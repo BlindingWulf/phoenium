@@ -82,6 +82,35 @@ gate with its real Minecraft footprint/readiness boundary; only after that revie
 separate task run a controlled live acceptance harness. Stage 3 remains **PARTIAL**;
 simulation workers = 1, parallel gameplay = OFF, and Stage 4 has not started.
 
+### 2026-09-03 scoped serial live-admission design (current resume point)
+
+The scoped movement/packet admission design is now recorded in
+[STAGE3_LIVE_ADMISSION_BOUNDARY.md](STAGE3_LIVE_ADMISSION_BOUNDARY.md). It identifies
+the valid-input pre-side-effect candidate in Minecraft 26.2's
+`ServerGamePacketListenerImpl.handleMovePlayer`: before its `tickCount` field read at
+method offset 74, after server-thread handoff and invalid-packet rejection but before
+`resetPosition`, `jumpFromGround`, `ServerPlayer.move`, correction teleport, tracking,
+or fall-damage work. The current after-`ensureRunningOnSameThread` Mixin is not promoted
+to this new contract; a later narrow adapter must match the documented point exactly.
+
+`LiveMovementFootprint`, `LiveMovementAdmission`, and `LivePacketReplayGate` provide a
+deterministic contract for the eventual adapter: routing destination is distinct from
+swept collision, step-up, support, fluid, entity-index, and synchronous callback
+coverage; every component must fit `FrozenRegionAuthority`; admission tickets are
+generation-fenced and revalidated immediately before the one replay marker is entered.
+The deterministic `LiveMovementAdmissionTest` covers contained admission, same-owner
+chunk crossing, escape-before-mutation, pending A/B convergence, topology-change stale
+rejection, and exact-once replay-marker behavior. The suite now contains **64 tests**.
+
+`handleInteract` is explicitly **not** a regional geographic-admission path: vanilla
+looks up its target entity before a safe target footprint can be derived, so explicit
+topology must fail it closed until a separate typed target-resolution protocol is
+reviewed. The base chunk observer remains **DIAGNOSTIC ONLY**. No client run, live
+geographic movement, real chunk installation, P3 tag, parallel gameplay, or Stage 4
+work occurred. The next step is implementation review of the exact valid-input Mixin
+target and its Minecraft AABB/state-snapshot adapter, followed only by a no-client boot
+check; Stage 3 remains **PARTIAL** with one simulation worker and parallel gameplay OFF.
+
 ## Locked decisions
 
 - Treat current Folia 26.2 semantics as primary; archived Ruthenium is a defect and regression reference.

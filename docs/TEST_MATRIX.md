@@ -105,13 +105,13 @@ unimplemented as regional mechanisms.
 
 ## Test discipline
 
-The 2026-09-02 architecture review reran `clean build` with 25 tests, zero failures,
-errors or skips; a subsequent `test` succeeded up to date. Stage 1/P2 checkpoints and
-historical live results remain preserved. The review did not rerun dedicated-server
-gates or earn any new Stage 3 live PASS. `TopologyPlanner.bufferClosure` and ordinary
-pre-transition inbox coverage have specific gaps documented in
-`STAGE3_MOVEMENT_ARCHITECTURE_REVIEW.md`; passing existing tests does not close them.
-The requested movement M-01–M-06 cases are future designs in that document, distinct
-from this matrix's compatibility M-01–M-06, and have not been executed as acceptance tests.
+The 2026-09-03 deterministic correction reran `clean build` with 58 tests, zero
+failures, errors, or skips; it executes the architecture review's distinct movement
+M-01–M-06 cases and publication-window proof. The scoped serial live-admission design
+adds six no-client contract tests, bringing the current deterministic suite to 64 tests.
+Stage 1/P2 checkpoints and historical live results remain preserved. Neither the
+deterministic correction nor the admission-model tests reran a dedicated client path or
+earned a new Stage 3 live PASS. See `STAGE3_LIVE_ADMISSION_BOUNDARY.md` for the exact
+remaining valid-input Mixin and AABB/state-snapshot adapter gate.
 
 Tests must use deterministic seeds, record scheduler worker count and topology configuration, fail on any ownership diagnostic, and retain minimized replay traces for concurrency failures. No test may pass merely because a fallback or broad lock masked an ownership violation.
