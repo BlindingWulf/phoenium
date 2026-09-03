@@ -128,6 +128,10 @@ environment was Minecraft 26.2, Temurin Java 25.0.4.1, Fabric Loader 0.19.5,
 from Git); its logs are `logs/latest.log`. The regular Phoenium artifact is
 `build/libs/phoenium-0.2.0-stage2.jar`.
 
+The coherent Stage 2 implementation commit is `bdac4fb` (`feat: integrate Stage 2
+Fabric serial live ticking`). Resolve the immutable
+`PHOENIUM_P2_FABRIC_SERIAL_LIVE_PASS` tag for the final checkpoint tree.
+
 Launch from that disposable server directory:
 
 ```text
