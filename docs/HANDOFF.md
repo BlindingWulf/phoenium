@@ -1,5 +1,37 @@
 # Handoff
 
+## Latest resume point — Stage 3 real-packet attempt (no client established)
+
+On 2026-09-03, the requested clean build passed **75/75 tests** with zero failures,
+errors, and skips. The final `phoenium-0.2.0-stage2.jar` exactly matched the JAR in
+the disposable `.stage2-server-live1` server directory. Two Fabric 26.2 dedicated
+server lifecycles were then run with the literal JVM property
+`-Dphoenium.stage3.explicitTopology=true` and stopped through authenticated local
+RCON `stop`.
+
+Both boots reached `Done`, reported `workers=1`, `parallel=OFF`,
+`explicitFixture=true`, and that the movement and interaction selectors were each
+loaded once. Startup and shutdown diagnostics recorded zero fallback, bypass,
+ownership violations, unleased executions, packet recursion, player/entity entries,
+and Stage-3 movement/interaction packet counters. Both stops saved all worlds and
+closed the RCON listener cleanly. The second lifecycle had no duplicate registration,
+stale scheduler state, or observable Phoenium thread leak.
+
+No real Minecraft connection was established. A locally installed Minecraft 26.2
+profile was found, but its Microsoft Store launcher helper exited without creating a
+Java client process in this unattended desktop session; the available UI bridge also
+exposed no native application surface to complete that launch. No unproven bot or
+synthetic/direct packet-handler invocation was used. Consequently, no player binding,
+movement, interaction, target-lifecycle, or disconnect evidence was generated, and
+the real-client movement and interaction gates remain **NOT TESTED**, not failed.
+
+Stage 3 remains **PARTIAL**; R-CHUNK-01 remains **PARTIAL**; Stage 4 remains
+**NOT STARTED**. Do not create a P3 PASS tag, implement chunk application, add C2ME,
+enable a second worker, or enable parallel gameplay. The next authorized run needs an
+interactive/local Minecraft 26.2 client session (or an already-proven compatible
+26.2 client harness) able to connect to the prepared disposable server and execute
+the documented fixture routes in `STAGE3_REAL_CLIENT_READINESS.md`.
+
 ## Resume point
 
 ### Latest resume point — Stage 3 real-client readiness
