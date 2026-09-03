@@ -25,6 +25,12 @@ public final class ChunkCompletionGateway {
     }
     public Delivery complete(ChunkWorkRequest request) {
         ChunkCustody.CustodyId custodyId = custody == null ? null : ChunkCustody.id(request);
+        if (custodyId != null && !custody.isCurrent(custodyId)) {
+            // A newer request incarnation owns this coordinate now. Do not advance the old stage,
+            // queue an envelope, or route it through vanilla error recovery.
+            rejections++;
+            return Delivery.REJECTED_SUPERSEDED;
+        }
         if (custodyId != null) custody.ready(custodyId);
         RegionRoute route = directory.resolve(request.chunkKey()).orElse(null);
         if (route == null) {
@@ -48,5 +54,5 @@ public final class ChunkCompletionGateway {
     }
     public long reroutes() { return reroutes; }
     public long rejections() { return rejections; }
-    public enum Delivery { QUEUED, REROUTED_CURRENT_OWNER, REJECTED_UNKNOWN_CHUNK, REJECTED_GATEWAY }
+    public enum Delivery { QUEUED, REROUTED_CURRENT_OWNER, REJECTED_UNKNOWN_CHUNK, REJECTED_SUPERSEDED, REJECTED_GATEWAY }
 }

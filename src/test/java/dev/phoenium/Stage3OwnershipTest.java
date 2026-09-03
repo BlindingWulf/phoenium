@@ -282,6 +282,29 @@ class Stage3OwnershipTest {
         assertEquals(ObjectOwnerGateway.Delivery.REJECTED_ABSENT, h.objectsGateway.submit(h.envelope("old6-entity", entity.objectEpoch(), "entity-mutation", AdmissionPolicy.REROUTE, 1)));
     }
 
+    @Test void chunkRequestIncarnationSupersessionRejectsR1BeforeItCanApplyToR2() {
+        Harness h = new Harness();
+        ChunkWorkRequest r1 = new ChunkWorkRequest(h.world, h.aKey, 1, h.directory.snapshot().generation(), "full", new TaskCorrelationId(401));
+        ChunkWorkRequest r2 = new ChunkWorkRequest(h.world, h.aKey, 2, h.directory.snapshot().generation(), "full", new TaskCorrelationId(402));
+        h.custody.request(ChunkCustody.id(r1));
+        h.chunkRequests.put(r1.correlationId(), r1);
+        h.custody.request(ChunkCustody.id(r2)); // R2 supersedes R1 at the same physical coordinate.
+        h.chunkRequests.put(r2.correlationId(), r2);
+
+        assertFalse(h.custody.isCurrent(ChunkCustody.id(r1)));
+        assertTrue(h.custody.isCurrent(ChunkCustody.id(r2)));
+        assertEquals(ChunkCustody.Stage.CANCELLED, h.custody.stage(ChunkCustody.id(r1)).orElseThrow());
+        assertEquals(ChunkCompletionGateway.Delivery.REJECTED_SUPERSEDED, h.chunkGateway.complete(r1));
+        assertEquals(0, h.a.inboxSize());
+        assertEquals(0, h.chunkApplications, "R1 cannot apply to R2's newer incarnation");
+
+        assertEquals(ChunkCompletionGateway.Delivery.QUEUED, h.chunkGateway.complete(r2));
+        h.scheduler.advanceOne();
+        assertEquals(1, h.chunkApplications, "only R2 reaches the owner application seam");
+        assertEquals(ChunkCustody.Stage.APPLIED, h.custody.stage(ChunkCustody.id(r2)).orElseThrow());
+        assertEquals(0, h.chunkDuplicates);
+    }
+
     @Test void chunkCustodyStagesAreExactlyOnceAndTerminalSafe() {
         ChunkCustody custody = new ChunkCustody();
         WorldId world = new WorldId("test");

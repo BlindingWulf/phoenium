@@ -32,10 +32,28 @@ public final class ChunkCustody {
 
     private final Map<CustodyId, Stage> stages = new ConcurrentHashMap<>();
     private final Map<CustodyId, RegionId> claimedOwners = new ConcurrentHashMap<>();
+    /** The newest request identity for each physical routing coordinate. Older requests are cancelled. */
+    private final Map<RequestSlot, CustodyId> currentRequests = new ConcurrentHashMap<>();
     private final LongAdder duplicateClaims = new LongAdder();
 
     /** The producer observed its future; idempotent while still REQUESTED. */
-    public void request(CustodyId id) { advance(id, Stage.REQUESTED); }
+    public void request(CustodyId id) {
+        currentRequests.compute(new RequestSlot(id.world(), id.chunkKey()), (slot, current) -> {
+            if (current == null || current.equals(id)) return id;
+            Stage stage = stages.get(current);
+            if (stage == Stage.CLAIMED) {
+                throw new IllegalStateException("cannot supersede a claimed chunk request " + current);
+            }
+            if (stage != null && !isTerminal(stage)) cancel(current);
+            return id;
+        });
+        advance(id, Stage.REQUESTED);
+    }
+
+    /** A producer completion may enter the owner gateway only for the newest request incarnation. */
+    public boolean isCurrent(CustodyId id) {
+        return id.equals(currentRequests.get(new RequestSlot(id.world(), id.chunkKey())));
+    }
 
     /** The producer future completed normally; idempotent while still READY. */
     public void ready(CustodyId id) { advance(id, Stage.READY); }
@@ -64,6 +82,10 @@ public final class ChunkCustody {
 
     /** Exactly-once claim: true the first time the completion reaches the leased owner. */
     public boolean claim(CustodyId id, RegionId owner) {
+        if (!isCurrent(id)) {
+            duplicateClaims.increment();
+            return false;
+        }
         boolean[] claimed = new boolean[1];
         stages.compute(id, (ignored, current) -> {
             if (current == Stage.CLAIMED || current == Stage.APPLIED) { duplicateClaims.increment(); claimed[0] = false; return current; }
@@ -114,4 +136,6 @@ public final class ChunkCustody {
             default -> -1;
         };
     }
+
+    private record RequestSlot(WorldId world, RoutingKey chunkKey) { }
 }

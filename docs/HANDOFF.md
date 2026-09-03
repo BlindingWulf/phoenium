@@ -64,11 +64,12 @@ explicit routes rather than inheriting a Stage 2 world default. The object ledge
 derived and revalidated immediately before mutation. The scheduler remains generic
 behind closed typed payload, gateway, and executor seams. `getChunkFuture` remains
 **DIAGNOSTIC ONLY**. `ChunkCustody` deterministically models request incarnation and
-exactly-once stage claims, but this does not claim control of live vanilla chunk
-installation or its recovery paths.
+exactly-once stage claims, including an explicit same-coordinate R1 -> R2 supersession
+witness where R1 is cancelled and cannot apply to R2. This does not claim control of
+live vanilla chunk installation or its recovery paths.
 
-Verification: `./gradlew.bat clean build --no-daemon` passed with **57 tests, 0
-failures, 0 errors, 0 skips** (`CoreAcceptanceTest` 26, `Stage3OwnershipTest` 17,
+Verification: `./gradlew.bat clean build --no-daemon` passed with **58 tests, 0
+failures, 0 errors, 0 skips** (`CoreAcceptanceTest` 26, `Stage3OwnershipTest` 18,
 `Stage3MovementTest` 14). This includes the prior Stage 1 and Stage 2 regressions,
 D03-A through D03-F, the explicit-route fallback regression, M-01 through M-06, the
 publication-window probe, and existing chunk custody/request-incarnation tests.
