@@ -165,6 +165,38 @@ loom {
             property 'phoenium.client.gametest.chunkTraceEvidence',
                     layout.buildDirectory.file('client-gametest/evidence/STAGE3-CHUNK-RUNTIME.json').get().asFile.absolutePath
         }
+
+        stage3ChunkReadinessTrace {
+            client()
+            name 'Phoenium Stage 3 Chunk Readiness Trace'
+            source sourceSets.clientGameTest
+            runDir 'run/stage3-chunk-readiness-trace'
+
+            vmArg '-Dfabric.client.gametest'
+            vmArg '-Dfabric.client.gametest.modid=phoenium-client-tests'
+            vmArg '-Dphoenium.test.mode=chunkreadiness'
+
+            programArg '--username'
+            programArg 'PhoeniumTest0'
+
+            property 'phoenium.test.username', 'PhoeniumTest0'
+            property 'phoenium.test.minecraftVersion', minecraft_version
+            property 'phoenium.test.javaVersion', '25'
+            property 'phoenium.test.fabricLoaderVersion', loader_version
+            property 'phoenium.test.fabricApiVersion', fabric_version
+            property 'phoenium.test.loomVersion', loom_version
+            property 'phoenium.test.gradleVersion', '9.5.1'
+            property 'phoenium.test.gradleTask', 'runStage3ChunkReadinessTrace'
+            property 'phoenium.test.serverDirectory',
+                    layout.buildDirectory.dir('stage3-client-server').get().asFile.absolutePath
+            property 'phoenium.test.serverAddress', '127.0.0.1:25565'
+            property 'phoenium.test.rconPort', '25575'
+            property 'phoenium.test.rconPassword', 'phoenium-stage3-client'
+            property 'phoenium.client.gametest.evidence',
+                    layout.buildDirectory.file('client-gametest/evidence/STAGE3-CHUNK-READINESS.json').get().asFile.absolutePath
+            property 'phoenium.client.gametest.chunkReadinessEvidence',
+                    layout.buildDirectory.file('client-gametest/evidence/STAGE3-CHUNK-READINESS.json').get().asFile.absolutePath
+        }
     }
 }
 
@@ -173,6 +205,10 @@ tasks.named('runStage3ClientGameTest') {
 }
 
 tasks.named('runStage3ChunkTrace') {
+    dependsOn tasks.named('prepareStage3ClientServer')
+}
+
+tasks.named('runStage3ChunkReadinessTrace') {
     dependsOn tasks.named('prepareStage3ClientServer')
 }
 

@@ -2,8 +2,10 @@
 
 Status: empirical reconnaissance complete; authoritative chunk ownership is still
 unimplemented. This map records the exact symbols in the pinned Minecraft 26.2
-artifact and the stages observed by the real-load trace. It is deliberately a
-mechanical map, not an approval to redirect any vanilla continuation.
+artifact and the stages observed by both the RCON-only load trace and the real-
+client readiness trace. It is deliberately a mechanical map, not an approval to
+redirect any vanilla continuation. The readiness-specific evidence is in
+[`STAGE3_CHUNK_READINESS_EVIDENCE.md`](STAGE3_CHUNK_READINESS_EVIDENCE.md).
 
 ## Scope and evidence identity
 
@@ -22,9 +24,9 @@ The bytecode inspection used the official-named, non-obfuscated artifact:
 | Loom | `1.17.20` |
 | Gradle | `9.5.1` |
 
-The production server artifact used by the run was
-`build/libs/phoenium-0.2.0-stage2.jar`, 204,709 bytes, SHA-256
-`A0EBFDF6AADD2D82C4E852181DB3417E78D15E0295EAACD98E49866747C3D51B`.
+The production server artifact used by the final readiness run was
+`build/libs/phoenium-0.2.0-stage2.jar`, 239,443 bytes, SHA-256
+`0952DE617A8C29718B12DC3C33FB63483AB3503619DDA12DDE63888D4C693E3F`.
 The same artifact was copied into the disposable dedicated server's `mods`
 directory. A jar-entry scan found zero client-test or `net/minecraft/client`
 entries.
@@ -38,6 +40,10 @@ When the property is absent or false, the mixin calls return after a static
 disabled check and no event file is written.
 
 ## Selection and lifecycle
+
+The original selection below is retained as historical RCON-only evidence. It
+does not cover player tracking, ticking readiness, client receipt, or client
+removal. The follow-up real-client selection is recorded immediately after it.
 
 The final run used a test-only RCON command that invoked the genuine
 `ServerLevel.getChunkSource().getChunkFuture(32, 4, ChunkStatus.FULL, true)`.
@@ -66,6 +72,48 @@ were recorded from the live `/seed` response. The third lifecycle reused the
 first world directory after a normal server stop. This is the deliberately
 persisted evidence-world exception; it is not used by the movement or
 interaction tests.
+
+### Follow-up real-client readiness trace (2026-09-03)
+
+The dedicated task `runStage3ChunkReadinessTrace` used two independent fresh
+worlds and a real TCP client connection to the production server jar. It did
+not issue a synthetic chunk request. Each lifecycle first verified that the
+target had no server `LevelChunk` (`getChunkNow=null`, `hasChunk=false`) and no
+exact client `FULL` cache entry, then moved the client into the target chunk and
+sampled the exact client cache until receipt. It then moved the client back to
+spawn and sampled until exact client eviction and tracking-demand removal.
+
+| Run | World | Seed | Target | Route | Trace events | Result |
+| --- | --- | --- | --- | --- | ---: | --- |
+| `fresh-generation-1` | `STAGE3-CHUNK-READINESS-1-1788472908795` | `-4966688072561929527` | `(4,-4)` | `stage3-fixture-a`, generation 1, owner epoch 0 | 1,456 | receipt/removal PASS |
+| `fresh-generation-2` | `STAGE3-CHUNK-READINESS-2-1788472934995` | `-1217979177269415904` | `(4,-4)` | `stage3-fixture-a`, generation 1, owner epoch 0 | 1,487 | receipt/removal PASS |
+
+The target is at the edge of the explicit A fixture and outside the readiness
+server's startup/spawn view. A partial holder may appear before the target is
+loaded; the precondition is specifically no loaded server `LevelChunk` and no
+exact client cache entry. Both raw traces stored zero dropped events and zero
+selected-event exceptions.
+
+The client-receipt path observed the exact 26.2 method
+`ClientChunkCache.getChunk(int,int,ChunkStatus,boolean)` with `FULL` and
+`create=false`; the returned `LevelChunk` was checked for exact `(4,-4)`
+position. Removal was the same non-forcing lookup returning `null` after the
+client left the tracking view. `addedLoadedChunks()` and
+`removedLoadedChunks()` were sampled as transient auxiliary sets and were not
+required because their per-tick windows were legitimately missed.
+
+The raw server sequence reached `FULL` accessibility, ticking preparation,
+`BLOCK_TICKING`/`ENTITY_TICKING` promotion, ticking conversion, post-processing,
+`ServerLevel.startTickingChunk`, `ChunkMap.onChunkReadyToSend`, and
+`ServerChunkCache.onChunkReadyToSend` in both worlds. The ordinary fresh-world
+path took the immediate send-sync branch. The delayed send callback branch was
+not observed.
+
+The same-owner target `(4,-4)` was selected after a preliminary cross-owner
+probe of `(32,4)` closed itself with
+`routing update crosses object owner; use transitionOwner after a quiescent
+publication boundary`. No topology transition, model change, ownership
+architecture change, or implementation workaround was introduced in response.
 
 ## Exact current symbols
 
@@ -116,12 +164,13 @@ continuation or callback used by the trace.
 
 | Candidate | Exact class and method | Descriptor | Result |
 | --- | --- | --- | --- |
-| ticking preparation | `ChunkMap.prepareTickingChunk` | `(Lnet/minecraft/server/level/ChunkHolder;)Ljava/util/concurrent/CompletableFuture;` | Mapped; **NOT OBSERVED** because the chunk-only FULL request did not create a player/ticking path |
-| ticking conversion | `ChunkMap.lambda$prepareTickingChunk$2` | `(Lnet/minecraft/server/level/ChunkHolder;Ljava/util/List;)Lnet/minecraft/world/level/chunk/LevelChunk;` | Mapped; **NOT OBSERVED** |
-| ready-to-send callback | `ChunkMap.lambda$prepareTickingChunk$3` | `(Lnet/minecraft/server/level/ChunkHolder;Lnet/minecraft/world/level/chunk/LevelChunk;Ljava/lang/Object;)V` | Mapped; **NOT OBSERVED**; no client network was needed for this experiment |
-| ready-to-send map callback | `ChunkMap.onChunkReadyToSend` | `(Lnet/minecraft/server/level/ChunkHolder;Lnet/minecraft/world/level/chunk/LevelChunk;)V` | Mapped; **NOT OBSERVED**; sends/registrations are later than storage application |
-| ready-to-send cache callback | `ServerChunkCache.onChunkReadyToSend` | `(Lnet/minecraft/server/level/ChunkHolder;)V` | Mapped; **NOT OBSERVED** |
-| world ticking | `ServerLevel.startTickingChunk` | `(Lnet/minecraft/world/level/chunk/LevelChunk;)V` | Mapped candidate; **NOT OBSERVED** in the no-player request |
+| ticking preparation | `ChunkMap.prepareTickingChunk` | `(Lnet/minecraft/server/level/ChunkHolder;)Ljava/util/concurrent/CompletableFuture;` | **OBSERVED** in both real-client runs; holder ticket moved from the FULL threshold toward ticking |
+| ticking result mapping | `ChunkMap.lambda$prepareTickingChunk$1` | `(Lnet/minecraft/server/level/ChunkHolder;Lnet/minecraft/server/level/ChunkResult;)Lnet/minecraft/server/level/ChunkResult;` | **OBSERVED** with successful `ChunkResult` inputs/outputs; internal future identity only |
+| ticking conversion | `ChunkMap.lambda$prepareTickingChunk$2` | `(Lnet/minecraft/server/level/ChunkHolder;Ljava/util/List;)Lnet/minecraft/world/level/chunk/LevelChunk;` | **OBSERVED** on `Server thread`; both runs reported `listSize=9` and `sendBranch=IMMEDIATE` |
+| delayed ready-to-send callback | `ChunkMap.lambda$prepareTickingChunk$3` | `(Lnet/minecraft/server/level/ChunkHolder;Lnet/minecraft/world/level/chunk/LevelChunk;Ljava/lang/Object;)V` | **NOT OBSERVED**; ordinary fresh demand completed through the immediate send-sync branch |
+| ready-to-send map callback | `ChunkMap.onChunkReadyToSend` | `(Lnet/minecraft/server/level/ChunkHolder;Lnet/minecraft/world/level/chunk/LevelChunk;)V` | **OBSERVED** after ticking conversion and `startTickingChunk`; later than storage application |
+| ready-to-send cache callback | `ServerChunkCache.onChunkReadyToSend` | `(Lnet/minecraft/server/level/ChunkHolder;)V` | **OBSERVED** after the map callback; holder send-sync was done |
+| world ticking | `ServerLevel.startTickingChunk` | `(Lnet/minecraft/world/level/chunk/LevelChunk;)V` | **OBSERVED** on `Server thread`; called with `LevelChunk` full status `ENTITY_TICKING` |
 
 ## Bytecode-confirmed relationships
 
@@ -257,8 +306,10 @@ There are two different answers depending on what “live mutation” means:
 That FULL seam is not the complete application footprint. The reload proves
 that `SerializableChunkData.read` can run POI consistency/unpack and queue
 lighting data before the application lambda returns. The holder's status
-futures, the later FULL future completion, post-future map bookkeeping, and
-unobserved ticking/readiness/send paths can all have independent effects.
+futures, the later FULL future completion, post-future map bookkeeping, and the
+client-demand ticking/readiness/send paths all have independent effects. The
+follow-up trace reached those later paths, but it did not turn them into a
+Phoenium custody implementation.
 
 `CHUNK_FUTURE_RETURN` is downstream of the initial application and FULL
 conversion in both observed paths. It occurred at sequence 226 on fresh and
@@ -280,8 +331,8 @@ read as proof that R-CHUNK-01 was implemented.
 | `ChunkStatusTasks.lambda$full$0` | **GOOD FULL-CONVERSION SEAM; INSUFFICIENT ALONE** | Main-thread continuation has chunk, holder, and access to level; bytecode performs the strongest live `LevelChunk` footprint, but it is too late for parsed data, POI, light input, and map-cache writes. |
 | `ServerChunkCache.getChunkFuture` return / existing observer | **TOO LATE / DIAGNOSTIC ONLY** | Public future/result is visible, but observed after application and FULL conversion; it cannot prevent or admit earlier side effects. |
 | `ChunkMap.prepareAccessibleChunk` | **INSUFFICIENT ALONE** | Readiness/range orchestration has holder but not the complete application result or mutable footprint. |
-| `ChunkMap.prepareTickingChunk`, `lambda$prepareTickingChunk$2`, `startTickingChunk` | **UNKNOWN / NOT OBSERVED** | These are later usable/ticking paths and require a separate legitimate ticking/player scenario. |
-| `ChunkMap.onChunkReadyToSend` and send callbacks | **TOO LATE for storage custody** | Network/readiness callbacks happen after usable chunk construction and were not part of this no-client experiment. |
+| `ChunkMap.prepareTickingChunk`, `lambda$prepareTickingChunk$2`, `startTickingChunk` | **OBSERVED; INSUFFICIENT ALONE** | The real-client trace confirms the later usable/ticking path on `Server thread`; it is downstream of FULL conversion and still has no validated Phoenium request/holder custody. |
+| `ChunkMap.onChunkReadyToSend` and send callbacks | **OBSERVED; TOO LATE for storage custody** | The real-client trace confirms the send/readiness callbacks after usable chunk construction. They are useful ordering anchors, not storage-ownership seams. |
 | load-failure callbacks | **UNKNOWN / NOT OBSERVED** | Exact symbols are mapped, but no safe controlled parse/load failure was induced. |
 
 No candidate is approved for implementation by this document. In particular,
@@ -295,8 +346,11 @@ thread identity, `mainThreadExecutor`, route resolution, or an existing
 - A legitimate real request/holder supersession or stale late-arrival race was
   not reproduced. Phoenium's deterministic `ChunkCustody` tests remain model
   evidence, not live Minecraft evidence.
-- Ticking/readiness/send paths were not reached without introducing a player or
-  client-network dependency. They require a separate non-mutating evidence mode.
+- The real-client readiness trace reached ticking/readiness/send and exact client
+  receipt/removal, but did not observe the delayed send branch. The final target
+  holder remained present at `FULL` with ticket level `31` after client tracking
+  removal during the 300-tick leave bound; direct target-holder demotion/unload
+  therefore remains **NOT OBSERVED**.
 - The trace does not expose a vanilla holder incarnation, request generation,
   ticket identity, cancellation token, or direct holder-to-public-future mapping.
 - The trace records method boundaries and object identities; it does not replace
@@ -311,10 +365,11 @@ thread identity, `mainThreadExecutor`, route resolution, or an existing
 The implementation is dormant by default and observation-only when enabled. It
 adds no owner routing, future replacement, authoritative callback wrapper,
 blocking owner wait, broad gameplay lock, peer lock, fake chunk, C2ME path,
-second worker, or parallel gameplay. The final run reported one worker,
-`parallel=OFF`, zero ownership violations, zero unleased executions, zero
-fallback, zero bypass, zero barriers, and zero producer-thread chunk mutations
-in the existing Phoenium diagnostics. Therefore:
+second worker, or parallel gameplay. The readiness run reported one worker,
+`parallel=OFF`, zero selected-event exceptions, zero dropped trace events, and
+no ownership implementation. The existing Phoenium diagnostics also reported
+zero ownership violations, zero unleased executions, zero fallback, zero bypass,
+zero barriers, and zero producer-thread chunk mutations. Therefore:
 
 `R-CHUNK-01 = PARTIAL`
 

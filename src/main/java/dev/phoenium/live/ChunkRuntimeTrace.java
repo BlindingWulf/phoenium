@@ -17,9 +17,12 @@ import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicLong;
 import net.minecraft.server.level.ChunkResult;
+import net.minecraft.server.level.ChunkHolder;
 import net.minecraft.server.level.GenerationChunkHolder;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.level.ChunkPos;
+import net.minecraft.world.level.chunk.LevelChunk;
+import net.minecraft.world.level.chunk.status.ChunkStatus;
 
 /**
  * Dormant, bounded observation of selected vanilla chunk stages.
@@ -37,6 +40,8 @@ public final class ChunkRuntimeTrace {
         System.getProperty("phoenium.stage3.chunkTrace.targets", ""));
     private static final int MAX_EVENTS = Math.max(100, Integer.getInteger(
         "phoenium.stage3.chunkTrace.maxEvents", 10_000));
+    private static final boolean LAZY_DEMAND = Boolean.getBoolean(
+        "phoenium.stage3.chunkTrace.lazyDemand");
     private static final Path OUTPUT = outputPath();
 
     private static final AtomicLong EVENT_SEQUENCE = new AtomicLong();
@@ -74,7 +79,7 @@ public final class ChunkRuntimeTrace {
             RequestState state = ACTIVE.compute(coordinate, (ignored, current) ->
                 current == null || current.futureDone || "NOT_OBSERVED".equals(current.requestedStatus)
                     ? new RequestState(coordinate, status, CORRELATION_SEQUENCE.incrementAndGet())
-                    : current);
+                    : current.withRequestStatus(status));
             stage(state, "CHUNK_FUTURE_REQUEST", status, null, null, null, null);
         } catch (RuntimeException ignored) {
             // Observation must never change vanilla control flow.
@@ -89,6 +94,7 @@ public final class ChunkRuntimeTrace {
             if (!selected(level, coordinate) || future == null) return;
             RequestState state = ACTIVE.computeIfAbsent(coordinate,
                 ignored -> new RequestState(coordinate, status, CORRELATION_SEQUENCE.incrementAndGet()));
+            state.withRequestStatus(status);
             stage(state, "CHUNK_FUTURE_RETURN", status, null, null, future, null);
             boolean attach;
             attach = FUTURES.putIfAbsent(future, state) == null;
@@ -123,6 +129,10 @@ public final class ChunkRuntimeTrace {
             ChunkCoordinate coordinate = coordinate(level, pos.x(), pos.z());
             if (!selected(level, coordinate)) return;
             RequestState state = ACTIVE.get(coordinate);
+            if (state == null && LAZY_DEMAND) {
+                state = ACTIVE.computeIfAbsent(coordinate,
+                    ignored -> new RequestState(coordinate, "CLIENT_DEMAND", CORRELATION_SEQUENCE.incrementAndGet()));
+            }
             if (state == null || "NOT_OBSERVED".equals(state.requestedStatus)) return;
             stage(state, stage, detail, data, holder, null, null);
         } catch (RuntimeException ignored) {
@@ -138,6 +148,10 @@ public final class ChunkRuntimeTrace {
             ChunkCoordinate coordinate = new ChunkCoordinate(pos.x(), pos.z());
             if (!TARGETS.contains(coordinate)) return;
             RequestState state = ACTIVE.get(coordinate);
+            if (state == null && LAZY_DEMAND) {
+                state = ACTIVE.computeIfAbsent(coordinate,
+                    ignored -> new RequestState(coordinate, "CLIENT_DEMAND", CORRELATION_SEQUENCE.incrementAndGet()));
+            }
             if (state == null || "NOT_OBSERVED".equals(state.requestedStatus)) return;
             stage(state, stage, detail, data, holder, null, null);
         } catch (RuntimeException ignored) {
@@ -174,7 +188,52 @@ public final class ChunkRuntimeTrace {
             .append(" futureSuccess=").append(state.futureSuccess)
             .append(" lastStage=").append(state.lastStage == null ? "UNRESOLVED" : state.lastStage)
             .append(" futureError=").append(state.futureError == null ? "none" : state.futureError)
+            .append(" demandObserved=").append(hasAnyStage(coordinate,
+                "CHUNK_MAP_APPLY_TRACKING_VIEW_ADD", "CHUNK_MAP_UPDATE_CHUNK_SCHEDULING_ENTER"))
+            .append(" fullObserved=").append(hasAnyStage(coordinate,
+                "CHUNK_MAP_PREPARE_ACCESSIBLE_CHUNK_ENTER", "CHUNK_HOLDER_FULL_PROMOTION_ENTER"))
+            .append(" tickingObserved=").append(hasAnyStage(coordinate,
+                "CHUNK_MAP_PREPARE_TICKING_CHUNK_ENTER", "CHUNK_MAP_TICKING_CONVERSION_RETURN"))
+            .append(" startTickingObserved=").append(hasStage(coordinate,
+                "SERVER_LEVEL_START_TICKING_CHUNK_ENTER"))
+            .append(" sendReadyObserved=").append(hasAnyStage(coordinate,
+                "CHUNK_MAP_ON_CHUNK_READY_TO_SEND", "SERVER_CHUNK_CACHE_ON_CHUNK_READY_TO_SEND"))
+            .append(" demandRemovedObserved=").append(hasStage(coordinate,
+                "CHUNK_MAP_DROP_CHUNK_TO_CLIENT"))
+            .append(" fullStatusChangeObserved=").append(hasStage(coordinate,
+                "CHUNK_MAP_FULL_STATUS_CHANGE_ENTER"))
+            .append(" demotionObserved=").append(directDemotionObserved(coordinate))
+            .append(" unloadObserved=").append(targetHolderUnloadObserved(coordinate))
             .toString();
+    }
+
+    /**
+     * Test-only, non-blocking snapshot of the vanilla holder/cache state. It is intentionally
+     * read-only: no ticket, future, holder, or chunk is created, completed, replaced, or joined.
+     */
+    public static String inspect(ServerLevel level, int x, int z) {
+        if (level == null) return "chunkTrace inspect level=UNRESOLVED";
+        ChunkPos pos = new ChunkPos(x, z);
+        var cache = level.getChunkSource();
+        var map = cache.chunkMap;
+        ChunkHolder holder = map.getUpdatingChunkIfPresent(pos.pack());
+        ChunkStatus latest = map.getLatestStatus(pos.pack());
+        LevelChunk loaded = cache.getChunkNow(x, z);
+        RouteContext route = routeContext(new ChunkCoordinate(x, z));
+        return "chunkTrace inspect world=" + level.dimension().identifier()
+            + " chunk=" + x + "," + z
+            + " route=" + (route.resolved ? route.region : "UNRESOLVED")
+            + " generation=" + route.topologyGeneration
+            + " ownerEpoch=" + route.ownerEpoch
+            + " latestStatus=" + (latest == null ? "UNRESOLVED" : latest.getName())
+            + " holderPresent=" + (holder != null)
+            + " holderIdentity=" + identity(holder)
+            + " ticketLevel=" + (holder == null ? "UNRESOLVED" : holder.getTicketLevel())
+            + " fullFutureDone=" + futureDone(holder == null ? null : holder.getFullChunkFuture())
+            + " tickingFutureDone=" + futureDone(holder == null ? null : holder.getTickingChunkFuture())
+            + " sendSyncDone=" + futureDone(holder == null ? null : holder.getSendSyncFuture())
+            + " getChunkNow=" + identity(loaded)
+            + " hasChunk=" + cache.hasChunk(x, z);
     }
 
     public static void finish() {
@@ -207,6 +266,67 @@ public final class ChunkRuntimeTrace {
 
     public static int eventCount() {
         return EVENTS.size();
+    }
+
+    private static boolean futureDone(CompletableFuture<?> future) {
+        return future != null && future.isDone();
+    }
+
+    private static boolean hasStage(ChunkCoordinate coordinate, String stage) {
+        for (Event event : EVENTS) {
+            if (event.coordinate.equals(coordinate) && event.stage.equals(stage)) return true;
+        }
+        return false;
+    }
+
+    private static boolean hasAnyStage(ChunkCoordinate coordinate, String... stages) {
+        for (String stage : stages) if (hasStage(coordinate, stage)) return true;
+        return false;
+    }
+
+    private static boolean directDemotionObserved(ChunkCoordinate coordinate) {
+        String holderIdentity = latestReadyHolderIdentity(coordinate);
+        return holderIdentity != null && EVENTS.stream().anyMatch(event ->
+            event.coordinate.equals(coordinate)
+                && "CHUNK_HOLDER_DEMOTE_FULL_CHUNK_ENTER".equals(event.stage)
+                && holderIdentity.equals(event.holderIdentity));
+    }
+
+    private static boolean targetHolderUnloadObserved(ChunkCoordinate coordinate) {
+        String holderIdentity = latestReadyHolderIdentity(coordinate);
+        String chunkIdentity = latestReadyChunkIdentity(coordinate);
+        if (holderIdentity == null && chunkIdentity == null) return false;
+        return EVENTS.stream().anyMatch(event -> {
+            if (!event.coordinate.equals(coordinate)) return false;
+            boolean unloadStage = event.stage.startsWith("CHUNK_MAP_UNLOAD_")
+                || event.stage.startsWith("CHUNK_MAP_SCHEDULE_UNLOAD")
+                || event.stage.startsWith("SERVER_LEVEL_UNLOAD_CHUNK_");
+            if (!unloadStage) return false;
+            return holderIdentity != null && holderIdentity.equals(event.holderIdentity)
+                || chunkIdentity != null && chunkIdentity.equals(event.dataIdentity);
+        });
+    }
+
+    private static String latestReadyHolderIdentity(ChunkCoordinate coordinate) {
+        for (int index = EVENTS.size() - 1; index >= 0; index--) {
+            Event event = EVENTS.get(index);
+            if (event.coordinate.equals(coordinate)
+                    && "CHUNK_MAP_ON_CHUNK_READY_TO_SEND".equals(event.stage)) {
+                return event.holderIdentity;
+            }
+        }
+        return null;
+    }
+
+    private static String latestReadyChunkIdentity(ChunkCoordinate coordinate) {
+        for (int index = EVENTS.size() - 1; index >= 0; index--) {
+            Event event = EVENTS.get(index);
+            if (event.coordinate.equals(coordinate)
+                    && "CHUNK_MAP_ON_CHUNK_READY_TO_SEND".equals(event.stage)) {
+                return event.dataIdentity;
+            }
+        }
+        return null;
     }
 
     private static void stage(RequestState state, String stage, String detail, Object data,
@@ -314,7 +434,7 @@ public final class ChunkRuntimeTrace {
 
     private static final class RequestState {
         private final ChunkCoordinate coordinate;
-        private final String requestedStatus;
+        private volatile String requestedStatus;
         private final long correlationId;
         private final long requestIncarnation;
         private volatile boolean futureDone;
@@ -327,6 +447,11 @@ public final class ChunkRuntimeTrace {
             this.requestedStatus = requestedStatus == null ? "UNKNOWN" : requestedStatus;
             this.correlationId = correlationId;
             this.requestIncarnation = correlationId;
+        }
+
+        private RequestState withRequestStatus(String status) {
+            if (status != null) requestedStatus = status;
+            return this;
         }
     }
 

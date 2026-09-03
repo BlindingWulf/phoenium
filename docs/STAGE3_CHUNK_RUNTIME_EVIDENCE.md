@@ -1,9 +1,14 @@
 # Stage 3 chunk runtime evidence
 
-This is the compact evidence record for the next chunk-ownership task. The
+This is the historical compact evidence record for the RCON-only chunk-
+ownership task. The
 descriptor-level inventory is in
 [`STAGE3_CHUNK_RUNTIME_MAP.md`](STAGE3_CHUNK_RUNTIME_MAP.md). This file records
-the final reproducible run and the unresolved ownership questions.
+the final reproducible RCON-only run and the unresolved ownership questions.
+For the later real-client ticking/readiness/send path, use
+[`STAGE3_CHUNK_READINESS_EVIDENCE.md`](STAGE3_CHUNK_READINESS_EVIDENCE.md);
+its results supersede only this report's earlier “not observed” readiness
+statements.
 
 Verdict: **reconnaissance complete; R-CHUNK-01 remains PARTIAL**. The run
 demonstrates real vanilla generation, disk-backed reload, POI/lighting activity,

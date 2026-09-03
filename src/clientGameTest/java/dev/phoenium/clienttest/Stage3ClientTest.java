@@ -6,11 +6,15 @@ import net.fabricmc.fabric.api.client.gametest.v1.context.ClientGameTestContext;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.screens.ConnectScreen;
 import net.minecraft.client.gui.screens.TitleScreen;
+import net.minecraft.client.multiplayer.ClientChunkCache;
 import net.minecraft.client.multiplayer.ClientPacketListener;
 import net.minecraft.client.multiplayer.ServerData;
 import net.minecraft.client.multiplayer.resolver.ServerAddress;
 import net.minecraft.core.BlockPos;
 import net.minecraft.network.chat.Component;
+import net.minecraft.world.level.ChunkPos;
+import net.minecraft.world.level.chunk.LevelChunk;
+import net.minecraft.world.level.chunk.status.ChunkStatus;
 
 import java.io.BufferedInputStream;
 import java.io.DataInputStream;
@@ -53,7 +57,14 @@ public final class Stage3ClientTest implements FabricClientGameTest {
     private static final int CLIENT_CONNECT_TIMEOUT_TICKS = 1200;
     private static final int CHUNK_TRACE_X = 32;
     private static final int CHUNK_TRACE_Z = 4;
+    /** Same-owner target at the edge of fixture A, outside the readiness server's spawn view. */
+    private static final int CHUNK_READINESS_X = 4;
+    private static final int CHUNK_READINESS_Z = -4;
     private static final int CHUNK_TRACE_TIMEOUT_TICKS = 1200;
+    /** Fresh client-demand world generation can legitimately outlive a three-minute probe. */
+    private static final int CHUNK_READINESS_TIMEOUT_TICKS = 7200;
+    /** Keep post-leave teardown bounded without making a missing unload look like a hang. */
+    private static final int CHUNK_READINESS_LEAVE_TIMEOUT_TICKS = 300;
     private static final Pattern MOVE_SEGMENT = Pattern.compile("move\\[([^]]*)\\]");
     private static final Pattern INTERACT_SEGMENT = Pattern.compile("interact\\[([^]]*)\\]");
     private static final Pattern NUMERIC_FIELD = Pattern.compile("\\b([A-Za-z]+)=(-?\\d+)");
@@ -66,6 +77,10 @@ public final class Stage3ClientTest implements FabricClientGameTest {
 
     @Override
     public void runTest(ClientGameTestContext context) {
+        if ("chunkreadiness".equals(System.getProperty("phoenium.test.mode"))) {
+            runChunkReadinessTrace(context);
+            return;
+        }
         if ("chunktrace".equals(System.getProperty("phoenium.test.mode"))) {
             runChunkTrace(context);
             return;
@@ -409,6 +424,675 @@ public final class Stage3ClientTest implements FabricClientGameTest {
         context.waitTicks(10);
         return new PendingChunkTrace(label, server.worldName, server.worldSeed(), server.traceOutput,
             server.latestLog, request, status);
+    }
+
+    /**
+     * Stage 3's dedicated real-client readiness trace.  The external server receives no synthetic
+     * chunk request: player tracking caused by the real TCP client is the demand source, and the
+     * client-side cache is sampled only through its non-forcing lookup/update-set APIs.
+     */
+    private static void runChunkReadinessTrace(ClientGameTestContext context) {
+        ReadinessEvidence evidence = ReadinessEvidence.create();
+        ExternalServer server = null;
+        boolean clientConnected = false;
+        try {
+            for (int lifecycle = 1; lifecycle <= 2; lifecycle++) {
+                String worldName = "STAGE3-CHUNK-READINESS-" + lifecycle + "-" + System.currentTimeMillis();
+                String label = "fresh-generation-" + lifecycle;
+                Path traceOutput = readinessTracePath(label);
+                server = ExternalServer.startChunkReadinessTrace(lifecycle, worldName, traceOutput);
+                evidence.serverDirectory = server.directory.toAbsolutePath().toString();
+                evidence.productionServerModLoaded = true;
+                if (lifecycle == 1) evidence.firstServerProcessStarted = true;
+                else evidence.secondServerProcessStarted = true;
+
+                server.waitUntilReady(context);
+                if (lifecycle == 1) evidence.firstServerReady = true;
+                else evidence.secondServerReady = true;
+                String seed = server.worldSeed();
+                String setup = server.prepareReadinessSetup();
+                String route = server.execute("phoenium route \"minecraft:overworld\" "
+                    + CHUNK_READINESS_X + " " + CHUNK_READINESS_Z);
+                require(route.contains("route=RESOLVED") && route.contains("region=stage3-fixture-a"),
+                    "readiness target did not resolve to same-owner fixture A: " + route);
+                String initialInspect = server.execute("phoenium chunktrace inspect "
+                    + CHUNK_READINESS_X + " " + CHUNK_READINESS_Z);
+                require(initialInspect.contains("getChunkNow=null")
+                        && initialInspect.contains("hasChunk=false"),
+                    "readiness target already had a loaded server chunk before client demand: " + initialInspect);
+
+                connectClient(context);
+                clientConnected = true;
+                evidence.realTcpConnectionStarted = true;
+                context.waitTicks(20);
+                ClientChunkObservation initialClient = clientChunkObservation(context);
+                require(!initialClient.targetLoaded,
+                    "readiness target was already present in the client before teleport: " + initialClient);
+
+                String gamemode = server.execute("gamemode spectator " + TEST_USERNAME);
+                require(gamemode != null && !gamemode.isBlank() && !gamemode.contains("Unknown"),
+                    "could not stabilize the real client in spectator mode: " + gamemode);
+                setup += " | gamemode=" + gamemode.trim();
+                double targetBlockX = CHUNK_READINESS_X * 16.0D + 8.5D;
+                double targetBlockZ = CHUNK_READINESS_Z * 16.0D + 8.5D;
+                String targetTeleport = server.execute("tp " + TEST_USERNAME + " " + targetBlockX
+                    + " 320 " + targetBlockZ);
+                waitForClientInChunk(context, CHUNK_READINESS_X, CHUNK_READINESS_Z,
+                    "target teleport " + label);
+                ReadinessDemandObservation demand = observeDemandUntilReceipt(server, context);
+                require(demand.clientTargetLoaded,
+                    "client did not receive exact target chunk through ClientChunkCache: " + demand);
+                require(demand.lastServerStatus.contains("sendReadyObserved=true"),
+                    "server did not observe send-ready before client receipt: " + demand.lastServerStatus);
+
+                String leaveTeleport = server.execute("tp " + TEST_USERNAME + " 8.5 80 8.5");
+                waitForClientInChunk(context, 0, 0, "leave teleport " + label);
+                ReadinessLeaveObservation leave = observeLeaveUntilServerRemoval(server, context);
+                String afterLeaveInspect = server.execute("phoenium chunktrace inspect "
+                    + CHUNK_READINESS_X + " " + CHUNK_READINESS_Z);
+                require(leave.clientTargetRemoved,
+                    "client did not remove the target chunk after leaving its tracking view: " + leave);
+                require(leave.serverDemandRemoved,
+                    "server did not observe tracking-demand removal: " + leave.lastServerStatus);
+
+                ReadinessPendingTrace pending = new ReadinessPendingTrace(label, worldName, seed,
+                    traceOutput, server.latestLog, route, setup, initialInspect, initialClient,
+                    targetTeleport, demand, leaveTeleport, leave, afterLeaveInspect);
+                disconnectClient(context);
+                clientConnected = false;
+                if (lifecycle == 1) evidence.firstClientDisconnectedCleanly = true;
+                else evidence.secondClientDisconnectedCleanly = true;
+                require(server.stopNormally(context), label + " server did not stop normally");
+                if (lifecycle == 1) evidence.firstServerStoppedCleanly = true;
+                else evidence.secondServerStoppedCleanly = true;
+                evidence.runs.add(ReadinessRun.read(pending));
+                server = null;
+                context.waitTicks(10);
+            }
+
+            assertReadinessOrdering(evidence.runs);
+            evidence.semanticOrderingStable = true;
+            evidence.success = true;
+        } catch (Throwable failure) {
+            evidence.failure = failure.toString();
+            if (failure instanceof Error error) throw error;
+            throw new AssertionError("Stage 3 chunk readiness trace failed", failure);
+        } finally {
+            if (clientConnected) {
+                try {
+                    disconnectClient(context);
+                } catch (Throwable cleanupFailure) {
+                    evidence.cleanupFailure = cleanupFailure.toString();
+                }
+            }
+            if (server != null) server.stopQuietly(context);
+            writeChunkReadinessEvidence(evidence);
+        }
+    }
+
+    private static ReadinessDemandObservation observeDemandUntilReceipt(ExternalServer server,
+                                                                          ClientGameTestContext context)
+            throws IOException {
+        boolean clientLoaded = false;
+        boolean clientAdded = false;
+        int loadedTick = -1;
+        int serverReadyTick = -1;
+        String status = "";
+        ClientChunkObservation latestClient = clientChunkObservation(context);
+        for (int tick = 0; tick < CHUNK_READINESS_TIMEOUT_TICKS; tick++) {
+            require(server.isAlive(), server.serverFailure("external server exited during readiness demand"));
+            latestClient = clientChunkObservation(context);
+            clientLoaded |= latestClient.targetLoaded;
+            clientAdded |= latestClient.targetAddedInUpdateSet;
+            if (clientLoaded && loadedTick < 0) loadedTick = tick;
+            if (tick % 5 == 0) {
+                status = server.execute("phoenium chunktrace status " + CHUNK_READINESS_X + " " + CHUNK_READINESS_Z);
+                if (serverReadyTick < 0 && status.contains("sendReadyObserved=true")) serverReadyTick = tick;
+                if (clientLoaded && status.contains("sendReadyObserved=true")
+                        && status.contains("startTickingObserved=true")) {
+                    return new ReadinessDemandObservation(true, clientAdded, loadedTick, serverReadyTick,
+                        status, latestClient);
+                }
+            }
+            context.waitTick();
+        }
+        return new ReadinessDemandObservation(clientLoaded, clientAdded, loadedTick, serverReadyTick,
+            status, latestClient);
+    }
+
+    private static ReadinessLeaveObservation observeLeaveUntilServerRemoval(ExternalServer server,
+                                                                             ClientGameTestContext context)
+            throws IOException {
+        boolean clientRemoved = false;
+        boolean clientRemovedSet = false;
+        boolean demandRemoved = false;
+        boolean demoted = false;
+        boolean unloaded = false;
+        int removedTick = -1;
+        int demandRemovedTick = -1;
+        int demotedTick = -1;
+        int unloadedTick = -1;
+        String status = "";
+        ClientChunkObservation latestClient = clientChunkObservation(context);
+        for (int tick = 0; tick < CHUNK_READINESS_LEAVE_TIMEOUT_TICKS; tick++) {
+            require(server.isAlive(), server.serverFailure("external server exited during readiness leave"));
+            latestClient = clientChunkObservation(context);
+            clientRemoved |= !latestClient.targetLoaded;
+            clientRemovedSet |= latestClient.targetRemovedInUpdateSet;
+            if (clientRemoved && removedTick < 0) removedTick = tick;
+            if (tick % 5 == 0) {
+                status = server.execute("phoenium chunktrace status " + CHUNK_READINESS_X + " " + CHUNK_READINESS_Z);
+                demandRemoved = status.contains("demandRemovedObserved=true");
+                demoted = status.contains("demotionObserved=true");
+                unloaded = status.contains("unloadObserved=true");
+                if (demandRemoved && demandRemovedTick < 0) demandRemovedTick = tick;
+                if (demoted && demotedTick < 0) demotedTick = tick;
+                if (unloaded && unloadedTick < 0) unloadedTick = tick;
+                if (clientRemoved && demandRemoved && (demoted || unloaded)) {
+                    return new ReadinessLeaveObservation(true, clientRemovedSet, demandRemoved, demoted,
+                        unloaded, removedTick, demandRemovedTick, demotedTick, unloadedTick, status, latestClient);
+                }
+            }
+            context.waitTick();
+        }
+        return new ReadinessLeaveObservation(clientRemoved, clientRemovedSet, demandRemoved, demoted, unloaded,
+            removedTick, demandRemovedTick, demotedTick, unloadedTick, status, latestClient);
+    }
+
+    private static void assertReadinessOrdering(List<ReadinessRun> runs) {
+        require(runs.size() == 2, "expected two fresh-world readiness traces");
+        for (ReadinessRun run : runs) {
+            TraceRun trace = run.trace;
+            require(trace.eventCount > 0, "readiness trace has no selected events: " + run.label);
+            require(trace.stageCounts.containsKey("CHUNK_MAP_UPDATE_CHUNK_SCHEDULING_ENTER")
+                    || trace.stageCounts.containsKey("CHUNK_MAP_APPLY_TRACKING_VIEW_ADD"),
+                "readiness trace missed the client-demand boundary: " + run.label);
+            require(trace.stageCounts.containsKey("CHUNK_MAP_PREPARE_ACCESSIBLE_CHUNK_ENTER"),
+                "readiness trace missed FULL accessibility preparation: " + run.label);
+            require(trace.stageCounts.containsKey("CHUNK_MAP_PREPARE_TICKING_CHUNK_ENTER"),
+                "readiness trace missed ticking preparation: " + run.label);
+            require(trace.stageCounts.containsKey("SERVER_LEVEL_START_TICKING_CHUNK_ENTER"),
+                "readiness trace missed ServerLevel.startTickingChunk: " + run.label);
+            require(trace.stageCounts.containsKey("CHUNK_MAP_ON_CHUNK_READY_TO_SEND"),
+                "readiness trace missed ChunkMap.onChunkReadyToSend: " + run.label);
+            require(run.clientTargetLoaded,
+                "readiness trace missed exact client cache receipt evidence: " + run.label);
+            require(run.clientTargetRemoved,
+                "readiness trace missed exact client cache removal evidence: " + run.label);
+            require(run.serverDemandObserved, "readiness trace missed tracking demand removal: " + run.label);
+            assertPair(trace, "CHUNK_MAP_PREPARE_ACCESSIBLE_CHUNK_ENTER",
+                "CHUNK_MAP_PREPARE_TICKING_CHUNK_ENTER");
+            assertPair(trace, "CHUNK_MAP_PREPARE_TICKING_CHUNK_ENTER",
+                "SERVER_LEVEL_START_TICKING_CHUNK_ENTER");
+            assertPair(trace, "SERVER_LEVEL_START_TICKING_CHUNK_ENTER",
+                "CHUNK_MAP_ON_CHUNK_READY_TO_SEND");
+            assertPair(trace, "CHUNK_MAP_ON_CHUNK_READY_TO_SEND",
+                "CHUNK_MAP_DROP_CHUNK_TO_CLIENT");
+        }
+        String[][] stablePairs = {
+            {"CHUNK_MAP_PREPARE_ACCESSIBLE_CHUNK_ENTER", "CHUNK_MAP_PREPARE_TICKING_CHUNK_ENTER"},
+            {"CHUNK_MAP_PREPARE_TICKING_CHUNK_ENTER", "SERVER_LEVEL_START_TICKING_CHUNK_ENTER"},
+            {"SERVER_LEVEL_START_TICKING_CHUNK_ENTER", "CHUNK_MAP_ON_CHUNK_READY_TO_SEND"},
+            {"CHUNK_MAP_ON_CHUNK_READY_TO_SEND", "CHUNK_MAP_DROP_CHUNK_TO_CLIENT"}
+        };
+        for (String[] pair : stablePairs) {
+            int first = runs.get(0).trace.indexOf(pair[0]);
+            int second = runs.get(0).trace.indexOf(pair[1]);
+            int firstAgain = runs.get(1).trace.indexOf(pair[0]);
+            int secondAgain = runs.get(1).trace.indexOf(pair[1]);
+            require(first >= 0 && second >= 0 && firstAgain >= 0 && secondAgain >= 0,
+                "readiness stable-order pair was absent: " + pair[0] + " -> " + pair[1]);
+            require((first < second) == (firstAgain < secondAgain),
+                "readiness semantic order was unstable for " + pair[0] + " -> " + pair[1]);
+        }
+    }
+
+    private static Path readinessTracePath(String label) {
+        Path summary = Path.of(System.getProperty("phoenium.client.gametest.chunkReadinessEvidence",
+            "build/client-gametest/evidence/STAGE3-CHUNK-READINESS.json"));
+        return summary.resolveSibling("STAGE3-CHUNK-READINESS-" + label + ".json").toAbsolutePath();
+    }
+
+    private static void writeChunkReadinessEvidence(ReadinessEvidence evidence) {
+        Path path = Path.of(System.getProperty("phoenium.client.gametest.evidence",
+            "build/client-gametest/evidence/STAGE3-CHUNK-READINESS.json"));
+        try {
+            Path parent = path.toAbsolutePath().getParent();
+            if (parent != null) Files.createDirectories(parent);
+            Files.writeString(path, evidence.toJson(), StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING);
+            Files.writeString(path.resolveSibling("STAGE3-CHUNK-READINESS-world-seeds.txt"),
+                evidence.worldSeedText(), StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING);
+        } catch (IOException exception) {
+            throw new AssertionError("Unable to write chunk readiness evidence to " + path, exception);
+        }
+    }
+
+    private static final class ReadinessPendingTrace {
+        private final String label;
+        private final String worldName;
+        private final String worldSeed;
+        private final Path traceOutput;
+        private final Path latestLog;
+        private final String routeResponse;
+        private final String setupResponse;
+        private final String initialInspect;
+        private final ClientChunkObservation initialClient;
+        private final String targetTeleport;
+        private final ReadinessDemandObservation demand;
+        private final String leaveTeleport;
+        private final ReadinessLeaveObservation leave;
+        private final String afterLeaveInspect;
+
+        private ReadinessPendingTrace(String label, String worldName, String worldSeed, Path traceOutput,
+                                      Path latestLog, String routeResponse, String setupResponse,
+                                      String initialInspect, ClientChunkObservation initialClient,
+                                      String targetTeleport, ReadinessDemandObservation demand,
+                                      String leaveTeleport, ReadinessLeaveObservation leave,
+                                      String afterLeaveInspect) {
+            this.label = label;
+            this.worldName = worldName;
+            this.worldSeed = worldSeed;
+            this.traceOutput = traceOutput;
+            this.latestLog = latestLog;
+            this.routeResponse = routeResponse;
+            this.setupResponse = setupResponse;
+            this.initialInspect = initialInspect;
+            this.initialClient = initialClient;
+            this.targetTeleport = targetTeleport;
+            this.demand = demand;
+            this.leaveTeleport = leaveTeleport;
+            this.leave = leave;
+            this.afterLeaveInspect = afterLeaveInspect;
+        }
+    }
+
+    private record ClientChunkObservation(boolean clientLevelPresent, boolean targetLoaded,
+                                          boolean targetAddedInUpdateSet, boolean targetRemovedInUpdateSet,
+                                          int loadedChunks, String chunkIdentity) { }
+
+    private record ReadinessDemandObservation(boolean clientTargetLoaded, boolean clientAddedInUpdateSet,
+                                              int clientLoadedTick, int serverReadyTick,
+                                              String lastServerStatus, ClientChunkObservation latestClient) { }
+
+    private record ReadinessLeaveObservation(boolean clientTargetRemoved, boolean clientRemovedInUpdateSet,
+                                             boolean serverDemandRemoved, boolean serverDemoted,
+                                             boolean serverUnloaded, int removedTick, int demandRemovedTick,
+                                             int demotedTick, int unloadedTick, String lastServerStatus,
+                                             ClientChunkObservation latestClient) { }
+
+    private static final class ReadinessRun {
+        private final String label;
+        private final String worldName;
+        private final String worldSeed;
+        private final TraceRun trace;
+        private final String routeResponse;
+        private final String setupResponse;
+        private final String initialInspect;
+        private final String initialClientObservation;
+        private final String targetTeleport;
+        private final String receiveStatus;
+        private final String receiveClientObservation;
+        private final String leaveTeleport;
+        private final String leaveStatus;
+        private final String leaveClientObservation;
+        private final String afterLeaveInspect;
+        private final boolean clientTargetLoaded;
+        private final boolean clientAddedInUpdateSet;
+        private final boolean clientTargetRemoved;
+        private final boolean clientRemovedInUpdateSet;
+        private final boolean serverDemandObserved;
+        private final boolean serverSendReady;
+        private final boolean serverDemoted;
+        private final boolean serverUnloaded;
+        private final int clientReceiveTick;
+        private final int serverSendReadyTick;
+        private final int clientRemovedTick;
+        private final int demandRemovedTick;
+        private final int demotedTick;
+        private final int unloadedTick;
+        private final boolean immediateSendBranchObserved;
+        private final boolean delayedSendBranchObserved;
+
+        private ReadinessRun(String label, String worldName, String worldSeed, TraceRun trace,
+                             String routeResponse, String setupResponse, String initialInspect,
+                             String initialClientObservation, String targetTeleport, String receiveStatus,
+                             String receiveClientObservation, String leaveTeleport, String leaveStatus,
+                             String leaveClientObservation, String afterLeaveInspect,
+                             boolean clientTargetLoaded, boolean clientAddedInUpdateSet,
+                             boolean clientTargetRemoved, boolean clientRemovedInUpdateSet,
+                             boolean serverDemandObserved, boolean serverSendReady, boolean serverDemoted,
+                             boolean serverUnloaded, int clientReceiveTick, int serverSendReadyTick,
+                             int clientRemovedTick, int demandRemovedTick, int demotedTick, int unloadedTick,
+                             boolean immediateSendBranchObserved, boolean delayedSendBranchObserved) {
+            this.label = label;
+            this.worldName = worldName;
+            this.worldSeed = worldSeed;
+            this.trace = trace;
+            this.routeResponse = routeResponse;
+            this.setupResponse = setupResponse;
+            this.initialInspect = initialInspect;
+            this.initialClientObservation = initialClientObservation;
+            this.targetTeleport = targetTeleport;
+            this.receiveStatus = receiveStatus;
+            this.receiveClientObservation = receiveClientObservation;
+            this.leaveTeleport = leaveTeleport;
+            this.leaveStatus = leaveStatus;
+            this.leaveClientObservation = leaveClientObservation;
+            this.afterLeaveInspect = afterLeaveInspect;
+            this.clientTargetLoaded = clientTargetLoaded;
+            this.clientAddedInUpdateSet = clientAddedInUpdateSet;
+            this.clientTargetRemoved = clientTargetRemoved;
+            this.clientRemovedInUpdateSet = clientRemovedInUpdateSet;
+            this.serverDemandObserved = serverDemandObserved;
+            this.serverSendReady = serverSendReady;
+            this.serverDemoted = serverDemoted;
+            this.serverUnloaded = serverUnloaded;
+            this.clientReceiveTick = clientReceiveTick;
+            this.serverSendReadyTick = serverSendReadyTick;
+            this.clientRemovedTick = clientRemovedTick;
+            this.demandRemovedTick = demandRemovedTick;
+            this.demotedTick = demotedTick;
+            this.unloadedTick = unloadedTick;
+            this.immediateSendBranchObserved = immediateSendBranchObserved;
+            this.delayedSendBranchObserved = delayedSendBranchObserved;
+        }
+
+        private static ReadinessRun read(ReadinessPendingTrace pending) throws IOException {
+            String raw = Files.readString(pending.traceOutput);
+            TraceRun trace = TraceRun.read(new PendingChunkTrace(pending.label, pending.worldName,
+                pending.worldSeed, pending.traceOutput, pending.latestLog, pending.targetTeleport,
+                pending.demand.lastServerStatus));
+            return new ReadinessRun(
+                pending.label, pending.worldName, pending.worldSeed, trace,
+                pending.routeResponse, pending.setupResponse, pending.initialInspect,
+                pending.initialClient.toString(), pending.targetTeleport, pending.demand.lastServerStatus,
+                pending.demand.latestClient.toString(), pending.leaveTeleport, pending.leave.lastServerStatus,
+                pending.leave.latestClient.toString(), pending.afterLeaveInspect,
+                pending.demand.clientTargetLoaded, pending.demand.clientAddedInUpdateSet,
+                pending.leave.clientTargetRemoved, pending.leave.clientRemovedInUpdateSet,
+                pending.leave.serverDemandRemoved, pending.demand.lastServerStatus.contains("sendReadyObserved=true"),
+                pending.leave.serverDemoted, pending.leave.serverUnloaded,
+                pending.demand.clientLoadedTick, pending.demand.serverReadyTick,
+                pending.leave.removedTick, pending.leave.demandRemovedTick,
+                pending.leave.demotedTick, pending.leave.unloadedTick,
+                raw.contains("sendBranch=IMMEDIATE"), raw.contains("sendBranch=DELAYED"));
+        }
+
+        private void appendJson(StringBuilder json) {
+            json.append("\n    {");
+            objectField(json, "label", label, true);
+            objectField(json, "worldName", worldName, true);
+            objectField(json, "worldSeed", worldSeed, true);
+            objectField(json, "tracePath", trace.tracePath, true);
+            objectField(json, "serverLog", trace.serverLog, true);
+            objectField(json, "routeResponse", routeResponse, true);
+            objectField(json, "setupResponse", setupResponse, true);
+            objectField(json, "initialInspect", initialInspect, true);
+            objectField(json, "initialClientObservation", initialClientObservation, true);
+            objectField(json, "targetTeleport", targetTeleport, true);
+            objectField(json, "receiveStatus", receiveStatus, true);
+            objectField(json, "receiveClientObservation", receiveClientObservation, true);
+            objectField(json, "leaveTeleport", leaveTeleport, true);
+            objectField(json, "leaveStatus", leaveStatus, true);
+            objectField(json, "leaveClientObservation", leaveClientObservation, true);
+            objectField(json, "afterLeaveInspect", afterLeaveInspect, true);
+            objectField(json, "clientTargetLoaded", clientTargetLoaded, true);
+            objectField(json, "clientAddedInUpdateSet", clientAddedInUpdateSet, true);
+            objectField(json, "clientTargetRemoved", clientTargetRemoved, true);
+            objectField(json, "clientRemovedInUpdateSet", clientRemovedInUpdateSet, true);
+            objectField(json, "serverDemandObserved", serverDemandObserved, true);
+            objectField(json, "serverSendReady", serverSendReady, true);
+            objectField(json, "serverDemoted", serverDemoted, true);
+            objectField(json, "serverUnloaded", serverUnloaded, true);
+            objectField(json, "clientReceiveTick", clientReceiveTick, true);
+            objectField(json, "serverSendReadyTick", serverSendReadyTick, true);
+            objectField(json, "clientRemovedTick", clientRemovedTick, true);
+            objectField(json, "demandRemovedTick", demandRemovedTick, true);
+            objectField(json, "demotedTick", demotedTick, true);
+            objectField(json, "unloadedTick", unloadedTick, true);
+            objectField(json, "immediateSendBranchObserved", immediateSendBranchObserved, true);
+            objectField(json, "delayedSendBranchObserved", delayedSendBranchObserved, true);
+            objectField(json, "eventCount", trace.eventCount, true);
+            objectField(json, "ownershipContextObserved", trace.ownershipContextObserved, true);
+            objectField(json, "regionLeaseObserved", trace.regionLeaseObserved, true);
+            objectField(json, "futureSuccessObserved", trace.futureSuccessObserved, true);
+            objectField(json, "exceptionCount", trace.exceptionCount, true);
+            objectField(json, "requestResponse", trace.requestResponse, true);
+            objectField(json, "completionResponse", trace.completionResponse, true);
+            objectArray(json, "stageOrder", trace.stageOrder, true);
+            objectMap(json, "stageCounts", trace.stageCounts, true);
+            objectArray(json, "correlationIds", trace.correlationIds, true);
+            objectArray(json, "regions", trace.regions, true);
+            objectArray(json, "threadClasses", trace.threadClasses, false);
+            json.append("\n    }");
+        }
+
+        private static void objectField(StringBuilder json, String name, String value, boolean comma) {
+            json.append("\n      ").append(Stage3ClientTest.json(name)).append(": ")
+                .append(Stage3ClientTest.json(value));
+            if (comma) json.append(",");
+        }
+
+        private static void objectField(StringBuilder json, String name, boolean value, boolean comma) {
+            json.append("\n      ").append(Stage3ClientTest.json(name)).append(": ").append(value);
+            if (comma) json.append(",");
+        }
+
+        private static void objectField(StringBuilder json, String name, int value, boolean comma) {
+            json.append("\n      ").append(Stage3ClientTest.json(name)).append(": ").append(value);
+            if (comma) json.append(",");
+        }
+
+        private static void objectArray(StringBuilder json, String name, List<String> values, boolean comma) {
+            json.append("\n      ").append(Stage3ClientTest.json(name)).append(": [");
+            for (int i = 0; i < values.size(); i++) {
+                if (i > 0) json.append(", ");
+                json.append(Stage3ClientTest.json(values.get(i)));
+            }
+            json.append("]");
+            if (comma) json.append(",");
+        }
+
+        private static void objectMap(StringBuilder json, String name, Map<String, Integer> values, boolean comma) {
+            json.append("\n      ").append(Stage3ClientTest.json(name)).append(": {");
+            int index = 0;
+            for (Map.Entry<String, Integer> entry : values.entrySet()) {
+                if (index++ > 0) json.append(",");
+                json.append("\n        ").append(Stage3ClientTest.json(entry.getKey()))
+                    .append(": ").append(entry.getValue());
+            }
+            if (!values.isEmpty()) json.append("\n      ");
+            json.append("}");
+            if (comma) json.append(",");
+        }
+    }
+
+    private static final class ReadinessEvidence {
+        private final String minecraftVersion;
+        private final String javaVersion;
+        private final String fabricLoaderVersion;
+        private final String fabricApiVersion;
+        private final String loomVersion;
+        private final String gradleVersion;
+        private final String gradleTask;
+        private final List<ReadinessRun> runs = new ArrayList<>();
+        private boolean firstServerProcessStarted;
+        private boolean firstServerReady;
+        private boolean firstServerStoppedCleanly;
+        private boolean firstClientDisconnectedCleanly;
+        private boolean secondServerProcessStarted;
+        private boolean secondServerReady;
+        private boolean secondServerStoppedCleanly;
+        private boolean secondClientDisconnectedCleanly;
+        private boolean productionServerModLoaded;
+        private boolean realTcpConnectionStarted;
+        private boolean semanticOrderingStable;
+        private boolean success;
+        private String serverDirectory = "unknown";
+        private String failure = "";
+        private String cleanupFailure = "";
+
+        private ReadinessEvidence(String minecraftVersion, String javaVersion, String fabricLoaderVersion,
+                                  String fabricApiVersion, String loomVersion, String gradleVersion,
+                                  String gradleTask) {
+            this.minecraftVersion = minecraftVersion;
+            this.javaVersion = javaVersion;
+            this.fabricLoaderVersion = fabricLoaderVersion;
+            this.fabricApiVersion = fabricApiVersion;
+            this.loomVersion = loomVersion;
+            this.gradleVersion = gradleVersion;
+            this.gradleTask = gradleTask;
+        }
+
+        private static ReadinessEvidence create() {
+            return new ReadinessEvidence(
+                System.getProperty("phoenium.test.minecraftVersion", "unknown"),
+                System.getProperty("phoenium.test.javaVersion", "unknown"),
+                System.getProperty("phoenium.test.fabricLoaderVersion", "unknown"),
+                System.getProperty("phoenium.test.fabricApiVersion", "unknown"),
+                System.getProperty("phoenium.test.loomVersion", "unknown"),
+                System.getProperty("phoenium.test.gradleVersion", "unknown"),
+                System.getProperty("phoenium.test.gradleTask", "runStage3ChunkReadinessTrace"));
+        }
+
+        private String toJson() {
+            StringBuilder json = new StringBuilder("{\n");
+            field(json, "test", "CHUNK-READINESS");
+            field(json, "success", success);
+            field(json, "generatedAtUtc", Instant.now().toString());
+            field(json, "minecraftVersion", minecraftVersion);
+            field(json, "javaVersion", javaVersion);
+            field(json, "fabricLoaderVersion", fabricLoaderVersion);
+            field(json, "fabricApiVersion", fabricApiVersion);
+            field(json, "loomVersion", loomVersion);
+            field(json, "gradleVersion", gradleVersion);
+            field(json, "gradleTask", gradleTask);
+            field(json, "serverDirectory", serverDirectory);
+            field(json, "targetWorld", "minecraft:overworld");
+            field(json, "targetChunk", CHUNK_READINESS_X + "," + CHUNK_READINESS_Z);
+            field(json, "targetOutsideSpawnArea", true);
+            field(json, "targetRoute", "stage3-fixture-a");
+            field(json, "requestedStatus", "FULL");
+            field(json, "demandSource", "real TCP client player tracking after teleport");
+            field(json, "clientReceiptMethod",
+                "ClientChunkCache.getChunk(4,-4,FULL,false) exact-position match; addedLoadedChunks() sampled as transient auxiliary evidence");
+            field(json, "clientRemovalMethod",
+                "ClientChunkCache.getChunk(4,-4,FULL,false) null; removedLoadedChunks() sampled as transient auxiliary evidence");
+            field(json, "requestIncarnationAvailable", false);
+            field(json, "holderIdentityObserved", true);
+            field(json, "holderIncarnationAvailable", false);
+            field(json, "chunkPosAvailable", true);
+            field(json, "topologyGenerationObserved", true);
+            field(json, "regionRouteObserved", true);
+            field(json, "originalFutureObserved", false);
+            field(json, "realDedicatedServer", true);
+            field(json, "productionServerModLoaded", productionServerModLoaded);
+            field(json, "clientHarnessUsed", true);
+            field(json, "realTcpConnectionStarted", realTcpConnectionStarted);
+            field(json, "clientNetworkConnectionRequired", true);
+            field(json, "microsoftAuthentication", false);
+            field(json, "minecraftLauncher", false);
+            field(json, "microsoftStoreLauncher", false);
+            field(json, "guiAutomation", false);
+            field(json, "authoritativeChunkOwnershipImplemented", false);
+            field(json, "vanillaFutureReplaced", false);
+            field(json, "futuresJoinedOrWrapped", false);
+            field(json, "secondWorkerIntroduced", false);
+            field(json, "parallelGameplay", false);
+            field(json, "workers", 1);
+            field(json, "rChunk01", "PARTIAL");
+            field(json, "stage3", "PARTIAL");
+            field(json, "stage4", "NOT_STARTED");
+            field(json, "freshGenerationRuns", 2);
+            field(json, "persistedReloadRuns", 0);
+            field(json, "firstServerProcessStarted", firstServerProcessStarted);
+            field(json, "firstServerReady", firstServerReady);
+            field(json, "firstServerStoppedCleanly", firstServerStoppedCleanly);
+            field(json, "firstClientDisconnectedCleanly", firstClientDisconnectedCleanly);
+            field(json, "secondServerProcessStarted", secondServerProcessStarted);
+            field(json, "secondServerReady", secondServerReady);
+            field(json, "secondServerStoppedCleanly", secondServerStoppedCleanly);
+            field(json, "secondClientDisconnectedCleanly", secondClientDisconnectedCleanly);
+            field(json, "semanticOrderingStable", semanticOrderingStable);
+            field(json, "allRunsClientReceiptObserved", allRunsHave(runs));
+            field(json, "allRunsDemandRemovalObserved", allRunsDemandRemoved(runs));
+            field(json, "allRunsDemotionOrUnloadObserved", allRunsDemotionOrUnload(runs));
+            field(json, "immediateSendBranchObserved", runs.stream().anyMatch(run -> run.immediateSendBranchObserved));
+            field(json, "delayedSendBranchObserved", runs.stream().anyMatch(run -> run.delayedSendBranchObserved));
+            field(json, "sendBranch2", runs.stream().anyMatch(run -> run.delayedSendBranchObserved)
+                ? "OBSERVED: delayed send-sync completion callback"
+                : "NOT OBSERVED: ordinary fresh-world demand completed through the immediate send-sync branch");
+            field(json, "distinctFreshWorldSeeds", distinctSeeds());
+            field(json, "failure", failure);
+            field(json, "cleanupFailure", cleanupFailure);
+            fieldPrefix(json, "runs");
+            json.append("[");
+            for (int i = 0; i < runs.size(); i++) {
+                if (i > 0) json.append(",");
+                runs.get(i).appendJson(json);
+            }
+            if (!runs.isEmpty()) json.append("\n  ");
+            json.append("]\n}\n");
+            return json.toString();
+        }
+
+        private String worldSeedText() {
+            StringBuilder text = new StringBuilder("Phoenium Stage 3 chunk readiness trace world record\n")
+                .append("targetWorld=minecraft:overworld\n")
+                .append("targetChunk=").append(CHUNK_READINESS_X).append(",").append(CHUNK_READINESS_Z).append("\n")
+                .append("freshGenerationRuns=2\n")
+                .append("persistedReloadRuns=0\n")
+                .append("targetOutsideSpawnArea=true\n\n");
+            for (ReadinessRun run : runs) {
+                text.append("[").append(run.label).append("]\n")
+                    .append("worldName=").append(run.worldName).append("\n")
+                    .append("worldSeed=").append(run.worldSeed).append("\n")
+                    .append("routeResponse=").append(run.routeResponse).append("\n")
+                    .append("tracePath=").append(run.trace.tracePath).append("\n")
+                    .append("stageOrder=").append(String.join(" -> ", run.trace.stageOrder)).append("\n")
+                    .append("clientReceipt=").append(run.clientTargetLoaded).append("\n")
+                    .append("clientRemoval=").append(run.clientTargetRemoved).append("\n")
+                    .append("serverDemoted=").append(run.serverDemoted).append("\n")
+                    .append("serverUnloaded=").append(run.serverUnloaded).append("\n\n");
+            }
+            return text.toString();
+        }
+
+        private boolean distinctSeeds() {
+            return runs.size() == 2 && !runs.get(0).worldSeed.equals(runs.get(1).worldSeed);
+        }
+
+        private static boolean allRunsHave(List<ReadinessRun> runs) {
+            return runs.size() == 2 && runs.stream().allMatch(run -> run.clientTargetLoaded);
+        }
+
+        private static boolean allRunsDemandRemoved(List<ReadinessRun> runs) {
+            return runs.size() == 2 && runs.stream().allMatch(run -> run.serverDemandObserved);
+        }
+
+        private static boolean allRunsDemotionOrUnload(List<ReadinessRun> runs) {
+            return runs.size() == 2 && runs.stream().allMatch(run -> run.serverDemoted || run.serverUnloaded);
+        }
+
+        private static void field(StringBuilder json, String name, String value) {
+            fieldPrefix(json, name);
+            json.append(Stage3ClientTest.json(value));
+        }
+
+        private static void field(StringBuilder json, String name, boolean value) {
+            fieldPrefix(json, name);
+            json.append(value);
+        }
+
+        private static void field(StringBuilder json, String name, int value) {
+            fieldPrefix(json, name);
+            json.append(value);
+        }
+
+        private static void fieldPrefix(StringBuilder json, String name) {
+            if (json.length() > 2) json.append(",\n");
+            json.append("  ").append(Stage3ClientTest.json(name)).append(": ");
+        }
     }
 
     private static void assertTraceOrdering(List<TraceRun> runs) {
@@ -919,6 +1603,45 @@ public final class Stage3ClientTest implements FabricClientGameTest {
         return context.computeOnClient(client -> client.level == null ? 0 : client.level.getEntityCount());
     }
 
+    private static void waitForClientInChunk(ClientGameTestContext context, int chunkX, int chunkZ,
+                                             String phase) {
+        for (int tick = 0; tick < CLIENT_CONNECT_TIMEOUT_TICKS; tick++) {
+            double[] position = clientPosition(context);
+            if (position.length == 3 && Double.isFinite(position[0]) && Double.isFinite(position[2])
+                    && (((int) Math.floor(position[0])) >> 4) == chunkX
+                    && (((int) Math.floor(position[2])) >> 4) == chunkZ) {
+                return;
+            }
+            context.waitTick();
+        }
+        double[] position = clientPosition(context);
+        throw new AssertionError("real client did not reach " + phase + " chunk=" + chunkX + "," + chunkZ
+            + " position=[" + position[0] + "," + position[1] + "," + position[2] + "]");
+    }
+
+    private static ClientChunkObservation clientChunkObservation(ClientGameTestContext context) {
+        return context.computeOnClient(client -> {
+            if (client.level == null) {
+                return new ClientChunkObservation(false, false, false, false, 0, null);
+            }
+            ClientChunkCache cache = client.level.getChunkSource();
+            long targetKey = ChunkPos.pack(CHUNK_READINESS_X, CHUNK_READINESS_Z);
+            LevelChunk chunk = cache.getChunk(CHUNK_READINESS_X, CHUNK_READINESS_Z, ChunkStatus.FULL, false);
+            boolean exactChunkLoaded = chunk != null
+                && chunk.getPos().x() == CHUNK_READINESS_X
+                && chunk.getPos().z() == CHUNK_READINESS_Z;
+            return new ClientChunkObservation(true, exactChunkLoaded,
+                cache.addedLoadedChunks().contains(targetKey),
+                cache.removedLoadedChunks().contains(targetKey),
+                cache.getLoadedChunksCount(), exactChunkLoaded ? clientIdentity(chunk) : null);
+        });
+    }
+
+    private static String clientIdentity(Object value) {
+        if (value == null) return null;
+        return value.getClass().getName() + "#" + Integer.toUnsignedString(System.identityHashCode(value));
+    }
+
     private static String clientPositionJson(ClientGameTestContext context) {
         double[] position = clientPosition(context);
         return "[" + position[0] + ", " + position[1] + ", " + position[2] + "]";
@@ -997,27 +1720,34 @@ public final class Stage3ClientTest implements FabricClientGameTest {
         private final int lifecycle;
         private final String worldName;
         private final Path traceOutput;
+        private final boolean readinessTrace;
         private Process process;
         private boolean cleanStop;
 
         private ExternalServer(Path directory, int lifecycle) {
-            this(directory, lifecycle, "STAGE3-CLIENT-" + lifecycle + "-" + System.currentTimeMillis(), null);
+            this(directory, lifecycle, "STAGE3-CLIENT-" + lifecycle + "-" + System.currentTimeMillis(), null, false);
         }
 
         private ExternalServer(Path directory, int lifecycle, String worldName, Path traceOutput) {
+            this(directory, lifecycle, worldName, traceOutput, false);
+        }
+
+        private ExternalServer(Path directory, int lifecycle, String worldName, Path traceOutput,
+                               boolean readinessTrace) {
             this.directory = directory;
             this.latestLog = directory.resolve("logs").resolve("latest.log");
             this.processLog = directory.resolve("server-process.log");
             this.lifecycle = lifecycle;
             this.worldName = worldName;
             this.traceOutput = traceOutput;
+            this.readinessTrace = readinessTrace;
         }
 
         private static ExternalServer start(int lifecycle) throws IOException {
             Path directory = Path.of(System.getProperty("phoenium.test.serverDirectory"));
             require(Files.isDirectory(directory), "prepared external server directory is missing: " + directory);
             ExternalServer server = new ExternalServer(directory, lifecycle);
-            return start(server, false);
+            return start(server, false, false);
         }
 
         private static ExternalServer startChunkTrace(int lifecycle, String worldName, Path traceOutput)
@@ -1025,10 +1755,19 @@ public final class Stage3ClientTest implements FabricClientGameTest {
             Path directory = Path.of(System.getProperty("phoenium.test.serverDirectory"));
             require(Files.isDirectory(directory), "prepared external server directory is missing: " + directory);
             ExternalServer server = new ExternalServer(directory, lifecycle, worldName, traceOutput);
-            return start(server, true);
+            return start(server, true, false);
         }
 
-        private static ExternalServer start(ExternalServer server, boolean chunkTrace) throws IOException {
+        private static ExternalServer startChunkReadinessTrace(int lifecycle, String worldName, Path traceOutput)
+                throws IOException {
+            Path directory = Path.of(System.getProperty("phoenium.test.serverDirectory"));
+            require(Files.isDirectory(directory), "prepared external server directory is missing: " + directory);
+            ExternalServer server = new ExternalServer(directory, lifecycle, worldName, traceOutput, true);
+            return start(server, true, true);
+        }
+
+        private static ExternalServer start(ExternalServer server, boolean chunkTrace, boolean lazyDemand)
+                throws IOException {
             server.writeConfiguration();
             Path java = Path.of(System.getProperty("java.home"), "bin",
                 System.getProperty("os.name", "").toLowerCase().contains("win") ? "java.exe" : "java");
@@ -1039,8 +1778,11 @@ public final class Stage3ClientTest implements FabricClientGameTest {
             if (chunkTrace) {
                 command.add("-Dphoenium.stage3.chunkTrace=true");
                 command.add("-Dphoenium.stage3.chunkTrace.world=minecraft:overworld");
-                command.add("-Dphoenium.stage3.chunkTrace.targets=" + CHUNK_TRACE_X + "," + CHUNK_TRACE_Z);
+                int targetX = server.readinessTrace ? CHUNK_READINESS_X : CHUNK_TRACE_X;
+                int targetZ = server.readinessTrace ? CHUNK_READINESS_Z : CHUNK_TRACE_Z;
+                command.add("-Dphoenium.stage3.chunkTrace.targets=" + targetX + "," + targetZ);
                 command.add("-Dphoenium.stage3.chunkTrace.output=" + server.traceOutput.toAbsolutePath());
+                command.add("-Dphoenium.stage3.chunkTrace.lazyDemand=" + lazyDemand);
             }
             command.add("-jar");
             command.add("fabric-server-launch.jar");
@@ -1079,8 +1821,8 @@ public final class Stage3ClientTest implements FabricClientGameTest {
                 "spawn-npcs=false",
                 "spawn-protection=0",
                 "sync-chunk-writes=true",
-                "view-distance=5",
-                "simulation-distance=5");
+                "view-distance=" + (readinessTrace ? "2" : "5"),
+                "simulation-distance=" + (readinessTrace ? "2" : "5"));
             Files.writeString(directory.resolve("server.properties"), String.join(System.lineSeparator(), properties)
                     + System.lineSeparator(), StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING);
         }
@@ -1131,6 +1873,12 @@ public final class Stage3ClientTest implements FabricClientGameTest {
                 + " | lowerPlatform=" + lowerPlatform.trim()
                 + " | upperPlatform=" + upperPlatform.trim()
                 + " | spawn=" + spawn.trim();
+        }
+
+        private String prepareReadinessSetup() throws IOException {
+            String spawn = execute("setworldspawn 8 80 8");
+            requireFixtureApplied("spawn", spawn);
+            return "spawn=" + spawn.trim() + " targetChunkOutsideSpawnArea=true";
         }
 
         private static void requireFixtureApplied(String name, String response) {

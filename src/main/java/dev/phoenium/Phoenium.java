@@ -85,6 +85,18 @@ public final class Phoenium implements DedicatedServerModInitializer {
                                         + " vanillaPath=observed-future-and-trace-only";
                                     context.getSource().sendSuccess(() -> Component.literal(response), false);
                                     return 1;
+                                }))))
+                    .then(Commands.literal("inspect")
+                        .then(Commands.argument("x", IntegerArgumentType.integer())
+                            .then(Commands.argument("z", IntegerArgumentType.integer())
+                                .executes(context -> {
+                                    ServerLevel level = context.getSource().getLevel();
+                                    int x = IntegerArgumentType.getInteger(context, "x");
+                                    int z = IntegerArgumentType.getInteger(context, "z");
+                                    String response = ChunkRuntimeTrace.inspect(level, x, z)
+                                        + " vanillaPath=read-only-inspection";
+                                    context.getSource().sendSuccess(() -> Component.literal(response), false);
+                                    return 1;
                                 }))))));
         }
     }

@@ -28,13 +28,13 @@ authoritative Minecraft chunk application.
   Mixins, future-graph changes, C2ME work, second worker, or parallel gameplay
   were added. R-CHUNK-01 and Stage 3 remain **PARTIAL**.
 
-- Code/test checkpoint before this documentation-only change:
+- Historical code/test checkpoint before this chunk-readiness closeout:
   `c76d449` (`test: aim stage 3 cross-owner interaction at target`), on top of
   `685690e` (`test: close stage 3 cross-owner interaction gate`).
-- The final documentation commit is intentionally not embedded here because
+- The final closeout commit is intentionally not embedded here because
   embedding its own SHA would make the file self-referential; delivery reports
   the final HEAD separately.
-- Deterministic suite: **75 passed, 0 failed, 0 errors, 0 skipped**.
+- Deterministic suite: **87 passed, 0 failed, 0 errors, 0 skipped**.
 - Stage 1: **PASS**.
 - Stage 2 serial live tick: **PASS**.
 - Stage 3: **PARTIAL**, only because R-CHUNK-01 is unresolved.
@@ -57,6 +57,17 @@ For empirical Minecraft 26.2 chunk runtime stage evidence, read
 `docs/STAGE3_CHUNK_RUNTIME_MAP.md`. The generated summary and raw selected
 traces are under `build/client-gametest/evidence/` after
 `runStage3ChunkTrace`.
+
+Latest readiness-specific evidence is in
+`docs/STAGE3_CHUNK_READINESS_EVIDENCE.md`. Its companion task is
+`runStage3ChunkReadinessTrace`; the generated summary is
+`build/client-gametest/evidence/STAGE3-CHUNK-READINESS.json`, with two fresh
+world raw traces beside it. That trace used a real TCP client and observed
+FULL-to-ticking-to-send-ready, exact client receipt, exact client removal, and
+tracking-demand removal. It did not observe direct teardown of the final server
+holder within the bounded leave window and did not implement chunk custody.
+The gate remains `R-CHUNK-01 = PARTIAL`, `Stage 3 = PARTIAL`, and
+`Stage 4 = NOT STARTED`.
 
 ## B. Completed P3 gates
 
@@ -114,9 +125,11 @@ The current authoritative runs and deterministic guards show zero for:
 - chunk admissions/applications/reroutes/rejections in the movement/interaction
   run.
 
-The last chunk line is only an observation that no chunk completion was exercised.
-`chunkApplications=0` is not proof of R-CHUNK-01, and the current observer does
-not control base-game installation.
+The last chunk line describes the movement/interaction run only; no chunk
+completion was exercised in that run. The separate readiness trace now records
+the real client-demand lifecycle, but `chunkApplications=0` in the existing
+diagnostics is still not proof of R-CHUNK-01, and the current observer does not
+control base-game installation.
 
 ## D. Chunk architecture already decided
 
