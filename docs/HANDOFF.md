@@ -2,12 +2,12 @@
 
 ## Resume point
 
-Stage 0 remains accepted at **PHOENIUM_P0_SOURCE_TRUTH_LOCKED**. Stage 1 is now
-accepted at **PHOENIUM_P1_SERIAL_REGION_CORE_PASS**; resolve that immutable Git tag
-for the exact Stage 1 checkpoint commit. Resume with **Stage 2 Fabric lifecycle and
-serial live integration** in [ROADMAP.md](ROADMAP.md). Do not begin a parallel worker,
-C2ME adapter, compatibility fork, or gameplay feature beyond an explicitly tested
-Stage 2 hook.
+Stage 0 remains accepted at **PHOENIUM_P0_SOURCE_TRUTH_LOCKED** and Stage 1 at
+**PHOENIUM_P1_SERIAL_REGION_CORE_PASS**. Stage 2 is accepted at
+**PHOENIUM_P2_FABRIC_SERIAL_LIVE_PASS**. Resume with **Stage 3 ownership boundaries:
+entity/player/packet/chunk-completion integration** in [ROADMAP.md](ROADMAP.md). Do
+not enable parallel workers, begin broad geographical regionalization, add C2ME, or
+claim required-stack compatibility from this serial live evidence.
 
 ## Locked decisions
 
@@ -109,6 +109,84 @@ All implementation is independent; no upstream source was copied or adapted. See
 | Parallelism | Not enabled or measured. | Deterministic core then serial live oracle before multiple workers. |
 | Secondary/future mods | VMP, Carpet, Servux, WorldEdit, LuckPerms, and BlueMap are not production dependencies. | Consider only after official required-stack gates. |
 | Upstream licensing | Ruthenium metadata conflicts with root GPL license. | Avoid direct reuse unless upstream clarifies; retain provenance review. |
+
+## Stage 2 completion evidence
+
+### Exact commands and environment
+
+From the Phoenium root, run:
+
+```text
+./gradlew.bat clean build --no-daemon
+./gradlew.bat test --no-daemon
+```
+
+The finalized suite passed with **19 tests, 0 failures**. The actual dedicated-server
+environment was Minecraft 26.2, Temurin Java 25.0.4.1, Fabric Loader 0.19.5,
+`fabric-api-base` 2.0.4+ece063239e, and `fabric-lifecycle-events-v1`
+4.1.4+29b6eb019e. The disposable server directory is `.stage2-server-live1` (ignored
+from Git); its logs are `logs/latest.log`. The regular Phoenium artifact is
+`build/libs/phoenium-0.2.0-stage2.jar`.
+
+Launch from that disposable server directory:
+
+```text
+java -Xmx1G -jar fabric-server-launch.jar nogui
+```
+
+Wait for `PHOENIUM_STAGE2 started`, allow a bounded tick observation, then use local
+console `/stop` (or the disposable server's local RCON stop command). See
+[STAGE2_SERVER_EVIDENCE.md](STAGE2_SERVER_EVIDENCE.md) for the exact installed module
+set and expected counters.
+
+### Accepted live binding and behavior
+
+The only Stage 2 live hook is a required redirect of the one direct
+`ServerLevel.tick(BooleanSupplier)` invocation in
+`MinecraftServer.tickChildren(BooleanSupplier)`. The binding is fully recorded in
+[STAGE2_LIVE_BINDING.md](STAGE2_LIVE_BINDING.md). The redirect submits typed
+`LiveLevelTick(worldKey)` work through P1 `OwnerGateway`, then the existing
+`RegionScheduler`, `RegionLease`, and `OwnershipContext` execute the original level
+operation. The live envelope never carries a Minecraft world object.
+
+Each loaded `ServerLevel` at startup is one temporary real Phoenium region with ID
+`stage2-live-world`; this is not chunk/entity regionalization. The serial execution
+lane remains on Minecraft's server thread to preserve vanilla thread affinity, but it
+receives no authority simply from that identity: only scheduler-installed lease/context
+permits the operation. `simulationWorkers=1` means this single serial execution lane;
+parallel gameplay is OFF and no Phoenium background worker exists.
+
+Lifecycle starts from `SERVER_STARTED`, shuts down from `SERVER_STOPPING`, and runs
+P1 `RUNNING -> QUIESCING -> STOPPING`; a failed execution changes the scheduler to
+`FAILED` and later redirected calls are consumed with no vanilla fallback.
+
+### Measured results
+
+| Run | Intercepted | Dispatched | Executed | Duplicate | Bypass | Fallback | Barrier |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| Normal A | 180 | 180 | 180 | 0 | 0 | 0 | 0 |
+| Normal B | 177 | 177 | 177 | 0 | 0 | 0 | 0 |
+| Extended normal | 1173 | 1173 | 1173 | 0 | 0 | 0 | 0 |
+| Injected failure at dispatch 10 | 1131 | 10 | 9 | 0 | 0 | 0 | 1 |
+
+Both normal runs reached ready state and cleanly exited through actual RCON `/stop`;
+there were no active leases, ownership violations, unleased execution, fallback, or
+Phoenium thread leaks at stop. The failure run held its barrier and also stopped cleanly
+on request. R-LIVE-TICK-01, R-LIVE-OWNER-01, R-LIVE-FALLBACK-01, and
+R-FABRIC-SERVER-01 are recorded as PASS in [TEST_MATRIX.md](TEST_MATRIX.md).
+
+### Known limits and Stage 3 entry conditions
+
+Stage 2 does **not** regionalize entity/player/AI/vehicle behavior, block entities,
+random or scheduled ticks, block events, redstone, game events, entity tracking,
+packets, chunks, saves, or cross-world / cross-region work. Runtime-added levels
+fail closed until their lifecycle is explicitly owned. No C2ME, compatibility adapter,
+compatibility fork, or required-stack target was tested; all remain `NOT_TESTED`.
+
+Read [STAGE2_LIVE_BINDING.md](STAGE2_LIVE_BINDING.md), then `PhoeniumLiveRuntime`,
+`MinecraftServerMixin`, `RegionScheduler`, and the Stage 3 roadmap before extending
+ownership. Stage 3 must retain this serial binding as its oracle and add named owner
+boundaries before introducing a new gameplay category.
 
 ## Stage 0 report status
 

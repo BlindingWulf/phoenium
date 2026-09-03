@@ -19,11 +19,15 @@ public final class RegionScheduler {
     private final Map<dev.phoenium.region.RegionId, RegionRuntime> runtimes;
     private final RegionDirectory directory;
     private final FailureBarrier barrier;
+    private final LiveTickExecutor liveTickExecutor;
     private SchedulerLifecycle lifecycle = SchedulerLifecycle.RUNNING;
     private long advances;
 
     public RegionScheduler(Map<dev.phoenium.region.RegionId, RegionRuntime> runtimes, RegionDirectory directory, FailureBarrier barrier) {
-        this.runtimes = runtimes; this.directory = directory; this.barrier = barrier;
+        this(runtimes, directory, barrier, null);
+    }
+    public RegionScheduler(Map<dev.phoenium.region.RegionId, RegionRuntime> runtimes, RegionDirectory directory, FailureBarrier barrier, LiveTickExecutor liveTickExecutor) {
+        this.runtimes = runtimes; this.directory = directory; this.barrier = barrier; this.liveTickExecutor = liveTickExecutor;
     }
     public int workerCount() { return 1; }
     public SchedulerLifecycle lifecycle() { return lifecycle; }
@@ -75,11 +79,21 @@ public final class RegionScheduler {
             barrier.trip(failure, directory.snapshot().generation(), runtime.ownerEpoch(), null);
         }
     }
-    private static void apply(RegionRuntime runtime, TaskPayload payload) {
+    private void apply(RegionRuntime runtime, TaskPayload payload) throws Exception {
         switch (payload) {
             case TaskPayload.Append append -> runtime.append(append.value());
             case TaskPayload.Add add -> runtime.add(add.value());
             case TaskPayload.Fail fail -> throw new IllegalStateException(fail.message());
+            case TaskPayload.LiveLevelTick liveLevelTick -> {
+                if (liveTickExecutor == null) throw new IllegalStateException("live tick payload without live executor");
+                liveTickExecutor.execute(runtime, liveLevelTick);
+            }
         }
+    }
+
+    /** A dedicated typed live operation, not a generic cross-owner Runnable escape hatch. */
+    @FunctionalInterface
+    public interface LiveTickExecutor {
+        void execute(RegionRuntime runtime, TaskPayload.LiveLevelTick tick) throws Exception;
     }
 }

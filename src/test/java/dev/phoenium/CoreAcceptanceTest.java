@@ -132,6 +132,19 @@ class CoreAcceptanceTest {
 
     @Test void regressionLeaseQueuedAuthorityIsNotQuiescent() { c04_transitionWaitsForLeaseBoundary(); }
     @Test void regressionOwnerIdentityDoesNotGrantAuthority() { CoreFixture f = new CoreFixture(); assertThrows(IllegalStateException.class, () -> f.a.add(1)); }
+    @Test void rLiveOwner01LivePayloadNeedsTheSameLeaseAndContextAsAnyOtherOwnerOperation() {
+        CoreFixture f = new CoreFixture();
+        assertThrows(IllegalStateException.class, f.a::tick, "the caller thread is not Phoenium authority");
+        var scheduler = new dev.phoenium.scheduler.RegionScheduler(f.runtimes, f.directory, f.barrier,
+            (runtime, tick) -> runtime.tick());
+        var gateway = new OwnerGateway(f.directory, f.runtimes, scheduler);
+        assertEquals(OwnerGateway.Delivery.QUEUED, gateway.submit(f.task(f.aKey,
+            new TaskPayload.LiveLevelTick(f.world.value()), AdmissionPolicy.REJECT, 1)));
+        scheduler.runOne(f.a);
+        assertEquals(1, f.a.tickCount());
+        assertFalse(f.a.leases().hasActiveLease());
+        assertTrue(OwnershipContext.current().isEmpty());
+    }
     @Test void regressionNoBlockingOwnerWait() {
         CoreFixture f = new CoreFixture();
         try (RegionLease lease = f.a.leases().acquire(); OwnershipContext.Scope ignored = OwnershipContext.enter(f.aId, lease.epoch(), OperationCategory.OWNER_TASK)) {
@@ -167,6 +180,7 @@ class CoreAcceptanceTest {
         String metadata = Files.readString(Path.of("src/main/resources/fabric.mod.json"));
         String build = Files.readString(Path.of("build.gradle"));
         assertTrue(metadata.contains("\"environment\": \"server\"")); assertFalse(metadata.contains("client"));
+        assertTrue(metadata.contains("fabric-lifecycle-events-v1")); assertTrue(metadata.contains("phoenium.mixins.json"));
         assertFalse(build.toLowerCase().contains("yarn")); assertTrue(build.contains("net.fabricmc.fabric-loom"));
     }
 }

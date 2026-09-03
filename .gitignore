@@ -1,7 +1,3 @@
 .gradle/
 build/
-out/
-*.class
-*.log
-.idea/
-*.iml
+.stage2-server*/

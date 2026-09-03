@@ -48,3 +48,13 @@ the Stage 0 behavioral contract. No Folia, Ruthenium, Paper, Moonrise, Concurren
 PandaAntiLag, Minecraft, or Fabric implementation source was copied or adapted. The
 GPL-3.0-only project LICENSE was added before implementation, so no source-derived
 implementation row or upstream copyright notice is currently required.
+
+## Stage 2 implementation provenance
+
+Stage 2's lifecycle, typed `LiveLevelTick` payload, diagnostics, Mixin configuration,
+and server harness guidance are independently authored. The exact 26.2 class and
+descriptor names were verified from the locally resolved official Minecraft 26.2
+artifact with bytecode inspection; no Minecraft, Fabric, Folia, Ruthenium, Paper,
+Moonrise, ConcurrentUtil, or Panda implementation source was copied or adapted.
+Fabric API is used only through its published lifecycle-event API. This remains a
+source-independent implementation under the existing GPL-3.0-only project license.

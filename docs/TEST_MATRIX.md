@@ -75,6 +75,20 @@ The suite also checks lifecycle validation, transfer post-commit barrier behavio
 blocking-owner-wait instrumentation, server-only metadata, and the no-Yarn build
 correction. Actual command results are recorded in [HANDOFF.md](HANDOFF.md).
 
+## Stage 2 execution evidence
+
+| ID | Result | Evidence |
+| --- | --- | --- |
+| I-01 / R-FABRIC-SERVER-01 | PASS | Disposable dedicated Fabric 26.2 server loaded Phoenium 0.2.0-stage2 with Loader 0.19.5, Java 25, `fabric-api-base` and `fabric-lifecycle-events-v1`; server-only metadata and no client entrypoint were inspected in the production JAR. RCON `/stop` exited cleanly. |
+| I-02 / R-LIVE-TICK-01 | PASS | Accepted redirect recorded `180 = 180 = 180` and `177 = 177 = 177` intercept/dispatch/execution observations across separate fresh server processes. Duplicate, bypass, and fallback counters were all zero. An earlier 19-second observation recorded `1173 = 1173 = 1173`. |
+| I-03 / R-LIVE-OWNER-01 | PASS | `rLiveOwner01LivePayloadNeedsTheSameLeaseAndContextAsAnyOtherOwnerOperation` proves direct caller-thread mutation fails while the same typed live payload succeeds only under the scheduler lease/context. Live diagnostics report one serial lane and parallel OFF. |
+| R-LIVE-FALLBACK-01 | PASS | Test-only `-Dphoenium.test.failLiveTickAt=10` stopped execution at 9 completed operations. Later intercepted calls were consumed by the FAILED scheduler: `1131 intercepted, 10 dispatched, 9 executed, 0 bypass, 0 fallback, 1 barrier`. The disposable server then accepted clean RCON `/stop`. |
+
+Stage 2 controls only the single direct server-level dispatch in `MinecraftServer.tickChildren`.
+Entity internals, scheduled block/fluid ticks, block events, random ticks, tracking,
+packets, chunk completion, saves, and cross-world/region parallelism remain vanilla or
+unimplemented as regional mechanisms.
+
 ## Test discipline
 
 Tests must use deterministic seeds, record scheduler worker count and topology configuration, fail on any ownership diagnostic, and retain minimized replay traces for concurrency failures. No test may pass merely because a fallback or broad lock masked an ownership violation.

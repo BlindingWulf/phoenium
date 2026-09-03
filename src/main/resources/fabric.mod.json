@@ -3,7 +3,7 @@
   "id": "phoenium",
   "version": "${version}",
   "name": "Phoenium",
-  "description": "Regionized server scheduling engine; Stage 1 isolated deterministic core.",
+  "description": "Regionized server scheduling engine; Stage 2 serial live integration.",
   "license": "GPL-3.0-only",
   "environment": "server",
   "entrypoints": {
@@ -11,9 +11,12 @@
       "dev.phoenium.Phoenium"
     ]
   },
+  "mixins": [
+    "phoenium.mixins.json"
+  ],
   "depends": {
     "fabricloader": ">=0.19.5",
-    "fabric": "*",
+    "fabric-lifecycle-events-v1": "*",
     "minecraft": "26.2",
     "java": ">=25"
   }

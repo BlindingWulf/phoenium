@@ -107,6 +107,27 @@ Shutdown enters QUIESCING, drains only envelopes that are valid for their owning
 
 No mixin target is approved merely because an old implementation used it. Stage 2 will identify the minimal 26.2 server-tick interception point and prove, with a counter and dedicated boot test, that each tick category is routed once. Network, scheduled ticks, block events, entity tracking, redstone, and chunk pipelines enter in separate stages after their ownership contracts are tested.
 
+## Stage 2 live binding (implemented)
+
+The serial live binding is `MinecraftServer.tickChildren(BooleanSupplier)`, redirecting
+its single direct `ServerLevel.tick(BooleanSupplier)` invoke.  The redirect does not
+perform a world mutation itself.  It submits the closed `LiveLevelTick(worldKey)`
+envelope through `OwnerGateway`, then `RegionScheduler.runOne` installs the normal P1
+lease and `OwnershipContext` before its dedicated typed live-operation handler invokes
+the original `ServerLevel.tick` call.  The envelope carries only a world key; the live
+Minecraft object remains at the integration boundary and is never a routed payload.
+
+Stage 2 represents each real `ServerLevel` present at server start as one region named
+`stage2-live-world`. This is a controlled serial world-level scope, not geographical
+regionalization. The scheduler reports one serial execution lane and parallel gameplay
+is off. The lane runs on Minecraft's server thread because this stage intentionally
+keeps vanilla server-level work on its required thread; authority still comes only from
+the lease/context installed by the scheduler, never thread identity.
+
+If the scheduler fails, the redirect consumes later matching calls without invoking
+vanilla. This is a hard barrier, not a fallback. No peer-region lock, broad gameplay
+lock, blocking owner wait, or additional simulation pool is introduced.
+
 ## Future compatibility layer boundary
 
 This is a future API boundary, not an implementation commitment in Stage 0. It exists to reduce needless third-party forks while preserving this architecture's single ownership system. A compatibility integration may eventually expose region-local execution, entity-owner execution, explicitly global Phoenium execution, asynchronous calculation with owner-routed completion, ownership queries and assertions, immutable snapshots, typed task envelopes, capability discovery, and safe region-transition requests.

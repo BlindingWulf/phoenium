@@ -62,6 +62,13 @@ Evidence is recorded in [STAGE1_CORE.md](STAGE1_CORE.md),
 
 ## Stage 2 — Fabric lifecycle and serial live integration
 
+**Completed at `PHOENIUM_P2_FABRIC_SERIAL_LIVE_PASS` (see the Stage 2 binding and
+server evidence documents).** The accepted narrow binding is the one direct
+`ServerLevel.tick(BooleanSupplier)` call from `MinecraftServer.tickChildren`. It is
+redirected through the existing gateway/scheduler/lease/context path with a single
+serial lane. This does not authorize Stage 3 work: all entity/player/chunk/packet and
+parallel-region integration remains next-stage work.
+
 Identify current 26.2 hooks from bytecode and current Fabric sources. Introduce the smallest server integration necessary to start/stop Phoenium and route one controlled tick flow in serial-first mode.
 
 Exit criteria: dedicated Fabric server boot; server-only metadata; exactly-once tick instrumentation; hard barrier test; no client artifacts or broad world locks.
