@@ -3,7 +3,10 @@
   "package": "dev.phoenium.mixin",
   "compatibilityLevel": "JAVA_25",
   "mixins": [
-    "MinecraftServerMixin"
+    "MinecraftServerMixin",
+    "ServerGamePacketListenerMixin",
+    "ServerGamePacketListenerInvoker",
+    "ServerChunkCacheMixin"
   ],
   "injectors": {
     "defaultRequire": 1

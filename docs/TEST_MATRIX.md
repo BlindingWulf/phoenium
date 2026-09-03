@@ -89,6 +89,19 @@ Entity internals, scheduled block/fluid ticks, block events, random ticks, track
 packets, chunk completion, saves, and cross-world/region parallelism remain vanilla or
 unimplemented as regional mechanisms.
 
+## Stage 3 deterministic ownership evidence
+
+| ID | Result | Evidence |
+| --- | --- | --- |
+| P3-01 | PASS | `p301RealEntityMutationRequiresCurrentOwnerEpoch` validates a real-object identity only under its active object epoch and leased region. |
+| P3-02 / P3-03 | PASS | Boundary movement invalidates the old entity epoch and a stale envelope either reroutes to B or is rejected before it can reach A. |
+| P3-04 / P3-05 | PASS | Player records use the distinct player kind and stale movement ingress is rerouted to the current owner. |
+| P3-07 / P3-08 / R-CHUNK-01 | PASS (contract harness) | An immutable chunk completion after a topology change enters the current owner only; the producer has no mutation path. |
+| P3-09 / R-OUTER-LEASE-01 | PASS | A lease/context for A rejects mutation of an object currently owned by B. |
+| P3-06 | PARTIAL | Exact 26.2 movement and entity-interaction admission Mixins compile and boot, but no real client trace has yet invoked them. |
+| P3-10 / R-LIVE-FALLBACK-01 | PASS | Final Stage 3 artifact failure run: 1293 intercepts, 10 dispatches, 9 executions, one barrier, zero bypass/fallback; clean RCON stop. |
+| I-01 / I-03 (Stage 3 artifact) | PASS | Fresh disposable server boot and RCON stop recorded `1980 = 1980 = 1980` with zero duplicate/bypass/fallback/violation/unleased/barrier counters; no client or entity activity was present. |
+
 ## Test discipline
 
 Tests must use deterministic seeds, record scheduler worker count and topology configuration, fail on any ownership diagnostic, and retain minimized replay traces for concurrency failures. No test may pass merely because a fallback or broad lock masked an ownership violation.

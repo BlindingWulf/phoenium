@@ -77,6 +77,11 @@ Exit criteria: dedicated Fabric server boot; server-only metadata; exactly-once 
 
 Add owner-routed entity movement, player/packet ingress, chunk work completion adapter, and the C2ME boundary contract. No direct C2ME integration starts before the contract is written and tested.
 
+**Status: in progress.** The deterministic object/player epoch ledger, owner gateway,
+outer-lease regression, real entity/player reconciliation, and immutable async completion
+contract are implemented. Exact live packet admission hooks, a real async chunk producer,
+and dedicated-server Stage 3 evidence remain before acceptance.
+
 Exit criteria: transfer, packet, stale-epoch, chunk completion, and dedicated boot tests pass in serial-first mode.
 
 ## Stage 4 — regional world services

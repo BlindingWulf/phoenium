@@ -3,7 +3,6 @@ package dev.phoenium.region;
 import dev.phoenium.core.OwnerEpoch;
 import dev.phoenium.ownership.RegionLeaseManager;
 import dev.phoenium.task.RegionTaskEnvelope;
-import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
@@ -13,8 +12,8 @@ import java.util.Optional;
 public final class RegionRuntime {
     private final RegionId id;
     private final RegionLeaseManager leases;
-    private final ArrayDeque<RegionTaskEnvelope> inbox = new ArrayDeque<>();
-    private final ArrayDeque<RegionTaskEnvelope> transitionMailbox = new ArrayDeque<>();
+    private final java.util.concurrent.ConcurrentLinkedDeque<RegionTaskEnvelope> inbox = new java.util.concurrent.ConcurrentLinkedDeque<>();
+    private final java.util.concurrent.ConcurrentLinkedDeque<RegionTaskEnvelope> transitionMailbox = new java.util.concurrent.ConcurrentLinkedDeque<>();
     private final List<String> operationLog = new ArrayList<>();
     private RegionLifecycle lifecycle = RegionLifecycle.TRANSIENT;
     private OwnerEpoch ownerEpoch;

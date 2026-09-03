@@ -91,6 +91,32 @@ and preserve this gateway/lease/directory path unchanged. No Stage 0 decision ch
 All implementation is independent; no upstream source was copied or adapted. See
 [SOURCE_PROVENANCE.md](SOURCE_PROVENANCE.md).
 
+## Stage 3 in-progress handoff
+
+The tree now contains a buildable deterministic Stage 3 ownership core. Read
+`STAGE3_OWNERSHIP_BINDING.md`, `STAGE3_PACKET_INGRESS.md`, and `STAGE3_C2ME_BOUNDARY.md`
+after the Stage 2 documents. `ObjectOwnershipRegistry` uses UUID/string identities and a separate
+object epoch; it is derived from and revalidated against `RegionDirectory`. `ObjectOwnerGateway`
+reroutes/rejects stale entity/player envelopes, and `ChunkCompletionGateway` only accepts
+immutable request metadata from an asynchronous producer.
+
+The Stage 2 redirect is unchanged. `PhoeniumLiveRuntime` now reconciles actual entities and
+players after the vanilla level tick under the existing controlled lease, with an explicit
+whole-world default route for this serial stage. Do not treat that default as a geographically
+regionalized topology or as packet-hook completion.
+
+Stage 3 now has exact 26.2 re-entrancy-safe Mixin admissions for `ServerboundMovePlayerPacket`
+and `ServerboundInteractPacket`, and an observer boundary at base
+`ServerChunkCache.getChunkFuture`. The final normal server marker is `1266 = 1266 = 1266` with
+all ownership/fallback diagnostics zero. The final injected-failure marker is `1293 intercepted,
+10 dispatched, 9 executed, 1 barrier`, with no fallback or bypass and clean RCON shutdown.
+
+Next work remains live acceptance evidence: drive a real client/bot through movement and entity
+interaction, create a configured live multi-region player boundary crossing with recorded epochs,
+and force a base chunk future across a topology change. Post-`ServerLevel.tick` non-player
+reconciliation is explicitly discovery only; it is not a future parallel entity transfer boundary.
+Stage 3 is not an accepted checkpoint yet.
+
 ## Historical Stage 0 first work session checklist
 
 1. Read [ARCHITECTURE.md](ARCHITECTURE.md), [THREADING_INVARIANTS.md](THREADING_INVARIANTS.md), and [SOURCE_PROVENANCE.md](SOURCE_PROVENANCE.md).

@@ -130,6 +130,26 @@ lock, blocking owner wait, or additional simulation pool is introduced.
 
 ## Future compatibility layer boundary
 
+## Stage 3 ownership boundary (implemented core)
+
+Stage 3 adds a derived `ObjectOwnershipRegistry` for entity and player identities. Each record
+contains a position routing key, directory generation/region epoch, and an independent object
+epoch. The independent epoch is necessary because a moving entity can make old work stale even
+when a later topology happens to reuse a region epoch. The registry is protected only by a narrow
+metadata gate and validates against `RegionDirectory` before every owner operation; it is not a
+second authority system.
+
+`ObjectOwnerGateway` converts an `OwnedObjectEnvelope` to the pre-existing typed task path by
+resolving current object ownership. The scheduler's closed object-executor seam rechecks the
+object epoch, directory route, active ownership context, and executing region immediately before
+mutation. Chunk producers use `ChunkWorkRequest` and `ChunkCompletionGateway` in the same way:
+they send immutable completion metadata and never mutate a live region or wait on its result.
+
+For the serial live bridge, every current `ServerLevel` publishes an explicit whole-world default
+route. The live executor reconciles actual Minecraft entities/players to position keys under its
+controlled lease. This is a declared temporary owner topology, not a grant of blanket authority;
+the foreign-object regression uses separate A/B regions and proves the distinction.
+
 This is a future API boundary, not an implementation commitment in Stage 0. It exists to reduce needless third-party forks while preserving this architecture's single ownership system. A compatibility integration may eventually expose region-local execution, entity-owner execution, explicitly global Phoenium execution, asynchronous calculation with owner-routed completion, ownership queries and assertions, immutable snapshots, typed task envelopes, capability discovery, and safe region-transition requests.
 
 Every such operation must use the established OwnerGateway, RegionDirectory, OwnershipContext, region leases, topology generations, owner epochs, typed envelopes, GlobalServiceContext, and failure barrier. An adapter cannot establish an alternate owner registry, bypass lease validation, or make a foreign callback authoritative.

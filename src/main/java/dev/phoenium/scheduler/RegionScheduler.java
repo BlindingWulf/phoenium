@@ -11,6 +11,7 @@ import dev.phoenium.region.RegionRuntime;
 import dev.phoenium.task.RegionTaskEnvelope;
 import dev.phoenium.task.TaskPayload;
 import dev.phoenium.topology.RegionDirectory;
+import dev.phoenium.ownership.ObjectOperationExecutor;
 import java.util.Comparator;
 import java.util.Map;
 
@@ -20,14 +21,20 @@ public final class RegionScheduler {
     private final RegionDirectory directory;
     private final FailureBarrier barrier;
     private final LiveTickExecutor liveTickExecutor;
+    private final ObjectOperationExecutor objectOperationExecutor;
     private SchedulerLifecycle lifecycle = SchedulerLifecycle.RUNNING;
     private long advances;
 
     public RegionScheduler(Map<dev.phoenium.region.RegionId, RegionRuntime> runtimes, RegionDirectory directory, FailureBarrier barrier) {
-        this(runtimes, directory, barrier, null);
+        this(runtimes, directory, barrier, null, null);
     }
     public RegionScheduler(Map<dev.phoenium.region.RegionId, RegionRuntime> runtimes, RegionDirectory directory, FailureBarrier barrier, LiveTickExecutor liveTickExecutor) {
+        this(runtimes, directory, barrier, liveTickExecutor, null);
+    }
+    public RegionScheduler(Map<dev.phoenium.region.RegionId, RegionRuntime> runtimes, RegionDirectory directory, FailureBarrier barrier,
+                           LiveTickExecutor liveTickExecutor, ObjectOperationExecutor objectOperationExecutor) {
         this.runtimes = runtimes; this.directory = directory; this.barrier = barrier; this.liveTickExecutor = liveTickExecutor;
+        this.objectOperationExecutor = objectOperationExecutor;
     }
     public int workerCount() { return 1; }
     public SchedulerLifecycle lifecycle() { return lifecycle; }
@@ -41,19 +48,21 @@ public final class RegionScheduler {
         runtimes.values().stream().filter(runtime -> runtime.lifecycle() == RegionLifecycle.READY && !runtime.transitioning() && runtime.inboxSize() > 0)
             .sorted(Comparator.comparing(RegionRuntime::id)).findFirst().ifPresent(this::runOne);
     }
-    public void runOne(RegionRuntime runtime) {
-        if (!lifecycle.acceptsSimulationWork() || runtime.transitioning()) return;
+    public boolean runOne(RegionRuntime runtime) {
+        if (!lifecycle.acceptsSimulationWork() || runtime.transitioning()) return false;
         RegionTaskEnvelope envelope = runtime.poll().orElse(null);
-        if (envelope == null) return;
+        if (envelope == null) return false;
         try (RegionLease lease = runtime.leases().acquire(); OwnershipContext.Scope ignored = OwnershipContext.enter(runtime.id(), lease.epoch(), OperationCategory.OWNER_TASK)) {
             runtime.transitionTo(RegionLifecycle.TICKING);
             lease.requireCurrent();
             apply(runtime, envelope.payload());
             advances++;
             runtime.transitionTo(RegionLifecycle.READY);
+            return true;
         } catch (Throwable failure) {
             lifecycle = SchedulerLifecycle.FAILED;
             barrier.trip(failure, directory.snapshot().generation(), runtime.ownerEpoch(), envelope);
+            return true;
         }
     }
     /** Tick work has exactly the same lease/context mechanism as owner-envelope work. */
@@ -87,6 +96,14 @@ public final class RegionScheduler {
             case TaskPayload.LiveLevelTick liveLevelTick -> {
                 if (liveTickExecutor == null) throw new IllegalStateException("live tick payload without live executor");
                 liveTickExecutor.execute(runtime, liveLevelTick);
+            }
+            case TaskPayload.OwnedObjectOperation operation -> {
+                if (objectOperationExecutor == null) throw new IllegalStateException("owned object operation without ownership executor");
+                objectOperationExecutor.execute(runtime, operation);
+            }
+            case TaskPayload.ChunkCompletion completion -> {
+                if (objectOperationExecutor == null) throw new IllegalStateException("chunk completion without ownership executor");
+                objectOperationExecutor.execute(runtime, completion);
             }
         }
     }

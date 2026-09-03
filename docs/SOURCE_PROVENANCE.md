@@ -58,3 +58,15 @@ artifact with bytecode inspection; no Minecraft, Fabric, Folia, Ruthenium, Paper
 Moonrise, ConcurrentUtil, or Panda implementation source was copied or adapted.
 Fabric API is used only through its published lifecycle-event API. This remains a
 source-independent implementation under the existing GPL-3.0-only project license.
+
+## Stage 3 implementation provenance
+
+Stage 3's object epoch ledger, envelope routing, async chunk completion identity, explicit
+world-default directory route, and live entity reconciliation are independently authored from the
+existing Phoenium contracts and exact Minecraft public API signatures verified from the locally
+resolved official 26.2 artifact. No Folia, Ruthenium, Paper, C2ME, Minecraft, or Fabric source
+was copied or adapted. C2ME is documented only as a future contract boundary.
+
+The Stage 3 packet and chunk observer Mixins are likewise independently authored. The exact
+official-named 26.2 method descriptors were verified with local `javap` inspection of the Loom
+resolved Minecraft artifact. No handler implementation or C2ME source was copied or adapted.
