@@ -1,0 +1,57 @@
+package dev.phoenium.chunk;
+
+import java.util.HashMap;
+import java.util.Map;
+import java.util.Objects;
+import java.util.concurrent.locks.ReentrantLock;
+
+/**
+ * Associates actual vanilla work reservations with one shared WorkId.  A demand subscription is
+ * deliberately a separate record, so repeated get/future callers do not manufacture work.
+ */
+public final class ChunkWorkRegistry {
+    private final ChunkCustodyModel custody;
+    /** Small work-lineage metadata gate only; no chunk or region mutation occurs under it. */
+    private final ReentrantLock metadataGate = new ReentrantLock();
+    private final Map<WorkSlot, ChunkCustodyModel.WorkId> workByReservation = new HashMap<>();
+    private final Map<ChunkCustodyModel.LifecycleId, Long> nextWorkSequence = new HashMap<>();
+    private final Map<ChunkCustodyModel.WorkId, Long> nextDemandSequence = new HashMap<>();
+
+    public ChunkWorkRegistry(ChunkCustodyModel custody) { this.custody = Objects.requireNonNull(custody, "custody"); }
+
+    /**
+     * reservation is a real holder/status-work reservation (status slot, promotion slot, etc.),
+     * not a public getChunkFuture demand.
+     */
+    public ChunkCustodyModel.WorkId beginOrResolveSharedWork(ChunkCustodyModel.LifecycleId lifecycle, WorkReservation reservation) {
+        Objects.requireNonNull(lifecycle, "lifecycle"); Objects.requireNonNull(reservation, "reservation");
+        metadataGate.lock(); try {
+            WorkSlot slot = new WorkSlot(lifecycle, reservation);
+            ChunkCustodyModel.WorkId existing = workByReservation.get(slot);
+            if (existing != null) return existing;
+            long sequence = nextWorkSequence.merge(lifecycle, 1L, Long::sum) - 1L;
+            ChunkCustodyModel.WorkId work = custody.beginWork(lifecycle, sequence);
+            workByReservation.put(slot, work);
+            return work;
+        } finally { metadataGate.unlock(); }
+    }
+
+    public ChunkCustodyModel.DemandId addDemand(ChunkCustodyModel.WorkId work) {
+        metadataGate.lock(); try {
+            long sequence = nextDemandSequence.merge(work, 1L, Long::sum) - 1L;
+            return custody.subscribe(work, sequence);
+        } finally { metadataGate.unlock(); }
+    }
+    public void removeDemand(ChunkCustodyModel.DemandId demand) { custody.cancelDemand(Objects.requireNonNull(demand, "demand")); }
+    public void retireWork(ChunkCustodyModel.WorkId work, boolean cancelled) { custody.retireWork(Objects.requireNonNull(work, "work"), cancelled); }
+    public boolean isCurrentWork(ChunkCustodyModel.WorkId work) { return custody.workState(work).filter(state -> state == ChunkCustodyModel.WorkState.ACTIVE).isPresent(); }
+
+    /** A stable, typed vanilla reservation lineage; callers must not use a demand count here. */
+    public record WorkReservation(String family, String slot, long reservationSequence) {
+        public WorkReservation {
+            Objects.requireNonNull(family, "family"); Objects.requireNonNull(slot, "slot");
+            if (family.isBlank() || slot.isBlank() || reservationSequence < 0) throw new IllegalArgumentException("invalid work reservation");
+        }
+    }
+    private record WorkSlot(ChunkCustodyModel.LifecycleId lifecycle, WorkReservation reservation) { }
+}

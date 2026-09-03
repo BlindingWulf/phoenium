@@ -244,14 +244,29 @@ Do not introduce any of the following:
 `getChunkFuture()` may remain an observer until a reviewed, request-bound
 application custody seam is implemented and proven.
 
-## I. Exact next task
+## I. Stage 3 adapter infrastructure
+
+The pure custody model now has a production-facing adapter infrastructure
+layer. Read [Stage 3 chunk adapter infrastructure](STAGE3_CHUNK_ADAPTER_INFRASTRUCTURE.md)
+after the architecture and runtime evidence documents.
+
+It supplies lifecycle and shared-work registries, a typed pending continuation,
+no-owner delivery pump, owner-inbox boundary, admission executor, private
+control outcome, and POI/light/metadata bridge interfaces.
+
+No Minecraft authoritative continuation is bound by that infrastructure pass.
+
+## J. Exact next task
 
 **NEXT MODEL TASK:**
 
-Implement the sequence in `STAGE3_CHUNK_OWNERSHIP_ARCHITECTURE.md`, beginning
-with its pure custody/state-model corrections, then bind and prove the named
-Minecraft 26.2 stages using Luna's runtime evidence. Do not redesign the identity,
-lease, service, or future-settlement contracts during implementation.
+Bind and prove the first authoritative Minecraft 26.2 continuation using the
+infrastructure in `STAGE3_CHUNK_ADAPTER_INFRASTRUCTURE.md`. Start only at an
+exact registration/invocation seam where the original upstream future,
+dependent-future role, result, exception, ordering, and recovery behavior can
+be preserved without a join, owner wait, generic Runnable path, or main-thread
+fallback. Do not redesign the identity, lease, service, or future-settlement
+contracts during that proof.
 
 Do **not** revisit movement/packet architecture unless new evidence contradicts
 the accepted results above. The only substantial Stage 3 engineering problem
