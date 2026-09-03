@@ -37,7 +37,21 @@ PASS here means the forensic check completed. It does not mean an unimplemented 
 | I-05 | 3 | Entity crossing boundary and player teleport | Epoch checks, transfer state machine, packet ownership, passenger grouping. |
 | I-06 | 4 | Scheduled ticks, block events, trackers, save, and shutdown | No global gameplay lock; consistent save and clean stop. |
 | I-07 | 5 | Parallel regions under stress | No ownership violations; serial and parallel final state match under deterministic harness. |
-| I-08 | 6 | PandaAntiLag behavioral feature | Local limits and skip compensation pass entity-class audit. |
+| I-08 | 7 | PandaAntiLag behavioral feature | Local limits and skip compensation pass entity-class audit; Panda Anti-Lag remains absent from the final runtime stack after native replacement. |
+
+## Required-stack compatibility gates
+
+No required-stack compatibility test has been run in Stage 0. Every target in [COMPATIBILITY_MATRIX.md](COMPATIBILITY_MATRIX.md) therefore remains `NOT_TESTED` until recorded execution evidence exists.
+
+| ID | Stage | Scenario | Required oracle |
+| --- | --- | --- | --- |
+| M-01 | 6 | Per-target startup and shutdown in every relevant configuration mode | Clean lifecycle is necessary but never sufficient; capability result and ownership diagnostics are retained. |
+| M-02 | 6–8 | Major upstream gameplay/runtime features | Intended upstream functionality is feature-complete, or a deliberate equivalent-or-better native replacement is proven. Disabling a major feature is `PARTIAL`, not `PASS_CONFIG`. |
+| M-03 | 6–8 | Phoenium ownership and required-stack interaction | No unleased mutable access, foreign mutation, fabricated world state, disabled ownership assertion, or silent fallback. |
+| M-04 | 6–8 | Serial and parallel Phoenium modes | Both modes preserve declared behavior; serial success alone is insufficient for a parallel production target. |
+| M-05 | 6–8 | Save, restart, region transition, and applicable stress | Completion routing, cancellation, topology/owner generation, and persistence remain correct under repeatable load. |
+| M-06 | 7 | Proposed patch or fork | Reproduced failure, repeatable test, identified violated invariant, adapter evaluation, provenance, license, independent build, and regression/feature-completeness tests exist before acceptance. |
+| M-07 | 7–9 | Fork Phase A / B / C separation | Phase A proves feature parity and ownership in serial/parallel modes before Phase B integration; Phase C optimization has distinct benchmark evidence. |
 
 ## Mandatory regression suite
 
@@ -54,4 +68,3 @@ The suite includes the Stage 0 evidence-derived tests R-LEASE-01, R-LOCK-01, R-L
 ## Test discipline
 
 Tests must use deterministic seeds, record scheduler worker count and topology configuration, fail on any ownership diagnostic, and retain minimized replay traces for concurrency failures. No test may pass merely because a fallback or broad lock masked an ownership violation.
-

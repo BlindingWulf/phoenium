@@ -107,3 +107,12 @@ Shutdown enters QUIESCING, drains only envelopes that are valid for their owning
 
 No mixin target is approved merely because an old implementation used it. Stage 2 will identify the minimal 26.2 server-tick interception point and prove, with a counter and dedicated boot test, that each tick category is routed once. Network, scheduled ticks, block events, entity tracking, redstone, and chunk pipelines enter in separate stages after their ownership contracts are tested.
 
+## Future compatibility layer boundary
+
+This is a future API boundary, not an implementation commitment in Stage 0. It exists to reduce needless third-party forks while preserving this architecture's single ownership system. A compatibility integration may eventually expose region-local execution, entity-owner execution, explicitly global Phoenium execution, asynchronous calculation with owner-routed completion, ownership queries and assertions, immutable snapshots, typed task envelopes, capability discovery, and safe region-transition requests.
+
+Every such operation must use the established OwnerGateway, RegionDirectory, OwnershipContext, region leases, topology generations, owner epochs, typed envelopes, GlobalServiceContext, and failure barrier. An adapter cannot establish an alternate owner registry, bypass lease validation, or make a foreign callback authoritative.
+
+The boundary is intentionally limited. It cannot safely convert arbitrary single-threaded algorithms into region-parallel ones, including synchronous work that spans independently owned regions, immediate mutable foreign-region reads, synchronous multi-region mutation, unsafe global/static cache mutation, captured live Minecraft objects passed to foreign threads, blocking cross-region or chunk `Future.get`/`join`, or custom executors that mutate regional state. Such cases require an algorithm redesign, topology convergence or temporary merge, Phoenium-aware source changes, an upstream patch, or a maintained fork. A broad world lock or hot-path global serialization is not an acceptable generic repair.
+
+An eventual conservative fallback for unknown legacy mods may serialize or quiesce work only when semantics cannot be inferred. It remains lease-respecting, measurable, diagnostic-visible, and unable to fall back unsafely to vanilla behavior. It is not the preferred execution model and cannot become a permanent high-frequency dependency for the required deployment stack.

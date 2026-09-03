@@ -2,7 +2,7 @@
 
 ## Resume point
 
-Stage 0 is complete. Resume with **Stage 1 isolated core model** in [ROADMAP.md](ROADMAP.md). Do not begin a live Minecraft tick hook, mixin, C2ME adapter, or parallel worker mode before the Stage 1 and Stage 2 gates that apply to it.
+Stage 0 remains accepted at **PHOENIUM_P0_SOURCE_TRUTH_LOCKED**. Its compatibility and fork-policy amendment is documentation-only and does not alter that historical checkpoint. Resume with **Stage 1 isolated core model** in [ROADMAP.md](ROADMAP.md). Do not begin a live Minecraft tick hook, mixin, C2ME adapter, compatibility fork, or parallel worker mode before the applicable core and live-integration gates.
 
 ## Locked decisions
 
@@ -12,6 +12,7 @@ Stage 0 is complete. Resume with **Stage 1 isolated core model** in [ROADMAP.md]
 - Model owner epoch, topology generation, and region lease separately.
 - Never use a broad per-world gameplay lock, peer-region lock ordering, fake chunks/block values, unowned shutdown task execution, or a silent vanilla fallback.
 - Choose GPL-3.0-only before any source-derived implementation. No third-party implementation entered this repository in Stage 0.
+- The official required deployment stack, full-PASS production gate, compatibility hierarchy, fork prerequisites, fork phases, and generic-layer limits are locked in [COMPATIBILITY_MATRIX.md](COMPATIBILITY_MATRIX.md). Every target remains `NOT_TESTED`; boot alone is never proof.
 
 ## First work session checklist
 
@@ -26,10 +27,10 @@ Stage 0 is complete. Resume with **Stage 1 isolated core model** in [ROADMAP.md]
 | Area | Current position | Required resolution |
 | --- | --- | --- |
 | Live server interception | No target approved or implemented. | Bytecode review and exactly-once dedicated-server test in Stage 2. |
-| C2ME | Required target, current contract not audited at integration level. | Isolated completion-routing adapter and compatibility proof. |
+| Required deployment stack | No target has execution evidence; C2ME is the highest-priority external integration and Krypton is tested last in isolation. | Post-core, feature-complete required-stack audit under the compatibility hierarchy; use adapter/patch/fork only when proven necessary. |
 | All tick categories | No Phoenium category is implemented. | Stage progression through entity, chunks, scheduled ticks, block events, redstone, trackers, save. |
 | Parallelism | Not enabled or measured. | Deterministic core then serial live oracle before multiple workers. |
-| Target mods | No compatibility runs completed. | Incremental matrix execution after core gates. |
+| Secondary/future mods | VMP, Carpet, Servux, WorldEdit, LuckPerms, and BlueMap are not production dependencies. | Consider only after official required-stack gates. |
 | Upstream licensing | Ruthenium metadata conflicts with root GPL license. | Avoid direct reuse unless upstream clarifies; retain provenance review. |
 
 ## Stage 0 report status
@@ -48,5 +49,4 @@ Stage 0 is complete. Resume with **Stage 1 isolated core model** in [ROADMAP.md]
 
 ## Git record
 
-The Stage 0 checkpoint commit and tag are created after the documentation validation immediately following this handoff record. The exact resulting HEAD and clean-status evidence are reported with the checkpoint delivery so this file does not contain a self-referential stale hash.
-
+The original Stage 0 checkpoint remains **PHOENIUM_P0_SOURCE_TRUTH_LOCKED**. The compatibility/fork-policy amendment is committed on top of it as `docs: lock required compatibility and fork policy`. The amendment commit is intentionally identified by the repository's current `HEAD` at delivery rather than embedding its own hash in this tracked file, which would become stale or self-referential. Its SHA and clean-status evidence are reported with the amendment delivery.
