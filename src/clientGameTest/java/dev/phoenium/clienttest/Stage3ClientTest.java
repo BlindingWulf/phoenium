@@ -202,7 +202,7 @@ public final class Stage3ClientTest implements FabricClientGameTest {
             require(crossDistance > 0.0D && crossDistance <= 3.0D,
                 "cross-owner fixture is outside normal vanilla interaction reach: " + crossDistance);
             Snapshot crossOwnerBefore = record(first, evidence, "cross-owner-before");
-            input.lookAt(new BlockPos(82, 80, 8));
+            input.lookAt(new BlockPos(80, 80, 8));
             input.pressKey(options -> options.keyUse);
             context.waitTicks(5);
             input.pressMouse(1);
