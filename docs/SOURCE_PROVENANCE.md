@@ -41,3 +41,10 @@ Ruthenium ended active development before current Folia's 26.2 branch accumulate
 
 Details are in [STAGE0_FOLIA_DELTA.md](STAGE0_FOLIA_DELTA.md).
 
+## Stage 1 implementation provenance
+
+All Stage 1 Java, Gradle, metadata, and test files are independently authored from
+the Stage 0 behavioral contract. No Folia, Ruthenium, Paper, Moonrise, ConcurrentUtil,
+PandaAntiLag, Minecraft, or Fabric implementation source was copied or adapted. The
+GPL-3.0-only project LICENSE was added before implementation, so no source-derived
+implementation row or upstream copyright notice is currently required.

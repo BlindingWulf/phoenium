@@ -42,6 +42,8 @@ The compatibility and fork-policy amendment is a documentation commit on top of 
 
 ## Stage 1 — isolated core model
 
+**Status: complete — `PHOENIUM_P1_SERIAL_REGION_CORE_PASS`**
+
 Create a standard Fabric 26.2 server-only project skeleton and a pure-Java deterministic core. Do not add Minecraft mixins or route live ticks yet.
 
 Required work:
@@ -54,6 +56,9 @@ Required work:
 6. Add build/unit report evidence to HANDOFF.
 
 Exit criteria: clean build; deterministic core tests; no code derived from upstream without recorded provenance; zero unleased-task and fallback paths.
+
+Evidence is recorded in [STAGE1_CORE.md](STAGE1_CORE.md),
+[STAGE1_BUILD_COMPATIBILITY.md](STAGE1_BUILD_COMPATIBILITY.md), and [HANDOFF.md](HANDOFF.md).
 
 ## Stage 2 — Fabric lifecycle and serial live integration
 

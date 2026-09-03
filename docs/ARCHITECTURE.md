@@ -116,3 +116,11 @@ Every such operation must use the established OwnerGateway, RegionDirectory, Own
 The boundary is intentionally limited. It cannot safely convert arbitrary single-threaded algorithms into region-parallel ones, including synchronous work that spans independently owned regions, immediate mutable foreign-region reads, synchronous multi-region mutation, unsafe global/static cache mutation, captured live Minecraft objects passed to foreign threads, blocking cross-region or chunk `Future.get`/`join`, or custom executors that mutate regional state. Such cases require an algorithm redesign, topology convergence or temporary merge, Phoenium-aware source changes, an upstream patch, or a maintained fork. A broad world lock or hot-path global serialization is not an acceptable generic repair.
 
 An eventual conservative fallback for unknown legacy mods may serialize or quiesce work only when semantics cannot be inferred. It remains lease-respecting, measurable, diagnostic-visible, and unable to fall back unsafely to vanilla behavior. It is not the preferred execution model and cannot become a permanent high-frequency dependency for the required deployment stack.
+
+## Stage 1 implementation status
+
+The isolated serial core now implements the identity values, lifecycle state machines,
+immutable directory, typed-envelope gateway, region lease/context, transition mailbox,
+deterministic one-worker scheduler, failure barrier, generic transfer record/group, and
+immutable save-cut model. Details and deferred live boundaries are in
+[STAGE1_CORE.md](STAGE1_CORE.md). No Stage 0 architectural decision changed.

@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 1,
+  "id": "phoenium",
+  "version": "${version}",
+  "name": "Phoenium",
+  "description": "Regionized server scheduling engine; Stage 1 isolated deterministic core.",
+  "license": "GPL-3.0-only",
+  "environment": "server",
+  "entrypoints": {
+    "server": [
+      "dev.phoenium.Phoenium"
+    ]
+  },
+  "depends": {
+    "fabricloader": ">=0.19.5",
+    "fabric": "*",
+    "minecraft": "26.2",
+    "java": ">=25"
+  }
+}

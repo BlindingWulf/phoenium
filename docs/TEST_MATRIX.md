@@ -65,6 +65,16 @@ The suite includes the Stage 0 evidence-derived tests R-LEASE-01, R-LOCK-01, R-L
 | R-REDSTONE-01 | Foreign redstone/game-event/neighbor access never returns fabricated block state or silently cancels required behavior. |
 | R-PANDA-01 | Pseudo-region keys include world identity and limiter work is owner-local. |
 
+## Stage 1 execution evidence
+
+The isolated deterministic suite implements C-01 through C-08 and these applicable
+regressions: R-LEASE-01, R-LOCK-01, R-LOCK-02, R-OWNER-01, R-OWNER-02, and
+R-FALLBACK-01. R-CHUNK-01 is precisely not applicable: Stage 1 deliberately has no
+missing-data/chunk abstraction, and therefore no fabricated semantic state path.
+The suite also checks lifecycle validation, transfer post-commit barrier behavior,
+blocking-owner-wait instrumentation, server-only metadata, and the no-Yarn build
+correction. Actual command results are recorded in [HANDOFF.md](HANDOFF.md).
+
 ## Test discipline
 
 Tests must use deterministic seeds, record scheduler worker count and topology configuration, fail on any ownership diagnostic, and retain minimized replay traces for concurrency failures. No test may pass merely because a fallback or broad lock masked an ownership violation.
