@@ -1,5 +1,33 @@
 # Stage 3 server evidence
 
+## 2026-09-03 live-adapter binding proof (no client)
+
+`gradlew.bat clean build --no-daemon` passed with **70 tests, zero failures, errors, or
+skips**. This retains the previous 64 deterministic tests and adds I-ADM-01 through
+I-ADM-06 for typed interaction target resolution. `git diff --check` was clean.
+
+The final artifact was installed in the disposable Fabric 26.2 dedicated server and
+booted without a client. At startup Phoenium deliberately forces
+`ServerGamePacketListenerImpl` through Mixin transformation. The log then records:
+
+```text
+PHOENIUM_STAGE3 movement tickCount selector and interaction target selector loaded once
+```
+
+Both injectors are required single-match selectors. Movement is injected at the first
+`ServerGamePacketListenerImpl.tickCount` GETFIELD in `handleMovePlayer`, after vanilla
+invalid-value rejection and before `resetPosition`; interaction is injected immediately
+before `ServerLevel.getEntityOrPart` in `handleInteract`. There is no retained
+after-`ensureRunningOnSameThread` movement injector. The server reached `Done`, ran with
+`workers=1 parallel=OFF`, and reported no barrier, bypass, fallback, ownership violation,
+unleased execution, packet recursion, or producer-thread chunk mutation. It shut down
+normally through local RCON `stop`; the log records the PHOENIUM stopped marker followed
+by `Thread RCON Listener stopped`.
+
+This is a load/binding proof only. No client connected and no real packet was admitted,
+so real client movement and interaction remain **NOT READY**. Stage 3 remains PARTIAL;
+Stage 4 is NOT STARTED.
+
 ## Automated evidence
 
 During the 2026-09-02 architecture review, `gradlew.bat clean build --no-daemon`

@@ -1,0 +1,100 @@
+package dev.phoenium.live;
+
+import dev.phoenium.core.WorldId;
+import dev.phoenium.topology.LiveMovementFootprint;
+import dev.phoenium.topology.RoutingKey;
+import java.util.List;
+import java.util.Set;
+import net.minecraft.network.protocol.game.ServerboundMovePlayerPacket;
+import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.world.phys.AABB;
+
+/**
+ * A deliberately small, immutable adaptation of the state that exists at the approved valid-input
+ * movement seam.  This is not a replacement player model: it is consumed once to decide whether
+ * vanilla's complete handler may be replayed under the current owner lease.
+ */
+public record LiveMovementSnapshot(LiveMovementFootprint footprint, Disposition disposition) {
+    public enum Disposition {
+        CLASSIFIED,
+        NON_FINITE,
+        AWAITING_TELEPORT,
+        PASSENGER,
+        NO_PHYSICS,
+        SLEEPING,
+        DIMENSION_TRANSITION,
+        LAST_GOOD_MISMATCH,
+        UNREPRESENTABLE_BOUNDS
+    }
+
+    public boolean classified() { return disposition == Disposition.CLASSIFIED; }
+
+    public static LiveMovementSnapshot capture(ServerPlayer player, ServerboundMovePlayerPacket packet,
+                                               double lastGoodX, double lastGoodY, double lastGoodZ,
+                                               boolean awaitingTeleport) {
+        if (awaitingTeleport) return rejected(Disposition.AWAITING_TELEPORT);
+        if (player.isPassenger()) return rejected(Disposition.PASSENGER);
+        if (player.noPhysics) return rejected(Disposition.NO_PHYSICS);
+        if (player.isSleeping()) return rejected(Disposition.SLEEPING);
+        if (player.isChangingDimension()) return rejected(Disposition.DIMENSION_TRANSITION);
+
+        double currentX = player.getX();
+        double currentY = player.getY();
+        double currentZ = player.getZ();
+        double requestedX = packet.getX(currentX);
+        double requestedY = packet.getY(currentY);
+        double requestedZ = packet.getZ(currentZ);
+        if (!finite(currentX, currentY, currentZ, requestedX, requestedY, requestedZ,
+                lastGoodX, lastGoodY, lastGoodZ)) return rejected(Disposition.NON_FINITE);
+        // The handler's delta is measured from lastGood.  A disagreement means a correction or
+        // another unclassified handler state is already in progress, so ordinary replay is unsafe.
+        if (Double.compare(currentX, lastGoodX) != 0 || Double.compare(currentY, lastGoodY) != 0
+            || Double.compare(currentZ, lastGoodZ) != 0) return rejected(Disposition.LAST_GOOD_MISMATCH);
+
+        double dx = requestedX - lastGoodX;
+        double dy = requestedY - lastGoodY;
+        double dz = requestedZ - lastGoodZ;
+        if (!finite(dx, dy, dz)) return rejected(Disposition.NON_FINITE);
+        AABB source = player.getBoundingBox();
+        AABB swept = source.expandTowards(dx, dy, dz);
+        // The one-block inflation covers collision cursor edges, support, and fluid horizontal
+        // neighbor inspection.  The step path can be no narrower than this horizontal envelope.
+        AABB padded = swept.inflate(1.0D, Math.max(1.0D, player.maxUpStep()) + 1.0D, 1.0D);
+        WorldId world = new WorldId(player.level().dimension().identifier().toString());
+        LiveMovementFootprint.ChunkBox broad = box(world, padded);
+        if (broad == null) return rejected(Disposition.UNREPRESENTABLE_BOUNDS);
+        RoutingKey sourceKey = key(world, currentX, currentZ);
+        RoutingKey destination = key(world, requestedX, requestedZ);
+        if (sourceKey == null || destination == null) return rejected(Disposition.UNREPRESENTABLE_BOUNDS);
+        LiveMovementFootprint footprint = new LiveMovementFootprint(world, destination,
+            List.of(broad), List.of(broad), List.of(broad), List.of(broad), List.of(broad),
+            Set.of(sourceKey, destination));
+        return new LiveMovementSnapshot(footprint, Disposition.CLASSIFIED);
+    }
+
+    private static LiveMovementSnapshot rejected(Disposition reason) { return new LiveMovementSnapshot(null, reason); }
+    private static boolean finite(double... values) {
+        for (double value : values) if (!Double.isFinite(value)) return false;
+        return true;
+    }
+    private static RoutingKey key(WorldId world, double x, double z) {
+        long chunkX = floor(x) >> 4;
+        long chunkZ = floor(z) >> 4;
+        if (!representable(chunkX) || !representable(chunkZ)) return null;
+        return new RoutingKey(world, (int) chunkX, (int) chunkZ);
+    }
+    private static LiveMovementFootprint.ChunkBox box(WorldId world, AABB bounds) {
+        if (!finite(bounds.minX, bounds.maxX, bounds.minZ, bounds.maxZ)) return null;
+        long minX = floor(bounds.minX) >> 4;
+        long maxX = floor(bounds.maxX) >> 4;
+        long minZ = floor(bounds.minZ) >> 4;
+        long maxZ = floor(bounds.maxZ) >> 4;
+        if (!representable(minX) || !representable(maxX) || !representable(minZ) || !representable(maxZ)) return null;
+        return new LiveMovementFootprint.ChunkBox(world, minX, maxX, minZ, maxZ);
+    }
+    private static long floor(double value) {
+        if (value < Long.MIN_VALUE || value > Long.MAX_VALUE) return Long.MIN_VALUE;
+        return (long) Math.floor(value);
+    }
+    private static boolean representable(long value) { return value >= Integer.MIN_VALUE && value <= Integer.MAX_VALUE; }
+}

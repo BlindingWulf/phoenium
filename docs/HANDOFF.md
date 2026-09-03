@@ -2,6 +2,37 @@
 
 ## Resume point
 
+### Latest resume point — Stage 3 live adapter binding
+
+The scoped live adapter binding is complete as a **no-client** proof; Stage 3 remains
+**PARTIAL**. `gradlew.bat clean build --no-daemon` passed with **70/70 tests** (the
+existing 64 plus interaction cases I-ADM-01 through I-ADM-06), and `git diff --check`
+was clean before documentation was updated. A Fabric 26.2 dedicated server booted the
+final artifact and logged `PHOENIUM_STAGE3 movement tickCount selector and interaction
+target selector loaded once`; it then stopped cleanly through local RCON `stop`.
+
+`ServerGamePacketListenerMixin` now injects exactly once at the first `tickCount`
+GETFIELD in `handleMovePlayer`, the accepted valid-input/pre-side-effect seam. Its
+`require=1` and `expect=1`, together with eager class transformation at server startup,
+make selector drift fail loudly. The obsolete after-`ensureRunningOnSameThread` movement
+hook is removed. `LiveMovementSnapshot` adapts only the live current AABB/position,
+proposal, last-good baseline, pending-teleport, passenger, no-physics, sleeping,
+dimension-change and step support state. Unclassified conditions fail closed before
+vanilla mutation; they never use a default-world replay fallback.
+
+Interaction is intercepted just before vanilla `getEntityOrPart`. A lock-free derived
+`InteractionTargetIndex` maps world plus network entity id to immutable ObjectId,
+incarnation, routing and expected-owner metadata. The current object registry and region
+directory remain authoritative. Same-owner interaction receives execution-time identity,
+generation and frozen-footprint revalidation; unknown, stale, entity-ID-reused and
+cross-owner cases fail closed/defer before mutation. Cross-owner interaction takes no
+owner wait and acquires no second lease. Do not begin real client evidence until a
+separate explicit authorization says to do so.
+
+No chunk application architecture, C2ME, extra worker, parallel gameplay, broader
+regional gameplay, P3 PASS tag, or Stage 4 work was added. The next allowed task is a
+review of controlled real-client packet evidence; do not infer it from the boot proof.
+
 Stage 0 remains accepted at **PHOENIUM_P0_SOURCE_TRUTH_LOCKED** and Stage 1 at
 **PHOENIUM_P1_SERIAL_REGION_CORE_PASS**. Stage 2 is accepted at
 **PHOENIUM_P2_FABRIC_SERIAL_LIVE_PASS**. Resume with **Stage 3 ownership boundaries:

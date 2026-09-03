@@ -4,33 +4,47 @@ import dev.phoenium.Phoenium;
 import net.minecraft.network.protocol.game.ServerboundInteractPacket;
 import net.minecraft.network.protocol.game.ServerboundMovePlayerPacket;
 import net.minecraft.server.network.ServerGamePacketListenerImpl;
+import net.minecraft.world.phys.Vec3;
+import org.objectweb.asm.Opcodes;
 import org.spongepowered.asm.mixin.Mixin;
+import org.spongepowered.asm.mixin.Shadow;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
 /**
- * Admission happens immediately after vanilla has moved a packet from Netty to the server thread,
- * but before either handler performs gameplay mutation. Replayed invocations require the narrow
- * marker installed by the region scheduler and therefore cannot recursively re-admit themselves.
+ * Movement admission is deliberately anchored at the first {@code tickCount} GETFIELD after the
+ * handler's invalid-value rejection.  It is the documented 26.2 valid-input, pre-side-effect
+ * point; the earlier after-ensureRunningOnSameThread hook is not retained as an authority path.
  */
 @Mixin(ServerGamePacketListenerImpl.class)
 abstract class ServerGamePacketListenerMixin {
-    private static final String ENSURE_SERVER_THREAD = "Lnet/minecraft/network/protocol/PacketUtils;ensureRunningOnSameThread(Lnet/minecraft/network/protocol/Packet;Lnet/minecraft/network/PacketListener;Lnet/minecraft/server/level/ServerLevel;)V";
+    private static final String TICK_COUNT = "Lnet/minecraft/server/network/ServerGamePacketListenerImpl;tickCount:I";
+    private static final String ENTITY_LOOKUP = "Lnet/minecraft/server/level/ServerLevel;getEntityOrPart(I)Lnet/minecraft/world/entity/Entity;";
+
+    @Shadow private double lastGoodX;
+    @Shadow private double lastGoodY;
+    @Shadow private double lastGoodZ;
+    @Shadow private Vec3 awaitingPositionFromClient;
+    @Shadow private int awaitingTeleport;
 
     @Inject(method = "handleMovePlayer(Lnet/minecraft/network/protocol/game/ServerboundMovePlayerPacket;)V",
-        at = @At(value = "INVOKE", target = ENSURE_SERVER_THREAD, shift = At.Shift.AFTER), cancellable = true)
+        at = @At(value = "FIELD", target = TICK_COUNT, opcode = Opcodes.GETFIELD, ordinal = 0),
+        require = 1, expect = 1, cancellable = true)
     private void phoenium$routeMove(ServerboundMovePlayerPacket packet, CallbackInfo ci) {
-        if (Phoenium.liveRuntime().packetExecutionMarked()) return;
-        Phoenium.liveRuntime().admitMovePacket((ServerGamePacketListenerImpl) (Object) this, packet);
+        ServerGamePacketListenerImpl connection = (ServerGamePacketListenerImpl) (Object) this;
+        if (Phoenium.liveRuntime().matchesMoveReplay(connection, packet)) return;
+        Phoenium.liveRuntime().admitMovePacket(connection, packet, lastGoodX, lastGoodY, lastGoodZ,
+            awaitingPositionFromClient != null || awaitingTeleport != 0);
         ci.cancel();
     }
 
     @Inject(method = "handleInteract(Lnet/minecraft/network/protocol/game/ServerboundInteractPacket;)V",
-        at = @At(value = "INVOKE", target = ENSURE_SERVER_THREAD, shift = At.Shift.AFTER), cancellable = true)
+        at = @At(value = "INVOKE", target = ENTITY_LOOKUP), require = 1, expect = 1, cancellable = true)
     private void phoenium$routeInteract(ServerboundInteractPacket packet, CallbackInfo ci) {
-        if (Phoenium.liveRuntime().packetExecutionMarked()) return;
-        Phoenium.liveRuntime().admitInteractPacket((ServerGamePacketListenerImpl) (Object) this, packet);
+        ServerGamePacketListenerImpl connection = (ServerGamePacketListenerImpl) (Object) this;
+        if (Phoenium.liveRuntime().matchesInteractReplay(connection, packet)) return;
+        Phoenium.liveRuntime().admitInteractPacket(connection, packet);
         ci.cancel();
     }
 }
