@@ -12,7 +12,14 @@ public final class RegionDirectory {
     public View snapshot() { return view.get(); }
     public Optional<RegionRoute> resolve(RoutingKey key) {
         View current = view.get();
-        return Optional.ofNullable(current.routes().getOrDefault(key, current.worldDefaults().get(key.world())));
+        RegionRoute explicit = current.routes().get(key);
+        if (explicit != null) return Optional.of(explicit);
+        if (current.hasExplicitRoutesForWorld(key.world())) {
+            // Explicit-topology world: a missing explicit route fails closed. A world default is
+            // never hidden mutation authority once the world carries concrete routes.
+            return Optional.empty();
+        }
+        return Optional.ofNullable(current.worldDefaults().get(key.world()));
     }
     public void publish(TopologyGeneration generation, Map<RoutingKey, RegionRoute> routes) {
         publish(generation, routes, Map.of());
@@ -34,5 +41,12 @@ public final class RegionDirectory {
     }
     public record View(TopologyGeneration generation, Map<RoutingKey, RegionRoute> routes, Map<dev.phoenium.core.WorldId, RegionRoute> worldDefaults) {
         public View { routes = Map.copyOf(routes); worldDefaults = Map.copyOf(worldDefaults); }
+        /** True when the world carries at least one explicit route, which disables default fallback for it. */
+        public boolean hasExplicitRoutesForWorld(dev.phoenium.core.WorldId world) {
+            for (RoutingKey routeKey : routes.keySet()) {
+                if (routeKey.world().equals(world)) return true;
+            }
+            return false;
+        }
     }
 }

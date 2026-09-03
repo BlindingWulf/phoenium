@@ -173,25 +173,25 @@ class Stage3OwnershipTest {
         assertEquals(1, h.entityMutations);
     }
 
-    @Test void m01SameOwnerRoutingKeyUpdateKeepsEpochAndExecution() {
+    @Test void regressionSameOwnerRoutingKeyUpdateKeepsEpochAndExecution() {
         Harness h = new Harness();
         RoutingKey movedKey = new RoutingKey(h.world, 1, 0);
         h.directory.publish(new TopologyGeneration(2), Map.of(
             h.aKey, new RegionRoute(h.aId, new TopologyGeneration(2), h.a.ownerEpoch()),
             h.bKey, new RegionRoute(h.bId, new TopologyGeneration(2), h.b.ownerEpoch()),
             movedKey, new RegionRoute(h.aId, new TopologyGeneration(2), h.a.ownerEpoch())));
-        ObjectOwnership entity = h.objects.admit("m1-entity", OwnedObjectKind.ENTITY, h.aKey);
-        ObjectOwnership updated = h.objects.updateRoutingKey("m1-entity", movedKey, new OwnerEpoch(0));
+        ObjectOwnership entity = h.objects.admit("old1-entity", OwnedObjectKind.ENTITY, h.aKey);
+        ObjectOwnership updated = h.objects.updateRoutingKey("old1-entity", movedKey, new OwnerEpoch(0));
         assertEquals(movedKey, updated.routingKey());
         assertEquals(h.aId, updated.owner());
         assertEquals(0, updated.objectEpoch().value());
-        assertEquals(ObjectOwnerGateway.Delivery.QUEUED, h.objectsGateway.submit(h.envelope("m1-entity", new OwnerEpoch(0), "entity-mutation", AdmissionPolicy.REJECT, 1)));
+        assertEquals(ObjectOwnerGateway.Delivery.QUEUED, h.objectsGateway.submit(h.envelope("old1-entity", new OwnerEpoch(0), "entity-mutation", AdmissionPolicy.REJECT, 1)));
         h.scheduler.advanceOne();
         assertEquals(1, h.entityMutations);
         assertEquals(h.aId, h.lastMutationRegion);
     }
 
-    @Test void m02DeferredTransitionMailboxReentersCurrentDirectory() {
+    @Test void regressionDeferredTransitionMailboxReentersCurrentDirectory() {
         Harness h = new Harness();
         TopologyCoordinator coordinator = h.coordinator();
         coordinator.request(new TopologyCoordinator.Transition(Set.of(h.aId, h.bId), Map.of(h.aKey, h.aId, h.bKey, h.bId)));
@@ -207,42 +207,42 @@ class Stage3OwnershipTest {
         assertTrue(h.a.immutableLog().isEmpty());
     }
 
-    @Test void m03ActiveLeaseBlocksQuiescentTopologyPublication() {
+    @Test void regressionActiveLeaseBlocksQuiescentTopologyPublication() {
         Harness h = new Harness();
-        h.objects.admit("m3-entity", OwnedObjectKind.ENTITY, h.aKey);
+        h.objects.admit("old3-entity", OwnedObjectKind.ENTITY, h.aKey);
         TopologyCoordinator coordinator = h.coordinator();
         RegionLease lease = h.a.leases().acquire();
         try (var ignored = OwnershipContext.enter(h.aId, lease.epoch(), OperationCategory.OWNER_TASK)) {
             coordinator.request(new TopologyCoordinator.Transition(Set.of(h.aId, h.bId), Map.of(h.aKey, h.bId, h.bKey, h.bId)));
             assertFalse(coordinator.advance());
             assertTrue(coordinator.hasPendingTransition());
-            ObjectOwnership held = h.objects.current("m3-entity").orElseThrow();
+            ObjectOwnership held = h.objects.current("old3-entity").orElseThrow();
             assertEquals(h.aId, held.owner());
             assertEquals(0, held.objectEpoch().value());
         }
         lease.close();
         assertTrue(coordinator.advance());
-        ObjectOwnership moved = h.objects.current("m3-entity").orElseThrow();
+        ObjectOwnership moved = h.objects.current("old3-entity").orElseThrow();
         assertEquals(h.bId, moved.owner());
         assertEquals(1, moved.objectEpoch().value());
         assertThrows(IllegalStateException.class, () -> h.a.leases().requireCurrent(lease.epoch()));
     }
 
-    @Test void m04ResidentObjectKeepsEpochAcrossCrossOwnerTransitions() {
+    @Test void regressionResidentObjectKeepsEpochAcrossCrossOwnerTransitions() {
         Harness h = new Harness();
-        h.objects.admit("m4-entity", OwnedObjectKind.ENTITY, h.aKey);
-        h.objects.admit("m4-resident", OwnedObjectKind.ENTITY, h.bKey);
+        h.objects.admit("old4-entity", OwnedObjectKind.ENTITY, h.aKey);
+        h.objects.admit("old4-resident", OwnedObjectKind.ENTITY, h.bKey);
         assertTrue(h.topology(Map.of(h.aKey, h.bId, h.bKey, h.bId)));
-        ObjectOwnership e1 = h.objects.current("m4-entity").orElseThrow();
-        ObjectOwnership r1 = h.objects.current("m4-resident").orElseThrow();
+        ObjectOwnership e1 = h.objects.current("old4-entity").orElseThrow();
+        ObjectOwnership r1 = h.objects.current("old4-resident").orElseThrow();
         assertEquals(h.bId, e1.owner());
         assertEquals(1, e1.objectEpoch().value());
         assertEquals(h.aKey, e1.routingKey());
         assertEquals(h.bId, r1.owner());
         assertEquals(0, r1.objectEpoch().value());
         assertTrue(h.topology(Map.of(h.aKey, h.aId, h.bKey, h.bId)));
-        ObjectOwnership e2 = h.objects.current("m4-entity").orElseThrow();
-        ObjectOwnership r2 = h.objects.current("m4-resident").orElseThrow();
+        ObjectOwnership e2 = h.objects.current("old4-entity").orElseThrow();
+        ObjectOwnership r2 = h.objects.current("old4-resident").orElseThrow();
         assertEquals(h.aId, e2.owner());
         assertEquals(2, e2.objectEpoch().value());
         assertEquals(h.aKey, e2.routingKey());
@@ -250,21 +250,21 @@ class Stage3OwnershipTest {
         assertEquals(0, r2.objectEpoch().value());
     }
 
-    @Test void m05TopologyPublishWithoutRegistryNeverGrantsOwnership() {
+    @Test void regressionTopologyPublishWithoutRegistryNeverGrantsOwnership() {
         Harness h = new Harness();
-        ObjectOwnership entity = h.objects.admit("m5-entity", OwnedObjectKind.ENTITY, h.aKey);
-        assertEquals(ObjectOwnerGateway.Delivery.QUEUED, h.objectsGateway.submit(h.envelope("m5-entity", entity.objectEpoch(), "entity-mutation", AdmissionPolicy.REROUTE, 1)));
+        ObjectOwnership entity = h.objects.admit("old5-entity", OwnedObjectKind.ENTITY, h.aKey);
+        assertEquals(ObjectOwnerGateway.Delivery.QUEUED, h.objectsGateway.submit(h.envelope("old5-entity", entity.objectEpoch(), "entity-mutation", AdmissionPolicy.REROUTE, 1)));
         TopologyCoordinator bare = new TopologyCoordinator(h.directory, h.runtimes, h.gateway);
         bare.request(new TopologyCoordinator.Transition(Set.of(h.aId, h.bId), Map.of(h.aKey, h.bId, h.bKey, h.bId)));
         assertTrue(bare.advance());
-        assertTrue(h.objects.current("m5-entity").isEmpty());
+        assertTrue(h.objects.current("old5-entity").isEmpty());
         h.scheduler.advanceOne();
         assertEquals(0, h.entityMutations);
         assertEquals(0, h.a.inboxSize());
         assertEquals(0, h.b.inboxSize());
     }
 
-    @Test void m06UnknownChunkAndRemovedObjectFailClosed() {
+    @Test void regressionUnknownChunkAndRemovedObjectFailClosed() {
         Harness h = new Harness();
         RoutingKey unknownKey = new RoutingKey(h.world, 42, 42);
         ChunkWorkRequest unknown = new ChunkWorkRequest(h.world, unknownKey, 7, h.directory.snapshot().generation(), "full", new TaskCorrelationId(77));
@@ -272,14 +272,14 @@ class Stage3OwnershipTest {
         assertEquals(ChunkCompletionGateway.Delivery.REJECTED_UNKNOWN_CHUNK, h.chunkGateway.complete(unknown));
         assertEquals(ChunkCustody.Stage.CANCELLED, h.custody.stage(ChunkCustody.id(unknown)).orElseThrow());
         assertEquals(0, h.chunkApplications);
-        ObjectOwnership entity = h.objects.admit("m6-entity", OwnedObjectKind.ENTITY, h.aKey);
-        assertEquals(ObjectOwnerGateway.Delivery.QUEUED, h.objectsGateway.submit(h.envelope("m6-entity", entity.objectEpoch(), "entity-mutation", AdmissionPolicy.REJECT, 1)));
-        h.objects.remove("m6-entity");
+        ObjectOwnership entity = h.objects.admit("old6-entity", OwnedObjectKind.ENTITY, h.aKey);
+        assertEquals(ObjectOwnerGateway.Delivery.QUEUED, h.objectsGateway.submit(h.envelope("old6-entity", entity.objectEpoch(), "entity-mutation", AdmissionPolicy.REJECT, 1)));
+        h.objects.remove("old6-entity");
         assertEquals(0, h.objects.liveCount());
         h.scheduler.advanceOne();
         assertEquals(0, h.entityMutations);
         assertEquals(0, h.a.inboxSize());
-        assertEquals(ObjectOwnerGateway.Delivery.REJECTED_ABSENT, h.objectsGateway.submit(h.envelope("m6-entity", entity.objectEpoch(), "entity-mutation", AdmissionPolicy.REROUTE, 1)));
+        assertEquals(ObjectOwnerGateway.Delivery.REJECTED_ABSENT, h.objectsGateway.submit(h.envelope("old6-entity", entity.objectEpoch(), "entity-mutation", AdmissionPolicy.REROUTE, 1)));
     }
 
     @Test void chunkCustodyStagesAreExactlyOnceAndTerminalSafe() {

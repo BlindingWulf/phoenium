@@ -98,7 +98,6 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
 
     public void start(MinecraftServer server) {
         if (state != State.NEW) throw new IllegalStateException("Phoenium lifecycle start repeated: " + state);
-        Map<RoutingKey, RegionRoute> routes = new LinkedHashMap<>();
         Map<WorldId, RegionRoute> worldDefaults = new LinkedHashMap<>();
         for (ServerLevel level : server.getAllLevels()) {
             WorldId world = worldId(level);
@@ -109,12 +108,14 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
             LiveRegion previous = regions.put(world, new LiveRegion(level, region, key, runtime));
             if (previous != null) throw new IllegalStateException("duplicate controlled world " + world.value());
             runtimes.put(region, runtime);
-            RegionRoute route = new RegionRoute(region, new TopologyGeneration(1), runtime.ownerEpoch());
-            routes.put(key, route);
-            worldDefaults.put(world, route);
+            // The deliberate Stage 2 whole-world region is published as a world default only: the
+            // world carries no explicit routes, so every chunk resolves through the default. The
+            // moment explicit routes appear, missing explicit keys fail closed instead of
+            // silently inheriting this default.
+            worldDefaults.put(world, new RegionRoute(region, new TopologyGeneration(1), runtime.ownerEpoch()));
         }
         if (regions.isEmpty()) throw new IllegalStateException("no server levels available for Stage 2 live binding");
-        directory.publish(new TopologyGeneration(1), routes, worldDefaults);
+        directory.publish(new TopologyGeneration(1), Map.of(), worldDefaults);
         scheduler = new RegionScheduler(runtimes, directory, barrier, this, this);
         gateway = new OwnerGateway(directory, runtimes, scheduler);
         objectGateway = new ObjectOwnerGateway(objects, directory, gateway);

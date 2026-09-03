@@ -27,25 +27,38 @@ public final class TopologyPlanner {
         }
         return components.stream().sorted(Comparator.comparing(component -> component.stream().min(RoutingKey::compareTo).orElseThrow())).toList();
     }
-    /** A component is a closed buffer when it is exactly the full radius buffer square: a single world, spans of 2*radius+1 in both axes, and every point of that square present. */
-    public boolean bufferClosure(Set<RoutingKey> component, int radius) {
+    /**
+     * Static required closure: the union of the world-local Chebyshev balls of radius {@code radius}
+     * around every active seed. Each ball lives entirely in the seed's own world; a key from another
+     * world never substitutes for a missing neighbor. This is a coordinate domain, not a complete
+     * MutationClosure: containment of every admitted operation's full footprint (broad-phase queries,
+     * callbacks, cached positions) in the frozen region authority is a separate admission-time duty.
+     */
+    public Set<RoutingKey> requiredClosure(Collection<RoutingKey> seeds, int radius) {
         if (radius < 0) throw new IllegalArgumentException("negative radius");
-        if (component.isEmpty()) return false;
-        int minX = Integer.MAX_VALUE, maxX = Integer.MIN_VALUE, minZ = Integer.MAX_VALUE, maxZ = Integer.MIN_VALUE;
-        dev.phoenium.core.WorldId world = null;
-        for (RoutingKey key : component) {
-            if (world == null) world = key.world();
-            if (!world.equals(key.world())) return false;
-            minX = Math.min(minX, key.x()); maxX = Math.max(maxX, key.x());
-            minZ = Math.min(minZ, key.z()); maxZ = Math.max(maxZ, key.z());
-        }
-        if (maxX - minX != 2 * radius || maxZ - minZ != 2 * radius) return false;
-        for (int x = minX; x <= maxX; x++) {
-            for (int z = minZ; z <= maxZ; z++) {
-                if (!component.contains(new RoutingKey(world, x, z))) return false;
+        Set<RoutingKey> closure = new LinkedHashSet<>();
+        for (RoutingKey seed : seeds) {
+            for (int x = seed.x() - radius; x <= seed.x() + radius; x++) {
+                for (int z = seed.z() - radius; z <= seed.z() + radius; z++) {
+                    closure.add(new RoutingKey(seed.world(), x, z));
+                }
             }
         }
-        return true;
+        return Set.copyOf(closure);
+    }
+
+    /**
+     * Buffer closure as containment: the required closure of the active seeds must be a subset of
+     * the region's own authority. The region may own strictly more than the closure; exact equality
+     * with a bounding square is neither required nor inferred. Membership is by exact RoutingKey
+     * identity, so authority in another world can never satisfy a seed's own-world neighbors. A
+     * PASS here is a static containment fact only; it does not prove that all movement or other
+     * operations stay enclosed.
+     */
+    public boolean bufferClosure(Set<RoutingKey> activeSeeds, Set<RoutingKey> regionAuthority, int radius) {
+        if (activeSeeds == null) throw new IllegalArgumentException("activeSeeds");
+        if (regionAuthority == null) throw new IllegalArgumentException("regionAuthority");
+        return regionAuthority.containsAll(requiredClosure(activeSeeds, radius));
     }
     public static boolean adjacentWithin(RoutingKey left, RoutingKey right, int radius) { return left.world().equals(right.world()) && chebyshev(left, right) <= radius; }
     private static long chebyshev(RoutingKey left, RoutingKey right) { return Math.max(Math.abs((long) left.x() - right.x()), Math.abs((long) left.z() - right.z())); }

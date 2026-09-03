@@ -38,28 +38,48 @@ Stage 1/P2 regressions pass; dedicated-server/client gates were not rerun. Histo
 evidence is retained without promotion. Stage 3 remains PARTIAL, no P3 tag is created,
 parallel gameplay is off, and Stage 4/compatibility work has not started.
 
-### 2026-09-03 Stage 3 ownership publication invariants (current resume point)
+### 2026-09-03 Stage 3 deterministic correction (current resume point)
 
-The deterministic ownership-publication layer is now enforced and green. Ordinary
-movement is topology enclosure; a same-RegionId routing/chunk-key change does not bump
-the object epoch; only a real owner change bumps it exactly once at the quiescent
-publication boundary. The object ledger is derived and `RegionDirectory` is
-authoritative; every mutable operation revalidates at execution time; the active lease
-domain is frozen while a transition is pending; missing explicit routes fail closed
-(no world-default fallback as hidden ownership authority); the scheduler stays generic
-behind typed executor/validator seams. `getChunkFuture` remains diagnostic only:
-`ChunkCustody` models the request/ready/queued/claimed/applied stages but does not
-claim control over vanilla chunk installation.
+The deterministic ownership-publication and topology-enclosure correction is complete
+and green. The required closure API is
+`requiredClosure(activeSeeds, radius) subset-of regionAuthority`: active seeds and
+authority are separate concepts, so a larger legitimate authority remains valid. The
+deterministic D03 witnesses cover exact minimum authority, larger authority, a missing
+required key, complete and incomplete multi-seed unions, cross-world substitution, and
+radius zero.
 
-Verification: `./gradlew.bat clean build --no-daemon` passed with **37 tests, 0
-failures, 0 errors, 0 skips** (`CoreAcceptanceTest` 20, `Stage3OwnershipTest` 17,
-including the explicit D-01..D-04 and M-01..M-06 regressions and the custody-stage
-regression). `git diff --check` is clean.
+The Stage 3 movement suite adds the requested deterministic M-01 through M-06 and a
+publication-window atomicity probe. It proves same-owner routing changes preserve the
+object epoch; full synthetic movement footprints fail before foreign lookup/store;
+conflicting closures become pending convergence without expanding active lease domains;
+real A -> B ownership changes increment exactly once without ABA reuse; stale old-inbox
+work rejects or reroutes under current identity; and huge-delta, no-physics, oversized
+box, step-height, projectile, repeated-move, and callback escapes trip the hard barrier
+before foreign mutation. The probe covers the window after `directory.publish(next)`
+and before reconciliation: stale A and premature B operations have no object authority,
+and the directory has one route owner only.
 
-**OPEN — live-geographic huge-delta / projectile movement**: the topology-enclosure
-model has no live acceptance evidence for huge-delta or projectile-style movement.
-Do not mark that area PASS and never create a false P3. Stage 3 remains **PARTIAL**;
-parallel workers stay OFF (simulation workers = 1) and Stage 4 has not started.
+`RegionDirectory` is authoritative; its explicit-topology worlds fail closed for missing
+explicit routes rather than inheriting a Stage 2 world default. The object ledger is
+derived and revalidated immediately before mutation. The scheduler remains generic
+behind closed typed payload, gateway, and executor seams. `getChunkFuture` remains
+**DIAGNOSTIC ONLY**. `ChunkCustody` deterministically models request incarnation and
+exactly-once stage claims, but this does not claim control of live vanilla chunk
+installation or its recovery paths.
+
+Verification: `./gradlew.bat clean build --no-daemon` passed with **57 tests, 0
+failures, 0 errors, 0 skips** (`CoreAcceptanceTest` 26, `Stage3OwnershipTest` 17,
+`Stage3MovementTest` 14). This includes the prior Stage 1 and Stage 2 regressions,
+D03-A through D03-F, the explicit-route fallback regression, M-01 through M-06, the
+publication-window probe, and existing chunk custody/request-incarnation tests.
+
+**Remaining live Stage 3 gates:** no real client, packet handler, live geographic
+crossing, live non-player/projectile movement, or live chunk-installation path was run.
+Do not create a P3 tag or enable parallel gameplay from deterministic evidence. The exact
+next step is to design and review one scoped serial live topology-enclosure admission
+gate with its real Minecraft footprint/readiness boundary; only after that review may a
+separate task run a controlled live acceptance harness. Stage 3 remains **PARTIAL**;
+simulation workers = 1, parallel gameplay = OFF, and Stage 4 has not started.
 
 ## Locked decisions
 

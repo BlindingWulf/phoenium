@@ -1,16 +1,19 @@
 package dev.phoenium;
 
+import dev.phoenium.core.TopologyGeneration;
 import dev.phoenium.core.WorldId;
 import dev.phoenium.diagnostics.BlockingOwnerWork;
 import dev.phoenium.ownership.OperationCategory;
 import dev.phoenium.ownership.OwnershipContext;
 import dev.phoenium.ownership.RegionLease;
+import dev.phoenium.region.RegionId;
 import dev.phoenium.region.RegionLifecycle;
 import dev.phoenium.save.SaveCoordinator;
 import dev.phoenium.scheduler.OwnerGateway;
 import dev.phoenium.task.AdmissionPolicy;
 import dev.phoenium.task.TaskPayload;
 import dev.phoenium.topology.RegionRoute;
+import dev.phoenium.topology.RoutingKey;
 import dev.phoenium.topology.TopologyCoordinator;
 import dev.phoenium.topology.TopologyPlanner;
 import dev.phoenium.transfer.TransferGroup;
@@ -81,32 +84,113 @@ class CoreAcceptanceTest {
         }
     }
 
-    @Test void regressionD03_bufferClosureRequiresFullNeighborhoodContainment() {
+    /** D03-A: the exact 3x3 radius-1 authority square contains the required closure. */
+    @Test void d03aExactAuthoritySquarePassesContainment() {
         TopologyPlanner planner = new TopologyPlanner();
         WorldId world = new WorldId("test");
-        dev.phoenium.topology.RoutingKey center = new dev.phoenium.topology.RoutingKey(world, 0, 0);
-        // Witness 1: a singleton at radius 1 misses all eight neighbors.
-        assertFalse(planner.bufferClosure(Set.of(center), 1));
-        // Radius 0 requires only the key itself.
-        assertTrue(planner.bufferClosure(Set.of(center), 0));
-        // A full 3x3 square is closed at radius 1.
-        Set<dev.phoenium.topology.RoutingKey> square = new java.util.TreeSet<>();
-        for (int x = -1; x <= 1; x++) for (int z = -1; z <= 1; z++) square.add(new dev.phoenium.topology.RoutingKey(world, x, z));
-        assertTrue(planner.bufferClosure(square, 1));
-        // Removing the center breaks closure for every surviving member.
-        java.util.Set<dev.phoenium.topology.RoutingKey> hollow = new java.util.TreeSet<>(square);
-        hollow.remove(center);
-        assertFalse(planner.bufferClosure(hollow, 1));
-        // A 1x3 row leaves every member's off-axis neighbors outside.
-        Set<dev.phoenium.topology.RoutingKey> row = Set.of(
-            new dev.phoenium.topology.RoutingKey(world, -1, 0), center, new dev.phoenium.topology.RoutingKey(world, 1, 0));
-        assertFalse(planner.bufferClosure(row, 1));
-        // Closure is world-local: a complete square in another world does not supply missing neighbors.
+        RoutingKey center = new RoutingKey(world, 0, 0);
+        Set<RoutingKey> authority = square(world, 0, 0, 1);
+        assertEquals(authority, planner.requiredClosure(Set.of(center), 1));
+        assertTrue(planner.bufferClosure(Set.of(center), authority, 1));
+    }
+
+    /** D03-B: a larger authority (5x5 and 7x7) owns MORE than the closure and still passes. */
+    @Test void d03bLargerAuthoritySquarePassesContainment() {
+        TopologyPlanner planner = new TopologyPlanner();
+        WorldId world = new WorldId("test");
+        RoutingKey center = new RoutingKey(world, 0, 0);
+        assertTrue(planner.bufferClosure(Set.of(center), square(world, 0, 0, 2), 1));
+        assertTrue(planner.bufferClosure(Set.of(center), square(world, 0, 0, 3), 1));
+        assertTrue(planner.requiredClosure(Set.of(center), 1).size() < planner.requiredClosure(Set.of(center), 2).size());
+    }
+
+    /** D03-C: a 3x3 square missing one neighbor is no longer a containing authority. */
+    @Test void d03cMissingNeighborFailsContainment() {
+        TopologyPlanner planner = new TopologyPlanner();
+        WorldId world = new WorldId("test");
+        RoutingKey center = new RoutingKey(world, 0, 0);
+        Set<RoutingKey> authority = new java.util.LinkedHashSet<>(square(world, 0, 0, 1));
+        authority.remove(new RoutingKey(world, 1, 0));
+        assertFalse(planner.bufferClosure(Set.of(center), authority, 1));
+        assertFalse(planner.bufferClosure(Set.of(center), Set.of(), 1));
+    }
+
+    /** D03-D: multi-seed required closure is the union of the per-seed balls; missing one union member fails. */
+    @Test void d03dMultiSeedUnionContainment() {
+        TopologyPlanner planner = new TopologyPlanner();
+        WorldId world = new WorldId("test");
+        RoutingKey left = new RoutingKey(world, -1, 0);
+        RoutingKey right = new RoutingKey(world, 1, 0);
+        Set<RoutingKey> union = new java.util.LinkedHashSet<>();
+        union.addAll(planner.requiredClosure(Set.of(left), 1));
+        union.addAll(planner.requiredClosure(Set.of(right), 1));
+        assertEquals(union, planner.requiredClosure(Set.of(left, right), 1));
+        assertTrue(planner.bufferClosure(Set.of(left, right), union, 1));
+        Set<RoutingKey> missingOne = new java.util.LinkedHashSet<>(union);
+        missingOne.remove(new RoutingKey(world, 0, 1));
+        assertFalse(planner.bufferClosure(Set.of(left, right), missingOne, 1));
+    }
+
+    /** D03-E: authority in another world never substitutes for own-world neighbors. */
+    @Test void d03eCrossWorldAuthorityNeverSatisfiesContainment() {
+        TopologyPlanner planner = new TopologyPlanner();
+        WorldId world = new WorldId("test");
         WorldId other = new WorldId("other");
-        Set<dev.phoenium.topology.RoutingKey> crossWorld = new java.util.TreeSet<>();
-        crossWorld.add(center);
-        square.forEach(key -> crossWorld.add(new dev.phoenium.topology.RoutingKey(other, key.x(), key.z())));
-        assertFalse(planner.bufferClosure(crossWorld, 1));
+        RoutingKey center = new RoutingKey(world, 0, 0);
+        Set<RoutingKey> foreignSquare = square(other, 0, 0, 1);
+        assertFalse(planner.bufferClosure(Set.of(center), foreignSquare, 1));
+        // Even a full own-world square plus the complete foreign square still fails when one
+        // own-world neighbor is absent: cross-world keys are exact-identity distinct.
+        Set<RoutingKey> nearlyFull = new java.util.LinkedHashSet<>(square(world, 0, 0, 1));
+        nearlyFull.remove(new RoutingKey(world, 0, -1));
+        nearlyFull.addAll(foreignSquare);
+        assertFalse(planner.bufferClosure(Set.of(center), nearlyFull, 1));
+    }
+
+    /** D03-F: radius 0 requires exactly the seed; the authority may own more. */
+    @Test void d03fZeroRadiusRequiresOnlyTheSeed() {
+        TopologyPlanner planner = new TopologyPlanner();
+        WorldId world = new WorldId("test");
+        RoutingKey center = new RoutingKey(world, 0, 0);
+        assertEquals(Set.of(center), planner.requiredClosure(Set.of(center), 0));
+        assertTrue(planner.bufferClosure(Set.of(center), Set.of(center), 0));
+        Set<RoutingKey> extra = new java.util.LinkedHashSet<>(Set.of(center));
+        extra.add(new RoutingKey(world, 5, 5));
+        assertTrue(planner.bufferClosure(Set.of(center), extra, 0));
+        assertTrue(planner.requiredClosure(Set.of(), 1).isEmpty());
+    }
+
+    private static Set<RoutingKey> square(WorldId world, int cx, int cz, int radius) {
+        Set<RoutingKey> cells = new java.util.LinkedHashSet<>();
+        for (int x = cx - radius; x <= cx + radius; x++) {
+            for (int z = cz - radius; z <= cz + radius; z++) cells.add(new RoutingKey(world, x, z));
+        }
+        return cells;
+    }
+
+    /** A world carrying explicit routes fails closed on missing keys; a default-only world keeps resolving. */
+    @Test void regressionExplicitTopologyWorldFailsClosedOnMissingExplicitRoute() {
+        CoreFixture f = new CoreFixture();
+        // The fixture world already carries explicit routes: an unrouted key resolves to nothing.
+        assertTrue(f.directory.resolve(new RoutingKey(f.world, 7, 7)).isEmpty());
+        // Publishing a world default for an explicit-topology world grants no hidden authority.
+        TopologyGeneration next = f.directory.snapshot().generation().next();
+        f.directory.publish(next, Map.of(
+            f.aKey, new RegionRoute(f.aId, next, f.a.ownerEpoch()),
+            f.bKey, new RegionRoute(f.bId, next, f.b.ownerEpoch())),
+            Map.of(f.world, new RegionRoute(f.aId, next, f.a.ownerEpoch())));
+        assertTrue(f.directory.resolve(new RoutingKey(f.world, 7, 7)).isEmpty());
+        assertEquals(f.aId, f.directory.resolve(f.aKey).orElseThrow().region());
+        // A world without explicit routes still resolves every key through its world default.
+        WorldId plain = new WorldId("plain");
+        RegionId whole = new RegionId(plain, "whole");
+        TopologyGeneration later = next.next();
+        f.directory.publish(later, Map.of(
+            f.aKey, new RegionRoute(f.aId, later, f.a.ownerEpoch()),
+            f.bKey, new RegionRoute(f.bId, later, f.b.ownerEpoch())),
+            Map.of(plain, new RegionRoute(whole, later, f.a.ownerEpoch())));
+        assertEquals(whole, f.directory.resolve(new RoutingKey(plain, 12, -5)).orElseThrow().region());
+        assertTrue(f.directory.resolve(new RoutingKey(f.world, 7, 7)).isEmpty());
     }
 
     @Test void c04_transitionWaitsForLeaseBoundary() {
