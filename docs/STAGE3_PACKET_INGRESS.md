@@ -22,4 +22,17 @@ Two exact official-named 26.2 handlers are intercepted immediately after their s
 
 The initial packet invocation is cancelled after owner admission. The raw packet remains in a private runtime pending-record keyed by correlation ID, never in an envelope. The scheduler replays it only inside a correlation-scoped execution marker; the Mixin permits that one re-entry, while every unmarked entry is routed rather than bypassed because it happens to be on the server thread.
 
-For movement, the packet target chunk is resolved and the player binding transitions *before* the original handler is replayed. This prevents post-mutation reconciliation from being the authority boundary for this packet path. Other packet families remain deliberately unimplemented and unclaimed.
+Current code resolves the packet target chunk and transitions the player binding *before*
+replaying the original handler. The architecture review identifies this as an invalid
+ownership inference: the packet supplies a proposal, while vanilla validates, collides,
+may reject/correct, and updates live source and destination state synchronously. A proposed
+chunk cannot establish destination authority for that complete handler.
+
+The required correction is current-player-owner admission for the whole handler, complete
+mutation-closure validation before mutable access, and routing-key reconciliation to the
+actual accepted position under the same owner lease. Same-owner chunk movement keeps
+object epoch. An escaping operation needs convergence before a proven restartable boundary
+or a hard barrier; it is not repaired by target-owner replay. See
+[STAGE3_MOVEMENT_ARCHITECTURE_REVIEW.md](STAGE3_MOVEMENT_ARCHITECTURE_REVIEW.md).
+This correction is specified, not implemented. Other packet families remain unclaimed;
+real packet and player-crossing evidence is still required.

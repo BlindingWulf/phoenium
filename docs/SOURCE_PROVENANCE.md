@@ -70,3 +70,15 @@ was copied or adapted. C2ME is documented only as a future contract boundary.
 The Stage 3 packet and chunk observer Mixins are likewise independently authored. The exact
 official-named 26.2 method descriptors were verified with local `javap` inspection of the Loom
 resolved Minecraft artifact. No handler implementation or C2ME source was copied or adapted.
+
+## Stage 3 architecture review provenance
+
+The movement and chunk application reviews are independently written analysis of the
+same pinned Folia 26.2 reference, its pinned Paper dependency and the official Minecraft
+26.2 bytecode. Exact paths, revisions, method descriptors, offsets and artifact digest
+are recorded in `STAGE3_MOVEMENT_ARCHITECTURE_REVIEW.md` and
+`STAGE3_CHUNK_APPLICATION_REVIEW.md`. The two pinned Paper patches were inspected only
+to establish Folia's actual entity movement/index behavior. Local disassemblies and
+reference patches remain in the parent workspace's `.audit` directory, outside this
+repository and its packaged artifacts. No runtime implementation is copied, adapted,
+or changed by this review; no compatibility-mod source was inspected.

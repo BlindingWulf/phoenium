@@ -132,9 +132,19 @@ lock, blocking owner wait, or additional simulation pool is introduced.
 
 ## Stage 3 ownership boundary (implemented core)
 
+The subsequent [movement review](STAGE3_MOVEMENT_ARCHITECTURE_REVIEW.md) clarifies the
+locked Stage 0 topology model: ordinary continuous movement stays under its existing
+owner for its complete synchronous transaction inside a frozen mutation closure.
+Same-owner routing-key changes do not invalidate object epoch. Actual owner publication
+and lifecycle invalidation are separate events. No fixed buffer is a proof for arbitrary
+modded movement; admission and pre-access escape enforcement remain required. The
+current object registry and topology model do not yet implement this geographic contract.
+The review specifies coherent closed publication and identifies current code gaps.
+No Stage 0 decision changes and no parallel mode is enabled.
+
 Stage 3 adds a derived `ObjectOwnershipRegistry` for entity and player identities. Each record
 contains a position routing key, directory generation/region epoch, and an independent object
-epoch. The independent epoch is necessary because a moving entity can make old work stale even
+epoch. The independent epoch is necessary because an actual owner transition can make old work stale even
 when a later topology happens to reuse a region epoch. The registry is protected only by a narrow
 metadata gate and validates against `RegionDirectory` before every owner operation; it is not a
 second authority system.

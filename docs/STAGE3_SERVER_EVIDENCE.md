@@ -2,6 +2,18 @@
 
 ## Automated evidence
 
+During the 2026-09-02 architecture review, `gradlew.bat clean build --no-daemon`
+executed **25 tests (19 CoreAcceptanceTest, 6 Stage3OwnershipTest), zero failures,
+errors or skips**. The subsequent `gradlew.bat test --no-daemon` succeeded with tasks
+up to date. Documentation was the only repository change. No new dedicated server,
+client/bot, real movement or real chunk-application run was performed in this review.
+See [the movement review](STAGE3_MOVEMENT_ARCHITECTURE_REVIEW.md) and
+[the chunk review](STAGE3_CHUNK_APPLICATION_REVIEW.md) for architectural findings and
+the limits of existing test coverage. Future M-01–M-06 designs are not live evidence.
+Four separate deterministic core inspection witnesses reproduced the existing epoch,
+buffer-validation and pre-transition-inbox defects recorded in the movement review.
+They are negative evidence outside the acceptance suite, not additional passing gates.
+
 `gradlew.bat test --no-daemon` exercises deterministic Stage 3 entity, player, stale-envelope, outer-lease, and asynchronous chunk-routing regressions alongside all prior Stage 1/2 tests. The Stage 3 tests use the one-worker scheduler and distinct A/B regions; no caller thread, outer lease, broad gameplay lock, peer wait, or vanilla fallback is accepted as authority.
 
 ## Live status

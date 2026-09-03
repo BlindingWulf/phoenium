@@ -94,14 +94,24 @@ unimplemented as regional mechanisms.
 | ID | Result | Evidence |
 | --- | --- | --- |
 | P3-01 | PASS | `p301RealEntityMutationRequiresCurrentOwnerEpoch` validates a real-object identity only under its active object epoch and leased region. |
-| P3-02 / P3-03 | PASS | Boundary movement invalidates the old entity epoch and a stale envelope either reroutes to B or is rejected before it can reach A. |
+| P3-02 / P3-03 | PASS (ledger harness) | Explicit A/B ledger movement invalidates the old entity epoch and a stale envelope submitted afterward reroutes to B or is rejected. This is not a vanilla movement transaction, same-owner chunk-crossing proof, or queued-before-transition test. |
 | P3-04 / P3-05 | PASS | Player records use the distinct player kind and stale movement ingress is rerouted to the current owner. |
-| P3-07 / P3-08 / R-CHUNK-01 | PASS (contract harness) | An immutable chunk completion after a topology change enters the current owner only; the producer has no mutation path. |
+| P3-07 / P3-08 | PASS (contract harness) | Immutable chunk metadata delivered after a topology change enters the current owner; the executor increments a mock counter and does not install Minecraft chunks. |
+| R-CHUNK-01 | PARTIAL | Real first application, holder publication, POI/FULL continuations, request supersession and forced live completion remain unproven. See `STAGE3_CHUNK_APPLICATION_REVIEW.md`. |
 | P3-09 / R-OUTER-LEASE-01 | PASS | A lease/context for A rejects mutation of an object currently owned by B. |
 | P3-06 | PARTIAL | Exact 26.2 movement and entity-interaction admission Mixins compile and boot, but no real client trace has yet invoked them. |
 | P3-10 / R-LIVE-FALLBACK-01 | PASS | Final Stage 3 artifact failure run: 1293 intercepts, 10 dispatches, 9 executions, one barrier, zero bypass/fallback; clean RCON stop. |
 | I-01 / I-03 (Stage 3 artifact) | PASS | Fresh disposable server boot and RCON stop recorded `1980 = 1980 = 1980` with zero duplicate/bypass/fallback/violation/unleased/barrier counters; no client or entity activity was present. |
 
 ## Test discipline
+
+The 2026-09-02 architecture review reran `clean build` with 25 tests, zero failures,
+errors or skips; a subsequent `test` succeeded up to date. Stage 1/P2 checkpoints and
+historical live results remain preserved. The review did not rerun dedicated-server
+gates or earn any new Stage 3 live PASS. `TopologyPlanner.bufferClosure` and ordinary
+pre-transition inbox coverage have specific gaps documented in
+`STAGE3_MOVEMENT_ARCHITECTURE_REVIEW.md`; passing existing tests does not close them.
+The requested movement M-01–M-06 cases are future designs in that document, distinct
+from this matrix's compatibility M-01–M-06, and have not been executed as acceptance tests.
 
 Tests must use deterministic seeds, record scheduler worker count and topology configuration, fail on any ownership diagnostic, and retain minimized replay traces for concurrency failures. No test may pass merely because a fallback or broad lock masked an ownership violation.

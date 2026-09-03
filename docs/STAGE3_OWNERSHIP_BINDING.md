@@ -1,12 +1,23 @@
 # Stage 3 ownership binding
 
+## Architecture review disposition
+
+[STAGE3_MOVEMENT_ARCHITECTURE_REVIEW.md](STAGE3_MOVEMENT_ARCHITECTURE_REVIEW.md)
+supersedes the transfer interpretation below. Decision A keeps an admitted ordinary
+movement transaction under its current owner inside a frozen mutation closure. A chunk
+coordinate change within that owner does not invalidate object epoch. Actual owner
+changes require a quiescent topology publication or explicit relocation protocol.
+The current code still conflates those events; this review documents the required
+correction without changing runtime behavior. Geographic enclosure is not implemented,
+and Stage 3 remains PARTIAL.
+
 ## Scope
 
 Stage 3 retains one simulation lane and keeps parallel gameplay off. The accepted Stage 2 redirect remains the only live level-tick interception. It does not turn an outer level lease into object authority.
 
 `ObjectOwnershipRegistry` is a narrow, derived ledger. It stores an entity or player UUID, kind, current position-derived `RoutingKey`, directory topology generation, region epoch, and a separate object epoch. `RegionDirectory` remains authoritative for location ownership: the ledger re-resolves it before use and cannot independently grant mutation authority.
 
-During each controlled live level tick, the runtime reconciles Minecraft's actual entity collection while the Stage 2 lease is active. New `Entity` and `ServerPlayer` instances are admitted, coordinate changes create a SOURCE_PREPARED -> DESTINATION_RESERVED -> OWNED transition in the ledger, and disappeared entries are removed. Moving or removing an object increments its object epoch, invalidating previously queued work.
+During each controlled live level tick, the runtime reconciles Minecraft's actual entity collection while the Stage 2 lease is active. New `Entity` and `ServerPlayer` instances are admitted, coordinate changes currently create a SOURCE_PREPARED -> DESTINATION_RESERVED -> OWNED transition in the ledger, and disappeared entries are removed. Current code increments object epoch for movement or removal. The review identifies movement's unconditional invalidation as a defect: these hidden ledger states do not prove a live transfer protocol.
 
 The temporary Stage 2 whole-world region is published explicitly as a directory world-default route. Real entity positions are still recorded as chunk routing keys; later geographical topology can replace the default with concrete routes without creating a second registry.
 
@@ -18,11 +29,14 @@ The generic transfer record/passenger graph contract from Stage 1 remains the re
 
 ## Discovery versus transfer boundary
 
-Reconciliation after `ServerLevel.tick` is intentionally a serial discovery/backstop mechanism for vanilla non-player entity insertion, removal, and position bookkeeping. It is **not** the future parallel entity-transfer boundary: vanilla entity simulation can already have performed movement by the time the enclosing tick returns. Before multiple workers or independently owned entity ticking, an earlier entity movement/teleport transition hook must reserve the destination and route the mutation under the transfer record before Minecraft changes region-sensitive state.
+Reconciliation after `ServerLevel.tick` is intentionally a serial discovery/backstop mechanism for vanilla non-player entity insertion, removal, and position bookkeeping. It is **not** the future parallel entity-transfer boundary: vanilla entity simulation can already have performed movement by the time the enclosing tick returns. Before geographic or multi-worker execution, ordinary movement must have complete owner enclosure at admission and escape checks before foreign access. True relocation needs source preparation and destination admission before region-sensitive application.
 
-Player movement is narrower: its admitted packet exposes a destination position. Stage 3 therefore establishes the player ownership transition from the packet target before replaying the real vanilla handler. Non-player post-tick movement must not be treated as equivalent proof.
+Player packets expose a proposed destination, not the accepted collision-resolved position. Current Stage 3 code moves the ledger to that proposal before replay; the review rejects this as an ownership-transfer proof. The complete handler must execute under current player authority with its full closure validated, then record the accepted actual position. Neither this packet shortcut nor non-player post-tick discovery proves a real boundary crossing.
 
-## 2026-09-02 ordinary non-player movement escalation
+## 2026-09-02 ordinary non-player movement escalation (historical)
+
+The rejected mid-call transfer analysis remains valid. Its premise that crossing a chunk
+coordinate must cross an owner is superseded by the enclosure decision linked above.
 
 Stage 3 inspected the shipped official-named Minecraft 26.2 bytecode, rather than selecting a
 hook by method name. The representative ordinary movement path is:

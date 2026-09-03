@@ -9,6 +9,35 @@ entity/player/packet/chunk-completion integration** in [ROADMAP.md](ROADMAP.md).
 not enable parallel workers, begin broad geographical regionalization, add C2ME, or
 claim required-stack compatibility from this serial live evidence.
 
+### Latest resume point — Stage 3 architecture review
+
+Read [STAGE3_MOVEMENT_ARCHITECTURE_REVIEW.md](STAGE3_MOVEMENT_ARCHITECTURE_REVIEW.md)
+and then [STAGE3_CHUNK_APPLICATION_REVIEW.md](STAGE3_CHUNK_APPLICATION_REVIEW.md).
+The movement decision is **TOPOLOGY ENCLOSURE with mandatory escape prevention**:
+ordinary movement stays entirely under its admitted owner; coordinate movement within
+that owner is bookkeeping. Actual ownership changes require a quiescent topology
+publication or explicit relocation protocol. There is no proven universal local radius
+for arbitrary vanilla/Fabric movement, and the existing core does not enforce geographic
+closure. Do not introduce a mid-`Entity.move` owner change.
+
+The review also corrects the current packet-target pre-transfer interpretation and records
+registry, topology-admission and pre-existing-inbox publication gaps. The next narrow change
+is coherent metadata publication: same-owner routing updates, recorded owner/incarnation,
+eager object transitions, closed admission until state is ready, and execution-time stale
+work validation. Do not apply a lazy RegionId-only fix that misses A -> B -> A transitions.
+
+The first parsed-chunk application seam is `ChunkMap.scheduleChunkLoad`'s second
+`thenApplyAsync`, invoking `lambda$scheduleChunkLoad$3` before `SerializableChunkData.read`.
+The exceptional load path, holder `handle` callback, independent POI unpacking and FULL
+conversion also require ownership. A single executor wrapper is not a complete chunk
+installation boundary. `getChunkFuture` remains **diagnostic only**; R-CHUNK-01 is PARTIAL.
+
+This review changes documentation only. `clean build` executed all **25 tests with zero
+failures/errors/skips**; the subsequent `test` command passed using those up-to-date results.
+Stage 1/P2 regressions pass; dedicated-server/client gates were not rerun. Historical live
+evidence is retained without promotion. Stage 3 remains PARTIAL, no P3 tag is created,
+parallel gameplay is off, and Stage 4/compatibility work has not started.
+
 ## Locked decisions
 
 - Treat current Folia 26.2 semantics as primary; archived Ruthenium is a defect and regression reference.
@@ -121,7 +150,10 @@ and force a base chunk future across a topology change. Post-`ServerLevel.tick` 
 reconciliation is explicitly discovery only; it is not a future parallel entity transfer boundary.
 Stage 3 is not an accepted checkpoint yet.
 
-### 2026-09-02 Stage 3 architectural escalation
+### 2026-09-02 Stage 3 architectural escalation (historical)
+
+The later architecture review linked at the top resolves the movement design choice and
+refines the chunk trace. The following preserves the evidence that motivated that review.
 
 An exact bytecode review of Minecraft 26.2 established that ordinary non-player
 `Entity.move(MoverType, Vec3)` resolves its movement before `setPos(Vec3)`, but then continues

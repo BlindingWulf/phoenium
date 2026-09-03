@@ -43,6 +43,14 @@ releases mailboxes for fresh owner resolution.
 `TopologyPlanner` is a pure deterministic connected-component merge planner for the
 isolated holder model. Its property-style test records the seed `0x50E11A5E`.
 
+The Stage 3 [movement architecture review](STAGE3_MOVEMENT_ARCHITECTURE_REVIEW.md)
+identifies limits in this isolated model: `bufferClosure` is tautological for its inputs,
+publication lacks a live-data completion fence, and work already in an ordinary inbox
+is not generically revalidated at execution. Existing Stage 1/P2 tests continue to pass;
+they do not prove geographic closure or the uncovered queued-before-publication case.
+The review specifies deterministic negative cases and the required ordering before
+geographic or multiple-worker execution. The accepted checkpoints are preserved.
+
 ## Transfer and save models
 
 `TransferRecord` implements REQUESTED -> SOURCE_PREPARED -> DESTINATION_RESERVED
