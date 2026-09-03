@@ -14,6 +14,20 @@ authoritative Minecraft chunk application.
 
 ## A. Current accepted checkpoint
 
+### Pure custody-model implementation status (2026-09-03)
+
+- The accepted coordinated multi-stage admission design now has a pure,
+  producer-agnostic deterministic model: lifecycle, shared-work, demand, and
+  semantic-stage identities are separate; topology generation is admission
+  validation rather than identity.
+- `ChunkCustodyModel` and `ChunkStageAdmission` prove queue-before-delivery,
+  single-owner lease-plus-claim admission, stale reroute, exactly-once stage
+  invocation, lifecycle replacement/rescue, demand cancellation separation,
+  shutdown fencing, and vanilla-vs-barrier failure classification.
+- This is intentionally **not** a Minecraft adapter. No authoritative chunk
+  Mixins, future-graph changes, C2ME work, second worker, or parallel gameplay
+  were added. R-CHUNK-01 and Stage 3 remain **PARTIAL**.
+
 - Code/test checkpoint before this documentation-only change:
   `c76d449` (`test: aim stage 3 cross-owner interaction at target`), on top of
   `685690e` (`test: close stage 3 cross-owner interaction gate`).
