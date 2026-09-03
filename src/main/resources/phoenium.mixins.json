@@ -6,7 +6,10 @@
     "MinecraftServerMixin",
     "ServerGamePacketListenerMixin",
     "ServerGamePacketListenerInvoker",
-    "ServerChunkCacheMixin"
+    "ServerChunkCacheMixin",
+    "PlayerListLifecycleMixin",
+    "EntityLifecycleMixin",
+    "ServerLevelEntityLifecycleMixin"
   ],
   "injectors": {
     "defaultRequire": 1

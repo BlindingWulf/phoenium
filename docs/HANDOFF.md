@@ -2,6 +2,36 @@
 
 ## Resume point
 
+### Latest resume point — Stage 3 real-client readiness
+
+Stage 3 is **ready for its first controlled real-client movement and same-region
+interaction evidence run**, but no client was connected in this task. `clean build`
+passed **75 tests**: all prior 70 plus explicit-fixture, initial-player, bootstrap,
+and lifecycle-adapter readiness cases. The no-client Fabric 26.2 boot was run with
+`-Dphoenium.stage3.explicitTopology=true`; it logged `explicitFixture=true`, zero
+world-default regional fallback, zero packet activity, and clean RCON `stop` shutdown.
+
+The development fixture has no world default and publishes finite disjoint A/B domains
+for every loaded world: A `x=-4..4,z=-4..4`, B `x=5..8,z=-4..4`, relative to chunk
+`(0,0)`. `PlayerList.placeNewPlayer` now creates the player ObjectId/incarnation,
+explicit routing binding, and derived network-ID candidate before movement packet
+ingress. Pending teleport and non-converged last-good movement packets are counted as
+bootstrap deferrals rather than rejected regional replays; passenger, no-physics,
+sleeping, dimension-transition, and invalid/non-finite paths remain excluded.
+
+The interaction index is now lifecycle-driven: addressability callbacks publish the
+derived candidate; same-owner position changes refresh it; removal invalidates it before
+numeric ID reuse; cross-owner movement invalidates rather than transferring it. Packet
+ingress still performs no `ServerLevel` entity lookup prior to typed admission.
+`LivePacketDiagnostics` supplies the future exactly-once counter evidence. See
+[STAGE3_REAL_CLIENT_READINESS.md](STAGE3_REAL_CLIENT_READINESS.md) for the exact
+coordinates, interaction target, expected counters, harness method, and boundaries.
+
+Do not interpret readiness as client evidence. The next separately authorized task may
+run only the documented disposable real-client routes. Keep one worker, parallel OFF,
+Stage 3 PARTIAL, Stage 4 NOT STARTED, and do not touch chunk application/C2ME or create
+a P3 tag.
+
 ### Latest resume point — Stage 3 live adapter binding
 
 The scoped live adapter binding is complete as a **no-client** proof; Stage 3 remains

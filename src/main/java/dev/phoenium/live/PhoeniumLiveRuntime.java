@@ -64,7 +64,7 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
     private final ObjectOwnershipRegistry objects = new ObjectOwnershipRegistry(directory);
     private final Map<TaskCorrelationId, PendingPacket> packets = new ConcurrentHashMap<>();
     private final InteractionTargetIndex interactionTargets = new InteractionTargetIndex();
-    private final Map<String, Integer> liveEntityIds = new ConcurrentHashMap<>();
+    private final EntityIndexLifecycleAdapter entityIndexLifecycle = new EntityIndexLifecycleAdapter(objects, directory, interactionTargets);
     private final Map<TaskCorrelationId, ChunkWorkRequest> chunkRequests = new ConcurrentHashMap<>();
     private final java.util.Set<WorldId> observedChunkFutureWorlds = ConcurrentHashMap.newKeySet();
     private final LivePacketReplayGate movementReplay = new LivePacketReplayGate();
@@ -77,6 +77,7 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
     private ChunkCompletionGateway chunkGateway;
     private final ChunkCustody chunkCustody = new ChunkCustody();
     private PendingTick pendingTick;
+    private boolean explicitFixture;
     private State state = State.NEW;
     private long lifecycleStarts;
     private long lifecycleStops;
@@ -94,6 +95,10 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
     private long packetStaleReroutes;
     private long packetRejections;
     private long packetRecursions;
+    private long movementIngress, movementBootstrapDeferred, movementFootprintAccepted, movementFootprintRejected, movementOwnerExecution;
+    private long movementReplayCount, movementHandlerCompletion, movementRoutingReconciliation, movementSameOwnerEpochPreserved, movementStaleTicketRejected;
+    private long interactionIngress, interactionIndexHit, interactionIndexMiss, interactionIncarnationRejected, interactionOwnerAdmission;
+    private long interactionCrossOwnerRejected, interactionOwnerExecution, interactionReplay, interactionVanillaLookup, interactionHandlerCompletion, interactionStaleTicketRejected;
     private long chunkCompletionAdmissions;
     private long chunkCompletionApplications;
     private long chunkCompletionReroutes;
@@ -111,36 +116,49 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
         // required injectors each declare require=1/expect=1, so selector drift is a startup
         // failure rather than a first-client surprise or an early-hook fallback.
         try {
-            Class.forName(ServerGamePacketListenerImpl.class.getName(), true, server.getClass().getClassLoader());
+            ClassLoader loader = server.getClass().getClassLoader();
+            Class.forName(ServerGamePacketListenerImpl.class.getName(), true, loader);
+            Class.forName("net.minecraft.server.players.PlayerList", true, loader);
+            Class.forName(Entity.class.getName(), true, loader);
+            Class.forName(ServerLevel.class.getName(), true, loader);
         } catch (ClassNotFoundException impossible) {
-            throw new IllegalStateException("Minecraft packet listener class is unavailable", impossible);
+            throw new IllegalStateException("required Minecraft lifecycle class is unavailable", impossible);
         }
         Map<WorldId, RegionRoute> worldDefaults = new LinkedHashMap<>();
+        Map<RoutingKey, RegionRoute> explicitRoutes = new LinkedHashMap<>();
+        explicitFixture = ExplicitLiveTopologyFixture.enabled();
         for (ServerLevel level : server.getAllLevels()) {
             WorldId world = worldId(level);
-            RegionId region = new RegionId(world, "stage2-live-world");
             RoutingKey key = new RoutingKey(world, 0, 0);
-            RegionRuntime runtime = new RegionRuntime(region, new OwnerEpoch(0));
-            runtime.transitionTo(RegionLifecycle.READY);
+            RegionId region;
+            RegionRuntime runtime;
+            if (explicitFixture) {
+                ExplicitLiveTopologyFixture.Plan plan = ExplicitLiveTopologyFixture.plan(world, key,
+                    new TopologyGeneration(1), new OwnerEpoch(0), new OwnerEpoch(0));
+                region = plan.a();
+                runtime = readyRuntime(region);
+                RegionRuntime b = readyRuntime(plan.b());
+                runtimes.put(plan.b(), b);
+                explicitRoutes.putAll(plan.routes());
+            } else {
+                region = new RegionId(world, "stage2-live-world");
+                runtime = readyRuntime(region);
+                worldDefaults.put(world, new RegionRoute(region, new TopologyGeneration(1), runtime.ownerEpoch()));
+            }
             LiveRegion previous = regions.put(world, new LiveRegion(level, region, key, runtime));
             if (previous != null) throw new IllegalStateException("duplicate controlled world " + world.value());
             runtimes.put(region, runtime);
-            // The deliberate Stage 2 whole-world region is published as a world default only: the
-            // world carries no explicit routes, so every chunk resolves through the default. The
-            // moment explicit routes appear, missing explicit keys fail closed instead of
-            // silently inheriting this default.
-            worldDefaults.put(world, new RegionRoute(region, new TopologyGeneration(1), runtime.ownerEpoch()));
         }
         if (regions.isEmpty()) throw new IllegalStateException("no server levels available for Stage 2 live binding");
-        directory.publish(new TopologyGeneration(1), Map.of(), worldDefaults);
+        directory.publish(new TopologyGeneration(1), explicitRoutes, explicitFixture ? Map.of() : worldDefaults);
         scheduler = new RegionScheduler(runtimes, directory, barrier, this, this);
         gateway = new OwnerGateway(directory, runtimes, scheduler);
         objectGateway = new ObjectOwnerGateway(objects, directory, gateway);
         chunkGateway = new ChunkCompletionGateway(directory, gateway, chunkCustody);
-        for (ServerLevel level : server.getAllLevels()) refreshEntityBindings(level);
         state = State.RUNNING;
+        for (ServerLevel level : server.getAllLevels()) refreshEntityBindings(level);
         lifecycleStarts++;
-        logger.info("PHOENIUM_STAGE3 movement tickCount selector and interaction target selector loaded once");
+        logger.info("PHOENIUM_STAGE3 movement tickCount selector and interaction target selector loaded once; explicitFixture={}", explicitFixture);
         logStatus("started");
     }
 
@@ -216,42 +234,68 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
             chunkCompletionAdmissions, chunkCompletionApplications, chunkCompletionReroutes, chunkCompletionRejections, chunkCompletionDuplicates,
             producerThreadChunkMutations);
     }
+    public LivePacketDiagnostics packetDiagnostics() {
+        return new LivePacketDiagnostics(movementIngress, movementBootstrapDeferred, movementFootprintAccepted, movementFootprintRejected,
+            movementOwnerExecution, movementReplayCount, movementHandlerCompletion, movementRoutingReconciliation,
+            movementSameOwnerEpochPreserved, movementStaleTicketRejected, interactionIngress, interactionIndexHit,
+            interactionIndexMiss, interactionIncarnationRejected, interactionOwnerAdmission, interactionCrossOwnerRejected,
+            interactionOwnerExecution, interactionReplay, interactionVanillaLookup, interactionHandlerCompletion,
+            interactionStaleTicketRejected);
+    }
 
     /** Re-entry is valid only for the exact correlation, connection, and packet object currently replaying. */
     public boolean matchesMoveReplay(ServerGamePacketListenerImpl connection, ServerboundMovePlayerPacket packet) {
         ReplayIdentity active = replayIdentity.get();
-        return active != null && active.kind == ReplayKind.MOVE && active.connection == connection && active.packet == packet;
+        boolean match = active != null && active.kind == ReplayKind.MOVE && active.connection == connection && active.packet == packet;
+        if (match) movementReplayCount++;
+        return match;
     }
     public boolean matchesInteractReplay(ServerGamePacketListenerImpl connection, ServerboundInteractPacket packet) {
         ReplayIdentity active = replayIdentity.get();
-        return active != null && active.kind == ReplayKind.INTERACT && active.connection == connection && active.packet == packet;
+        boolean match = active != null && active.kind == ReplayKind.INTERACT && active.connection == connection && active.packet == packet;
+        if (match) interactionVanillaLookup++;
+        return match;
     }
 
     /** Called at the required valid-input seam, before resetPosition, jumping, or player movement. */
     public void admitMovePacket(ServerGamePacketListenerImpl connection, ServerboundMovePlayerPacket packet,
                                 double lastGoodX, double lastGoodY, double lastGoodZ, boolean awaitingTeleport) {
+        movementIngress++;
         ServerPlayer player = connection.player;
-        if (player == null) { packetRejections++; return; }
+        if (player == null) { packetRejections++; movementFootprintRejected++; return; }
         ObjectOwnership current = bindPlayer(player);
         LiveMovementSnapshot snapshot = LiveMovementSnapshot.capture(player, packet, lastGoodX, lastGoodY, lastGoodZ, awaitingTeleport);
-        if (!snapshot.classified()) { packetRejections++; return; }
+        if (!snapshot.classified()) {
+            if (MovementBootstrapDisposition.from(snapshot.disposition()) == MovementBootstrapDisposition.DEFER_UNTIL_TELEPORT_OR_BASELINE_CONVERGES) {
+                movementBootstrapDeferred++;
+            } else {
+                packetRejections++; movementFootprintRejected++;
+            }
+            return;
+        }
         try {
             LiveMovementAdmission.Ticket ticket = LiveMovementAdmission.admit(directory, current.owner(), snapshot.footprint());
+            movementFootprintAccepted++;
             admitPacket(connection, player, new PendingMove(this, connection, packet, current.objectId(), current.incarnation(), ticket),
                 "player-movement", current, AdmissionPolicy.REJECT);
-        } catch (RuntimeException rejected) { packetRejections++; }
+        } catch (RuntimeException rejected) { packetRejections++; movementFootprintRejected++; }
     }
 
     /** Resolves an immutable derived target reference, without calling ServerLevel.getEntityOrPart. */
     public void admitInteractPacket(ServerGamePacketListenerImpl connection, ServerboundInteractPacket packet) {
+        interactionIngress++;
         ServerPlayer player = connection.player;
         if (player == null) { packetRejections++; return; }
         ObjectOwnership playerBinding = bindPlayer(player);
         try {
             InteractionTargetRef target = interactionTargets.require(worldId(player.level()), packet.entityId());
+            interactionIndexHit++;
             LiveInteractionAdmission.Ticket ticket = LiveInteractionAdmission.admit(directory, playerBinding, target, interactionTargets);
+            interactionOwnerAdmission++;
             admitPacket(connection, player, new PendingInteract(connection, packet, ticket), "entity-interaction", playerBinding, AdmissionPolicy.REJECT);
-        } catch (RuntimeException rejected) { packetRejections++; }
+        } catch (InteractionTargetIndex.UnknownInteractionTargetException rejected) { packetRejections++; interactionIndexMiss++; }
+        catch (LiveInteractionAdmission.CrossRegionInteractionException rejected) { packetRejections++; interactionCrossOwnerRejected++; }
+        catch (RuntimeException rejected) { packetRejections++; interactionIncarnationRejected++; }
     }
 
     /**
@@ -315,21 +359,30 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
         PendingPacket packet = packets.remove(operation.correlationId());
         if (packet == null) throw new IllegalStateException("missing admitted packet " + operation.correlationId());
         if (packet instanceof PendingMove move) {
-            if (executingPlayer.incarnation() != move.playerIncarnation()) throw new IllegalStateException("stale movement player incarnation");
-            move.ticket().requireCurrent(directory, runtime.id());
+            movementOwnerExecution++;
+            try {
+                if (executingPlayer.incarnation() != move.playerIncarnation()) throw new IllegalStateException("stale movement player incarnation");
+                move.ticket().requireCurrent(directory, runtime.id());
+            } catch (RuntimeException stale) { movementStaleTicketRejected++; return; }
             try (LivePacketReplayGate.Scope gate = movementReplay.enter(move.ticket(), directory, runtime.id());
                  PacketExecutionScope ignored = enterPacketExecution(operation.correlationId(), ReplayKind.MOVE, move.connection(), move.packet())) {
                 move.execute();
                 packetExecutions++;
+                movementHandlerCompletion++;
             }
             return;
         }
         if (packet instanceof PendingInteract interact) {
-            interact.ticket().requireCurrent(directory, objects, interactionTargets, runtime.id());
-            if (!consumedInteractionReplays.add(operation.correlationId())) throw new IllegalStateException("interaction replay ticket already consumed");
+            interactionOwnerExecution++;
+            try {
+                interact.ticket().requireCurrent(directory, objects, interactionTargets, runtime.id());
+                if (!consumedInteractionReplays.add(operation.correlationId())) throw new IllegalStateException("interaction replay ticket already consumed");
+            } catch (RuntimeException stale) { interactionStaleTicketRejected++; return; }
             try (PacketExecutionScope ignored = enterPacketExecution(operation.correlationId(), ReplayKind.INTERACT, interact.connection(), interact.packet())) {
                 interact.execute();
                 packetExecutions++;
+                interactionReplay++;
+                interactionHandlerCompletion++;
             }
             return;
         }
@@ -380,28 +433,57 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
     }
     private boolean isRunning() { return state == State.RUNNING && scheduler != null && scheduler.lifecycle().acceptsSimulationWork(); }
     private static WorldId worldId(ServerLevel level) { return new WorldId(level.dimension().identifier().toString()); }
-    /**
-     * Stage 3's live admission ledger observes the authoritative entity collection only while the
-     * controlled level lease is active. Position is retained as a routing key; the temporary Stage 2
-     * world-default route deliberately keeps execution serial until geography is regionalized later.
-     */
+    private static RegionRuntime readyRuntime(RegionId region) {
+        RegionRuntime runtime = new RegionRuntime(region, new OwnerEpoch(0));
+        runtime.transitionTo(RegionLifecycle.READY);
+        return runtime;
+    }
+    /** Lifecycle callback after vanilla has made an entity addressable; it never performs a world lookup. */
+    public void onEntityAddressable(Entity entity) {
+        if (!isRunning() || !(entity.level() instanceof ServerLevel level) || entity.isRemoved()) return;
+        WorldId world = worldId(level);
+        RoutingKey key = new RoutingKey(world, entity.chunkPosition().x(), entity.chunkPosition().z());
+        try {
+            ObjectOwnership binding = entityIndexLifecycle.addressable(entity.getUUID().toString(),
+                entity instanceof ServerPlayer ? OwnedObjectKind.PLAYER : OwnedObjectKind.ENTITY,
+                world, entity.getId(), key, explicitFixture);
+        } catch (RuntimeException unavailable) {
+            // A target outside the finite explicit fixture has no derived candidate.  It cannot be
+            // rediscovered from the ServerLevel index at packet ingress.
+        }
+    }
+
+    /** A movement observation may refresh same-owner routing, but a cross-owner entity is invalidated, not transferred. */
+    public void onEntityRoutingObserved(Entity entity) {
+        if (!isRunning() || !(entity.level() instanceof ServerLevel level) || entity.isRemoved()) return;
+        WorldId world = worldId(level);
+        RoutingKey key = new RoutingKey(world, entity.chunkPosition().x(), entity.chunkPosition().z());
+        entityIndexLifecycle.routingObserved(entity.getUUID().toString(), world, entity.getId(), key);
+    }
+
+    /** Removal invalidates the network-id candidate before vanilla can later reuse its numeric ID. */
+    public void onEntityRemoved(Entity entity) {
+        if (!isRunning() || !(entity.level() instanceof ServerLevel level)) return;
+        entityIndexLifecycle.removed(entity.getUUID().toString(), worldId(level), entity.getId());
+    }
+
+    /** PlayerList placement is the required initial-ownership point before the first movement packet. */
+    public void onPlayerPlaced(ServerPlayer player) {
+        if (!isRunning()) return;
+        bindPlayer(player);
+    }
+
+    /** Lease-bound reconciliation remains a startup/audit backstop, not packet-ingress target discovery. */
     private void refreshEntityBindings(ServerLevel level) {
         WorldId world = worldId(level);
         HashSet<String> present = new HashSet<>();
         for (Entity entity : level.getAllEntities()) {
             String id = entity.getUUID().toString();
             present.add(id);
-            RoutingKey key = new RoutingKey(world, entity.chunkPosition().x(), entity.chunkPosition().z());
-            var existing = objects.current(id);
-            ObjectOwnership binding;
-            if (existing.isEmpty()) binding = objects.admit(id, entity instanceof ServerPlayer ? OwnedObjectKind.PLAYER : OwnedObjectKind.ENTITY, key);
-            else if (!existing.orElseThrow().routingKey().equals(key)) binding = objects.updateRoutingKey(id, key, existing.orElseThrow().objectEpoch());
-            else binding = existing.orElseThrow();
-            interactionTargets.publish(world, entity.getId(), binding);
-            liveEntityIds.put(id, entity.getId());
+            onEntityAddressable(entity);
         }
         for (var previous : objects.ownedInWorld(world)) if (!present.contains(previous.objectId())) {
-            Integer entityId = liveEntityIds.remove(previous.objectId());
+            Integer entityId = entityIndexLifecycle.entityId(previous.objectId());
             if (entityId != null) interactionTargets.invalidate(world, entityId, previous.objectId(), previous.incarnation());
             objects.remove(previous.objectId());
         }
@@ -410,16 +492,11 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
         WorldId world = worldId(player.level());
         String id = player.getUUID().toString();
         RoutingKey key = new RoutingKey(world, player.chunkPosition().x(), player.chunkPosition().z());
-        var existing = objects.current(id);
-        ObjectOwnership binding;
-        if (existing.isEmpty()) binding = objects.admit(id, OwnedObjectKind.PLAYER, key);
-        else if (!existing.orElseThrow().routingKey().equals(key)) binding = objects.updateRoutingKey(id, key, existing.orElseThrow().objectEpoch());
-        else binding = existing.orElseThrow();
-        interactionTargets.publish(world, player.getId(), binding);
-        liveEntityIds.put(id, player.getId());
-        return binding;
+        return entityIndexLifecycle.addressable(id, OwnedObjectKind.PLAYER, world, player.getId(), key, explicitFixture);
     }
-    private void logStatus(String event) { logger.info("PHOENIUM_STAGE2 {} {}", event, diagnostics().toLogLine()); }
+    private void logStatus(String event) {
+        logger.info("PHOENIUM_STAGE2 {} {} packets={}", event, diagnostics().toLogLine(), packetDiagnostics().toLogLine());
+    }
 
     private sealed interface PendingPacket permits PendingMove, PendingInteract {
         void execute();
@@ -440,8 +517,10 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
         if (player == null) return;
         ObjectOwnership current = objects.current(objectId).orElseThrow(() -> new IllegalStateException("moving object absent " + objectId));
         RoutingKey actual = new RoutingKey(worldId(player.level()), player.chunkPosition().x(), player.chunkPosition().z());
-        if (current.routingKey().equals(actual)) return;
-        objects.updateRoutingKey(objectId, actual, current.objectEpoch());
+        ObjectOwnership settled = current.routingKey().equals(actual) ? current
+            : objects.updateRoutingKey(objectId, actual, current.objectEpoch());
+        movementRoutingReconciliation++;
+        if (settled.objectEpoch().equals(current.objectEpoch())) movementSameOwnerEpochPreserved++;
     }
     private record PendingInteract(ServerGamePacketListenerImpl connection, ServerboundInteractPacket packet,
                                    LiveInteractionAdmission.Ticket ticket) implements PendingPacket {

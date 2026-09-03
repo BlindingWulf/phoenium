@@ -1,5 +1,24 @@
 # Stage 3 server evidence
 
+## 2026-09-03 explicit-readiness no-client proof
+
+The final readiness build ran `gradlew.bat clean build --no-daemon` with **75 tests,
+zero failures or errors**, followed by a clean `git diff --check`. No client, movement
+packet, or interaction packet was sent.
+
+The final artifact booted in the disposable Fabric 26.2 dedicated server using the
+literal JVM argument `-Dphoenium.stage3.explicitTopology=true`. It reached `Done` and
+logged the required forced selector/lifecycle-Mixin load marker with
+`explicitFixture=true`. Its start and stop diagnostics showed `workers=1`,
+`parallel=OFF`, `fallback=0`, `bypass=0`, `ownershipViolations=0`, `unleased=0`, and
+zero packet counters. The explicit fixture has no `worldDefaults` routes. Local RCON
+`stop` returned `Stopping the server`; the final log contains the Phoenium stopped
+marker, saved worlds, and `Thread RCON Listener stopped`.
+
+This proves pre-client initialization only. The prepared movement and interaction
+actions remain unexecuted; use [STAGE3_REAL_CLIENT_READINESS.md](STAGE3_REAL_CLIENT_READINESS.md)
+for the separately authorized future harness.
+
 ## 2026-09-03 live-adapter binding proof (no client)
 
 `gradlew.bat clean build --no-daemon` passed with **70 tests, zero failures, errors, or
