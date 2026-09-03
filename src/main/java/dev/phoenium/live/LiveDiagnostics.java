@@ -11,7 +11,7 @@ public record LiveDiagnostics(
     int ownedEntities, int ownedPlayers, long packetAdmissions, long packetExecutions,
     long packetStaleReroutes, long packetRejections, long packetRecursions,
     long chunkCompletionAdmissions, long chunkCompletionApplications, long chunkCompletionReroutes,
-    long chunkCompletionRejections, long producerThreadChunkMutations) {
+    long chunkCompletionRejections, long chunkCompletionDuplicates, long producerThreadChunkMutations) {
     public String toLogLine() {
         return "lifecycle=" + lifecycle + " scheduler=" + scheduler + " workers=" + simulationWorkers
             + " parallel=OFF worlds=" + controlledWorlds + " leases=" + activeLeases + " intercepted=" + intercepted
@@ -22,6 +22,7 @@ public record LiveDiagnostics(
             + " packetRejections=" + packetRejections + " packetRecursions=" + packetRecursions
             + " chunkAdmissions=" + chunkCompletionAdmissions + " chunkApplications=" + chunkCompletionApplications
             + " chunkReroutes=" + chunkCompletionReroutes + " chunkRejections=" + chunkCompletionRejections
+            + " chunkDuplicates=" + chunkCompletionDuplicates
             + " producerChunkMutations=" + producerThreadChunkMutations;
     }
 }

@@ -38,6 +38,29 @@ Stage 1/P2 regressions pass; dedicated-server/client gates were not rerun. Histo
 evidence is retained without promotion. Stage 3 remains PARTIAL, no P3 tag is created,
 parallel gameplay is off, and Stage 4/compatibility work has not started.
 
+### 2026-09-03 Stage 3 ownership publication invariants (current resume point)
+
+The deterministic ownership-publication layer is now enforced and green. Ordinary
+movement is topology enclosure; a same-RegionId routing/chunk-key change does not bump
+the object epoch; only a real owner change bumps it exactly once at the quiescent
+publication boundary. The object ledger is derived and `RegionDirectory` is
+authoritative; every mutable operation revalidates at execution time; the active lease
+domain is frozen while a transition is pending; missing explicit routes fail closed
+(no world-default fallback as hidden ownership authority); the scheduler stays generic
+behind typed executor/validator seams. `getChunkFuture` remains diagnostic only:
+`ChunkCustody` models the request/ready/queued/claimed/applied stages but does not
+claim control over vanilla chunk installation.
+
+Verification: `./gradlew.bat clean build --no-daemon` passed with **37 tests, 0
+failures, 0 errors, 0 skips** (`CoreAcceptanceTest` 20, `Stage3OwnershipTest` 17,
+including the explicit D-01..D-04 and M-01..M-06 regressions and the custody-stage
+regression). `git diff --check` is clean.
+
+**OPEN — live-geographic huge-delta / projectile movement**: the topology-enclosure
+model has no live acceptance evidence for huge-delta or projectile-style movement.
+Do not mark that area PASS and never create a false P3. Stage 3 remains **PARTIAL**;
+parallel workers stay OFF (simulation workers = 1) and Stage 4 has not started.
+
 ## Locked decisions
 
 - Treat current Folia 26.2 semantics as primary; archived Ruthenium is a defect and regression reference.

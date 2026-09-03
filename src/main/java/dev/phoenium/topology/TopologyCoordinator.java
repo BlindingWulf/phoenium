@@ -13,11 +13,17 @@ public final class TopologyCoordinator {
     private final RegionDirectory directory;
     private final Map<dev.phoenium.region.RegionId, RegionRuntime> runtimes;
     private final OwnerGateway gateway;
+    private final dev.phoenium.ownership.ObjectOwnershipRegistry objects;
     private final ReentrantLock metadataGate = new ReentrantLock();
     private Transition pending;
 
     public TopologyCoordinator(RegionDirectory directory, Map<dev.phoenium.region.RegionId, RegionRuntime> runtimes, OwnerGateway gateway) {
-        this.directory = directory; this.runtimes = runtimes; this.gateway = gateway;
+        this(directory, runtimes, gateway, null);
+    }
+
+    /** A non-null registry is reconciled at the quiescent boundary so derived object bindings follow the published topology exactly once. */
+    public TopologyCoordinator(RegionDirectory directory, Map<dev.phoenium.region.RegionId, RegionRuntime> runtimes, OwnerGateway gateway, dev.phoenium.ownership.ObjectOwnershipRegistry objects) {
+        this.directory = directory; this.runtimes = runtimes; this.gateway = gateway; this.objects = objects;
     }
     public void request(Transition transition) {
         metadataGate.lock();
@@ -37,6 +43,7 @@ public final class TopologyCoordinator {
             Map<RoutingKey, RegionRoute> routes = pending.owners().entrySet().stream().collect(java.util.stream.Collectors.toUnmodifiableMap(
                 Map.Entry::getKey, entry -> new RegionRoute(entry.getValue(), next, runtime(entry.getValue()).ownerEpoch().next())));
             directory.publish(next, routes);
+            if (objects != null) objects.reconcileTopology();
             pending.participants().forEach(id -> runtime(id).finishTransition(runtime(id).ownerEpoch().next()));
             pending.participants().forEach(id -> gateway.releaseTransitionMailbox(runtime(id)));
             pending = null;

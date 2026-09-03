@@ -1,5 +1,6 @@
 package dev.phoenium;
 
+import dev.phoenium.core.WorldId;
 import dev.phoenium.diagnostics.BlockingOwnerWork;
 import dev.phoenium.ownership.OperationCategory;
 import dev.phoenium.ownership.OwnershipContext;
@@ -68,7 +69,44 @@ class CoreAcceptanceTest {
         var first = planner.mergePlan(holders, 2);
         assertEquals(first, planner.mergePlan(holders, 2), "seed=" + seed);
         assertEquals(holders, first.stream().flatMap(Set::stream).collect(java.util.stream.Collectors.toSet()));
-        assertTrue(first.stream().allMatch(component -> planner.bufferClosure(component, 2)));
+        // Components are maximal: no two keys in different components are within the merge radius.
+        for (int i = 0; i < first.size(); i++) {
+            for (int j = i + 1; j < first.size(); j++) {
+                for (dev.phoenium.topology.RoutingKey a : first.get(i)) {
+                    for (dev.phoenium.topology.RoutingKey b : first.get(j)) {
+                        assertFalse(TopologyPlanner.adjacentWithin(a, b, 2), "seed=" + seed);
+                    }
+                }
+            }
+        }
+    }
+
+    @Test void regressionD03_bufferClosureRequiresFullNeighborhoodContainment() {
+        TopologyPlanner planner = new TopologyPlanner();
+        WorldId world = new WorldId("test");
+        dev.phoenium.topology.RoutingKey center = new dev.phoenium.topology.RoutingKey(world, 0, 0);
+        // Witness 1: a singleton at radius 1 misses all eight neighbors.
+        assertFalse(planner.bufferClosure(Set.of(center), 1));
+        // Radius 0 requires only the key itself.
+        assertTrue(planner.bufferClosure(Set.of(center), 0));
+        // A full 3x3 square is closed at radius 1.
+        Set<dev.phoenium.topology.RoutingKey> square = new java.util.TreeSet<>();
+        for (int x = -1; x <= 1; x++) for (int z = -1; z <= 1; z++) square.add(new dev.phoenium.topology.RoutingKey(world, x, z));
+        assertTrue(planner.bufferClosure(square, 1));
+        // Removing the center breaks closure for every surviving member.
+        java.util.Set<dev.phoenium.topology.RoutingKey> hollow = new java.util.TreeSet<>(square);
+        hollow.remove(center);
+        assertFalse(planner.bufferClosure(hollow, 1));
+        // A 1x3 row leaves every member's off-axis neighbors outside.
+        Set<dev.phoenium.topology.RoutingKey> row = Set.of(
+            new dev.phoenium.topology.RoutingKey(world, -1, 0), center, new dev.phoenium.topology.RoutingKey(world, 1, 0));
+        assertFalse(planner.bufferClosure(row, 1));
+        // Closure is world-local: a complete square in another world does not supply missing neighbors.
+        WorldId other = new WorldId("other");
+        Set<dev.phoenium.topology.RoutingKey> crossWorld = new java.util.TreeSet<>();
+        crossWorld.add(center);
+        square.forEach(key -> crossWorld.add(new dev.phoenium.topology.RoutingKey(other, key.x(), key.z())));
+        assertFalse(planner.bufferClosure(crossWorld, 1));
     }
 
     @Test void c04_transitionWaitsForLeaseBoundary() {

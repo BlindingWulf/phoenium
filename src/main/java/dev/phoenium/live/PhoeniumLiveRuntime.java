@@ -5,6 +5,7 @@ import dev.phoenium.core.TopologyGeneration;
 import dev.phoenium.core.WorldId;
 import dev.phoenium.failure.FailureBarrier;
 import dev.phoenium.chunk.ChunkCompletionGateway;
+import dev.phoenium.chunk.ChunkCustody;
 import dev.phoenium.chunk.ChunkWorkRequest;
 import dev.phoenium.ownership.ObjectOwnershipRegistry;
 import dev.phoenium.ownership.ObjectOwnership;
@@ -65,6 +66,7 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
     private OwnerGateway gateway;
     private ObjectOwnerGateway objectGateway;
     private ChunkCompletionGateway chunkGateway;
+    private final ChunkCustody chunkCustody = new ChunkCustody();
     private PendingTick pendingTick;
     private State state = State.NEW;
     private long lifecycleStarts;
@@ -87,6 +89,7 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
     private long chunkCompletionApplications;
     private long chunkCompletionReroutes;
     private long chunkCompletionRejections;
+    private long chunkCompletionDuplicates;
     private long producerThreadChunkMutations;
     private long sequence;
     private final long injectedFailureAt = Long.getLong("phoenium.test.failLiveTickAt", -1L);
@@ -115,7 +118,7 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
         scheduler = new RegionScheduler(runtimes, directory, barrier, this, this);
         gateway = new OwnerGateway(directory, runtimes, scheduler);
         objectGateway = new ObjectOwnerGateway(objects, directory, gateway);
-        chunkGateway = new ChunkCompletionGateway(directory, gateway);
+        chunkGateway = new ChunkCompletionGateway(directory, gateway, chunkCustody);
         state = State.RUNNING;
         lifecycleStarts++;
         logStatus("started");
@@ -190,7 +193,8 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
             regions.size(), activeLeases, intercepts, dispatches, executions, duplicates, unexpectedBypasses, fallbacks,
             ownershipViolations, unleasedExecutions, hardBarriers, barrier.tripped(), objects.liveCount(), objects.playerCount(),
             packetAdmissions, packetExecutions, packetStaleReroutes, packetRejections, packetRecursions,
-            chunkCompletionAdmissions, chunkCompletionApplications, chunkCompletionReroutes, chunkCompletionRejections, producerThreadChunkMutations);
+            chunkCompletionAdmissions, chunkCompletionApplications, chunkCompletionReroutes, chunkCompletionRejections, chunkCompletionDuplicates,
+            producerThreadChunkMutations);
     }
 
     /** Mixin-visible marker check; this is the only re-entry exemption and it is scoped to one correlation id. */
@@ -200,11 +204,10 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
     public void admitMovePacket(ServerGamePacketListenerImpl connection, ServerboundMovePlayerPacket packet) {
         ServerPlayer player = connection.player;
         if (player == null) { packetRejections++; return; }
+        // The client-proposed destination is never published before transfer; the binding follows the
+        // authoritative position and is reconciled against the actual result after the handler runs.
         ObjectOwnership current = bindPlayer(player);
-        RoutingKey destination = new RoutingKey(worldId(player.level()), Math.floorDiv((int) Math.floor(packet.getX(player.getX())), 16), Math.floorDiv((int) Math.floor(packet.getZ(player.getZ())), 16));
-        // Movement establishes its transfer boundary before vanilla's position mutation, never as a post-mutation discovery.
-        if (!current.routingKey().equals(destination)) current = objects.move(current.objectId(), destination);
-        admitPacket(connection, player, new PendingMove(connection, packet), "player-movement", current);
+        admitPacket(connection, player, new PendingMove(this, connection, packet, current.objectId()), "player-movement", current);
     }
 
     /** Representative real interaction path: ServerboundInteractPacket / ServerPlayer.interactOn. */
@@ -225,7 +228,17 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
         ChunkWorkRequest request = new ChunkWorkRequest(world, new RoutingKey(world, x, z), sequence,
             directory.snapshot().generation(), "base-server-chunk-future-" + status.getName(), correlation);
         chunkRequests.put(correlation, request);
-        future.whenComplete((ignoredResult, ignoredFailure) -> admitChunkCompletion(request));
+        chunkCustody.request(ChunkCustody.id(request));
+        future.whenComplete((ignoredResult, failure) -> {
+            if (failure != null) {
+                // The producer failed before completion: the custody ledger records the failure and
+                // the request identity is dropped. No owner work is ever fabricated for it.
+                chunkCustody.fail(ChunkCustody.id(request));
+                chunkRequests.remove(request.correlationId());
+                return;
+            }
+            admitChunkCompletion(request);
+        });
     }
 
     private void admitChunkCompletion(ChunkWorkRequest request) {
@@ -269,10 +282,28 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
 
     @Override
     public void execute(RegionRuntime runtime, TaskPayload.ChunkCompletion completion) {
-        ChunkWorkRequest request = chunkRequests.remove(completion.correlationId());
-        if (request == null || request.requestGeneration() != completion.requestGeneration()) throw new IllegalStateException("missing or stale chunk completion " + completion.correlationId());
-        RegionRoute current = directory.resolve(request.chunkKey()).orElseThrow();
+        ChunkWorkRequest request = chunkRequests.get(completion.correlationId());
+        if (request == null || request.requestGeneration() != completion.requestGeneration()) {
+            chunkRequests.remove(completion.correlationId());
+            throw new IllegalStateException("missing or stale chunk completion " + completion.correlationId());
+        }
+        ChunkCustody.CustodyId custodyId = ChunkCustody.id(request);
+        RegionRoute current = directory.resolve(request.chunkKey()).orElse(null);
+        if (current == null) {
+            // The key no longer resolves at this quiescent boundary. Drop the completion without
+            // fabricating an EmptyChunk/AIR/BEDROCK state: stale ownership is not a disk failure.
+            chunkRequests.remove(completion.correlationId());
+            chunkCustody.cancel(custodyId);
+            return;
+        }
         if (!current.region().equals(runtime.id())) throw new IllegalStateException("chunk completion reached foreign owner");
+        if (!chunkCustody.claim(custodyId, runtime.id())) {
+            // The claim gate is the exactly-once application boundary; a second claim is duplicate evidence.
+            chunkCompletionDuplicates++;
+            return;
+        }
+        chunkRequests.remove(completion.correlationId());
+        chunkCustody.apply(custodyId);
         // This observer has no base-game result-application privilege; the leased owner records only a validated completion admission.
         chunkCompletionApplications++;
     }
@@ -305,7 +336,7 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
             RoutingKey key = new RoutingKey(world, entity.chunkPosition().x(), entity.chunkPosition().z());
             var existing = objects.current(id);
             if (existing.isEmpty()) objects.admit(id, entity instanceof ServerPlayer ? OwnedObjectKind.PLAYER : OwnedObjectKind.ENTITY, key);
-            else if (!existing.orElseThrow().routingKey().equals(key)) objects.move(id, key);
+            else if (!existing.orElseThrow().routingKey().equals(key)) objects.updateRoutingKey(id, key, existing.orElseThrow().objectEpoch());
         }
         for (var previous : objects.ownedInWorld(world)) if (!present.contains(previous.objectId())) objects.remove(previous.objectId());
     }
@@ -315,7 +346,7 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
         RoutingKey key = new RoutingKey(world, player.chunkPosition().x(), player.chunkPosition().z());
         var existing = objects.current(id);
         if (existing.isEmpty()) return objects.admit(id, OwnedObjectKind.PLAYER, key);
-        if (!existing.orElseThrow().routingKey().equals(key)) return objects.move(id, key);
+        if (!existing.orElseThrow().routingKey().equals(key)) return objects.updateRoutingKey(id, key, existing.orElseThrow().objectEpoch());
         return existing.orElseThrow();
     }
     private void logStatus(String event) { logger.info("PHOENIUM_STAGE2 {} {}", event, diagnostics().toLogLine()); }
@@ -323,8 +354,23 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
     private sealed interface PendingPacket permits PendingMove, PendingInteract {
         void execute();
     }
-    private record PendingMove(ServerGamePacketListenerImpl connection, ServerboundMovePlayerPacket packet) implements PendingPacket {
-        @Override public void execute() { ((ServerGamePacketListenerInvoker) connection).phoenium$invokeMovePlayer(packet); }
+    private record PendingMove(PhoeniumLiveRuntime runtime, ServerGamePacketListenerImpl connection, ServerboundMovePlayerPacket packet, String objectId) implements PendingPacket {
+        @Override public void execute() {
+            ((ServerGamePacketListenerInvoker) connection).phoenium$invokeMovePlayer(packet);
+            runtime.reconcileAfterMove(objectId, connection.player);
+        }
+    }
+    /**
+     * Runs under the owning region lease after vanilla has settled the position. The routing key follows
+     * the authoritative result, never the client proposal; a same-owner settle preserves the object epoch
+     * and a cross-owner settle fails closed instead of inventing a transfer.
+     */
+    private void reconcileAfterMove(String objectId, ServerPlayer player) {
+        if (player == null) return;
+        ObjectOwnership current = objects.current(objectId).orElseThrow(() -> new IllegalStateException("moving object absent " + objectId));
+        RoutingKey actual = new RoutingKey(worldId(player.level()), player.chunkPosition().x(), player.chunkPosition().z());
+        if (current.routingKey().equals(actual)) return;
+        objects.updateRoutingKey(objectId, actual, current.objectEpoch());
     }
     private record PendingInteract(ServerGamePacketListenerImpl connection, ServerboundInteractPacket packet) implements PendingPacket {
         @Override public void execute() { ((ServerGamePacketListenerInvoker) connection).phoenium$invokeInteract(packet); }

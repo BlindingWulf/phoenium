@@ -1,6 +1,8 @@
 package dev.phoenium.ownership;
 
 import dev.phoenium.scheduler.OwnerGateway;
+import dev.phoenium.scheduler.RegionScheduler;
+import dev.phoenium.region.RegionRuntime;
 import dev.phoenium.task.RegionTaskEnvelope;
 import dev.phoenium.task.TaskPayload;
 import dev.phoenium.topology.RegionRoute;
@@ -16,6 +18,7 @@ public final class ObjectOwnerGateway {
 
     public ObjectOwnerGateway(ObjectOwnershipRegistry objects, dev.phoenium.topology.RegionDirectory directory, OwnerGateway gateway) {
         this.objects = Objects.requireNonNull(objects, "objects"); this.directory = Objects.requireNonNull(directory, "directory"); this.gateway = Objects.requireNonNull(gateway, "gateway");
+        gateway.scheduler().installObjectDeliveryValidator(this);
     }
     public Delivery submit(OwnedObjectEnvelope requested) {
         ObjectOwnership current = objects.current(requested.objectId()).orElse(null);
@@ -37,5 +40,22 @@ public final class ObjectOwnerGateway {
     }
     public long staleReroutes() { return staleReroutes; }
     public long staleRejections() { return staleRejections; }
+    /**
+     * Runs immediately before mutation, after the owner inbox has been polled. An envelope earns
+     * no permanent authority by being queued in a former owner's inbox.
+     */
+    public boolean revalidateForExecution(RegionRuntime runtime, RegionTaskEnvelope queued) {
+        if (!(queued.payload() instanceof TaskPayload.OwnedObjectOperation operation)) return true;
+        ObjectOwnership current = objects.current(operation.objectId()).orElse(null);
+        boolean valid = current != null
+            && current.objectEpoch().equals(operation.expectedObjectEpoch())
+            && current.owner().equals(runtime.id())
+            && directory.resolve(current.routingKey()).map(route -> route.region().equals(runtime.id())).orElse(false);
+        if (valid) return true;
+        OwnedObjectEnvelope retry = new OwnedObjectEnvelope(operation.objectId(), operation.expectedObjectEpoch(), operation.operationKind(),
+            queued.origin(), operation.correlationId(), queued.sequence(), queued.admissionPolicy());
+        submit(retry);
+        return false;
+    }
     public enum Delivery { QUEUED, REROUTED, REJECTED_STALE, REJECTED_ABSENT, REJECTED_GATEWAY }
 }

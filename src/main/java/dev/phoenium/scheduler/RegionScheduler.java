@@ -12,6 +12,7 @@ import dev.phoenium.task.RegionTaskEnvelope;
 import dev.phoenium.task.TaskPayload;
 import dev.phoenium.topology.RegionDirectory;
 import dev.phoenium.ownership.ObjectOperationExecutor;
+import dev.phoenium.ownership.ObjectOwnerGateway;
 import java.util.Comparator;
 import java.util.Map;
 
@@ -24,6 +25,8 @@ public final class RegionScheduler {
     private final ObjectOperationExecutor objectOperationExecutor;
     private SchedulerLifecycle lifecycle = SchedulerLifecycle.RUNNING;
     private long advances;
+    private ObjectOwnerGateway objectDeliveryValidator;
+    private OwnerGateway locationValidator;
 
     public RegionScheduler(Map<dev.phoenium.region.RegionId, RegionRuntime> runtimes, RegionDirectory directory, FailureBarrier barrier) {
         this(runtimes, directory, barrier, null, null);
@@ -40,6 +43,10 @@ public final class RegionScheduler {
     public SchedulerLifecycle lifecycle() { return lifecycle; }
     public FailureBarrier failureBarrier() { return barrier; }
     public long advances() { return advances; }
+    /** Installed by the typed object gateway; validation remains at envelope delivery, never ingress only. */
+    public void installObjectDeliveryValidator(ObjectOwnerGateway validator) { this.objectDeliveryValidator = validator; }
+    /** Installed by the generic owner gateway; every location task revalidates at execution, never ingress only. */
+    public void installLocationValidator(OwnerGateway validator) { this.locationValidator = validator; }
     public void quiesce() { if (lifecycle == SchedulerLifecycle.RUNNING) lifecycle = SchedulerLifecycle.QUIESCING; }
     /** Shutdown never drains envelopes on the caller thread; pending work stays unexecuted. */
     public void stop() { if (lifecycle != SchedulerLifecycle.FAILED) lifecycle = SchedulerLifecycle.STOPPING; }
@@ -52,6 +59,11 @@ public final class RegionScheduler {
         if (!lifecycle.acceptsSimulationWork() || runtime.transitioning()) return false;
         RegionTaskEnvelope envelope = runtime.poll().orElse(null);
         if (envelope == null) return false;
+        if (envelope.payload() instanceof TaskPayload.OwnedObjectOperation) {
+            if (objectDeliveryValidator == null || !objectDeliveryValidator.revalidateForExecution(runtime, envelope)) return true;
+        } else {
+            if (locationValidator == null || !locationValidator.revalidateLocationForExecution(runtime, envelope)) return true;
+        }
         try (RegionLease lease = runtime.leases().acquire(); OwnershipContext.Scope ignored = OwnershipContext.enter(runtime.id(), lease.epoch(), OperationCategory.OWNER_TASK)) {
             runtime.transitionTo(RegionLifecycle.TICKING);
             lease.requireCurrent();

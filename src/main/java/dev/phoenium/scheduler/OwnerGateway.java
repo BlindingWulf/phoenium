@@ -15,7 +15,10 @@ public final class OwnerGateway {
 
     public OwnerGateway(RegionDirectory directory, Map<dev.phoenium.region.RegionId, RegionRuntime> runtimes, RegionScheduler scheduler) {
         this.directory = directory; this.runtimes = runtimes; this.scheduler = scheduler;
+        scheduler.installLocationValidator(this);
     }
+    /** Exposed only to install typed delivery revalidation; it is not a task execution escape hatch. */
+    public RegionScheduler scheduler() { return scheduler; }
     public Delivery submit(RegionTaskEnvelope envelope) {
         if (!scheduler.lifecycle().acceptsSimulationWork()) return Delivery.REJECTED_SCHEDULER_STOPPED;
         RegionRoute route = directory.resolve(envelope.routingKey()).orElseThrow(() -> new IllegalArgumentException("unknown routing key " + envelope.routingKey()));
@@ -31,6 +34,20 @@ public final class OwnerGateway {
         }
         runtime.enqueue(current);
         return stale ? Delivery.REROUTED : Delivery.QUEUED;
+    }
+    /**
+     * Runs immediately before a generic location task mutates anything, after the owner inbox has been
+     * polled. A queued envelope never keeps authority over a key whose current route names another
+     * owner: REJECT policies drop it, other policies reroute it through current directory resolution,
+     * and an unresolvable key fails closed. A same-owner generation/epoch refresh keeps the task valid.
+     */
+    public boolean revalidateLocationForExecution(RegionRuntime runtime, RegionTaskEnvelope queued) {
+        RegionRoute route = directory.resolve(queued.routingKey()).orElse(null);
+        if (route == null) return false;
+        if (route.region().equals(runtime.id())) return true;
+        if (queued.admissionPolicy() == AdmissionPolicy.REJECT) return false;
+        submit(queued);
+        return false;
     }
     public enum Delivery { QUEUED, REROUTED, DEFERRED, REJECTED_STALE, REJECTED_TRANSITION, REJECTED_SCHEDULER_STOPPED }
 
