@@ -3,6 +3,7 @@ package dev.phoenium;
 import com.mojang.brigadier.CommandDispatcher;
 import com.mojang.brigadier.arguments.IntegerArgumentType;
 import com.mojang.brigadier.arguments.StringArgumentType;
+import dev.phoenium.live.ChunkRuntimeTrace;
 import dev.phoenium.live.PhoeniumLiveRuntime;
 import net.fabricmc.api.DedicatedServerModInitializer;
 import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback;
@@ -10,6 +11,8 @@ import net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.Commands;
 import net.minecraft.network.chat.Component;
+import net.minecraft.server.level.ServerLevel;
+import net.minecraft.world.level.chunk.status.ChunkStatus;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -52,6 +55,38 @@ public final class Phoenium implements DedicatedServerModInitializer {
                                 context.getSource().sendSuccess(() -> Component.literal(response), false);
                                 return 1;
                             }))))));
+        if (ChunkRuntimeTrace.enabled()) {
+            dispatcher.register(Commands.literal("phoenium")
+                .then(Commands.literal("chunktrace")
+                    .then(Commands.literal("load")
+                        .then(Commands.argument("x", IntegerArgumentType.integer())
+                            .then(Commands.argument("z", IntegerArgumentType.integer())
+                                .executes(context -> {
+                                    ServerLevel level = context.getSource().getLevel();
+                                    int x = IntegerArgumentType.getInteger(context, "x");
+                                    int z = IntegerArgumentType.getInteger(context, "z");
+                                    // Test-only request: do not wait, replace, wrap, or alter the
+                                    // genuine vanilla future. The trace observes its normal path.
+                                    level.getChunkSource().getChunkFuture(x, z, ChunkStatus.FULL, true);
+                                    String response = "chunkTrace request=QUEUED world="
+                                        + level.dimension().identifier() + " chunk=" + x + "," + z;
+                                    context.getSource().sendSuccess(() -> Component.literal(response), false);
+                                    return 1;
+                                }))))
+                    .then(Commands.literal("status")
+                        .then(Commands.argument("x", IntegerArgumentType.integer())
+                            .then(Commands.argument("z", IntegerArgumentType.integer())
+                                .executes(context -> {
+                                    ServerLevel level = context.getSource().getLevel();
+                                    int x = IntegerArgumentType.getInteger(context, "x");
+                                    int z = IntegerArgumentType.getInteger(context, "z");
+                                    String response = ChunkRuntimeTrace.status(
+                                        level.dimension().identifier().toString(), x, z)
+                                        + " vanillaPath=observed-future-and-trace-only";
+                                    context.getSource().sendSuccess(() -> Component.literal(response), false);
+                                    return 1;
+                                }))))));
+        }
     }
 
     public static PhoeniumLiveRuntime liveRuntime() { return LIVE; }

@@ -31,6 +31,12 @@ Authoritative evidence paths (ignored disposable outputs):
 - `.stage2-server-live1/stage3-p2-normal-20260903-072138.log`
 - `.stage2-server-live1/stage3-p2-failure-20260903-072434.log`
 
+For empirical Minecraft 26.2 chunk runtime stage evidence, read
+`docs/STAGE3_CHUNK_RUNTIME_EVIDENCE.md` and
+`docs/STAGE3_CHUNK_RUNTIME_MAP.md`. The generated summary and raw selected
+traces are under `build/client-gametest/evidence/` after
+`runStage3ChunkTrace`.
+
 ## B. Completed P3 gates
 
 | Gate | Result | Evidence |

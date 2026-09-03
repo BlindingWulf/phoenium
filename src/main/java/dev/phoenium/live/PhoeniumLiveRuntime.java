@@ -13,6 +13,7 @@ import dev.phoenium.ownership.ObjectOperationExecutor;
 import dev.phoenium.ownership.ObjectOwnerGateway;
 import dev.phoenium.ownership.OwnedObjectEnvelope;
 import dev.phoenium.ownership.OwnedObjectKind;
+import dev.phoenium.ownership.OwnershipContext;
 import dev.phoenium.mixin.ServerGamePacketListenerInvoker;
 import dev.phoenium.region.RegionId;
 import dev.phoenium.region.RegionLifecycle;
@@ -156,6 +157,7 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
         objectGateway = new ObjectOwnerGateway(objects, directory, gateway);
         chunkGateway = new ChunkCompletionGateway(directory, gateway, chunkCustody);
         state = State.RUNNING;
+        ChunkRuntimeTrace.start();
         for (ServerLevel level : server.getAllLevels()) refreshEntityBindings(level);
         lifecycleStarts++;
         logger.info("PHOENIUM_STAGE3 movement tickCount selector and interaction target selector loaded once; explicitFixture={}", explicitFixture);
@@ -223,6 +225,7 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
         state = State.STOPPED;
         lifecycleStops++;
         logStatus("stopped");
+        ChunkRuntimeTrace.finish();
     }
 
     public LiveDiagnostics diagnostics() {
@@ -259,6 +262,25 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
         return "route=RESOLVED world=" + world.value() + " chunk=" + x + "," + z
             + " region=" + route.region().value() + " generation=" + route.generation().value()
             + " ownerEpoch=" + route.ownerEpoch().value() + " explicitFixture=" + explicitFixture;
+    }
+
+    /**
+     * Snapshot used only by the gated chunk trace.  A context is evidence of an active lease;
+     * neither the route nor the thread identity grants authority to the observer.
+     */
+    public ChunkRuntimeTrace.RouteContext chunkTraceRoute(String worldName, int x, int z) {
+        WorldId world = new WorldId(worldName);
+        RegionRoute route = directory.resolve(new RoutingKey(world, x, z)).orElse(null);
+        var active = OwnershipContext.current();
+        boolean hasContext = active.isPresent();
+        String contextRegion = active.map(value -> value.region().value()).orElse(null);
+        long leaseEpoch = active.map(value -> value.lease().value()).orElse(-1L);
+        if (route == null) {
+            return new ChunkRuntimeTrace.RouteContext(false, "UNRESOLVED", -1, -1,
+                hasContext, hasContext, contextRegion, leaseEpoch);
+        }
+        return new ChunkRuntimeTrace.RouteContext(true, route.region().value(), route.generation().value(),
+            route.ownerEpoch().value(), hasContext, hasContext, contextRegion, leaseEpoch);
     }
 
     /** Re-entry is valid only for the exact correlation, connection, and packet object currently replaying. */

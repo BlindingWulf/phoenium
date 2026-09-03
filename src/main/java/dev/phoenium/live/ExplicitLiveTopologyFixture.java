@@ -18,6 +18,8 @@ public final class ExplicitLiveTopologyFixture {
     public static final String PROPERTY = "phoenium.stage3.explicitTopology";
     public static final int A_RADIUS = 4;
     public static final int B_WIDTH = 4;
+    /** The gated trace target sits outside the server's persistent spawn area. */
+    public static final int TRACE_B_WIDTH = 28;
     private ExplicitLiveTopologyFixture() { }
 
     public static boolean enabled() { return Boolean.getBoolean(PROPERTY); }
@@ -33,7 +35,8 @@ public final class ExplicitLiveTopologyFixture {
                 routes.put(key, new RegionRoute(a, generation, aEpoch));
             }
         }
-        for (int x = spawnAnchor.x() + A_RADIUS + 1; x <= spawnAnchor.x() + A_RADIUS + B_WIDTH; x++) {
+        int bWidth = Boolean.getBoolean("phoenium.stage3.chunkTrace") ? TRACE_B_WIDTH : B_WIDTH;
+        for (int x = spawnAnchor.x() + A_RADIUS + 1; x <= spawnAnchor.x() + A_RADIUS + bWidth; x++) {
             for (int z = spawnAnchor.z() - A_RADIUS; z <= spawnAnchor.z() + A_RADIUS; z++) {
                 RoutingKey key = new RoutingKey(world, x, z);
                 if (routes.put(key, new RegionRoute(b, generation, bEpoch)) != null) {

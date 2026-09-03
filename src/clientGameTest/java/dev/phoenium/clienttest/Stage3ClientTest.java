@@ -24,10 +24,15 @@ import java.nio.ByteOrder;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
 import java.nio.file.StandardOpenOption;
+import java.time.Instant;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -46,9 +51,14 @@ public final class Stage3ClientTest implements FabricClientGameTest {
     private static final String SERVER_ADDRESS = System.getProperty("phoenium.test.serverAddress", "127.0.0.1:25565");
     private static final int SERVER_START_TIMEOUT_TICKS = 1200;
     private static final int CLIENT_CONNECT_TIMEOUT_TICKS = 1200;
+    private static final int CHUNK_TRACE_X = 32;
+    private static final int CHUNK_TRACE_Z = 4;
+    private static final int CHUNK_TRACE_TIMEOUT_TICKS = 1200;
     private static final Pattern MOVE_SEGMENT = Pattern.compile("move\\[([^]]*)\\]");
     private static final Pattern INTERACT_SEGMENT = Pattern.compile("interact\\[([^]]*)\\]");
     private static final Pattern NUMERIC_FIELD = Pattern.compile("\\b([A-Za-z]+)=(-?\\d+)");
+    private static final Pattern TRACE_STAGE = Pattern.compile("\\\"stage\\\"\\s*:\\s*\\\"([^\\\"]*)\\\"");
+    private static final Pattern TRACE_EXCEPTION = Pattern.compile("\\\"exception\\\"\\s*:\\s*(null|\\\"([^\\\"]*)\\\")");
     private static final Pattern POSITION = Pattern.compile(
         "\\[\\s*(-?(?:\\d+\\.?\\d*|\\.\\d+)(?:[eE][+-]?\\d+)?)[dDfF]?\\s*,"
             + "\\s*(-?(?:\\d+\\.?\\d*|\\.\\d+)(?:[eE][+-]?\\d+)?)[dDfF]?\\s*,"
@@ -56,6 +66,10 @@ public final class Stage3ClientTest implements FabricClientGameTest {
 
     @Override
     public void runTest(ClientGameTestContext context) {
+        if ("chunktrace".equals(System.getProperty("phoenium.test.mode"))) {
+            runChunkTrace(context);
+            return;
+        }
         Evidence evidence = Evidence.create();
         ExternalServer first = null;
         ExternalServer second = null;
@@ -297,6 +311,577 @@ public final class Stage3ClientTest implements FabricClientGameTest {
         }
     }
 
+    /**
+     * CHUNK-RUNTIME: drive the real production server's ordinary chunk request path without
+     * changing the path or waiting on its future.  The client GameTest process supplies the
+     * bounded clock; the request itself is issued through the test-only RCON command.
+     */
+    private static void runChunkTrace(ClientGameTestContext context) {
+        ChunkTraceEvidence evidence = ChunkTraceEvidence.create();
+        ExternalServer server = null;
+        try {
+            String firstWorld = "STAGE3-CHUNK-GEN-1-" + System.currentTimeMillis();
+            server = ExternalServer.startChunkTrace(1, firstWorld, tracePath("generation-1"));
+            evidence.firstServerProcessStarted = true;
+            evidence.productionServerModLoaded = true;
+            evidence.serverDirectory = server.directory.toAbsolutePath().toString();
+            server.waitUntilReady(context);
+            evidence.firstServerReady = true;
+            evidence.firstWorldName = firstWorld;
+            evidence.firstWorldSeed = server.worldSeed();
+            PendingChunkTrace firstPending = requestChunkTrace(server, context, "fresh-generation-1");
+            require(server.stopNormally(context), "first fresh-generation server did not stop normally");
+            evidence.firstServerStoppedCleanly = true;
+            evidence.runs.add(TraceRun.read(firstPending));
+            server = null;
+            context.waitTicks(10);
+
+            String secondWorld = "STAGE3-CHUNK-GEN-2-" + System.currentTimeMillis();
+            server = ExternalServer.startChunkTrace(2, secondWorld, tracePath("generation-2"));
+            evidence.secondServerProcessStarted = true;
+            server.waitUntilReady(context);
+            evidence.secondServerReady = true;
+            evidence.secondWorldName = secondWorld;
+            evidence.secondWorldSeed = server.worldSeed();
+            PendingChunkTrace secondPending = requestChunkTrace(server, context, "fresh-generation-2");
+            require(server.stopNormally(context), "second fresh-generation server did not stop normally");
+            evidence.secondServerStoppedCleanly = true;
+            evidence.runs.add(TraceRun.read(secondPending));
+            server = null;
+            context.waitTicks(10);
+
+            // This is the deliberately persisted evidence-world exception described in the
+            // Stage 3 handoff: the first fresh world is restarted, not copied or fabricated.
+            server = ExternalServer.startChunkTrace(3, firstWorld, tracePath("persisted-reload"));
+            evidence.reloadServerProcessStarted = true;
+            server.waitUntilReady(context);
+            evidence.reloadServerReady = true;
+            evidence.reloadWorldName = firstWorld;
+            evidence.reloadWorldSeed = server.worldSeed();
+            PendingChunkTrace reloadPending = requestChunkTrace(server, context, "existing-chunk-reload");
+            require(server.stopNormally(context), "persisted reload server did not stop normally");
+            evidence.reloadServerStoppedCleanly = true;
+            evidence.runs.add(TraceRun.read(reloadPending));
+            server = null;
+
+            assertTraceOrdering(evidence.runs);
+            evidence.semanticOrderingStable = true;
+            evidence.success = true;
+        } catch (Throwable failure) {
+            evidence.failure = failure.toString();
+            if (failure instanceof Error error) throw error;
+            throw new AssertionError("Stage 3 chunk runtime trace failed", failure);
+        } finally {
+            if (server != null) server.stopQuietly(context);
+            evidence.firstServerLog = evidence.runs.stream().findFirst()
+                .map(run -> run.serverLog).orElse("unknown");
+            evidence.secondServerLog = evidence.runs.stream().skip(1).findFirst()
+                .map(run -> run.serverLog).orElse("unknown");
+            evidence.reloadServerLog = evidence.runs.stream().skip(2).findFirst()
+                .map(run -> run.serverLog).orElse("unknown");
+            writeChunkTraceEvidence(evidence);
+        }
+    }
+
+    private static PendingChunkTrace requestChunkTrace(ExternalServer server,
+                                                       ClientGameTestContext context,
+                                                       String label) throws IOException {
+        String initial = server.execute("phoenium chunktrace status " + CHUNK_TRACE_X + " " + CHUNK_TRACE_Z);
+        require(initial.contains("selected=true") && initial.contains("futureDone=false"),
+            "target chunk was not initially absent/unloaded for " + label + ": " + initial);
+        String request = server.execute("phoenium chunktrace load " + CHUNK_TRACE_X + " " + CHUNK_TRACE_Z);
+        require(request.contains("request=QUEUED"), "chunk trace request was not accepted: " + request);
+        String status = "";
+        boolean complete = false;
+        for (int tick = 0; tick < CHUNK_TRACE_TIMEOUT_TICKS; tick++) {
+            require(server.isAlive(), server.serverFailure("external server exited during " + label));
+            if (tick % 5 == 0) {
+                status = server.execute("phoenium chunktrace status " + CHUNK_TRACE_X + " " + CHUNK_TRACE_Z);
+                if (status.contains("futureDone=true") && status.contains("futureSuccess=true")
+                        && status.contains("vanillaPath=observed-future-and-trace-only")) {
+                    complete = true;
+                    break;
+                }
+            }
+            context.waitTick();
+        }
+        require(complete, "chunk trace did not reach a successful vanilla future result for " + label + ": " + status);
+        context.waitTicks(10);
+        return new PendingChunkTrace(label, server.worldName, server.worldSeed(), server.traceOutput,
+            server.latestLog, request, status);
+    }
+
+    private static void assertTraceOrdering(List<TraceRun> runs) {
+        require(runs.size() == 3, "expected two fresh-generation traces and one reload trace");
+        for (TraceRun run : runs) {
+            require(run.eventCount > 0, "trace has no selected events: " + run.label);
+            require(run.stageCounts.containsKey("CHUNK_FUTURE_REQUEST"),
+                "trace missed the future request stage: " + run.label);
+            require(run.stageCounts.containsKey("CHUNK_FUTURE_RETURN"),
+                "trace missed the future return stage: " + run.label);
+            require(run.stageCounts.containsKey("CHUNK_FUTURE_COMPLETION"),
+                "trace missed successful future completion: " + run.label);
+            assertPair(run, "CHUNK_FUTURE_REQUEST", "CHUNK_FUTURE_RETURN");
+            assertPair(run, "CHUNK_FUTURE_RETURN", "CHUNK_FUTURE_COMPLETION");
+            assertPair(run, "CHUNK_MAP_SCHEDULE_CHUNK_LOAD_ENTER", "CHUNK_MAP_APPLICATION_ENTER");
+            assertPair(run, "CHUNK_MAP_APPLICATION_ENTER", "CHUNK_MAP_APPLICATION_RETURN");
+            assertPair(run, "GENERATION_HOLDER_APPLY_STEP_ENTER", "CHUNK_MAP_APPLICATION_ENTER");
+            assertPair(run, "GENERATION_HOLDER_APPLY_STEP_ENTER", "GENERATION_HOLDER_APPLY_STEP_RETURN");
+            assertPair(run, "CHUNK_STATUS_FULL_CONVERSION_ENTER", "CHUNK_STATUS_FULL_CONVERSION_RETURN");
+            assertPair(run, "CHUNK_MAP_TICKING_CONVERSION_ENTER", "CHUNK_MAP_TICKING_CONVERSION_RETURN");
+        }
+        require(!runs.get(0).parsedChunkDataPresent && !runs.get(1).parsedChunkDataPresent,
+            "fresh-generation traces unexpectedly read persisted chunk data");
+        TraceRun reload = runs.get(2);
+        require(reload.parsedChunkDataPresent, "persisted reload did not observe saved chunk data at application");
+        require(reload.stageCounts.containsKey("SERIALIZABLE_DATA_READ_ENTER"),
+            "persisted reload did not observe SerializableChunkData.read");
+        require(reload.stageCounts.containsKey("SERIALIZABLE_DATA_READ_RETURN"),
+            "persisted reload did not return from SerializableChunkData.read");
+        assertPair(reload, "CHUNK_MAP_APPLICATION_ENTER", "SERIALIZABLE_DATA_READ_ENTER");
+        assertPair(reload, "SERIALIZABLE_DATA_READ_ENTER", "SERIALIZABLE_DATA_READ_RETURN");
+        assertPair(reload, "SERIALIZABLE_DATA_READ_RETURN", "CHUNK_MAP_APPLICATION_RETURN");
+
+        String[][] stablePairs = {
+            {"CHUNK_FUTURE_REQUEST", "CHUNK_FUTURE_RETURN"},
+            {"CHUNK_MAP_SCHEDULE_CHUNK_LOAD_ENTER", "CHUNK_MAP_APPLICATION_ENTER"},
+            {"GENERATION_HOLDER_APPLY_STEP_ENTER", "CHUNK_MAP_APPLICATION_ENTER"},
+            {"GENERATION_HOLDER_COMPLETE_FUTURE_ENTER", "CHUNK_FUTURE_COMPLETION"}
+        };
+        for (String[] pair : stablePairs) {
+            int first = runs.get(0).indexOf(pair[0]);
+            int second = runs.get(0).indexOf(pair[1]);
+            int firstAgain = runs.get(1).indexOf(pair[0]);
+            int secondAgain = runs.get(1).indexOf(pair[1]);
+            if (first >= 0 && second >= 0 && firstAgain >= 0 && secondAgain >= 0) {
+                require((first < second) == (firstAgain < secondAgain),
+                    "semantic order was unstable for " + pair[0] + " -> " + pair[1]);
+            }
+        }
+    }
+
+    private static void assertPair(TraceRun run, String before, String after) {
+        int beforeIndex = run.indexOf(before);
+        int afterIndex = run.indexOf(after);
+        if (beforeIndex >= 0 && afterIndex >= 0) {
+            require(beforeIndex < afterIndex,
+                "unexpected stage order in " + run.label + ": " + before + " was not before " + after
+                    + " in " + run.stageOrder);
+        }
+    }
+
+    private static Path tracePath(String label) {
+        Path summary = Path.of(System.getProperty("phoenium.client.gametest.chunkTraceEvidence",
+            "build/client-gametest/evidence/STAGE3-CHUNK-RUNTIME.json"));
+        return summary.resolveSibling("STAGE3-CHUNK-RUNTIME-" + label + ".json").toAbsolutePath();
+    }
+
+    private static void writeChunkTraceEvidence(ChunkTraceEvidence evidence) {
+        Path path = Path.of(System.getProperty("phoenium.client.gametest.evidence",
+            "build/client-gametest/evidence/STAGE3-CHUNK-RUNTIME.json"));
+        try {
+            Path parent = path.toAbsolutePath().getParent();
+            if (parent != null) Files.createDirectories(parent);
+            Files.writeString(path, evidence.toJson(), StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING);
+            Files.writeString(path.resolveSibling("STAGE3-CHUNK-RUNTIME-world-seeds.txt"),
+                evidence.worldSeedText(), StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING);
+        } catch (IOException exception) {
+            throw new AssertionError("Unable to write chunk runtime evidence to " + path, exception);
+        }
+    }
+
+    private static final class PendingChunkTrace {
+        private final String label;
+        private final String worldName;
+        private final String worldSeed;
+        private final Path traceOutput;
+        private final Path latestLog;
+        private final String requestResponse;
+        private final String completionResponse;
+
+        private PendingChunkTrace(String label, String worldName, String worldSeed, Path traceOutput,
+                                  Path latestLog, String requestResponse, String completionResponse) {
+            this.label = label;
+            this.worldName = worldName;
+            this.worldSeed = worldSeed;
+            this.traceOutput = traceOutput;
+            this.latestLog = latestLog;
+            this.requestResponse = requestResponse;
+            this.completionResponse = completionResponse;
+        }
+    }
+
+    private static final class TraceRun {
+        private final String label;
+        private final String worldName;
+        private final String worldSeed;
+        private final String tracePath;
+        private final String serverLog;
+        private final int eventCount;
+        private final List<String> stageOrder;
+        private final Map<String, Integer> stageCounts;
+        private final List<String> correlationIds;
+        private final List<String> regions;
+        private final List<String> threadClasses;
+        private final boolean ownershipContextObserved;
+        private final boolean regionLeaseObserved;
+        private final boolean futureSuccessObserved;
+        private final boolean parsedChunkDataPresent;
+        private final int exceptionCount;
+        private final String requestResponse;
+        private final String completionResponse;
+
+        private TraceRun(String label, String worldName, String worldSeed, String tracePath, String serverLog,
+                          int eventCount, List<String> stageOrder, Map<String, Integer> stageCounts,
+                          List<String> correlationIds, List<String> regions, List<String> threadClasses,
+                          boolean ownershipContextObserved, boolean regionLeaseObserved,
+                          boolean futureSuccessObserved, boolean parsedChunkDataPresent, int exceptionCount,
+                          String requestResponse, String completionResponse) {
+            this.label = label;
+            this.worldName = worldName;
+            this.worldSeed = worldSeed;
+            this.tracePath = tracePath;
+            this.serverLog = serverLog;
+            this.eventCount = eventCount;
+            this.stageOrder = stageOrder;
+            this.stageCounts = stageCounts;
+            this.correlationIds = correlationIds;
+            this.regions = regions;
+            this.threadClasses = threadClasses;
+            this.ownershipContextObserved = ownershipContextObserved;
+            this.regionLeaseObserved = regionLeaseObserved;
+            this.futureSuccessObserved = futureSuccessObserved;
+            this.parsedChunkDataPresent = parsedChunkDataPresent;
+            this.exceptionCount = exceptionCount;
+            this.requestResponse = requestResponse;
+            this.completionResponse = completionResponse;
+        }
+
+        private static TraceRun read(PendingChunkTrace pending) throws IOException {
+            require(Files.exists(pending.traceOutput),
+                "chunk runtime trace was not written for " + pending.label + ": " + pending.traceOutput);
+            String raw = Files.readString(pending.traceOutput);
+            require(raw.contains("STAGE3-CHUNK-RUNTIME") && raw.contains("\"events\""),
+                "chunk runtime trace is not a recognized JSON artifact for " + pending.label);
+
+            Map<String, Integer> stageCounts = new LinkedHashMap<>();
+            LinkedHashSet<String> uniqueStages = new LinkedHashSet<>();
+            Matcher stages = TRACE_STAGE.matcher(raw);
+            while (stages.find()) {
+                String stage = stages.group(1);
+                uniqueStages.add(stage);
+                stageCounts.merge(stage, 1, Integer::sum);
+            }
+            String serverLog = snapshotServerLog(pending);
+            return new TraceRun(
+                pending.label,
+                pending.worldName,
+                pending.worldSeed,
+                pending.traceOutput.toAbsolutePath().toString(),
+                serverLog,
+                stageCountEvents(raw),
+                List.copyOf(uniqueStages),
+                new LinkedHashMap<>(stageCounts),
+                distinctNumericValues(raw, "correlationId"),
+                distinctValues(raw, "region"),
+                distinctValues(raw, "threadClass"),
+                raw.contains("\"ownershipContext\":true"),
+                raw.contains("\"regionLease\":true"),
+                raw.contains("\"futureSuccess\":true"),
+                raw.contains("parsedDataPresent=true"),
+                exceptionCount(raw),
+                pending.requestResponse,
+                pending.completionResponse);
+        }
+
+        private static int stageCountEvents(String raw) {
+            int count = 0;
+            Matcher stages = TRACE_STAGE.matcher(raw);
+            while (stages.find()) count++;
+            return count;
+        }
+
+        private static int exceptionCount(String raw) {
+            int count = 0;
+            Matcher exceptions = TRACE_EXCEPTION.matcher(raw);
+            while (exceptions.find()) {
+                if (!"null".equals(exceptions.group(1))) count++;
+            }
+            return count;
+        }
+
+        private static List<String> distinctValues(String raw, String field) {
+            Pattern pattern = Pattern.compile("\\\"" + Pattern.quote(field)
+                + "\\\"\\s*:\\s*\\\"([^\\\"]*)\\\"");
+            LinkedHashSet<String> values = new LinkedHashSet<>();
+            Matcher matches = pattern.matcher(raw);
+            while (matches.find()) values.add(matches.group(1));
+            return List.copyOf(values);
+        }
+
+        private static List<String> distinctNumericValues(String raw, String field) {
+            Pattern pattern = Pattern.compile("\\\"" + Pattern.quote(field)
+                + "\\\"\\s*:\\s*(-?\\d+)");
+            LinkedHashSet<String> values = new LinkedHashSet<>();
+            Matcher matches = pattern.matcher(raw);
+            while (matches.find()) values.add(matches.group(1));
+            return List.copyOf(values);
+        }
+
+        private static String snapshotServerLog(PendingChunkTrace pending) {
+            Path snapshot = pending.traceOutput.resolveSibling(
+                "STAGE3-CHUNK-RUNTIME-" + pending.label + "-latest.log");
+            try {
+                if (Files.exists(pending.latestLog)) {
+                    Files.copy(pending.latestLog, snapshot, StandardCopyOption.REPLACE_EXISTING);
+                    return snapshot.toAbsolutePath().toString();
+                }
+            } catch (IOException ignored) {
+                // The trace remains the authoritative machine-readable artifact for this run.
+            }
+            return pending.latestLog.toAbsolutePath().toString();
+        }
+
+        private int indexOf(String stage) { return stageOrder.indexOf(stage); }
+    }
+
+    private static final class ChunkTraceEvidence {
+        private final String minecraftVersion;
+        private final String javaVersion;
+        private final String fabricLoaderVersion;
+        private final String fabricApiVersion;
+        private final String loomVersion;
+        private final String gradleVersion;
+        private final String gradleTask;
+        private final List<TraceRun> runs = new ArrayList<>();
+        private boolean firstServerProcessStarted;
+        private boolean firstServerReady;
+        private boolean firstServerStoppedCleanly;
+        private boolean secondServerProcessStarted;
+        private boolean secondServerReady;
+        private boolean secondServerStoppedCleanly;
+        private boolean reloadServerProcessStarted;
+        private boolean reloadServerReady;
+        private boolean reloadServerStoppedCleanly;
+        private boolean productionServerModLoaded;
+        private boolean semanticOrderingStable;
+        private boolean success;
+        private String serverDirectory = "unknown";
+        private String firstWorldName = "unknown";
+        private String firstWorldSeed = "unknown";
+        private String secondWorldName = "unknown";
+        private String secondWorldSeed = "unknown";
+        private String reloadWorldName = "unknown";
+        private String reloadWorldSeed = "unknown";
+        private String firstServerLog = "unknown";
+        private String secondServerLog = "unknown";
+        private String reloadServerLog = "unknown";
+        private String failure = "";
+
+        private ChunkTraceEvidence(String minecraftVersion, String javaVersion, String fabricLoaderVersion,
+                                   String fabricApiVersion, String loomVersion, String gradleVersion,
+                                   String gradleTask) {
+            this.minecraftVersion = minecraftVersion;
+            this.javaVersion = javaVersion;
+            this.fabricLoaderVersion = fabricLoaderVersion;
+            this.fabricApiVersion = fabricApiVersion;
+            this.loomVersion = loomVersion;
+            this.gradleVersion = gradleVersion;
+            this.gradleTask = gradleTask;
+        }
+
+        private static ChunkTraceEvidence create() {
+            return new ChunkTraceEvidence(
+                System.getProperty("phoenium.test.minecraftVersion", "unknown"),
+                System.getProperty("phoenium.test.javaVersion", "unknown"),
+                System.getProperty("phoenium.test.fabricLoaderVersion", "unknown"),
+                System.getProperty("phoenium.test.fabricApiVersion", "unknown"),
+                System.getProperty("phoenium.test.loomVersion", "unknown"),
+                System.getProperty("phoenium.test.gradleVersion", "unknown"),
+                System.getProperty("phoenium.test.gradleTask", "runStage3ChunkTrace"));
+        }
+
+        private String toJson() {
+            StringBuilder json = new StringBuilder("{\n");
+            field(json, "test", "CHUNK-RUNTIME");
+            field(json, "success", success);
+            field(json, "generatedAtUtc", Instant.now().toString());
+            field(json, "minecraftVersion", minecraftVersion);
+            field(json, "javaVersion", javaVersion);
+            field(json, "fabricLoaderVersion", fabricLoaderVersion);
+            field(json, "fabricApiVersion", fabricApiVersion);
+            field(json, "loomVersion", loomVersion);
+            field(json, "gradleVersion", gradleVersion);
+            field(json, "gradleTask", gradleTask);
+            field(json, "serverDirectory", serverDirectory);
+            field(json, "targetWorld", "minecraft:overworld");
+            field(json, "targetChunk", CHUNK_TRACE_X + "," + CHUNK_TRACE_Z);
+            field(json, "requestedStatus", "FULL");
+            field(json, "requestPath", "test-only RCON command -> ServerLevel.getChunkSource().getChunkFuture");
+            field(json, "requestIncarnationAvailable", false);
+            field(json, "holderIdentityObserved", true);
+            field(json, "holderIncarnationAvailable", false);
+            field(json, "chunkPosAvailable", true);
+            field(json, "topologyGenerationObserved", true);
+            field(json, "regionRouteObserved", true);
+            field(json, "originalFutureObserved", true);
+            field(json, "exceptionalLoadPathObserved", false);
+            field(json, "realSupersessionObserved", false);
+            field(json, "realDedicatedServer", true);
+            field(json, "productionServerModLoaded", productionServerModLoaded);
+            field(json, "clientHarnessUsed", true);
+            field(json, "realTcpConnectionStarted", false);
+            field(json, "clientNetworkConnectionRequired", false);
+            field(json, "microsoftAuthentication", false);
+            field(json, "minecraftLauncher", false);
+            field(json, "microsoftStoreLauncher", false);
+            field(json, "guiAutomation", false);
+            field(json, "authoritativeChunkOwnershipImplemented", false);
+            field(json, "vanillaFutureReplaced", false);
+            field(json, "futuresJoinedOrWrapped", false);
+            field(json, "secondWorkerIntroduced", false);
+            field(json, "parallelGameplay", false);
+            field(json, "workers", 1);
+            field(json, "rChunk01", "PARTIAL");
+            field(json, "stage3", "PARTIAL");
+            field(json, "stage4", "NOT_STARTED");
+            field(json, "freshGenerationRuns", 2);
+            field(json, "persistedReloadRuns", 1);
+            field(json, "firstServerProcessStarted", firstServerProcessStarted);
+            field(json, "firstServerReady", firstServerReady);
+            field(json, "firstServerStoppedCleanly", firstServerStoppedCleanly);
+            field(json, "secondServerProcessStarted", secondServerProcessStarted);
+            field(json, "secondServerReady", secondServerReady);
+            field(json, "secondServerStoppedCleanly", secondServerStoppedCleanly);
+            field(json, "reloadServerProcessStarted", reloadServerProcessStarted);
+            field(json, "reloadServerReady", reloadServerReady);
+            field(json, "reloadServerStoppedCleanly", reloadServerStoppedCleanly);
+            field(json, "firstWorldName", firstWorldName);
+            field(json, "firstWorldSeed", firstWorldSeed);
+            field(json, "secondWorldName", secondWorldName);
+            field(json, "secondWorldSeed", secondWorldSeed);
+            field(json, "reloadWorldName", reloadWorldName);
+            field(json, "reloadWorldSeed", reloadWorldSeed);
+            field(json, "firstServerLog", firstServerLog);
+            field(json, "secondServerLog", secondServerLog);
+            field(json, "reloadServerLog", reloadServerLog);
+            field(json, "semanticOrderingStable", semanticOrderingStable);
+            field(json, "failure", failure);
+            fieldPrefix(json, "runs");
+            json.append("[");
+            for (int i = 0; i < runs.size(); i++) {
+                if (i > 0) json.append(",");
+                appendRun(json, runs.get(i));
+            }
+            if (!runs.isEmpty()) json.append("\n  ");
+            json.append("]\n}\n");
+            return json.toString();
+        }
+
+        private static void appendRun(StringBuilder json, TraceRun run) {
+            json.append("\n    {");
+            objectField(json, "label", run.label, true);
+            objectField(json, "worldName", run.worldName, true);
+            objectField(json, "worldSeed", run.worldSeed, true);
+            objectField(json, "tracePath", run.tracePath, true);
+            objectField(json, "serverLog", run.serverLog, true);
+            objectField(json, "eventCount", run.eventCount, true);
+            objectField(json, "ownershipContextObserved", run.ownershipContextObserved, true);
+            objectField(json, "regionLeaseObserved", run.regionLeaseObserved, true);
+            objectField(json, "futureSuccessObserved", run.futureSuccessObserved, true);
+            objectField(json, "parsedChunkDataPresent", run.parsedChunkDataPresent, true);
+            objectField(json, "exceptionCount", run.exceptionCount, true);
+            objectField(json, "requestResponse", run.requestResponse, true);
+            objectField(json, "completionResponse", run.completionResponse, true);
+            objectArray(json, "stageOrder", run.stageOrder, true);
+            objectMap(json, "stageCounts", run.stageCounts, true);
+            objectArray(json, "correlationIds", run.correlationIds, true);
+            objectArray(json, "regions", run.regions, true);
+            objectArray(json, "threadClasses", run.threadClasses, false);
+            json.append("\n    }");
+        }
+
+        private String worldSeedText() {
+            StringBuilder text = new StringBuilder("Phoenium Stage 3 chunk runtime trace world record\n")
+                .append("targetWorld=minecraft:overworld\n")
+                .append("targetChunk=").append(CHUNK_TRACE_X).append(",").append(CHUNK_TRACE_Z).append("\n")
+                .append("freshGenerationRuns=2\n")
+                .append("persistedReloadRuns=1\n\n")
+                .append("firstWorldName=").append(firstWorldName).append("\n")
+                .append("firstWorldSeed=").append(firstWorldSeed).append("\n")
+                .append("secondWorldName=").append(secondWorldName).append("\n")
+                .append("secondWorldSeed=").append(secondWorldSeed).append("\n")
+                .append("reloadWorldName=").append(reloadWorldName).append("\n")
+                .append("reloadWorldSeed=").append(reloadWorldSeed).append("\n");
+            for (TraceRun run : runs) {
+                text.append("\n[").append(run.label).append("]\n")
+                    .append("tracePath=").append(run.tracePath).append("\n")
+                    .append("serverLog=").append(run.serverLog).append("\n")
+                    .append("stageOrder=").append(String.join(" -> ", run.stageOrder)).append("\n");
+            }
+            return text.toString();
+        }
+
+        private static void field(StringBuilder json, String name, String value) {
+            fieldPrefix(json, name);
+            json.append(Stage3ClientTest.json(value));
+        }
+
+        private static void field(StringBuilder json, String name, boolean value) {
+            fieldPrefix(json, name);
+            json.append(value);
+        }
+
+        private static void field(StringBuilder json, String name, int value) {
+            fieldPrefix(json, name);
+            json.append(value);
+        }
+
+        private static void fieldPrefix(StringBuilder json, String name) {
+            if (json.length() > 2) json.append(",\n");
+            json.append("  ").append(Stage3ClientTest.json(name)).append(": ");
+        }
+
+        private static void objectField(StringBuilder json, String name, String value, boolean comma) {
+            json.append("\n      ").append(Stage3ClientTest.json(name)).append(": ")
+                .append(Stage3ClientTest.json(value));
+            if (comma) json.append(",");
+        }
+
+        private static void objectField(StringBuilder json, String name, boolean value, boolean comma) {
+            json.append("\n      ").append(Stage3ClientTest.json(name)).append(": ").append(value);
+            if (comma) json.append(",");
+        }
+
+        private static void objectField(StringBuilder json, String name, int value, boolean comma) {
+            json.append("\n      ").append(Stage3ClientTest.json(name)).append(": ").append(value);
+            if (comma) json.append(",");
+        }
+
+        private static void objectArray(StringBuilder json, String name, List<String> values, boolean comma) {
+            json.append("\n      ").append(Stage3ClientTest.json(name)).append(": [");
+            for (int i = 0; i < values.size(); i++) {
+                if (i > 0) json.append(", ");
+                json.append(Stage3ClientTest.json(values.get(i)));
+            }
+            json.append("]");
+            if (comma) json.append(",");
+        }
+
+        private static void objectMap(StringBuilder json, String name, Map<String, Integer> values, boolean comma) {
+            json.append("\n      ").append(Stage3ClientTest.json(name)).append(": {");
+            int index = 0;
+            for (Map.Entry<String, Integer> entry : values.entrySet()) {
+                if (index++ > 0) json.append(",");
+                json.append("\n        ").append(Stage3ClientTest.json(entry.getKey()))
+                    .append(": ").append(entry.getValue());
+            }
+            if (!values.isEmpty()) json.append("\n      ");
+            json.append("}");
+            if (comma) json.append(",");
+        }
+    }
+
     private static void connectClient(ClientGameTestContext context) {
         context.runOnClient(client -> {
             ServerData server = new ServerData("Phoenium Stage 3", SERVER_ADDRESS, ServerData.Type.OTHER);
@@ -411,31 +996,57 @@ public final class Stage3ClientTest implements FabricClientGameTest {
         private final Path processLog;
         private final int lifecycle;
         private final String worldName;
+        private final Path traceOutput;
         private Process process;
         private boolean cleanStop;
 
         private ExternalServer(Path directory, int lifecycle) {
+            this(directory, lifecycle, "STAGE3-CLIENT-" + lifecycle + "-" + System.currentTimeMillis(), null);
+        }
+
+        private ExternalServer(Path directory, int lifecycle, String worldName, Path traceOutput) {
             this.directory = directory;
             this.latestLog = directory.resolve("logs").resolve("latest.log");
             this.processLog = directory.resolve("server-process.log");
             this.lifecycle = lifecycle;
-            this.worldName = "STAGE3-CLIENT-" + lifecycle + "-" + System.currentTimeMillis();
+            this.worldName = worldName;
+            this.traceOutput = traceOutput;
         }
 
         private static ExternalServer start(int lifecycle) throws IOException {
             Path directory = Path.of(System.getProperty("phoenium.test.serverDirectory"));
             require(Files.isDirectory(directory), "prepared external server directory is missing: " + directory);
             ExternalServer server = new ExternalServer(directory, lifecycle);
+            return start(server, false);
+        }
+
+        private static ExternalServer startChunkTrace(int lifecycle, String worldName, Path traceOutput)
+                throws IOException {
+            Path directory = Path.of(System.getProperty("phoenium.test.serverDirectory"));
+            require(Files.isDirectory(directory), "prepared external server directory is missing: " + directory);
+            ExternalServer server = new ExternalServer(directory, lifecycle, worldName, traceOutput);
+            return start(server, true);
+        }
+
+        private static ExternalServer start(ExternalServer server, boolean chunkTrace) throws IOException {
             server.writeConfiguration();
             Path java = Path.of(System.getProperty("java.home"), "bin",
                 System.getProperty("os.name", "").toLowerCase().contains("win") ? "java.exe" : "java");
-            List<String> command = List.of(
+            List<String> command = new ArrayList<>(List.of(
                 java.toString(), "-Xmx1G",
                 "-Dphoenium.stage3.explicitTopology=true",
-                "-Dphoenium.test.diagnostics=true",
-                "-jar", "fabric-server-launch.jar", "nogui");
+                "-Dphoenium.test.diagnostics=true"));
+            if (chunkTrace) {
+                command.add("-Dphoenium.stage3.chunkTrace=true");
+                command.add("-Dphoenium.stage3.chunkTrace.world=minecraft:overworld");
+                command.add("-Dphoenium.stage3.chunkTrace.targets=" + CHUNK_TRACE_X + "," + CHUNK_TRACE_Z);
+                command.add("-Dphoenium.stage3.chunkTrace.output=" + server.traceOutput.toAbsolutePath());
+            }
+            command.add("-jar");
+            command.add("fabric-server-launch.jar");
+            command.add("nogui");
             ProcessBuilder builder = new ProcessBuilder(command)
-                .directory(directory.toFile())
+                .directory(server.directory.toFile())
                 .redirectErrorStream(true)
                 .redirectOutput(ProcessBuilder.Redirect.appendTo(server.processLog.toFile()));
             server.process = builder.start();

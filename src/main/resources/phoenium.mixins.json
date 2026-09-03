@@ -7,6 +7,13 @@
     "ServerGamePacketListenerMixin",
     "ServerGamePacketListenerInvoker",
     "ServerChunkCacheMixin",
+    "ChunkRuntimeTraceChunkMapMixin",
+    "ChunkRuntimeTraceGenerationChunkHolderMixin",
+    "ChunkRuntimeTraceChunkStatusTasksMixin",
+    "ChunkRuntimeTraceSectionStorageMixin",
+    "ChunkRuntimeTraceLightEngineMixin",
+    "ChunkRuntimeTraceSerializableChunkDataMixin",
+    "ChunkRuntimeTracePoiManagerMixin",
     "PlayerListLifecycleMixin",
     "EntityLifecycleMixin",
     "ServerLevelEntityLifecycleMixin"

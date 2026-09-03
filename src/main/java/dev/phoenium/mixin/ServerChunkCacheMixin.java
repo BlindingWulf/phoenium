@@ -1,6 +1,7 @@
 package dev.phoenium.mixin;
 
 import dev.phoenium.Phoenium;
+import dev.phoenium.live.ChunkRuntimeTrace;
 import java.util.concurrent.CompletableFuture;
 import net.minecraft.server.level.ChunkResult;
 import net.minecraft.server.level.ServerChunkCache;
@@ -20,9 +21,17 @@ abstract class ServerChunkCacheMixin {
     @Shadow @Final private ServerLevel level;
 
     @Inject(method = "getChunkFuture(IILnet/minecraft/world/level/chunk/status/ChunkStatus;Z)Ljava/util/concurrent/CompletableFuture;",
+        at = @At("HEAD"))
+    private void phoenium$traceChunkFutureRequest(int x, int z, ChunkStatus status, boolean create,
+                                                   CallbackInfoReturnable<CompletableFuture<ChunkResult<ChunkAccess>>> cir) {
+        ChunkRuntimeTrace.futureRequested(level, x, z, status.getName());
+    }
+
+    @Inject(method = "getChunkFuture(IILnet/minecraft/world/level/chunk/status/ChunkStatus;Z)Ljava/util/concurrent/CompletableFuture;",
         at = @At("RETURN"))
     private void phoenium$observeChunkFuture(int x, int z, ChunkStatus status, boolean create,
                                                CallbackInfoReturnable<CompletableFuture<ChunkResult<ChunkAccess>>> cir) {
+        ChunkRuntimeTrace.futureReturned(level, x, z, status.getName(), cir.getReturnValue());
         Phoenium.liveRuntime().observeChunkFuture(level, x, z, status, cir.getReturnValue());
     }
 }
