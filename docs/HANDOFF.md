@@ -93,6 +93,10 @@ All implementation is independent; no upstream source was copied or adapted. See
 
 ## Stage 3 in-progress handoff
 
+The coherent partial Stage 3 implementation was preserved before final live-boundary work as
+`bf9717de8afa6156de64032693dffcaf9c3be827` (`feat: add stage 3 live ownership bindings`).
+This is explicitly a rollback point, not a Stage 3 PASS checkpoint and not a P3 tag.
+
 The tree now contains a buildable deterministic Stage 3 ownership core. Read
 `STAGE3_OWNERSHIP_BINDING.md`, `STAGE3_PACKET_INGRESS.md`, and `STAGE3_C2ME_BOUNDARY.md`
 after the Stage 2 documents. `ObjectOwnershipRegistry` uses UUID/string identities and a separate
@@ -116,6 +120,23 @@ interaction, create a configured live multi-region player boundary crossing with
 and force a base chunk future across a topology change. Post-`ServerLevel.tick` non-player
 reconciliation is explicitly discovery only; it is not a future parallel entity transfer boundary.
 Stage 3 is not an accepted checkpoint yet.
+
+### 2026-09-02 Stage 3 architectural escalation
+
+An exact bytecode review of Minecraft 26.2 established that ordinary non-player
+`Entity.move(MoverType, Vec3)` resolves its movement before `setPos(Vec3)`, but then continues
+in the same synchronous method with collision, block, fall-damage, movement-emission, and
+velocity mutations. Establishing B ownership before `setPos` would leave that tail mutating a
+B-owned entity under A; deferring/replaying it would split synchronous vanilla semantics or
+require broad caller interception. The requested real non-player crossing gate is therefore
+blocked pending an architecture that owns the complete mutation transaction. See
+`STAGE3_OWNERSHIP_BINDING.md` for the exact call graph and candidate analysis.
+
+The corresponding base chunk trace found a main-thread application continuation after background
+chunk parsing, rather than an irreducible producer-thread Phoenium-mutation boundary. However,
+the current return observer is downstream of that application binding, so `R-CHUNK-01` remains
+PARTIAL until a controlled application seam and real request/completion evidence exist. See
+`STAGE3_C2ME_BOUNDARY.md`. Do not create the P3 PASS tag while this escalation remains open.
 
 ## Historical Stage 0 first work session checklist
 

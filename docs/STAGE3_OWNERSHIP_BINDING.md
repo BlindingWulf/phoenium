@@ -21,3 +21,47 @@ The generic transfer record/passenger graph contract from Stage 1 remains the re
 Reconciliation after `ServerLevel.tick` is intentionally a serial discovery/backstop mechanism for vanilla non-player entity insertion, removal, and position bookkeeping. It is **not** the future parallel entity-transfer boundary: vanilla entity simulation can already have performed movement by the time the enclosing tick returns. Before multiple workers or independently owned entity ticking, an earlier entity movement/teleport transition hook must reserve the destination and route the mutation under the transfer record before Minecraft changes region-sensitive state.
 
 Player movement is narrower: its admitted packet exposes a destination position. Stage 3 therefore establishes the player ownership transition from the packet target before replaying the real vanilla handler. Non-player post-tick movement must not be treated as equivalent proof.
+
+## 2026-09-02 ordinary non-player movement escalation
+
+Stage 3 inspected the shipped official-named Minecraft 26.2 bytecode, rather than selecting a
+hook by method name. The representative ordinary movement path is:
+
+```text
+living/entity tick caller
+  -> Entity.move(MoverType, Vec3)
+     -> maybeBackOffFromEdge / collide (resolved movement Vec3)
+     -> addMovementThisTick(from, resolved-to)
+     -> Entity.setPos(resolved-to)
+     -> collision flags / setOnGroundWithMovement
+     -> Level.getBlockState / checkFallDamage
+     -> applyMovementEmissionAndPlaySound / setDeltaMovement
+```
+
+`Entity.move` bytecode places the resolved destination in a local value immediately before the
+`setPos(Vec3)` invoke (the call sequence is bytecode offsets 276--310 in the inspected 26.2
+artifact). That is a useful *discovery* candidate, but it is not a valid independent ownership
+transfer authority. At that point `addMovementThisTick` has already mutated entity state, and
+the same synchronous invocation continues through destination-sensitive mutable work listed
+above. Moving the ledger to Region B there while allowing the tail to remain under the existing
+Region A outer lease violates T-01/T-03. Cancelling and replaying the method under B leaves the
+vanilla tick caller observing an uncompleted movement; executing its tail separately requires
+splitting private method-local state and changes vanilla semantics. Redirecting every ordinary
+movement caller is not a narrow 26.2 boundary and is unmanageably broad across entity types,
+teleports, vehicles, and passengers.
+
+Other candidates were rejected for the same evidence-backed reasons:
+
+| Candidate | Result | Rejection reason |
+| --- | --- | --- |
+| `Entity.setPos` / `setPosRaw` globally | Rejected | Used by construction, teleports, reconciliation, and arbitrary callers; it does not carry the movement protocol or allow ownership-authorized completion of `Entity.move`. |
+| Invoke before `Entity.setPos(Vec3)` inside `Entity.move` | Rejected as transfer authority | Destination is known, but the remaining synchronous method mutates destination-sensitive live state under the old lease. |
+| After `ServerLevel.tick` reconciliation | Discovery only | All ordinary movement mutation has already occurred. |
+
+Minimal reproduction: configure a serial A/B routing boundary and move an ordinary entity across
+it in one `Entity.move` call. A pre-`setPos` ledger update makes the post-`setPos` tail a
+Region-A mutation of a Region-B object. Delaying the update makes `setPos` a Region-A mutation
+after the object should have crossed. Neither outcome is permitted, and waiting for B is
+prohibited by T-05. This is therefore an **architectural escalation blocker** for real
+non-player Region A -> B transfer. No `Entity` Mixin was added, no second worker was enabled,
+and no Stage 3 PASS claim is made.

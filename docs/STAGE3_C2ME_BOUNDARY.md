@@ -11,3 +11,46 @@ This is the contract a future C2ME adapter must satisfy. No C2ME source is forke
 The contract is now observed against the base 26.2 `ServerChunkCache.getChunkFuture(int, int, ChunkStatus, boolean)` return value. Phoenium observes—not replaces—the returned `CompletableFuture<ChunkResult<ChunkAccess>>`, captures only request metadata, and attaches a completion continuation. The continuation has no `ChunkAccess` or `ServerLevel` mutation path; it submits the immutable `ChunkWorkRequest` through `ChunkCompletionGateway`. A leased owner records validated completion admission. Minecraft's own future/result chain remains its existing authority and is not joined, blocked, fabricated, or rewritten.
 
 This proves the Phoenium-side producer boundary in the base server only. It is not a C2ME compatibility result and it does not claim to have taken over vanilla chunk result application.
+
+## 2026-09-02 base 26.2 first live-mutation trace
+
+The observer is not sufficient proof of chunk ownership by itself. The required bytecode trace
+of the shipped official-named 26.2 server is:
+
+```text
+ServerChunkCache.getChunkFuture
+  -> ServerChunkCache.getChunkFutureMainThread
+  -> ChunkHolder.scheduleChunkGenerationTask
+  -> ChunkMap.runGenerationTasks
+  -> ChunkGenerationTask.runUntilWait / scheduleChunkInLayer
+  -> GenerationChunkHolder.applyStep
+  -> ChunkMap.scheduleChunkLoad (for loading)
+     -> readChunk
+     -> thenApplyAsync(SerializableChunkData.parse, Util.backgroundExecutor("parseChunk"))
+     -> PoiManager.prefetch
+     -> thenCombine
+     -> thenApplyAsync(..., ChunkMap.mainThreadExecutor)
+```
+
+The `scheduleChunkLoad` producer stage parses persisted data on the background executor. It
+does not receive Phoenium owner authority. The next continuation is explicitly scheduled on
+`ChunkMap.mainThreadExecutor`; this is the first identified base-server application boundary
+at which the loaded `ChunkAccess` may be installed into `ChunkMap`/holder state and become live
+server state. Generation similarly returns `ChunkResult<ChunkAccess>` through
+`GenerationChunkHolder.applyStep`, with task progress driven by `ChunkMap.runGenerationTasks`.
+
+Therefore the answer is **A, conditional**: the current base 26.2 pipeline has a
+main-thread-owned application continuation after immutable/background load parsing, but
+Phoenium's present `ServerChunkCache.getChunkFuture` return observer runs too late to control
+that continuation. It can prove producer-side Phoenium non-authority and queue a metadata-only
+owner admission; it cannot claim that it owns vanilla installation. A future adapter must bind
+the main-thread application continuation (or its exact `ChunkMap`/holder installation call),
+capture the route generation before producer work, and re-resolve/validate it immediately
+before installation. It must not block a region owner or manufacture a chunk result.
+
+This trace does **not** establish an irreducible producer-thread mutation that requires a P1
+redesign, so it is not the chunk architectural escalation condition. It does establish that
+`R-CHUNK-01` cannot yet be PASS: there is no real forced request/completion evidence and no
+Phoenium-controlled application binding. Minecraft's own load-failure `createEmptyChunk` path
+was observed in `ChunkMap`; Phoenium neither invokes nor substitutes that path, and the
+Phoenium contract remains prohibited from fabricating semantic state.
