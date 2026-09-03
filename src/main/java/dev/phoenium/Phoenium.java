@@ -1,6 +1,8 @@
 package dev.phoenium;
 
 import com.mojang.brigadier.CommandDispatcher;
+import com.mojang.brigadier.arguments.IntegerArgumentType;
+import com.mojang.brigadier.arguments.StringArgumentType;
 import dev.phoenium.live.PhoeniumLiveRuntime;
 import net.fabricmc.api.DedicatedServerModInitializer;
 import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback;
@@ -37,7 +39,19 @@ public final class Phoenium implements DedicatedServerModInitializer {
                     final String response = line;
                     context.getSource().sendSuccess(() -> Component.literal(response), false);
                     return 1;
-                })));
+                }))
+            .then(Commands.literal("route")
+                .then(Commands.argument("world", StringArgumentType.string())
+                    .then(Commands.argument("x", IntegerArgumentType.integer())
+                        .then(Commands.argument("z", IntegerArgumentType.integer())
+                            .executes(context -> {
+                                String world = StringArgumentType.getString(context, "world");
+                                int x = IntegerArgumentType.getInteger(context, "x");
+                                int z = IntegerArgumentType.getInteger(context, "z");
+                                String response = LIVE.routeDiagnostic(world, x, z);
+                                context.getSource().sendSuccess(() -> Component.literal(response), false);
+                                return 1;
+                            }))))));
     }
 
     public static PhoeniumLiveRuntime liveRuntime() { return LIVE; }

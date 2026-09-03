@@ -246,6 +246,21 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
         return barrier.record().map(record -> record.cause().toString()).orElse("");
     }
 
+    /** Test-only route evidence reads the immutable directory; it grants no gameplay authority. */
+    public String routeDiagnostic(String worldName, int x, int z) {
+        WorldId world = new WorldId(worldName);
+        RoutingKey key = new RoutingKey(world, x, z);
+        RegionRoute route = directory.resolve(key).orElse(null);
+        if (route == null) {
+            return "route=UNRESOLVED world=" + world.value() + " chunk=" + x + "," + z
+                + " generation=" + directory.snapshot().generation().value()
+                + " explicitFixture=" + explicitFixture;
+        }
+        return "route=RESOLVED world=" + world.value() + " chunk=" + x + "," + z
+            + " region=" + route.region().value() + " generation=" + route.generation().value()
+            + " ownerEpoch=" + route.ownerEpoch().value() + " explicitFixture=" + explicitFixture;
+    }
+
     /** Re-entry is valid only for the exact correlation, connection, and packet object currently replaying. */
     public boolean matchesMoveReplay(ServerGamePacketListenerImpl connection, ServerboundMovePlayerPacket packet) {
         ReplayIdentity active = replayIdentity.get();

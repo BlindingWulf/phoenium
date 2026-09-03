@@ -171,14 +171,41 @@ public final class Stage3ClientTest implements FabricClientGameTest {
             require(evidence.sameRegionInteractionObserved,
                 "same-region interaction did not produce the complete indexed admission/replay path: " + interactionAfter.raw);
 
-            first.execute("summon minecraft:armor_stand 82.5 80 8.5 {NoGravity:1b,Tags:[\""
+            first.execute("summon minecraft:armor_stand 80.5 80 8.5 {NoGravity:1b,Tags:[\""
                 + CROSS_OWNER_TARGET_TAG + "\"]}");
             context.waitTicks(25);
-            Snapshot crossOwnerBefore = record(first, evidence, "cross-owner-before");
-            first.execute("tp " + evidence.testUsername + " 72.5 80 8.5");
+            first.execute("tp " + evidence.testUsername + " 78.5 80 8.5");
             context.waitTicks(30);
+            evidence.crossOwnerPlayerPosition = first.serverPosition();
+            evidence.crossOwnerTargetPosition = first.targetPosition(CROSS_OWNER_TARGET_TAG);
+            double[] crossPlayer = parsePosition(evidence.crossOwnerPlayerPosition);
+            double[] crossTarget = parsePosition(evidence.crossOwnerTargetPosition);
+            int crossPlayerChunkX = chunkCoordinate(crossPlayer[0]);
+            int crossTargetChunkX = chunkCoordinate(crossTarget[0]);
+            evidence.crossOwnerPlayerChunk = "(" + crossPlayerChunkX + "," + chunkCoordinate(crossPlayer[2]) + ")";
+            evidence.crossOwnerTargetChunk = "(" + crossTargetChunkX + "," + chunkCoordinate(crossTarget[2]) + ")";
+            evidence.crossOwnerPlayerRoute = first.execute("phoenium route \"minecraft:overworld\" "
+                + crossPlayerChunkX + " " + chunkCoordinate(crossPlayer[2])).trim();
+            evidence.crossOwnerTargetRoute = first.execute("phoenium route \"minecraft:overworld\" "
+                + crossTargetChunkX + " " + chunkCoordinate(crossTarget[2])).trim();
+            require(evidence.crossOwnerPlayerRoute.contains("route=RESOLVED")
+                    && evidence.crossOwnerPlayerRoute.contains("region=stage3-fixture-a"),
+                "cross-owner player did not resolve to fixture Region A: " + evidence.crossOwnerPlayerRoute);
+            require(evidence.crossOwnerTargetRoute.contains("route=RESOLVED")
+                    && evidence.crossOwnerTargetRoute.contains("region=stage3-fixture-b"),
+                "cross-owner target did not resolve to fixture Region B: " + evidence.crossOwnerTargetRoute);
+            require(crossPlayerChunkX == 4 && crossTargetChunkX == 5,
+                "cross-owner fixture did not straddle the intended chunk boundary: "
+                    + evidence.crossOwnerPlayerChunk + " -> " + evidence.crossOwnerTargetChunk);
+            double crossDistance = distance(crossPlayer, crossTarget);
+            evidence.crossOwnerDistance = Double.toString(crossDistance);
+            require(crossDistance > 0.0D && crossDistance <= 3.0D,
+                "cross-owner fixture is outside normal vanilla interaction reach: " + crossDistance);
+            Snapshot crossOwnerBefore = record(first, evidence, "cross-owner-before");
             input.lookAt(new BlockPos(82, 80, 8));
             input.pressKey(options -> options.keyUse);
+            context.waitTicks(5);
+            input.pressMouse(1);
             context.waitTicks(20);
             Snapshot crossOwnerAfter = record(first, evidence, "cross-owner-after");
             long crossIngress = delta(crossOwnerBefore, crossOwnerAfter, "interact.in");
@@ -187,7 +214,7 @@ public final class Stage3ClientTest implements FabricClientGameTest {
             evidence.crossOwnerInteractionPacketObserved = crossIngress > 0;
             evidence.crossOwnerInteractionRejected = crossReject > 0;
             evidence.crossOwnerInteractionReason = crossIngress == 0
-                ? "NOT OBSERVED AT SERVER INGRESS: target was 10 blocks away, beyond vanilla interaction reach; no synthetic packet was introduced."
+                ? "NOT OBSERVED AT SERVER INGRESS: normal client input emitted no packet for the legal near-boundary attempt; no synthetic packet was introduced."
                 : "REJECTED BEFORE VANILLA LOOKUP: target owner B differed from player owner A.";
             require(delta(crossOwnerBefore, crossOwnerAfter, "interact.ownerExecution") == 0
                     && delta(crossOwnerBefore, crossOwnerAfter, "interact.replay") == 0
@@ -339,6 +366,17 @@ public final class Stage3ClientTest implements FabricClientGameTest {
             Double.parseDouble(matcher.group(2)),
             Double.parseDouble(matcher.group(3))
         };
+    }
+
+    private static int chunkCoordinate(double coordinate) {
+        return (int) Math.floor(coordinate / 16.0D);
+    }
+
+    private static double distance(double[] first, double[] second) {
+        double dx = first[0] - second[0];
+        double dy = first[1] - second[1];
+        double dz = first[2] - second[2];
+        return Math.sqrt(dx * dx + dy * dy + dz * dz);
     }
 
     private static void require(boolean condition, String message) {
@@ -495,6 +533,10 @@ public final class Stage3ClientTest implements FabricClientGameTest {
 
         private String serverPosition() throws IOException {
             return execute("data get entity " + TEST_USERNAME + " Pos");
+        }
+
+        private String targetPosition(String tag) throws IOException {
+            return execute("data get entity @e[type=minecraft:armor_stand,tag=" + tag + ",limit=1] Pos");
         }
 
         private boolean stopNormally(ClientGameTestContext context) {
@@ -694,6 +736,13 @@ public final class Stage3ClientTest implements FabricClientGameTest {
         private String sameOwnerServerPosition = "unknown";
         private String boundaryClientPosition = "unknown";
         private String boundaryServerPosition = "unknown";
+        private String crossOwnerPlayerPosition = "unknown";
+        private String crossOwnerTargetPosition = "unknown";
+        private String crossOwnerPlayerChunk = "unknown";
+        private String crossOwnerTargetChunk = "unknown";
+        private String crossOwnerPlayerRoute = "unknown";
+        private String crossOwnerTargetRoute = "unknown";
+        private String crossOwnerDistance = "unknown";
         private String crossOwnerInteractionReason = "unknown";
         private String interactionTargetClientEntityCount = "unknown";
         private String interactionTargetRemovalResponse = "unknown";
@@ -779,6 +828,13 @@ public final class Stage3ClientTest implements FabricClientGameTest {
             field(json, "sameOwnerServerPosition", sameOwnerServerPosition);
             field(json, "boundaryClientPosition", boundaryClientPosition);
             field(json, "boundaryServerPosition", boundaryServerPosition);
+            field(json, "crossOwnerPlayerPosition", crossOwnerPlayerPosition);
+            field(json, "crossOwnerTargetPosition", crossOwnerTargetPosition);
+            field(json, "crossOwnerPlayerChunk", crossOwnerPlayerChunk);
+            field(json, "crossOwnerTargetChunk", crossOwnerTargetChunk);
+            field(json, "crossOwnerPlayerRoute", crossOwnerPlayerRoute);
+            field(json, "crossOwnerTargetRoute", crossOwnerTargetRoute);
+            field(json, "crossOwnerDistance", crossOwnerDistance);
             field(json, "interactionTargetClientEntityCount", interactionTargetClientEntityCount);
             field(json, "interactionTargetRemovalResponse", interactionTargetRemovalResponse);
             field(json, "crossOwnerInteractionReason", crossOwnerInteractionReason);
