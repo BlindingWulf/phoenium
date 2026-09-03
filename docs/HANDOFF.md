@@ -1,6 +1,62 @@
 # Handoff
 
-## Latest resume point — Stage 3 real-packet attempt (no client established)
+> **BEFORE ANY LIVE MINECRAFT TEST: read [docs/AGENT_MINECRAFT_TESTING.md](AGENT_MINECRAFT_TESTING.md).**
+
+## Latest resume point — Stage 3 real-client evidence
+
+On 2026-09-03, the permanent account-free command-line harness was completed and
+the real-client gates were exercised with no Microsoft account, launcher login, or
+GUI automation. The pinned environment is Minecraft 26.2, Java 25, Fabric Loader
+0.19.5, Fabric API 0.159.0+26.2, Loom 1.17.20, and Gradle 9.5.1. The only client
+identity is the offline test name PhoeniumTest0.
+
+runClientGameTest passes its smoke test: Loom starts an actual Fabric client from
+the command line, a dedicated server is reached over TCP, programmatic client input
+is exercised, and both sides terminate cleanly. runStage3ClientGameTest passes
+the observed Stage 3 movement and same-owner interaction phases against a separate
+external dedicated process running the production Phoenium JAR. Every authoritative
+run creates a unique fresh world with a newly generated seed; the names, seeds, and
+fixture command responses are saved in STAGE3-CLIENT.json and
+STAGE3-CLIENT-world-seeds.txt.
+
+The Stage 3 run records:
+
+- P3-CLIENT-01 login and usable world: **PASS**.
+- P3-CLIENT-02 same-owner movement: **PASS** with real client movement packets.
+- P3-CLIENT-03 boundary movement rejection: **PASS**; the server position remains
+  in owner A when the movement footprint crosses into owner B.
+- P3-CLIENT-04 same-owner interaction: **PASS**, including indexed hit,
+  owner admission/execution, replay guard, vanilla lookup, effect, and removal
+  invalidation.
+- P3-CLIENT-05 cross-owner interaction: **PARTIAL**. The target is deliberately
+  ten blocks away, so vanilla interaction reach prevents the normal client from
+  emitting a packet. No synthetic packet was introduced; no foreign mutation was
+  observed.
+
+The external server reports one worker and parallel=OFF. Ownership violations,
+unleased execution, fallback, bypass, packet recursion, and duplicate packet
+admission remain zero. The movement/interaction run does not exercise chunk
+application: chunk admissions, applications, reroutes, and rejections remain zero.
+The client disconnects cleanly, the server projection clears, both servers stop
+normally through local RCON, and a second fresh server lifecycle reinitializes
+cleanly.
+
+Evidence is available at:
+
+- build/client-gametest/evidence/STAGE3-CLIENT.json
+- build/client-gametest/evidence/STAGE3-CLIENT-world-seeds.txt
+- build/client-gametest/evidence/HARNESS-SMOKE-01.json
+- run/stage3-client-gametest/logs/latest.log
+- build/stage3-client-server/logs/latest.log
+- build/stage3-client-server/server-process.log
+
+Stage 3 remains **PARTIAL** because P3-CLIENT-05 has no real server-ingress packet
+for the deliberately out-of-reach target. R-CHUNK-01 remains **PARTIAL** and Stage 4
+remains **NOT STARTED**. Do not create a P3 PASS tag, implement chunk application,
+add C2ME, enable a second worker, enable parallel gameplay, or redesign the Stage 3
+boundary while investigating this result.
+
+## Historical resume point — Stage 3 real-packet attempt (no client established)
 
 On 2026-09-03, the requested clean build passed **75/75 tests** with zero failures,
 errors, and skips. The final `phoenium-0.2.0-stage2.jar` exactly matched the JAR in
