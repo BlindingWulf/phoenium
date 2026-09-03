@@ -26,6 +26,120 @@ dependencies {
     testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
 }
 
+sourceSets {
+    clientGameTest {
+        java.srcDir 'src/clientGameTest/java'
+        resources.srcDir 'src/clientGameTest/resources'
+
+        // The client harness may inspect the live Phoenium runtime, but its output is
+        // deliberately kept out of the main source set and therefore out of the
+        // production server-only JAR.
+        compileClasspath += sourceSets.main.compileClasspath
+        compileClasspath += sourceSets.main.output
+        runtimeClasspath += sourceSets.main.runtimeClasspath
+        runtimeClasspath += sourceSets.main.output
+    }
+}
+
+configurations {
+    clientGameTestImplementation.extendsFrom implementation
+    clientGameTestRuntimeOnly.extendsFrom runtimeOnly
+}
+
+tasks.named('processClientGameTestResources') {
+    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+}
+
+def stage3ServerBase = file('.stage2-server-live1')
+
+tasks.register('prepareStage3ClientServer', Sync) {
+    description = 'Prepare an ignored, disposable external Fabric server for Stage 3 client evidence.'
+    group = 'verification'
+    dependsOn tasks.named('jar')
+    into layout.buildDirectory.dir('stage3-client-server')
+    from(stage3ServerBase) {
+        include 'fabric-server-launch.jar'
+        include '.fabric/**'
+        include 'libraries/**'
+        include 'versions/**'
+        include 'mods/fabric-api-base.jar'
+        include 'mods/fabric-lifecycle-events-v1.jar'
+    }
+    from(configurations.runtimeClasspath) {
+        include '*fabric-command-api-v2*.jar'
+        into 'mods'
+    }
+    from(tasks.named('jar')) {
+        into 'mods'
+    }
+}
+
+loom {
+    runs {
+        clientGameTest {
+            client()
+            name 'Phoenium Client GameTest'
+            source sourceSets.clientGameTest
+            runDir 'run/client-gametest'
+
+            // Fabric Client GameTest is opt-in and discovers the isolated harness
+            // entrypoint through the official fabric-client-gametest key.
+            vmArg '-Dfabric.client.gametest'
+            vmArg '-Dfabric.client.gametest.modid=phoenium-client-tests'
+
+            // Development identity only. The dedicated test server is offline/local
+            // and never consults a Microsoft account or launcher profile.
+            programArg '--username'
+            programArg 'PhoeniumTest0'
+
+            property 'phoenium.test.username', 'PhoeniumTest0'
+            property 'phoenium.test.minecraftVersion', minecraft_version
+            property 'phoenium.test.javaVersion', '25'
+            property 'phoenium.test.fabricLoaderVersion', loader_version
+            property 'phoenium.test.fabricApiVersion', fabric_version
+            property 'phoenium.test.loomVersion', loom_version
+            property 'phoenium.test.gradleVersion', '9.5.1'
+            property 'phoenium.test.gradleTask', 'runClientGameTest'
+            property 'phoenium.client.gametest.evidence',
+                    layout.buildDirectory.file('client-gametest/evidence/HARNESS-SMOKE-01.json').get().asFile.absolutePath
+        }
+
+        stage3ClientGameTest {
+            client()
+            name 'Phoenium Stage 3 Client GameTest'
+            source sourceSets.clientGameTest
+            runDir 'run/stage3-client-gametest'
+
+            vmArg '-Dfabric.client.gametest'
+            vmArg '-Dfabric.client.gametest.modid=phoenium-client-tests'
+            vmArg '-Dphoenium.test.mode=stage3'
+
+            programArg '--username'
+            programArg 'PhoeniumTest0'
+
+            property 'phoenium.test.username', 'PhoeniumTest0'
+            property 'phoenium.test.minecraftVersion', minecraft_version
+            property 'phoenium.test.javaVersion', '25'
+            property 'phoenium.test.fabricLoaderVersion', loader_version
+            property 'phoenium.test.fabricApiVersion', fabric_version
+            property 'phoenium.test.loomVersion', loom_version
+            property 'phoenium.test.gradleVersion', '9.5.1'
+            property 'phoenium.test.gradleTask', 'runStage3ClientGameTest'
+            property 'phoenium.test.serverDirectory',
+                    layout.buildDirectory.dir('stage3-client-server').get().asFile.absolutePath
+            property 'phoenium.test.serverAddress', '127.0.0.1:25565'
+            property 'phoenium.test.rconPort', '25575'
+            property 'phoenium.test.rconPassword', 'phoenium-stage3-client'
+            property 'phoenium.client.gametest.evidence',
+                    layout.buildDirectory.file('client-gametest/evidence/STAGE3-CLIENT.json').get().asFile.absolutePath
+        }
+    }
+}
+
+tasks.named('runStage3ClientGameTest') {
+    dependsOn tasks.named('prepareStage3ClientServer')
+}
+
 java {
     toolchain {
         languageVersion = JavaLanguageVersion.of(25)

@@ -242,6 +242,9 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
             interactionOwnerExecution, interactionReplay, interactionVanillaLookup, interactionHandlerCompletion,
             interactionStaleTicketRejected);
     }
+    public String failureDescription() {
+        return barrier.record().map(record -> record.cause().toString()).orElse("");
+    }
 
     /** Re-entry is valid only for the exact correlation, connection, and packet object currently replaying. */
     public boolean matchesMoveReplay(ServerGamePacketListenerImpl connection, ServerboundMovePlayerPacket packet) {
@@ -295,7 +298,11 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
             admitPacket(connection, player, new PendingInteract(connection, packet, ticket), "entity-interaction", playerBinding, AdmissionPolicy.REJECT);
         } catch (InteractionTargetIndex.UnknownInteractionTargetException rejected) { packetRejections++; interactionIndexMiss++; }
         catch (LiveInteractionAdmission.CrossRegionInteractionException rejected) { packetRejections++; interactionCrossOwnerRejected++; }
-        catch (RuntimeException rejected) { packetRejections++; interactionIncarnationRejected++; }
+        catch (RuntimeException rejected) {
+            packetRejections++;
+            interactionIncarnationRejected++;
+            logger.warn("PHOENIUM_STAGE3 interaction admission rejected entityId={} reason={}", packet.entityId(), rejected.toString());
+        }
     }
 
     /**

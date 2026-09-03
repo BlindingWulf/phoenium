@@ -14,7 +14,8 @@ public record LiveDiagnostics(
     long chunkCompletionRejections, long chunkCompletionDuplicates, long producerThreadChunkMutations) {
     public String toLogLine() {
         return "lifecycle=" + lifecycle + " scheduler=" + scheduler + " workers=" + simulationWorkers
-            + " parallel=OFF worlds=" + controlledWorlds + " leases=" + activeLeases + " intercepted=" + intercepted
+            + " lifecycleStarts=" + lifecycleStarts + " lifecycleStops=" + lifecycleStops + " parallel=OFF worlds=" + controlledWorlds
+            + " leases=" + activeLeases + " intercepted=" + intercepted
             + " dispatched=" + dispatched + " executed=" + executed + " duplicate=" + duplicates
             + " bypass=" + unexpectedBypasses + " fallback=" + fallbacks + " ownershipViolations=" + ownershipViolations
             + " unleased=" + unleasedExecutions + " barriers=" + hardBarriers + " entities=" + ownedEntities + " players=" + ownedPlayers

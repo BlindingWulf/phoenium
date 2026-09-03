@@ -6,7 +6,9 @@ import dev.phoenium.ownership.ObjectOwnershipRegistry;
 import dev.phoenium.region.RegionId;
 import dev.phoenium.topology.FrozenRegionAuthority;
 import dev.phoenium.topology.RegionDirectory;
+import dev.phoenium.topology.RoutingKey;
 import java.util.Objects;
+import java.util.Set;
 
 /** Same-owner-only interaction admission; cross-owner interaction is intentionally deferred. */
 public final class LiveInteractionAdmission {
@@ -17,7 +19,7 @@ public final class LiveInteractionAdmission {
         Objects.requireNonNull(target, "target"); Objects.requireNonNull(index, "index");
         if (!player.owner().equals(target.expectedOwner())) throw new CrossRegionInteractionException();
         FrozenRegionAuthority authority = FrozenRegionAuthority.freeze(directory, player.owner());
-        authority.requireWithin(java.util.Set.of(player.routingKey(), target.routingKey()));
+        authority.requireWithin(keys(player.routingKey(), target.routingKey()));
         return new Ticket(player.objectId(), player.incarnation(), player.objectEpoch(), target,
             player.owner(), authority.generation());
     }
@@ -33,8 +35,11 @@ public final class LiveInteractionAdmission {
                 || !player.owner().equals(owner) || !currentTarget.owner().equals(owner)) throw new IllegalStateException("interaction ownership changed");
             FrozenRegionAuthority authority = FrozenRegionAuthority.freeze(directory, owner);
             if (!generation.equals(authority.generation())) throw new IllegalStateException("stale interaction topology generation");
-            authority.requireWithin(java.util.Set.of(player.routingKey(), currentTarget.routingKey()));
+            authority.requireWithin(keys(player.routingKey(), currentTarget.routingKey()));
         }
+    }
+    private static Set<RoutingKey> keys(RoutingKey player, RoutingKey target) {
+        return player.equals(target) ? Set.of(player) : Set.of(player, target);
     }
     public static final class CrossRegionInteractionException extends IllegalStateException {
         public CrossRegionInteractionException() { super("cross-region interaction deferred before mutation"); }

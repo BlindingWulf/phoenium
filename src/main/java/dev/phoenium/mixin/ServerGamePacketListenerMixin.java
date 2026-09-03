@@ -26,7 +26,6 @@ abstract class ServerGamePacketListenerMixin {
     @Shadow private double lastGoodY;
     @Shadow private double lastGoodZ;
     @Shadow private Vec3 awaitingPositionFromClient;
-    @Shadow private int awaitingTeleport;
 
     @Inject(method = "handleMovePlayer(Lnet/minecraft/network/protocol/game/ServerboundMovePlayerPacket;)V",
         at = @At(value = "FIELD", target = TICK_COUNT, opcode = Opcodes.GETFIELD, ordinal = 0),
@@ -35,7 +34,7 @@ abstract class ServerGamePacketListenerMixin {
         ServerGamePacketListenerImpl connection = (ServerGamePacketListenerImpl) (Object) this;
         if (Phoenium.liveRuntime().matchesMoveReplay(connection, packet)) return;
         Phoenium.liveRuntime().admitMovePacket(connection, packet, lastGoodX, lastGoodY, lastGoodZ,
-            awaitingPositionFromClient != null || awaitingTeleport != 0);
+            awaitingPositionFromClient != null);
         ci.cancel();
     }
 

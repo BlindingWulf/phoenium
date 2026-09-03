@@ -1,0 +1,18 @@
+{
+  "schemaVersion": 1,
+  "id": "phoenium-client-tests",
+  "version": "0.2.0-test",
+  "name": "Phoenium Client Tests",
+  "description": "Disposable command-line Fabric Client GameTests for Phoenium.",
+  "environment": "client",
+  "entrypoints": {
+    "fabric-client-gametest": [
+      "dev.phoenium.clienttest.HarnessSmokeTest"
+    ]
+  },
+  "depends": {
+    "fabricloader": ">=0.19.5",
+    "fabric-client-gametest-api-v1": "*",
+    "minecraft": "26.2"
+  }
+}

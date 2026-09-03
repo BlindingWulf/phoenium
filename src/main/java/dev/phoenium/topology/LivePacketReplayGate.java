@@ -1,7 +1,8 @@
 package dev.phoenium.topology;
 
 import dev.phoenium.region.RegionId;
-import java.util.HashSet;
+import java.util.Collections;
+import java.util.IdentityHashMap;
 import java.util.Objects;
 import java.util.Set;
 
@@ -12,7 +13,10 @@ import java.util.Set;
  */
 public final class LivePacketReplayGate {
     private final ThreadLocal<LiveMovementAdmission.Ticket> active = new ThreadLocal<>();
-    private final Set<LiveMovementAdmission.Ticket> consumed = new HashSet<>();
+    // Ticket values may legitimately be equal for two different packets with the same movement
+    // footprint.  The replay guard is about one admission instance, not value-level geometry.
+    private final Set<LiveMovementAdmission.Ticket> consumed =
+        Collections.newSetFromMap(new IdentityHashMap<>());
 
     public Scope enter(LiveMovementAdmission.Ticket ticket, RegionDirectory directory, RegionId owner) {
         Objects.requireNonNull(ticket, "ticket");

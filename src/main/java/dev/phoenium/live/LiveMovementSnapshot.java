@@ -68,7 +68,7 @@ public record LiveMovementSnapshot(LiveMovementFootprint footprint, Disposition 
         if (sourceKey == null || destination == null) return rejected(Disposition.UNREPRESENTABLE_BOUNDS);
         LiveMovementFootprint footprint = new LiveMovementFootprint(world, destination,
             List.of(broad), List.of(broad), List.of(broad), List.of(broad), List.of(broad),
-            Set.of(sourceKey, destination));
+            keys(sourceKey, destination));
         return new LiveMovementSnapshot(footprint, Disposition.CLASSIFIED);
     }
 
@@ -97,4 +97,7 @@ public record LiveMovementSnapshot(LiveMovementFootprint footprint, Disposition 
         return (long) Math.floor(value);
     }
     private static boolean representable(long value) { return value >= Integer.MIN_VALUE && value <= Integer.MAX_VALUE; }
+    private static Set<RoutingKey> keys(RoutingKey source, RoutingKey destination) {
+        return source.equals(destination) ? Set.of(source) : Set.of(source, destination);
+    }
 }
