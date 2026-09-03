@@ -116,10 +116,10 @@ The Stage 3 command is the authoritative real-packet run. It:
 4. force-loads the exact fixture chunks before applying the fixture;
 5. creates solid lower and upper fixture floors and sets the spawn point;
 6. connects PhoeniumTest0 through the normal client networking path;
-7. exercises same-owner movement, a cross-owner boundary rejection, and
-   same-owner interaction;
-8. records the vanilla-reach limitation for the cross-owner interaction
-   attempt without inventing a packet;
+7. exercises same-owner movement, a cross-owner boundary rejection, same-owner
+   interaction, and a legal near-boundary cross-owner interaction;
+8. records the live-directory route proof and the normal client packet result
+   without inventing a packet;
 9. disconnects cleanly and starts a second fresh server lifecycle.
 
 Optional focused commands:
@@ -161,15 +161,18 @@ The evidence must distinguish:
 - rejected movement whose footprint crosses an owner boundary;
 - same-owner interaction ingress, hit resolution, admission, replay, vanilla
   lookup, and effect;
-- cross-owner interaction attempted but not observed at server ingress because
-  the target was outside vanilla interaction reach;
+- cross-owner interaction observed at server ingress with the player and target
+  in separate explicit owners but within normal vanilla interaction reach;
 - clean client disconnect and server-side projection cleanup;
 - a second server lifecycle with fresh initialization.
 
-crossOwnerInteractionPacketObserved=false is valid for the current test when
-the target is deliberately ten blocks away. Do not replace that phase with a
-synthetic packet. The evidence reason must say that vanilla reach prevented
-packet emission, and the phase remains PARTIAL.
+The current closeout uses a near-boundary fixture: the player is in chunk
+(4,0), the target is in chunk (5,0), their live directory routes are
+`stage3-fixture-a` and `stage3-fixture-b`, and the observed center distance is
+2.0 blocks. The normal client emits the interaction packet. The server rejects
+it after derived-index resolution but before vanilla target lookup, with no
+owner execution, replay, lookup, or effect. A future run that cannot observe a
+packet must remain PARTIAL; never replace it with a synthetic packet.
 
 ## Fresh-world and seed policy
 
@@ -226,10 +229,11 @@ The optional diagnostic command is registered only when the external server
 is started with -Dphoenium.test.diagnostics=true:
 
     phoenium diagnostics
+    phoenium route "minecraft:overworld" <chunk-x> <chunk-z>
 
 It reports lifecycle, scheduler, worker, ownership, lease, dispatch,
 interception, packet-admission, and chunk counters. Keep the diagnostics
-endpoint test-only; it is not a production gameplay command.
+endpoint and route query test-only; neither is a production gameplay command.
 
 ## Phase interpretation
 
@@ -246,10 +250,12 @@ Use these labels in reports:
 - P3-CLIENT-04 — same-owner interaction: PASS when ingress, target index hit,
   owner admission, owner execution, replay guard, vanilla lookup, and effect
   are all observed.
-- P3-CLIENT-05 — cross-owner interaction: PARTIAL when the normal client does
-  not emit a packet because vanilla reach prevents the ten-block attempt. It
-  is still useful negative evidence: no foreign mutation, owner execution,
-  replay, or vanilla lookup is observed.
+- P3-CLIENT-05 — cross-owner interaction: PASS when a normal client packet is
+  observed for a target in a different explicit owner, cross-owner rejection is
+  positive, and owner execution, replay, vanilla lookup, and effect remain
+  zero. The current fixture proves this at a 2.0-block near-boundary distance.
+  If no legal packet is observed on a future run, report PARTIAL and preserve
+  the exact reason.
 
 Also report:
 
@@ -259,8 +265,8 @@ Also report:
   production Phoenium JAR;
 - chunk admissions/applications/reroutes/rejections remain zero in this
   movement/interaction-only scope;
-- the Stage 3 result remains PARTIAL until the explicit cross-owner packet
-  limitation is resolved with a real, vanilla-valid interaction scenario.
+- the Stage 3 result remains PARTIAL because authoritative chunk application
+  and R-CHUNK-01 are unresolved; the cross-owner packet limitation is closed.
 
 The current project status is therefore:
 

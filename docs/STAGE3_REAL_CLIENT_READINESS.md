@@ -1,5 +1,11 @@
 # Stage 3 real-client readiness
 
+> Historical readiness plan. The 2026-09-03 closeout subsequently executed the
+> client run. Current results are in `STAGE3-CLIENT.json` and the concise
+> remaining-work handoff is `STAGE3_CHUNK_HANDOFF.md`; the near-boundary fixture
+> now uses player `(78.5,80,8.5)` in chunk `(4,0)` and target `(80.5,80,8.5)` in
+> chunk `(5,0)`.
+
 This document defines the pre-client configuration and future evidence plan. It does
 not record a real connection, movement packet, or interaction packet.
 

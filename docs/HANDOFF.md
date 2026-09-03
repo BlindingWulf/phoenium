@@ -1,6 +1,8 @@
 # Handoff
 
 > **BEFORE ANY LIVE MINECRAFT TEST: read [docs/AGENT_MINECRAFT_TESTING.md](AGENT_MINECRAFT_TESTING.md).**
+>
+> **FOR REMAINING STAGE 3 CHUNK WORK: read [docs/STAGE3_CHUNK_HANDOFF.md](STAGE3_CHUNK_HANDOFF.md).**
 
 ## Latest resume point — Stage 3 real-client evidence
 
@@ -13,7 +15,7 @@ identity is the offline test name PhoeniumTest0.
 runClientGameTest passes its smoke test: Loom starts an actual Fabric client from
 the command line, a dedicated server is reached over TCP, programmatic client input
 is exercised, and both sides terminate cleanly. runStage3ClientGameTest passes
-the observed Stage 3 movement and same-owner interaction phases against a separate
+the Stage 3 movement and interaction phases against a separate
 external dedicated process running the production Phoenium JAR. Every authoritative
 run creates a unique fresh world with a newly generated seed; the names, seeds, and
 fixture command responses are saved in STAGE3-CLIENT.json and
@@ -28,15 +30,19 @@ The Stage 3 run records:
 - P3-CLIENT-04 same-owner interaction: **PASS**, including indexed hit,
   owner admission/execution, replay guard, vanilla lookup, effect, and removal
   invalidation.
-- P3-CLIENT-05 cross-owner interaction: **PARTIAL**. The target is deliberately
-  ten blocks away, so vanilla interaction reach prevents the normal client from
-  emitting a packet. No synthetic packet was introduced; no foreign mutation was
-  observed.
+- P3-CLIENT-05 cross-owner interaction: **PASS**. The player at `(78.5,80,8.5)`
+  resolves from chunk `(4,0)` to `stage3-fixture-a`; the target at `(80.5,80,8.5)`
+  resolves from chunk `(5,0)` to `stage3-fixture-b`; actual distance is `2.0`.
+  The normal client emitted two packets, both rejected before vanilla lookup,
+  with no foreign mutation, owner execution, replay, or effect.
 
 The external server reports one worker and parallel=OFF. Ownership violations,
 unleased execution, fallback, bypass, packet recursion, and duplicate packet
-admission remain zero. The movement/interaction run does not exercise chunk
-application: chunk admissions, applications, reroutes, and rejections remain zero.
+admission remain zero. Fresh current-artifact P2 evidence separately records a
+normal run with `8088 = 8088 = 8088` live ticks and a failure run with
+`615 intercepted, 10 dispatched, 9 executed, 1 barrier`; both stopped through
+local RCON. The movement/interaction run does not exercise chunk application:
+chunk admissions, applications, reroutes, and rejections remain zero.
 The client disconnects cleanly, the server projection clears, both servers stop
 normally through local RCON, and a second fresh server lifecycle reinitializes
 cleanly.
@@ -50,11 +56,11 @@ Evidence is available at:
 - build/stage3-client-server/logs/latest.log
 - build/stage3-client-server/server-process.log
 
-Stage 3 remains **PARTIAL** because P3-CLIENT-05 has no real server-ingress packet
-for the deliberately out-of-reach target. R-CHUNK-01 remains **PARTIAL** and Stage 4
-remains **NOT STARTED**. Do not create a P3 PASS tag, implement chunk application,
-add C2ME, enable a second worker, enable parallel gameplay, or redesign the Stage 3
-boundary while investigating this result.
+Stage 3 remains **PARTIAL** solely because authoritative chunk application and
+R-CHUNK-01 remain unresolved. Stage 4 remains **NOT STARTED**. Do not create a
+P3 PASS tag, implement chunk application in this task, add C2ME, enable a second
+worker, enable parallel gameplay, or redesign the established movement/packet
+architecture. For the exact remaining work, use STAGE3_CHUNK_HANDOFF.md.
 
 ## Historical resume point — Stage 3 real-packet attempt (no client established)
 

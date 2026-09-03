@@ -1,5 +1,18 @@
 # Stage 3 server evidence
 
+## 2026-09-03 non-chunk closeout supersession
+
+The later non-chunk closeout supersedes the earlier no-client status below for
+the live client gates. The current account-free client run passes login,
+same-owner movement, boundary rejection, same-owner interaction, and
+cross-owner interaction. The cross-owner witness is player `(78.5,80,8.5)` in
+chunk `(4,0)` / `stage3-fixture-a` and target `(80.5,80,8.5)` in chunk `(5,0)` /
+`stage3-fixture-b`, distance `2.0`; two normal client packets were rejected
+before vanilla lookup with zero foreign mutation. Fresh current-artifact P2
+normal and failure evidence is recorded in the two timestamped logs referenced
+by `docs/STAGE3_CHUNK_HANDOFF.md`. Stage 3 and R-CHUNK-01 remain PARTIAL solely
+because authoritative chunk application is unresolved.
+
 ## 2026-09-03 explicit-readiness no-client proof
 
 The final readiness build ran `gradlew.bat clean build --no-daemon` with **75 tests,
