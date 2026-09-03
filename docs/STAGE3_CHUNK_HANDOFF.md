@@ -1,5 +1,12 @@
 # Stage 3 chunk-only handoff
 
+> **IMPLEMENTATION AUTHORITY:** read
+> [STAGE3_CHUNK_OWNERSHIP_ARCHITECTURE.md](STAGE3_CHUNK_OWNERSHIP_ARCHITECTURE.md)
+> with Luna's runtime evidence/map. It selects **A — coordinated multi-stage
+> admission** and supersedes earlier proposals where they differ. The source
+> model described below is historical/current-code context, not the complete
+> approved implementation contract. R-CHUNK-01 and Stage 3 remain **PARTIAL**.
+
 This is the compact resume point for the only substantial Stage 3 work left. It
 supersedes the need to reread the historical Stage 3 reports for this task. The
 scope of this closeout is everything that can be accepted without implementing
@@ -214,8 +221,10 @@ application custody seam is implemented and proven.
 
 **NEXT MODEL TASK:**
 
-Bind and prove base Minecraft 26.2 authoritative chunk application custody,
-using the existing XHigh review and the `ChunkCustody` model.
+Implement the sequence in `STAGE3_CHUNK_OWNERSHIP_ARCHITECTURE.md`, beginning
+with its pure custody/state-model corrections, then bind and prove the named
+Minecraft 26.2 stages using Luna's runtime evidence. Do not redesign the identity,
+lease, service, or future-settlement contracts during implementation.
 
 Do **not** revisit movement/packet architecture unless new evidence contradicts
 the accepted results above. The only substantial Stage 3 engineering problem
