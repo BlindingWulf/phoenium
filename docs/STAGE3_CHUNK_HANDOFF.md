@@ -258,6 +258,15 @@ No Minecraft authoritative continuation is bound by that infrastructure pass.
 
 ## J. Exact next task
 
+### Prerequisite-service checkpoint
+
+The service prerequisite layer is now documented in
+[STAGE3_CHUNK_SERVICE_PREREQUISITES.md](STAGE3_CHUNK_SERVICE_PREREQUISITES.md).
+It provides world-scoped, demand-allocated POI install receipts, light-input
+ingress receipts, ordered chunk-type metadata, and a non-blocking load
+prerequisite query. It binds no Minecraft mutation and does not change the
+approved Decision A future semantics.
+
 Read [PARSED_APPLY future semantics decision](STAGE3_PARSED_APPLY_FUTURE_DECISION.md)
 first. **Decision A approves precise thenComposeAsync flattening**, with the
 adjacent recovery composition, exact holder control filter, explicit work-token

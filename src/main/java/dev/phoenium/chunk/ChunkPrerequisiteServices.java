@@ -1,0 +1,27 @@
+package dev.phoenium.chunk;
+
+import dev.phoenium.core.WorldId;
+import java.util.Objects;
+
+/** Real per-world lifetime root for the unbound Stage 3 prerequisite services. */
+public final class ChunkPrerequisiteServices {
+    private final WorldId world;
+    private final ChunkCustodyModel custody = new ChunkCustodyModel();
+    private final ChunkLifecycleRegistry lifecycles;
+    private final ChunkWorkRegistry works;
+    private final PoiInstallService poi;
+    private final LightInputService light;
+    private final ChunkTypeMetadataService metadata;
+    private final LoadApplyPrerequisites prerequisites;
+    public ChunkPrerequisiteServices(WorldId world, String serverSession) {
+        this.world = Objects.requireNonNull(world, "world"); lifecycles = new ChunkLifecycleRegistry(custody, serverSession); works = new ChunkWorkRegistry(custody);
+        poi = new PoiInstallService(lifecycles, works); light = new LightInputService(lifecycles, works); metadata = new ChunkTypeMetadataService(lifecycles);
+        prerequisites = new LoadApplyPrerequisites(lifecycles, works, poi, light, metadata);
+    }
+    public WorldId world() { return world; } public ChunkCustodyModel custody() { return custody; } public ChunkLifecycleRegistry lifecycles() { return lifecycles; }
+    public ChunkWorkRegistry works() { return works; } public PoiInstallService poi() { return poi; } public LightInputService light() { return light; }
+    public ChunkTypeMetadataService metadata() { return metadata; } public LoadApplyPrerequisites prerequisites() { return prerequisites; }
+    public void retire(ChunkCustodyModel.LifecycleId lifecycle) { poi.retire(lifecycle); light.retire(lifecycle); metadata.retire(lifecycle); }
+    public void shutdown() { prerequisites.shutdown(); poi.shutdown(); light.shutdown(); metadata.shutdown(); }
+    public int receiptEntries() { return poi.entries() + light.entries(); }
+}

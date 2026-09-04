@@ -7,6 +7,7 @@ import dev.phoenium.failure.FailureBarrier;
 import dev.phoenium.chunk.ChunkCompletionGateway;
 import dev.phoenium.chunk.ChunkCustody;
 import dev.phoenium.chunk.ChunkWorkRequest;
+import dev.phoenium.chunk.ChunkPrerequisiteServices;
 import dev.phoenium.ownership.ObjectOwnershipRegistry;
 import dev.phoenium.ownership.ObjectOwnership;
 import dev.phoenium.ownership.ObjectOperationExecutor;
@@ -60,6 +61,8 @@ import org.slf4j.Logger;
 public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecutor, ObjectOperationExecutor {
     private final Logger logger;
     private final Map<WorldId, LiveRegion> regions = new LinkedHashMap<>();
+    /** Per-world service lifetime only; no Minecraft chunk callback is bound to it in this pass. */
+    private final Map<WorldId, ChunkPrerequisiteServices> chunkPrerequisiteServices = new LinkedHashMap<>();
     private final Map<RegionId, RegionRuntime> runtimes = new LinkedHashMap<>();
     private final RegionDirectory directory = new RegionDirectory();
     private final ObjectOwnershipRegistry objects = new ObjectOwnershipRegistry(directory);
@@ -130,6 +133,7 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
         explicitFixture = ExplicitLiveTopologyFixture.enabled();
         for (ServerLevel level : server.getAllLevels()) {
             WorldId world = worldId(level);
+            chunkPrerequisiteServices.put(world, new ChunkPrerequisiteServices(world, "live-" + (lifecycleStarts + 1)));
             RoutingKey key = new RoutingKey(world, 0, 0);
             RegionId region;
             RegionRuntime runtime;
@@ -222,6 +226,8 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
     public void stop() {
         if (state == State.STOPPED) return;
         if (scheduler != null) { scheduler.quiesce(); scheduler.stop(); }
+        chunkPrerequisiteServices.values().forEach(ChunkPrerequisiteServices::shutdown);
+        chunkPrerequisiteServices.clear();
         state = State.STOPPED;
         lifecycleStops++;
         logStatus("stopped");
