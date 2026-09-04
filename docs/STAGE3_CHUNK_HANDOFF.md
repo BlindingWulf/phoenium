@@ -1,5 +1,43 @@
 # Stage 3 chunk-only handoff
 
+## Current FULL callback decision — 2026-09-04
+
+**Cleanup defect: FIXED**, dedicated commit
+`a99d647c1ed39b1a96d5267e6f08f06ba17d8945`. **Scoreboard decision: accepted
+amendment, not automatically implemented. FULL callback closure: INCOMPLETE.
+Production FULL binding: NOT ENABLED. Integrated FULL implementation ready: NO.**
+
+The [current FULL review](STAGE3_FULL_CONVERSION_REVIEW.md) now records the pinned
+vanilla/installed-Fabric dispatch, named world-registry and connection-ordering
+additions, and the combined preclaim order: connection/session directory,
+scoreboard, named world turns, then one converged region. Logical reservations
+are distinct from short state critical sections; no state lock spans callbacks
+or completion. Original synchronous sends, returns and partial failures remain
+observable. Nine additional real-method semantic witnesses cover the specific
+review edges; they do not establish a production FULL binding or live FULL
+acceptance.
+
+Final verification: `gradlew.bat clean build compileClientGameTestJava --no-daemon`
+is BUILD SUCCESSFUL, **221 tests, 0 failures/errors/skips** (206 baseline, 212 at
+the cleanup commit, plus nine callback witnesses). The clean-built production
+JAR still hashes to `347E1EB30F078CBFF4CBB969244AED6E0324A5C0486DA61B894566D46210F796`,
+identical to the accepted isolated live probe. This review changes only tests
+and these existing documents; no additional live FULL claim is made. Final
+build/evidence manifest: `run/full-callback-closure/final-build.log` and
+`run/full-callback-closure/final-evidence.json`. Preserved normal final-artifact
+runtime captures are in `run/terminal-cleanup/normal-final/`.
+
+**Next task: resolve D1–D3 in that review before integrated FULL implementation.**
+D1 needs exact authority/lifetime for synchronous cross-dimension live entity
+references. D2 needs approved timing/failure semantics for legacy owner-name
+lookup and synchronous cache persistence inside loading. D3 needs an enforced
+ready-input invariant, precise in-progress chunk access, or an atomicity decision
+for conversion during Tadpole loading and its potentially self-dependent FULL
+query. These branches remain explicit gaps; no behavior is disabled to claim
+closure. The accepted scoreboard contract is unchanged and no isolated service
+scaffold was added. Server-only; workers=1; parallel gameplay=OFF;
+R-CHUNK-01/Stage 3=PARTIAL; Stage 4=NOT STARTED.
+
 ## Terminal cleanup correction — 2026-09-04
 
 **Cleanup defect: FIXED.** Starting HEAD `8c0072ac559bf53dee5672ee97c29f76020834c8`
@@ -17,6 +55,17 @@ reclamation waits for the claim map, including APPLIED-before-claim-exit, rather
 than treating a terminal stage-state value as proof that its lease has exited.
 No new lifecycle authority, permanent tombstone, or lock across completion was
 introduced. Demand cancellation still does not retire shared work.
+
+The reproduced sequence was: `ChunkStageDeliveryPump` missing-route control →
+`PendingVanillaStage.control(CANCELLED)` completes its outcome → `finishPoi`
+enters `ChunkLoadGraph.abort` → outer abort controls parsed apply → its inline
+completion handler reenters settlement → terminal future completion and
+`cleanupIfSettled` → `Environment.settled` →
+`ChunkPrerequisiteServices.releaseFinishedWork` reclaim the lifecycle/work →
+outer abort resumes its LOAD_RECOVERY and STATUS_PUBLISH controls → old
+`disarmLocked` creates two absent stage records. The corrected abort publishes
+custody retirement before its first outward completion, and the later controls
+cannot recreate authoritative metadata for that retired WorkId.
 
 Deterministic coverage includes inline/reentrant completion, handler registration
 on completed futures, duplicate abort, late old tokens, same-coordinate new
@@ -42,7 +91,7 @@ and the unchanged harness passed on rerun. This is separate from invalid-demand
 acceptance. Logs: `run/scoreboard-service-review/cleanup-{build,live-regression,client-rerun}.log`.
 
 Scoreboard decision remains the accepted amendment, not automatically
-implemented. FULL callback closure is still being reviewed separately;
+implemented. FULL callback closure is INCOMPLETE for D1–D3 in the current review;
 production FULL is **NOT ENABLED**. Workers=1, parallel gameplay=OFF;
 R-CHUNK-01/Stage 3=PARTIAL; Stage 4=NOT STARTED.
 
