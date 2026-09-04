@@ -258,6 +258,15 @@ No Minecraft authoritative continuation is bound by that infrastructure pass.
 
 ## J. Exact next task
 
+Read [PARSED_APPLY future semantics decision](STAGE3_PARSED_APPLY_FUTURE_DECISION.md)
+first. **Decision A approves precise thenComposeAsync flattening**, with the
+adjacent recovery composition, exact holder control filter, explicit work-token
+correlation and terminal settlement specified there. This refines the earlier
+executor-only wording; a one-line operator change is not sufficient. The review
+verified checkpoint `0aecc38` and **99 passing tests**; it changes documentation
+only. Terra's bounded implementation must satisfy FUT-01 through FUT-18 before
+acceptance. R-CHUNK-01/Stage 3 stay PARTIAL; Stage 4 stays NOT STARTED.
+
 **NEXT MODEL TASK:**
 
 Bind and prove the first authoritative Minecraft 26.2 continuation using the
