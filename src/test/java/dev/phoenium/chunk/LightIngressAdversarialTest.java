@@ -107,6 +107,8 @@ class LightIngressAdversarialTest {
         assertEquals(0,f.custody.retainedEntries()); assertEquals(0,f.services.works().retainedEntries());
         assertEquals(0,f.services.lifecycles().retainedEntries()); assertEquals(0,f.services.receiptEntries());
         assertEquals(0,f.services.metadata().entries()); assertFalse(f.pending.retainsInputOrContinuation());
+        assertEquals(ChunkStageAdmission.Result.SUPERSEDED,f.deliver());
+        assertInstanceOf(ChunkStageOutcome.Applied.class,f.pending.outcome().getNow(null));
         var next = f.services.lifecycles().activateHolder(1,f.key,f.holder);
         assertNotEquals(f.lifecycle,next); assertFalse(f.light.register(f.batch,false,List.of()));
         assertThrows(IllegalStateException.class,() -> f.custody.beginWork(f.lifecycle,0));
@@ -208,6 +210,20 @@ class LightIngressAdversarialTest {
         assertEquals(List.of(LightInputService.State.ACCEPTED,LightInputService.State.ACCEPTED,LightInputService.State.FAILED_VANILLA,LightInputService.State.REGISTERED),
                 atExit.get().occurrences().stream().map(LightInputService.OccurrenceSnapshot::state).toList());
         assertEquals(0,f.light.entries()); assertEquals(3,f.physical); assertFalse(f.barrier.tripped()); f.cleanup();
+    }
+
+    @Test void duplicateDeliveryAfterShutdownCannotSettleTheClaimWinnerUnderItsLease() {
+        var f = new LightProtocolFixture(); f.register(true);
+        f.ready((input,claim) -> {
+            f.services.shutdown();
+            assertEquals(ChunkStageAdmission.Result.DUPLICATE,f.deliver());
+            f.pending.control(ChunkStageAdmission.Result.SHUTDOWN);
+            assertFalse(f.pending.outcome().isDone());
+            f.submitAll(claim); return f.light.sealRead(claim,f.batch);
+        });
+        assertEquals(ChunkStageAdmission.Result.APPLIED,f.deliver());
+        assertInstanceOf(ChunkStageOutcome.Applied.class,f.pending.outcome().getNow(null));
+        assertEquals(1,f.physical); f.cleanup();
     }
 
     @Test void emptyReloadRequiresNormalReadCompletionAndCanAuthenticateReceipt() throws Exception {

@@ -47,8 +47,12 @@ public final class ChunkStageAdmission {
         custody.gate().lock();
         try {
             if (!pending.belongsTo(custody)) return breachLocked(stage, null, new ChunkProtocolException("foreign custody instance"));
-            if (custody.stageState(stage).orElse(null) == ChunkCustodyModel.StageState.FAILED_BARRIER)
+            var state = custody.stageState(stage).orElse(null);
+            if (state == ChunkCustodyModel.StageState.FAILED_BARRIER)
                 return new Execution<>(Result.FAILED_BARRIER, null, barrier.record().orElseThrow().cause());
+            // A late fence/duplicate must not complete the outcome while its winner holds a lease.
+            if (state == ChunkCustodyModel.StageState.CLAIMED || state == ChunkCustodyModel.StageState.APPLIED
+                    || state == ChunkCustodyModel.StageState.FAILED_VANILLA) return result(Result.DUPLICATE);
             if (!custody.admissionsOpenLocked()) return result(Result.SHUTDOWN);
             if (!custody.isEligibleLocked(stage)) return result(classify(stage));
             if (custody.targetClaimedLocked(stage)) return result(Result.NOT_READY);
@@ -108,6 +112,7 @@ public final class ChunkStageAdmission {
     }
     private Result classify(ChunkCustodyModel.StageId stage) {
         return switch (custody.stageState(stage).orElse(null)) {
+            case null -> Result.SUPERSEDED;
             case SUPERSEDED -> Result.SUPERSEDED;
             case CANCELLED -> Result.CANCELLED;
             case FAILED_BARRIER -> Result.FAILED_BARRIER;

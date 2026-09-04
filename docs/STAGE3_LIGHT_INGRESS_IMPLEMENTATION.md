@@ -8,6 +8,11 @@ failures, errors or skips: original 134, LIO-01..16, and 27 additional adversari
 cases. Production binding is deliberately absent from this independent checkpoint.
 The accepted decision documents are unchanged.
 
+The follow-up terminal audit adds one regression (178 Part A cases): duplicate
+shutdown/control delivery cannot settle a still-claimed winner before its lease
+exits, and late delivery after full ledger reclamation is superseded without
+record resurrection. The original independently green checkpoint remains 177.
+
 `LightInputService.BatchId` contains LifecycleId, WorkId, exact PARSED_APPLY
 StageId and batch sequence. LifecycleId carries server session, world instance,
 WorldId, RoutingKey/ChunkPos and holder activation sequence. An OccurrenceId adds

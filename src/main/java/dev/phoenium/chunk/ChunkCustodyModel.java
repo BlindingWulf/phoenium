@@ -172,6 +172,7 @@ public final class ChunkCustodyModel {
         return true;
     }
     boolean targetClaimedLocked(StageId id) { return claims.containsKey(slot(id.work().lifecycle())); }
+    boolean hasActiveClaimLocked(StageId id) { return id.equals(claims.get(slot(id.work().lifecycle()))); }
     void releaseClaimLocked(StageId id) { claims.remove(slot(id.work().lifecycle()), id); }
     boolean isEligibleLocked(StageId id) {
         return stages.get(id) == StageState.QUEUED && activeWorkLocked(id.work());

@@ -140,6 +140,16 @@ public final class PendingVanillaStage<I, O> {
     }
     void applied(O value) { outcome.complete(new ChunkStageOutcome.Applied<>(value)); }
     void control(ChunkStageAdmission.Result result) {
+        custody.gate().lock();
+        try {
+            var state = custody.stageState(stage).orElse(null);
+            if (outcome.isDone() || custody.hasActiveClaimLocked(stage)
+                    || state == ChunkCustodyModel.StageState.APPLIED || state == ChunkCustodyModel.StageState.FAILED_VANILLA
+                    || state == ChunkCustodyModel.StageState.FAILED_BARRIER) return;
+            custody.disarmLocked(stage,result == ChunkStageAdmission.Result.SUPERSEDED
+                    ? ChunkCustodyModel.StageState.SUPERSEDED : ChunkCustodyModel.StageState.CANCELLED);
+        }
+        finally { custody.gate().unlock(); }
         releaseInput();
         if (light != null) light.forget(lightBatch);
         outcome.complete(new ChunkStageOutcome.Control<>(result));
