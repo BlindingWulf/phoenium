@@ -48,9 +48,74 @@ the subsequent Part B record, avoiding a self-referential commit hash here.
 
 ## Part B production binding
 
-Not enabled by the metadata checkpoint. All FUT/live/production transformation
-acceptance remains pending; the approved Decision A contract is unchanged.
-No live counter or terminal-leak result is inferred from the service tests.
+Entered only after metadata checkpoint
+`4065883746456ce84e550689a438b9a4b64e5801`, successful Part A build and CLEAN tree.
+
+**BLOCKED at reload light prerequisite ordering (B5/B7/B9).** No authoritative
+transformation is installed. Decision A flattening and the metadata decision
+remain unchanged. This is a service-stage ordering issue, not evidence against
+thenComposeAsync or coordinated multi-stage ownership.
+
+B7 requires an accepted LightInputReceipt before PARSED_APPLY is eligible.
+B5 defines that receipt as actual retainData/BLOCK/SKY ingress acceptance, not
+preparation, a reserved batch, or computation completion. B9 and the locked
+future decision preserve the original synchronous parsed-apply body and its
+mutation ordering, with no mutation in the main-executor readiness wrapper.
+
+In the exact 26.2 artifact, the relevant ingress occurs INSIDE that body:
+
+| Method | Actual instruction / dependency |
+| --- | --- |
+| ChunkMap.lambda$scheduleChunkLoad$3 | Calls SerializableChunkData.read at 38. |
+| SerializableChunkData.read | In each applicable section, checkConsistencyWithBlocks at 180. |
+| Same read | First required retainData at 238. |
+| Same read | BLOCK queueSectionData at 261; SKY at 281 when the dimension/payload permits it. |
+| LoadApplyPrerequisites.evaluate | Reload stays NOT_READY until the light batch has accepted all required ingress. |
+
+For persisted data with light payloads, binding only those original calls gives:
+
+```
+PARSED_APPLY eligibility -> accepted light receipt
+accepted light receipt -> original read submits light
+original read -> owner-admitted PARSED_APPLY
+```
+
+The existing independent POI packed-data prefetch/install path does not resolve
+this light dependency. A zero-input reload batch cannot stand in for persisted
+BLOCK/SKY inputs; registering a batch alone does not create its receipt.
+
+Two changes could break that cycle, but neither is silently chosen here:
+(1) make pre-apply eligibility require prepared/reserved light ingress and
+record the accepted receipt during read, or (2) explicitly authorize extraction
+of physical light ingress into a preceding service stage, with a defined
+POI/light ordering and suppression of duplicate nested submissions. The first
+changes B7's receipt prerequisite; the second changes the retained body's
+side-effect timing and needs a precise contract for the split. Merely submitting
+inputs early is not evidence that vanilla mutation ordering was preserved.
+The current task locks these semantics against redesign. The architecture's
+section 17 treats an unresolved narrow POI/light service contract as a blocker.
+
+ChunkReloadPrerequisiteOrderTest provides two passing stop witnesses:
+- Exact method/class bytecode checks place POI consistency and retain/BLOCK/SKY
+  calls inside read, and read inside $3; immediate parse/registration methods
+  have no direct light-ingress calls. Exact method match counts are checked.
+- The real prerequisite ledger, with POI satisfied and a required BLOCK batch
+  declared, remains NOT_READY until retain and section acceptance are recorded.
+  Those test acknowledgments are explicitly not physical ingress acceptance.
+
+These witnesses establish the dependency for a direct binding, not a proof
+that no reviewed extraction design can exist. No alternative is implemented,
+no fake receipt is issued, and no production body is partially enabled.
+
+Final clean build: 134 tests PASS, zero failures/errors/skips, including all 132
+metadata-checkpoint tests and both ordering witnesses. FUT acceptance remains
+0/18; actual Fabric transformation, fresh generation and persisted-reload
+acceptance are NOT RUN. Runtime safety counters and terminal leaks are NOT
+MEASURED, not inferred zero. Existing diagnostic Mixins remain diagnostic.
+
+Next: resolve the accepted-versus-prepared light prerequisite and original
+read ordering, then resume the atomic application/recovery/holder binding.
+Do not advance to FULL_CONVERT/FULL publication from this checkpoint.
 
 ---
 

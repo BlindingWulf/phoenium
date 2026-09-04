@@ -332,3 +332,16 @@ recovery parity pass. Clean build: 132 tests PASS. See the current section of
 STAGE3_PARSED_APPLY_IMPLEMENTATION.md; historical mismatch text above is resolved.
 Decision A production binding and FUT/live acceptance remain pending at this
 separate metadata checkpoint. R-CHUNK-01/Stage 3 PARTIAL; Stage 4 NOT STARTED.
+
+### Decision A resumed: reload light-order gate blocked
+
+Metadata checkpoint: `4065883746456ce84e550689a438b9a4b64e5801`, CLEAN.
+Part B inspection found that B7 requires an accepted light receipt before
+PARSED_APPLY, while real retainData and BLOCK/SKY ingress occur inside its
+SerializableChunkData.read body. Directly binding those calls makes admission
+wait for its own effects. No early light submission, receipt reinterpretation,
+or mutation-body split is silently authorized. See the implementation record
+for exact bytecode anchors, two deterministic witnesses and the required narrow
+ordering decision. Final clean build: 134 PASS. FUT 0/18 accepted; no production
+binding or new live acceptance. Resolve this gate before continuing Decision A;
+FULL expansion is not next yet. R-CHUNK-01/Stage 3 PARTIAL; Stage 4 NOT STARTED.
