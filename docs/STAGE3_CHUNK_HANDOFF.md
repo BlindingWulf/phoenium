@@ -1,6 +1,40 @@
 # Stage 3 chunk-only handoff
 
-## Current FULL callback decision — 2026-09-04
+## Current D1–D3 resolution — 2026-09-04
+
+Read [STAGE3_FULL_D1_D3_DECISIONS.md](STAGE3_FULL_D1_D3_DECISIONS.md) for the
+current dispositions, exact source paths, 32 new semantic witnesses, combined
+reservation graph and partial-failure/cleanup trace. Start was clean
+`84a01d4352dc5b937da8ff0c35dd1df9414bd017`, baseline **221/221**. Final clean
+build and client-harness compilation: **253/253**, zero failures/errors/skips.
+Production JAR remains
+`347E1EB30F078CBFF4CBB969244AED6E0324A5C0486DA61B894566D46210F796`.
+
+D1 is **RESOLVED WITH DOCUMENTED AMENDMENT**: exact references confer no
+foreign gameplay authority; the existing identity service publishes the
+enumerated liveness/identity/target-predicate facts, with conflicting writers
+participating before their own regional claims. D2 **REQUIRES USER APPROVAL**
+for early profile/cache/file effects and an earlier identity observation.
+D3's self-FULL dependency is **SOURCE-PROVEN**, corroborated by original
+future selection during an actual supplier witness; its exact-object remedy
+**REQUIRES USER APPROVAL** for allowing that formerly cyclic branch to finish.
+The witness stops before a wait; no live deadlock reproduction is claimed.
+
+No approval is inferred from this review. **FULL callback closure: INCOMPLETE.
+Integrated FULL implementation ready: NO. Production FULL: NOT ENABLED.**
+The exact remaining gate is D2/D3 consent plus the named actual-callback binding
+obligations (including dynamic collision shapes and non-self dependency checks),
+not another broad reconnaissance pass. A conditional implementation sequence is
+in the decision; do not implement around the pending observable changes.
+
+Cleanup `a99d647c1ed39b1a96d5267e6f08f06ba17d8945` and all its assertions,
+including missing-route negative coverage and APPLIED-before-claim-release,
+remain unchanged and passing. Evidence: `run/full-d1-d3-decisions/`. No new live
+server/client run, production code or build configuration change. Server-only;
+workers=1; parallel gameplay=OFF; R-CHUNK-01/Stage 3=PARTIAL;
+Stage 4=NOT STARTED.
+
+## Prior FULL callback inventory at 84a01d4 — 2026-09-04
 
 **Cleanup defect: FIXED**, dedicated commit
 `a99d647c1ed39b1a96d5267e6f08f06ba17d8945`. **Scoreboard decision: accepted

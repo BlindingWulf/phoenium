@@ -18,6 +18,26 @@ submission. Its reservation is explicit service authority, independent of a
 region lease; it does not close the rest of the FULL callback footprint or
 enable FULL. The historical architecture and evidence below are preserved.
 
+### Focused D1–D3 review amendment — 2026-09-04
+
+[FULL D1–D3 decisions](STAGE3_FULL_D1_D3_DECISIONS.md) distinguishes the old
+contract and the selected changes explicitly. D1-F refines §§6/7/9/10: the named
+identity service may supply the enumerated owner-published, versioned identity
+and target-validation facts at original synchronous reference calls. All
+contributing writers participate before their enclosing claims. The actual
+foreign pointer remains an alias, without live-read/mutation rights; no second
+region lease or cross-dimension geographic convergence is authorized. Existing
+unamended registry turns alone still do not grant these fact-service rights.
+
+D2-P (early profile/cache/persistence effects and earlier identity observation)
+and D3-X (private exact-object access allowing a self-dependent saved conversion
+to complete) are **proposals requiring user approval for observable changes**.
+They do not silently replace this record's synchronous/ready-input rules. Their
+combined diagram retains C before S before ordered world turns, with a proposed
+short cache validation grant between C and S and no I/O under any such grant.
+No production binding is installed. FULL closure/readiness remains
+INCOMPLETE/NO, Stage 3/R-CHUNK-01 PARTIAL and Stage 4 NOT STARTED.
+
 ## 2. Evidence basis
 
 Reviewed at clean HEAD `e992f830601c366a17e9df3cc034a8430012b381` on 2026-09-03.

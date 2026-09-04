@@ -1,6 +1,35 @@
 # Stage 3 FULL conversion review and load regression repair
 
-## Current callback review — 2026-09-04
+## Current D1–D3 disposition — 2026-09-04
+
+[STAGE3_FULL_D1_D3_DECISIONS.md](STAGE3_FULL_D1_D3_DECISIONS.md) supersedes
+the open-decision conclusions below while retaining this source inventory and
+M1/M2/scoreboard ordering. D1 is **RESOLVED WITH DOCUMENTED AMENDMENT** through
+typed identity/target-validation facts, not foreign object authority. D2
+**REQUIRES USER APPROVAL** for pre-admission legacy-name/cache/persistence
+effects and observation timing. D3 **REQUIRES USER APPROVAL** for the proposed
+private exact-object query that breaks the source-proven self-FULL cycle.
+No consent is invented and no production authority is installed.
+
+The new witnesses establish that Mob.setTarget validates through concrete
+target predicates; saved FishingHook's reader is empty; cache IOException is
+caught while runtime failures retain their original propagation; and the actual
+FULL supplier can finish after a caught conversion failure with team effects
+already committed. They run original proto and reload post-load paths, exact
+future selection, frog finalization/collision, and seeded random checks with
+explicit controlled environment endpoints. The self-query witness does not
+enter managedBlock or claim a live hang. Dynamic non-air collision shapes and
+mutually dependent non-self work remain named binding/closure obligations in
+that decision, not implied fixture coverage.
+
+Baseline **221/221**, final clean build **253/253**, no failures/errors/skips,
+production artifact unchanged. Cleanup checkpoint `a99d647` and all existing
+scoreboard/cleanup witnesses remain intact. **FULL callback closure: INCOMPLETE;
+integrated implementation ready: NO; production FULL: NOT ENABLED.** Next action
+is the explicit decisions/acceptance sequence in the linked document, rather
+than treating the older “decision needed” text as unexamined evidence.
+
+## Prior callback review at 84a01d4 — 2026-09-04
 
 **Cleanup: FIXED in `a99d647c1ed39b1a96d5267e6f08f06ba17d8945`. FULL callback
 closure: INCOMPLETE. Integrated FULL implementation ready: NO.** Three precise
