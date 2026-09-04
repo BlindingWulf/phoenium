@@ -1,5 +1,14 @@
 # Stage 3 chunk-only handoff
 
+> **2026-09-04 follow-up:** FULL conversion/publication remains unbound following
+> a reproduced synchronous scoreboard/foreign-dimension dispatch ownership
+> question. The pending service-contract proposal, POI race repair, fixture
+> fixes, final 203-test result, five passing server lifecycles and artifact hash
+> are in [STAGE3_FULL_CONVERSION_REVIEW.md](STAGE3_FULL_CONVERSION_REVIEW.md).
+> This is not a completed FULL checkpoint. The accepted load checkpoint below
+> remains historical context; the new report distinguishes final regression
+> evidence from the unresolved FULL decision.
+
 > **Latest implementation checkpoint:** Part A is independently committed with
 > 178 tests. Part B now binds the real Minecraft 26.2 EMPTY load registrar,
 > original `$3` parsed apply, `$4` recovery, POI installation, read-time light

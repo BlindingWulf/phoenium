@@ -13,8 +13,6 @@ import dev.phoenium.region.RegionId;
 import dev.phoenium.topology.RegionDirectory;
 import dev.phoenium.topology.RegionRoute;
 import dev.phoenium.topology.RoutingKey;
-import it.unimi.dsi.fastutil.longs.Long2ObjectMap;
-import it.unimi.dsi.fastutil.longs.LongSet;
 import java.util.ArrayList;
 import java.util.IdentityHashMap;
 import java.util.LinkedHashMap;
@@ -287,8 +285,8 @@ public final class ChunkBindingRuntime {
         @Override public boolean poiAlreadyInstalled(ChunkLoadGraph.Token token, CompletableFuture<?> source) {
             requireHolder(token);
             PoiStorageAccess storage = (PoiStorageAccess) map.phoenium$poi();
-            return storage.phoenium$loadedChunks().contains(position.pack())
-                    && storage.phoenium$pendingLoads().get(position.pack()) != source;
+            return new PoiLoadBookkeeping(storage.phoenium$loadLock(), storage.phoenium$pendingLoads(),
+                    storage.phoenium$loadedChunks()).alreadyInstalled(position.pack(), source);
         }
         @Override public void installPoi(ChunkLoadGraph.Token token, ChunkLoadGraph.PoiInput input,
                                          ChunkStageClaim claim) {
@@ -296,19 +294,15 @@ public final class ChunkBindingRuntime {
             if (!(input.packedResult() instanceof Optional<?> packedResult))
                 throw new ChunkProtocolException("POI prefetch result type changed");
             PoiStorageAccess storage = (PoiStorageAccess) map.phoenium$poi();
-            Long2ObjectMap<CompletableFuture<Optional<?>>> pending = storage.phoenium$pendingLoads();
-            LongSet loaded = storage.phoenium$loadedChunks();
+            PoiLoadBookkeeping bookkeeping = new PoiLoadBookkeeping(storage.phoenium$loadLock(),
+                    storage.phoenium$pendingLoads(), storage.phoenium$loadedChunks());
             long key = position.pack();
-            if (loaded.contains(key)) return;
-            if (pending.get(key) != input.source())
-                throw new ChunkProtocolException("POI pending source identity changed");
+            if (!bookkeeping.needsInstallation(key, input.source())) return;
             try { MinecraftPoiInstaller.install((net.minecraft.world.level.chunk.storage.SectionStorage<?, ?>) map.phoenium$poi(),
                     position, packedResult.orElse(null)); }
             catch (Throwable failure) { throw failure instanceof RuntimeException runtime ? runtime
                     : new RuntimeException(failure); }
-            if (pending.get(key) != input.source())
-                throw new ChunkProtocolException("POI source changed during owner install");
-            pending.remove(key); loaded.add(key);
+            bookkeeping.acknowledgeInstallation(key, input.source());
             poiInstalls++;
             trace("POI_INSTALLED", token, "Q=" + input.source());
         }

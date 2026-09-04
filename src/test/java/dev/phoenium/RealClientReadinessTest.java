@@ -23,6 +23,27 @@ import static org.junit.jupiter.api.Assertions.*;
 
 /** Deterministic real-client readiness tests; these construct no Minecraft client or packet. */
 class RealClientReadinessTest {
+    @Test void chunkSupportCoversSpawnDependenciesWithoutRemovingThePacketBoundary() {
+        net.minecraft.SharedConstants.tryDetectVersion();
+        net.minecraft.server.Bootstrap.bootStrap();
+        int dependencyRadius = net.minecraft.world.level.chunk.status.ChunkPyramid.GENERATION_PYRAMID
+                .getStepTo(net.minecraft.world.level.chunk.status.ChunkStatus.FULL)
+                .getAccumulatedRadiusOf(net.minecraft.world.level.chunk.status.ChunkStatus.EMPTY);
+        assertTrue(5 + 5 + 1 + dependencyRadius <= ExplicitLiveTopologyFixture.CHUNK_SUPPORT_RADIUS,
+                "fixture must enclose spawn search, client view, and FULL generation dependencies");
+        WorldId world = new WorldId("minecraft:overworld");
+        var generation = new TopologyGeneration(1);
+        var plan = ExplicitLiveTopologyFixture.plan(world, new RoutingKey(world, 0, 0),
+                generation, new OwnerEpoch(0), new OwnerEpoch(0), new RoutingKey(world, 160, -160));
+        var directory = new RegionDirectory();
+        directory.publish(generation, plan.routes());
+        for (int x : new int[] {138, 182}) for (int z : new int[] {-182, -138})
+            assertEquals(plan.a(), directory.resolve(new RoutingKey(world, x, z)).orElseThrow().region());
+        assertEquals(plan.a(), directory.resolve(new RoutingKey(world, 4, 0)).orElseThrow().region());
+        assertEquals(plan.b(), directory.resolve(new RoutingKey(world, 5, 0)).orElseThrow().region());
+        assertTrue(directory.resolve(new RoutingKey(world, 193, 0)).isEmpty());
+        assertTrue(directory.snapshot().worldDefaults().isEmpty());
+    }
     @Test void firstMovementBootstrapDefersOnlyAwaitingTeleportOrBaselineMismatch() {
         assertEquals(MovementBootstrapDisposition.DEFER_UNTIL_TELEPORT_OR_BASELINE_CONVERGES,
             MovementBootstrapDisposition.from(LiveMovementSnapshot.Disposition.AWAITING_TELEPORT));

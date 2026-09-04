@@ -279,7 +279,11 @@ class CoreAcceptanceTest {
             .map(path -> { try { return Files.readString(path); } catch (Exception e) { throw new RuntimeException(e); } })
             .collect(java.util.stream.Collectors.joining("\n"));
         assertFalse(allCore.contains("ReentrantReadWriteLock"));
-        assertFalse(allCore.contains("synchronized ("));
+        // SectionStorage already owns this monitor. The bounded bookkeeping bridge must use
+        // that same monitor as vanilla prefetch; its tests prohibit unlocked map access.
+        // All other production source remains subject to the broad-monitor prohibition.
+        String poiMetadata = Files.readString(Path.of("src/main/java/dev/phoenium/chunk/PoiLoadBookkeeping.java"));
+        assertFalse(allCore.replace(poiMetadata, "").contains("synchronized ("));
         assertTrue(allCore.contains("ReentrantLock metadataGate"));
     }
     @Test void regressionShutdownDoesNotExecutePendingWorkFromCallerThread() {

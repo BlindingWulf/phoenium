@@ -269,8 +269,14 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
         RegionId region;
         RegionRuntime runtime;
         if (explicitFixture) {
+            RoutingKey initialSpawn = null;
+            if (Boolean.getBoolean("phoenium.test.chunkFixtureSupport")) {
+                var position = net.minecraft.world.level.ChunkPos.containing(
+                        level.getChunkSource().randomState().sampler().findSpawnPosition());
+                initialSpawn = new RoutingKey(world, position.x(), position.z());
+            }
             ExplicitLiveTopologyFixture.Plan plan = ExplicitLiveTopologyFixture.plan(world, key, generation,
-                    new OwnerEpoch(0), new OwnerEpoch(0));
+                    new OwnerEpoch(0), new OwnerEpoch(0), initialSpawn);
             region = plan.a(); runtime = readyRuntime(region);
             RegionRuntime b = readyRuntime(plan.b());
             runtimes.put(plan.b(), b); routes.putAll(plan.routes());

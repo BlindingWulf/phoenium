@@ -174,15 +174,15 @@ public final class Stage3ClientTest implements FabricClientGameTest {
             first.execute("tp " + evidence.testUsername + " 8.5 80 8.5");
             first.execute("kill @e[type=minecraft:armor_stand]");
             context.waitTicks(30);
-            Snapshot interactionBeforeSummon = record(first, evidence, "interaction-before-summon");
+            record(first, evidence, "interaction-before-summon");
             first.execute("summon minecraft:armor_stand 10.5 80 8.5 {NoGravity:1b,Tags:[\""
                 + SAME_OWNER_TARGET_TAG + "\"]}");
             context.waitTicks(25);
             Snapshot interactionPublished = record(first, evidence, "interaction-target-published");
             evidence.interactionTargetClientEntityCount = Integer.toString(clientEntityCount(context));
-            evidence.interactionLifecycleObserved = value(interactionPublished, "entities") > value(interactionBeforeSummon, "entities");
-            require(evidence.interactionLifecycleObserved,
-                "same-owner target did not become visible in the live owned-entity projection: " + interactionPublished.raw);
+            double[] sameTarget = parsePosition(first.targetPosition(SAME_OWNER_TARGET_TAG));
+            require(Math.abs(sameTarget[0] - 10.5D) < 0.01D && Math.abs(sameTarget[2] - 8.5D) < 0.01D,
+                "the tagged same-owner target was not present at the interaction position");
 
             input.lookAt(new BlockPos(10, 80, 8));
             input.pressKey(options -> options.keyUse);
@@ -190,6 +190,9 @@ public final class Stage3ClientTest implements FabricClientGameTest {
             input.pressMouse(1);
             context.waitTicks(20);
             Snapshot interactionAfter = record(first, evidence, "interaction-after");
+            // A hit on this actual interaction proves index publication. Aggregate entity counts
+            // can fall concurrently as unrelated naturally generated mobs unload or despawn.
+            evidence.interactionLifecycleObserved = delta(interactionPublished, interactionAfter, "interact.hit") > 0;
             evidence.sameRegionInteractionObserved = delta(interactionPublished, interactionAfter, "interact.in") > 0
                 && delta(interactionPublished, interactionAfter, "interact.hit") > 0
                 && delta(interactionPublished, interactionAfter, "interact.ownerAdmission") > 0
@@ -1772,8 +1775,10 @@ public final class Stage3ClientTest implements FabricClientGameTest {
             Path java = Path.of(System.getProperty("java.home"), "bin",
                 System.getProperty("os.name", "").toLowerCase().contains("win") ? "java.exe" : "java");
             List<String> command = new ArrayList<>(List.of(
-                java.toString(), "-Xmx1G",
+                java.toString(), "-Xmx2G",
                 "-Dphoenium.stage3.explicitTopology=true",
+                "-Dphoenium.test.chunkFixtureSupport=true",
+                "-Dphoenium.test.chunkBindingTrace=true",
                 "-Dphoenium.test.diagnostics=true"));
             if (chunkTrace) {
                 command.add("-Dphoenium.stage3.chunkTrace=true");

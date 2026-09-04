@@ -20,26 +20,47 @@ public final class ExplicitLiveTopologyFixture {
     public static final int B_WIDTH = 4;
     /** The gated trace target sits outside the server's persistent spawn area. */
     public static final int TRACE_B_WIDTH = 28;
+    /** Spawn search (5), client view (5 + one border), and generation dependencies (11). */
+    public static final int CHUNK_SUPPORT_RADIUS = 22;
     private ExplicitLiveTopologyFixture() { }
 
     public static boolean enabled() { return Boolean.getBoolean(PROPERTY); }
 
     public static Plan plan(WorldId world, RoutingKey spawnAnchor, TopologyGeneration generation,
                             OwnerEpoch aEpoch, OwnerEpoch bEpoch) {
+        return plan(world, spawnAnchor, generation, aEpoch, bEpoch, null);
+    }
+
+    public static Plan plan(WorldId world, RoutingKey spawnAnchor, TopologyGeneration generation,
+                            OwnerEpoch aEpoch, OwnerEpoch bEpoch, RoutingKey initialSpawn) {
         RegionId a = new RegionId(world, "stage3-fixture-a");
         RegionId b = new RegionId(world, "stage3-fixture-b");
         Map<RoutingKey, RegionRoute> routes = new LinkedHashMap<>();
-        for (int x = spawnAnchor.x() - A_RADIUS; x <= spawnAnchor.x() + A_RADIUS; x++) {
-            for (int z = spawnAnchor.z() - A_RADIUS; z <= spawnAnchor.z() + A_RADIUS; z++) {
+        boolean chunkSupport = initialSpawn != null;
+        int supportRadius = chunkSupport ? CHUNK_SUPPORT_RADIUS : A_RADIUS;
+        for (int x = spawnAnchor.x() - supportRadius; x <= spawnAnchor.x() + supportRadius; x++) {
+            for (int z = spawnAnchor.z() - supportRadius; z <= spawnAnchor.z() + supportRadius; z++) {
                 RoutingKey key = new RoutingKey(world, x, z);
                 routes.put(key, new RegionRoute(a, generation, aEpoch));
             }
+        }
+        if (chunkSupport) {
+            if (!world.equals(initialSpawn.world())) throw new IllegalArgumentException("foreign spawn support world");
+            // Declare the actual sampler-selected spawn neighborhood and the harness corridor's
+            // dependency neighborhood before any stage is admitted. No missing-route fallback.
+            for (int x = initialSpawn.x() - CHUNK_SUPPORT_RADIUS; x <= initialSpawn.x() + CHUNK_SUPPORT_RADIUS; x++)
+                for (int z = initialSpawn.z() - CHUNK_SUPPORT_RADIUS; z <= initialSpawn.z() + CHUNK_SUPPORT_RADIUS; z++)
+                    routes.put(new RoutingKey(world, x, z), new RegionRoute(a, generation, aEpoch));
+            for (int x = spawnAnchor.x() + supportRadius + 1; x <= spawnAnchor.x() + A_RADIUS + TRACE_B_WIDTH + CHUNK_SUPPORT_RADIUS; x++)
+                for (int z = spawnAnchor.z() - supportRadius; z <= spawnAnchor.z() + supportRadius; z++)
+                    routes.put(new RoutingKey(world, x, z), new RegionRoute(a, generation, aEpoch));
         }
         int bWidth = Boolean.getBoolean("phoenium.stage3.chunkTrace") ? TRACE_B_WIDTH : B_WIDTH;
         for (int x = spawnAnchor.x() + A_RADIUS + 1; x <= spawnAnchor.x() + A_RADIUS + bWidth; x++) {
             for (int z = spawnAnchor.z() - A_RADIUS; z <= spawnAnchor.z() + A_RADIUS; z++) {
                 RoutingKey key = new RoutingKey(world, x, z);
-                if (routes.put(key, new RegionRoute(b, generation, bEpoch)) != null) {
+                RegionRoute previous = routes.put(key, new RegionRoute(b, generation, bEpoch));
+                if (previous != null && !chunkSupport) {
                     throw new IllegalStateException("explicit fixture created overlapping authority");
                 }
             }
