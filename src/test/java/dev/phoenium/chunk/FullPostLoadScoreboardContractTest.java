@@ -93,6 +93,37 @@ final class FullPostLoadScoreboardContractTest {
         assertTrue(f.deliveries.isEmpty());
     }
 
+    @Test void sameTeamStillRemovesAndAddsAndAbsentSavedTeamLeavesMembershipAlone() throws Throwable {
+        var f = new Fixture();
+        var team = f.scoreboard.getPlayerTeam("saved-team");
+        assertTrue(f.scoreboard.addPlayerToTeam(Fixture.UUID, team));
+        f.deliveries.clear();
+        assertTrue(f.scoreboard.addPlayerToTeam(Fixture.UUID, team), "vanilla returns the post-removal set insertion result");
+        assertEquals(List.of("overworld:REMOVE", "nether:REMOVE", "overworld:ADD", "nether:ADD"), f.deliveries);
+        f.deliveries.clear();
+        f.restore("absent-team");
+        assertSame(team, f.scoreboard.getPlayersTeam(Fixture.UUID));
+        assertTrue(f.deliveries.isEmpty());
+        assertFalse(f.scoreboard.removePlayerFromTeam("absent-member"));
+    }
+
+    @Test void failureDuringRemoveLeavesNoMembershipAndNeverReachesAddOrDirty() throws Throwable {
+        var f = new Fixture();
+        var prior = f.scoreboard.addPlayerTeam("prior-team");
+        f.scoreboard.addPlayerToTeam(Fixture.UUID, prior);
+        f.deliveries.clear();
+        set(f.scoreboard, ServerScoreboard.class, "dirty", false);
+        var exact = new IllegalStateException("controlled REMOVE send failure");
+        f.beforeSend = () -> { throw exact; };
+        assertSame(exact, assertThrows(IllegalStateException.class, () -> f.restore("saved-team")));
+        assertNull(f.scoreboard.getPlayersTeam(Fixture.UUID));
+        assertFalse(prior.getPlayers().contains(Fixture.UUID));
+        assertFalse(f.scoreboard.getPlayerTeam("saved-team").getPlayers().contains(Fixture.UUID));
+        assertTrue(f.deliveries.isEmpty());
+        Field dirty = ServerScoreboard.class.getDeclaredField("dirty"); dirty.setAccessible(true);
+        assertFalse(dirty.getBoolean(f.scoreboard), "setDirty follows send and waypoint, not the membership write");
+    }
+
     private static final class Fixture {
         static final String UUID = "ce40fa98-3714-4d72-8ad6-055a7d90f29d";
         final List<String> deliveries = new ArrayList<>();

@@ -11,6 +11,13 @@ This document is the implementation authority, together with Luna's runtime evid
 Stage 1/2 and all accepted non-chunk Stage 3 gates stay PASS. R-CHUNK-01 and Stage 3 stay PARTIAL; workers=1, parallel gameplay=OFF, Stage 4=NOT STARTED.
 No production hook, C2ME integration, Stage 4 service implementation, or Stage 3 PASS tag is authorized by this review.
 
+2026-09-04 bounded refinement: the
+[FULL scoreboard service decision](STAGE3_FULL_SCOREBOARD_SERVICE_DECISION.md)
+amends sections 6/9/10 for synchronous scoreboard access and ordered connection
+submission. Its reservation is explicit service authority, independent of a
+region lease; it does not close the rest of the FULL callback footprint or
+enable FULL. The historical architecture and evidence below are preserved.
+
 ## 2. Evidence basis
 
 Reviewed at clean HEAD `e992f830601c366a17e9df3cc034a8430012b381` on 2026-09-03.

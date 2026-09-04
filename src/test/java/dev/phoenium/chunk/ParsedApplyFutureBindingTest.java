@@ -293,6 +293,48 @@ class ParsedApplyFutureBindingTest {
         assertEquals(0, f.services.custody().retainedEntries()); assertFalse(f.graph.retainsInputs());
     }
 
+    /** Characterizes the OPEN defect, not the desired cleanup contract. Replace 2/68 with 0 when fixed. */
+    @Test void missingRouteCancellationRecreatesTwoTerminalCustodyEntriesAfterCleanup() {
+        int retained = 0;
+        for (int occurrence = 0; occurrence < 34; occurrence++) {
+            Fixture f = new Fixture(false);
+            f.expectMissingRoute = true;
+            f.directory.publish(new TopologyGeneration(2), Map.of());
+            // The combined parsed edge is ready as soon as POI cancellation completes it.
+            f.parsedSource.complete(Optional.empty());
+            f.poiSource.complete(Optional.empty());
+            assertSame(GenerationChunkHolder.UNLOADED_CHUNK, f.holderFuture.join());
+            assertTrue(f.returned.isCompletedExceptionally());
+            assertTrue(f.graph.dependent().isDone());
+            assertTrue(f.graph.poiInner().isDone());
+            assertTrue(f.graph.parsedInner().isDone());
+            assertTrue(f.graph.recoveryInner().isDone());
+            assertTrue(f.graph.publicationInner().isDone());
+            assertEquals(1, f.unloadCalls);
+            assertEquals(List.of("POI_INSTALL:CANCELLED"), f.terminals);
+            assertEquals(0, f.poiInstalls + f.applyCalls + f.recoveryCalls + f.publicationCalls);
+            assertTrue(f.inbox.isEmpty());
+            assertFalse(f.graph.retainsInputs());
+            assertFalse(f.leaseA.hasActiveLease());
+            assertFalse(f.leaseB.hasActiveLease());
+            assertFalse(f.barrier.tripped());
+            assertEquals(0, f.services.receiptEntries());
+            assertEquals(0, f.services.metadata().entries());
+            assertEquals(0, f.services.lifecycles().retainedEntries());
+            assertEquals(0, f.services.works().retainedEntries());
+            assertTrue(f.services.custody().stageState(f.graph.poiStage()).isEmpty());
+            assertTrue(f.services.custody().stageState(f.graph.parsedStage()).isEmpty());
+            assertEquals(ChunkCustodyModel.StageState.CANCELLED,
+                    f.services.custody().stageState(f.graph.recoveryStage()).orElseThrow());
+            assertEquals(ChunkCustodyModel.StageState.CANCELLED,
+                    f.services.custody().stageState(f.graph.publicationStage()).orElseThrow());
+            f.graph.shutdown(); f.services.shutdown();
+            assertEquals(2, f.services.custody().retainedEntries(), "known orphan StageId entries survive shutdown");
+            retained += f.services.custody().retainedEntries();
+        }
+        assertEquals(68, retained, "matches the preserved 34-cancellation server log; cleanup is still OPEN");
+    }
+
     private static final class Fixture implements ChunkLoadGraph.Environment {
         private static long fixtureSequence;
         final WorldId world = new WorldId("future-" + (++fixtureSequence));
@@ -314,7 +356,7 @@ class ParsedApplyFutureBindingTest {
         final List<String> terminals = new ArrayList<>(); Throwable applyFailure, recoveryFailure, recoveryInput;
         Runnable duringApply; RegionId applyOwner; String applyThread;
         int poiInstalls, applyCalls, recoveryCalls, publicationCalls, unloadCalls, callbackBarriers;
-        long batchSequence; boolean applyHadLease, publicationHadLease, poiReceiptSeenAtRead;
+        long batchSequence; boolean applyHadLease, publicationHadLease, poiReceiptSeenAtRead, expectMissingRoute;
         CompletableFuture<ChunkResult<ChunkAccess>> oldStatus;
 
         Fixture(boolean reload) { this(reload, Runnable::run, true, false); }
@@ -369,7 +411,13 @@ class ParsedApplyFutureBindingTest {
         }
 
         @Override public ChunkPrerequisiteServices services() { return services; }
-        @Override public void enqueue(PendingVanillaStage<?, ?> pending) { assertEquals(ChunkStageOwnerGateway.Delivery.QUEUED, pump.publishAndDeliver(pending)); }
+        @Override public void enqueue(PendingVanillaStage<?, ?> pending) {
+            var delivery = pump.publishAndDeliver(pending);
+            if (expectMissingRoute) {
+                assertEquals(ChunkStageOwnerGateway.Delivery.REJECTED_ROUTE, delivery);
+                pending.control(ChunkStageAdmission.Result.CANCELLED); // Same redundant terminal call as LoadEnvironment.
+            } else assertEquals(ChunkStageOwnerGateway.Delivery.QUEUED, delivery);
+        }
         @Override public void requireHolder(ChunkLoadGraph.Token token) {
             if (token.holder() != holder || !services.lifecycles().observeSameHolder(token.lifecycle(), holder))
                 throw new ChunkProtocolException("holder evidence changed");

@@ -1,5 +1,38 @@
 # Stage 3 chunk-only handoff
 
+> **Current review decision, 2026-09-04: AMENDED.** Read
+> [STAGE3_FULL_SCOREBOARD_SERVICE_DECISION.md](STAGE3_FULL_SCOREBOARD_SERVICE_DECISION.md)
+> before another FULL implementation. The existing scoreboard has one explicit
+> coordinated authority; reserve its operation turn before the regional claim,
+> update membership synchronously, and preserve the original ordered send
+> submissions and failure prefixes outside state critical sections. All
+> conflicting team readers/writers, dirty/save access and login initialization
+> participate. Connection snapshots must bind exact sessions to the existing
+> connection lifecycle; the current entity projection does not supply this.
+>
+> Repairs/evidence were preserved first in `4d4e804`; see
+> [preservation record](STAGE3_FULL_REVIEW_PRESERVATION.md). Rebuilt baseline:
+> 203 PASS. With two additional vanilla semantic witnesses and one deterministic
+> defect reproduction: **206 PASS**, BUILD SUCCESSFUL. Production artifact hash
+> is unchanged. Historical live evidence is preserved, not newly rerun.
+>
+> **Missing-route retention: OPEN WITH REPRODUCTION.** A synchronous terminal
+> callback can reclaim custody before the outer abort loop finishes; two later
+> controls recreate LOAD_RECOVERY/STATUS_PUBLISH stage records. The new test
+> reproduces 2 entries per cancellation / 68 for 34, matching the original log.
+> Its assertions characterize the defect; no cleanup fix is claimed. Missing
+> coverage is not supersession or an indefinite topology wait.
+>
+> **Exact next task:** close the named synchronous waypoint, tracking/pairing,
+> debug and concrete entity/block-entity callback footprint gaps in decision
+> section 6; repair and rerun terminal cleanup with zero-retention assertions;
+> then implement the approved service together with the actual FULL supplier,
+> holder/work lifetime extension and separate FULL publication. No disconnected
+> service scaffolding. Complete FULL implementation readiness is **NO** until
+> those specific callback authority prerequisites are closed. FULL authority is
+> **NOT ENABLED**. Server-only, workers=1, parallel gameplay=OFF;
+> R-CHUNK-01/Stage 3=PARTIAL; Stage 4=NOT STARTED.
+
 > **2026-09-04 follow-up:** FULL conversion/publication remains unbound following
 > a reproduced synchronous scoreboard/foreign-dimension dispatch ownership
 > question. The pending service-contract proposal, POI race repair, fixture
