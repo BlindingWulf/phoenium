@@ -10,4 +10,10 @@ package dev.phoenium.chunk;
 @FunctionalInterface
 public interface VanillaChunkStage<I, O> {
     O apply(I input) throws Throwable;
+
+    /** The exact claim is passed lexically to adapters with synchronous service sub-operations. */
+    @FunctionalInterface
+    interface Admitted<I, O> {
+        O apply(I input, ChunkStageClaim claim) throws Throwable;
+    }
 }

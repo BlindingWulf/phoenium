@@ -54,8 +54,23 @@ public final class ChunkCustodyModel {
     private final Map<DemandId, Boolean> demands = new HashMap<>();
     private final Map<StageId, StageState> stages = new HashMap<>();
     private final Map<StageId, DeliveryDisposition> dispositions = new HashMap<>();
+    private final Map<LifecycleSlot, StageId> claims = new HashMap<>();
+    private long nextActivation;
+    private boolean admissionsOpen = true;
 
     ReentrantLock gate() { return gate; }
+
+    boolean admissionsOpenLocked() { return admissionsOpen; }
+    public void closeAdmissions() {
+        gate.lock();
+        try { admissionsOpen = false; }
+        finally { gate.unlock(); }
+    }
+    /** Terminal cleanup must not allow an unregistered/forgotten stage to resurrect. */
+    void disarmLocked(StageId id, StageState terminal) {
+        StageState state = stages.get(id);
+        if (state == null || state == StageState.READY || state == StageState.QUEUED) stages.put(id, terminal);
+    }
 
     /** Called only under the custody fence; pending unload preserves already reserved work. */
     boolean metadataEntitledLocked(WorkId id) {
@@ -78,7 +93,7 @@ public final class ChunkCustodyModel {
                 return current.id;
             }
             if (current != null && current.state != LifecycleState.RETIRED) retireLocked(current);
-            long activation = current == null ? 0 : current.id.holderActivationSequence() + 1;
+            long activation = nextActivation++;
             LifecycleId id = new LifecycleId(serverSession, worldInstanceSequence, key.world(), key, activation);
             LifecycleRecord created = new LifecycleRecord(id, holderEvidence);
             lifecycles.put(slot, created);
@@ -151,9 +166,13 @@ public final class ChunkCustodyModel {
         StageState current = stages.get(id);
         if (current != StageState.QUEUED) return false;
         requireActiveWork(id.work());
+        if (targetClaimedLocked(id)) return false;
+        claims.put(slot(id.work().lifecycle()), id);
         stages.put(id, StageState.CLAIMED);
         return true;
     }
+    boolean targetClaimedLocked(StageId id) { return claims.containsKey(slot(id.work().lifecycle())); }
+    void releaseClaimLocked(StageId id) { claims.remove(slot(id.work().lifecycle()), id); }
     boolean isEligibleLocked(StageId id) {
         return stages.get(id) == StageState.QUEUED && activeWorkLocked(id.work());
     }
@@ -165,12 +184,38 @@ public final class ChunkCustodyModel {
     public void failVanilla(StageId id) {
         gate.lock(); try {
             StageState current = stages.get(id);
-            if (current != StageState.READY && current != StageState.QUEUED) throw new IllegalStateException("vanilla failure after stage claim " + current);
+            if (current != StageState.READY && current != StageState.QUEUED && current != StageState.CLAIMED)
+                throw new IllegalStateException("vanilla failure from terminal stage " + current);
             stages.put(id, StageState.FAILED_VANILLA);
         } finally { gate.unlock(); }
     }
     public Optional<StageState> stageState(StageId id) { gate.lock(); try { return Optional.ofNullable(stages.get(id)); } finally { gate.unlock(); } }
     public Optional<DeliveryDisposition> disposition(StageId id) { gate.lock(); try { return Optional.ofNullable(dispositions.get(id)); } finally { gate.unlock(); } }
+
+    /** All consumers must acknowledge before this terminal ledger reclamation. No tombstones. */
+    public boolean canReleaseRetiredLifecycle(LifecycleId id) {
+        gate.lock(); try {
+            LifecycleRecord record = lifecycleById.get(id);
+            return record != null && record.state == LifecycleState.RETIRED
+                && claims.values().stream().noneMatch(stage -> stage.work().lifecycle().equals(id));
+        } finally { gate.unlock(); }
+    }
+    public void releaseRetiredLifecycle(LifecycleId id) {
+        gate.lock(); try {
+            if (!canReleaseRetiredLifecycle(id)) throw new ChunkProtocolException("lifecycle cleanup before terminal acknowledgment");
+            stages.keySet().removeIf(stage -> stage.work().lifecycle().equals(id));
+            dispositions.keySet().removeIf(stage -> stage.work().lifecycle().equals(id));
+            demands.keySet().removeIf(demand -> demand.work().lifecycle().equals(id));
+            works.keySet().removeIf(work -> work.lifecycle().equals(id));
+            LifecycleRecord record = lifecycleById.remove(id);
+            lifecycles.remove(slot(id), record);
+        } finally { gate.unlock(); }
+    }
+    public int retainedEntries() {
+        gate.lock(); try { return lifecycles.size() + lifecycleById.size() + works.size() + demands.size() + stages.size() + dispositions.size() + claims.size(); }
+        finally { gate.unlock(); }
+    }
+    private LifecycleSlot slot(LifecycleId id) { return new LifecycleSlot(id.worldInstanceSequence(), id.chunkKey()); }
 
     private void retireLocked(LifecycleRecord record) {
         record.state = LifecycleState.RETIRED;
@@ -184,7 +229,7 @@ public final class ChunkCustodyModel {
     private void requireLive(LifecycleId id) { if (requireLifecycle(id).state != LifecycleState.LIVE) throw new IllegalStateException("lifecycle is not live " + id); }
     private WorkRecord requireWork(WorkId id) { WorkRecord work = works.get(id); if (work == null) throw new IllegalStateException("unknown work " + id); return work; }
     private void requireActiveWork(WorkId id) { if (!activeWorkLocked(id)) throw new IllegalStateException("work is not active " + id); }
-    private boolean activeWorkLocked(WorkId id) { WorkRecord work = works.get(id); LifecycleRecord lifecycle = lifecycleById.get(id.lifecycle()); return work != null && work.state == WorkState.ACTIVE && lifecycle != null && lifecycle.state == LifecycleState.LIVE; }
+    private boolean activeWorkLocked(WorkId id) { return metadataEntitledLocked(id); }
     private record LifecycleSlot(long worldInstanceSequence, RoutingKey key) { }
     private static final class LifecycleRecord { final LifecycleId id; final Object holderEvidence; LifecycleState state = LifecycleState.LIVE; LifecycleRecord(LifecycleId id, Object holderEvidence) { this.id = id; this.holderEvidence = holderEvidence; } }
     private static final class WorkRecord { WorkState state = WorkState.ACTIVE; }

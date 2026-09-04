@@ -23,7 +23,7 @@ class ChunkCustodyModelTest {
         for (ChunkStageKind kind : ChunkStageKind.values()) {
             ChunkCustodyModel.StageId stage = f.stage(kind, kind.name().toLowerCase(), ++sequence);
             f.readyAndQueue(stage);
-            assertEquals(ChunkStageAdmission.Result.APPLIED, f.admission.deliver(stage, f.a, invocations::incrementAndGet));
+            assertEquals(ChunkStageAdmission.Result.APPLIED, f.deliver(stage, f.a, invocations::incrementAndGet));
             assertEquals(ChunkCustodyModel.StageState.APPLIED, f.model.stageState(stage).orElseThrow());
         }
         assertEquals(ChunkStageKind.values().length, invocations.get());
@@ -32,53 +32,53 @@ class ChunkCustodyModelTest {
     @Test void ca02OwnerChangesBeforeClaimReroutesSameStageToB() {
         Fixture f = new Fixture(); ChunkCustodyModel.StageId stage = f.stage(ChunkStageKind.PARSED_APPLY, "load", 1); f.readyAndQueue(stage);
         f.publish(f.b, 2); AtomicInteger mutations = new AtomicInteger();
-        assertEquals(ChunkStageAdmission.Result.STALE_ROUTE, f.admission.deliver(stage, f.a, mutations::incrementAndGet));
-        assertEquals(ChunkStageAdmission.Result.APPLIED, f.admission.deliver(stage, f.b, mutations::incrementAndGet));
+        assertEquals(ChunkStageAdmission.Result.STALE_ROUTE, f.deliver(stage, f.a, mutations::incrementAndGet));
+        assertEquals(ChunkStageAdmission.Result.APPLIED, f.deliver(stage, f.b, mutations::incrementAndGet));
         assertEquals(1, mutations.get()); assertEquals(1, f.admission.staleRoutes());
     }
 
     @Test void ca03OwnerChangesBetweenStagesNeverReplaysAppliedStage() {
         Fixture f = new Fixture(); ChunkCustodyModel.StageId first = f.stage(ChunkStageKind.PARSED_APPLY, "load", 1); f.readyAndQueue(first);
-        AtomicInteger firstRuns = new AtomicInteger(); assertEquals(ChunkStageAdmission.Result.APPLIED, f.admission.deliver(first, f.a, firstRuns::incrementAndGet));
+        AtomicInteger firstRuns = new AtomicInteger(); assertEquals(ChunkStageAdmission.Result.APPLIED, f.deliver(first, f.a, firstRuns::incrementAndGet));
         f.publish(f.b, 2); ChunkCustodyModel.StageId second = f.stage(ChunkStageKind.FULL_CONVERT, "full", 2); f.readyAndQueue(second);
-        AtomicInteger secondRuns = new AtomicInteger(); assertEquals(ChunkStageAdmission.Result.APPLIED, f.admission.deliver(second, f.b, secondRuns::incrementAndGet));
-        assertEquals(ChunkStageAdmission.Result.DUPLICATE, f.admission.deliver(first, f.b, firstRuns::incrementAndGet));
+        AtomicInteger secondRuns = new AtomicInteger(); assertEquals(ChunkStageAdmission.Result.APPLIED, f.deliver(second, f.b, secondRuns::incrementAndGet));
+        assertEquals(ChunkStageAdmission.Result.DUPLICATE, f.deliver(first, f.b, firstRuns::incrementAndGet));
         assertEquals(1, firstRuns.get()); assertEquals(1, secondRuns.get());
     }
 
     @Test void ca04DuplicateDeliveryClaimsAndInvokesExactlyOnce() {
         Fixture f = new Fixture(); ChunkCustodyModel.StageId stage = f.stage(ChunkStageKind.STATUS_PUBLISH, "status-full", 1); f.readyAndQueue(stage);
-        AtomicInteger calls = new AtomicInteger(); assertEquals(ChunkStageAdmission.Result.APPLIED, f.admission.deliver(stage, f.a, calls::incrementAndGet));
-        assertEquals(ChunkStageAdmission.Result.DUPLICATE, f.admission.deliver(stage, f.a, calls::incrementAndGet));
+        AtomicInteger calls = new AtomicInteger(); assertEquals(ChunkStageAdmission.Result.APPLIED, f.deliver(stage, f.a, calls::incrementAndGet));
+        assertEquals(ChunkStageAdmission.Result.DUPLICATE, f.deliver(stage, f.a, calls::incrementAndGet));
         assertEquals(1, calls.get());
     }
 
     @Test void ca05RetiredSharedWorkCannotMutateAndReplacementWorkCan() {
         Fixture f = new Fixture(); ChunkCustodyModel.StageId old = f.stage(ChunkStageKind.PARSED_APPLY, "old", 1); f.readyAndQueue(old);
         f.model.retireWork(f.work, false);
-        assertEquals(ChunkStageAdmission.Result.SUPERSEDED, f.admission.deliver(old, f.a, () -> fail("retired work ran")));
+        assertEquals(ChunkStageAdmission.Result.SUPERSEDED, f.deliver(old, f.a, () -> fail("retired work ran")));
         ChunkCustodyModel.WorkId replacement = f.model.beginWork(f.lifecycle, 2);
         ChunkCustodyModel.StageId fresh = new ChunkCustodyModel.StageId(replacement, ChunkStageKind.PARSED_APPLY, "new", 1);
-        f.model.ready(fresh); f.model.queue(fresh); assertEquals(ChunkStageAdmission.Result.APPLIED, f.admission.deliver(fresh, f.a, () -> {}));
+        f.model.ready(fresh); f.model.queue(fresh); assertEquals(ChunkStageAdmission.Result.APPLIED, f.deliver(fresh, f.a, () -> {}));
     }
 
     @Test void ca06HolderReplacementRejectsOldLifecycleAndPendingUnloadRescuePreservesIt() {
         Fixture f = new Fixture(); ChunkCustodyModel.StageId old = f.stage(ChunkStageKind.PARSED_APPLY, "old", 1); f.readyAndQueue(old);
         Object replacementHolder = new Object(); f.model.retire(f.lifecycle);
         ChunkCustodyModel.LifecycleId replacement = f.model.activate("server", 1, f.key, replacementHolder);
-        assertNotEquals(f.lifecycle, replacement); assertEquals(ChunkStageAdmission.Result.SUPERSEDED, f.admission.deliver(old, f.a, () -> fail("old lifecycle ran")));
+        assertNotEquals(f.lifecycle, replacement); assertEquals(ChunkStageAdmission.Result.SUPERSEDED, f.deliver(old, f.a, () -> fail("old lifecycle ran")));
         ChunkCustodyModel.WorkId nextWork = f.model.beginWork(replacement, 1);
         ChunkCustodyModel.StageId next = new ChunkCustodyModel.StageId(nextWork, ChunkStageKind.PARSED_APPLY, "new", 1); f.model.ready(next); f.model.queue(next);
-        assertEquals(ChunkStageAdmission.Result.APPLIED, f.admission.deliver(next, f.a, () -> {}));
+        assertEquals(ChunkStageAdmission.Result.APPLIED, f.deliver(next, f.a, () -> {}));
         Fixture rescue = new Fixture(); rescue.model.pendingUnload(rescue.lifecycle); assertTrue(rescue.model.rescue(rescue.lifecycle, rescue.holder));
         assertEquals(ChunkCustodyModel.LifecycleState.LIVE, rescue.model.lifecycleState(rescue.lifecycle).orElseThrow());
     }
 
     @Test void ca07ShutdownAfterReadySettlesWithoutMutationAndClaimedStageMayFinish() {
         Fixture f = new Fixture(); ChunkCustodyModel.StageId ready = f.stage(ChunkStageKind.PARSED_APPLY, "ready", 1); f.readyAndQueue(ready); f.admission.closeAdmissions();
-        assertEquals(ChunkStageAdmission.Result.SHUTDOWN, f.admission.deliver(ready, f.a, () -> fail("shutdown admitted a new stage")));
+        assertEquals(ChunkStageAdmission.Result.SHUTDOWN, f.deliver(ready, f.a, () -> fail("shutdown admitted a new stage")));
         Fixture claimed = new Fixture(); ChunkCustodyModel.StageId stage = claimed.stage(ChunkStageKind.FULL_CONVERT, "claimed", 1); claimed.readyAndQueue(stage);
-        assertEquals(ChunkStageAdmission.Result.APPLIED, claimed.admission.deliver(stage, claimed.a, claimed.admission::closeAdmissions));
+        assertEquals(ChunkStageAdmission.Result.APPLIED, claimed.deliver(stage, claimed.a, claimed.admission::closeAdmissions));
         assertEquals(ChunkCustodyModel.StageState.APPLIED, claimed.model.stageState(stage).orElseThrow());
     }
 
@@ -98,8 +98,8 @@ class ChunkCustodyModelTest {
         Fixture f = new Fixture(); ChunkCustodyModel.StageId stage = f.stage(ChunkStageKind.MAP_METADATA, "marker", 1); f.readyAndQueue(stage);
         f.publish(f.a, 2); AtomicInteger calls = new AtomicInteger();
         // A stale G1 delivery cannot claim; the same StageId is then delivered using current G2.
-        assertEquals(ChunkStageAdmission.Result.STALE_ROUTE, f.admission.deliver(stage, f.a, new TopologyGeneration(1), calls::incrementAndGet));
-        assertEquals(ChunkStageAdmission.Result.APPLIED, f.admission.deliver(stage, f.a, new TopologyGeneration(2), calls::incrementAndGet));
+        assertEquals(ChunkStageAdmission.Result.STALE_ROUTE, f.deliver(stage, f.a, new TopologyGeneration(1), calls::incrementAndGet));
+        assertEquals(ChunkStageAdmission.Result.APPLIED, f.deliver(stage, f.a, new TopologyGeneration(2), calls::incrementAndGet));
         assertEquals(1, calls.get()); assertEquals(ChunkCustodyModel.StageState.APPLIED, f.model.stageState(stage).orElseThrow());
     }
 
@@ -108,7 +108,7 @@ class ChunkCustodyModelTest {
         f.model.cancelDemand(d1); assertFalse(f.model.demandActive(d1)); assertTrue(f.model.demandActive(d2)); assertEquals(ChunkCustodyModel.WorkState.ACTIVE, f.model.workState(f.work).orElseThrow());
         ChunkCustodyModel.StageId stage = f.stage(ChunkStageKind.POI_INSTALL, "section-1", 1);
         f.model.ready(stage); assertTrue(f.model.queue(stage)); assertFalse(f.model.queue(stage));
-        assertEquals(ChunkStageAdmission.Result.APPLIED, f.admission.deliver(stage, f.a, () -> {}));
+        assertEquals(ChunkStageAdmission.Result.APPLIED, f.deliver(stage, f.a, () -> {}));
         f.model.cancelDemand(d2); assertFalse(f.model.hasActiveDemand(f.work)); assertEquals(ChunkCustodyModel.WorkState.ACTIVE, f.model.workState(f.work).orElseThrow(), "zero demands does not silently kill committed shared work");
         f.model.retireWork(f.work, true); assertEquals(ChunkCustodyModel.WorkState.CANCELLED, f.model.workState(f.work).orElseThrow());
     }
@@ -116,9 +116,9 @@ class ChunkCustodyModelTest {
     @Test void repeatedOwnerAndGenerationChangesAndThrownOperationNeverReplay() {
         Fixture f = new Fixture(); ChunkCustodyModel.StageId stage = f.stage(ChunkStageKind.FULL_CONVERT, "full", 1); f.readyAndQueue(stage);
         f.publish(f.a, 2); f.publish(f.b, 3); f.publish(f.a, 4); AtomicInteger calls = new AtomicInteger();
-        assertEquals(ChunkStageAdmission.Result.APPLIED, f.admission.deliver(stage, f.a, calls::incrementAndGet)); assertEquals(1, calls.get());
+        assertEquals(ChunkStageAdmission.Result.APPLIED, f.deliver(stage, f.a, calls::incrementAndGet)); assertEquals(1, calls.get());
         Fixture failed = new Fixture(); ChunkCustodyModel.StageId throwing = failed.stage(ChunkStageKind.PARSED_APPLY, "throws", 1); failed.readyAndQueue(throwing);
-        assertEquals(ChunkStageAdmission.Result.FAILED_BARRIER, failed.admission.deliver(throwing, failed.a, () -> { throw new IllegalStateException("after mutation started"); }));
+        assertEquals(ChunkStageAdmission.Result.FAILED_BARRIER, failed.deliver(throwing, failed.a, () -> { throw new IllegalStateException("after mutation started"); }));
         assertEquals(ChunkCustodyModel.StageState.FAILED_BARRIER, failed.model.stageState(throwing).orElseThrow());
     }
 
@@ -127,6 +127,19 @@ class ChunkCustodyModelTest {
         final RegionId a = new RegionId(world, "A"), b = new RegionId(world, "B"); final Object holder = new Object();
         final RegionDirectory directory = new RegionDirectory(); final FailureBarrier barrier = new FailureBarrier(); final ChunkCustodyModel model = new ChunkCustodyModel();
         final ChunkCustodyModel.LifecycleId lifecycle; final ChunkCustodyModel.WorkId work; final ChunkStageAdmission admission;
+        ChunkStageAdmission.Result deliver(ChunkCustodyModel.StageId stage, RegionId owner, Runnable operation) {
+            var route = directory.resolve(stage.work().lifecycle().chunkKey()).orElseThrow();
+            return deliver(stage,owner,route.generation(),operation);
+        }
+        ChunkStageAdmission.Result deliver(ChunkCustodyModel.StageId stage, RegionId owner, TopologyGeneration generation, Runnable operation) {
+            var pending = new PendingVanillaStage<Void,Void>(model,stage.work().lifecycle(),stage.work(),stage,
+                    new dev.phoenium.task.TaskCorrelationId(0),input -> {
+                        try { operation.run(); return null; }
+                        catch (Throwable failure) { throw new ChunkProtocolException("model invariant",failure); }
+                    });
+            pending.bindInput(null);
+            return new ChunkStageExecutor(admission).execute(pending,owner,generation);
+        }
         Fixture() { publish(a, 1); lifecycle = model.activate("server", 1, key, holder); work = model.beginWork(lifecycle, 1); admission = new ChunkStageAdmission(model, directory, Map.of(a, new RegionLeaseManager(a), b, new RegionLeaseManager(b)), barrier); }
         void publish(RegionId owner, long generation) { TopologyGeneration g = new TopologyGeneration(generation); directory.publish(g, Map.of(key, new RegionRoute(owner, g, new OwnerEpoch(0)))); }
         ChunkCustodyModel.StageId stage(ChunkStageKind kind, String subKey, long sequence) { return new ChunkCustodyModel.StageId(work, kind, subKey, sequence); }

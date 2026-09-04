@@ -1,5 +1,16 @@
 # Stage 3 chunk-only handoff
 
+> **Latest implementation checkpoint:** reload light protocol Part A is implemented
+> and passes a clean build with **177 tests**, including LIO-01..16. Exact registered
+> light evidence gates claim; actual original ingress plus normal read return gates
+> receipt and PARSED_APPLY success. The active claim freezes synchronous authority;
+> terminal acknowledgments release service, holder/work and stage records.
+> See [STAGE3_LIGHT_INGRESS_IMPLEMENTATION.md](STAGE3_LIGHT_INGRESS_IMPLEMENTATION.md).
+> This is an independent protocol checkpoint, not enabled Decision A production
+> authority. FUT-01..18, real holder/work/future/POI/metadata bindings and live reload
+> then fresh acceptance remain outstanding. Workers 1, parallel OFF, Stage 3 and
+> R-CHUNK-01 PARTIAL, Stage 4/C2ME NOT STARTED.
+
 > **IMPLEMENTATION AUTHORITY:** read
 > [STAGE3_CHUNK_OWNERSHIP_ARCHITECTURE.md](STAGE3_CHUNK_OWNERSHIP_ARCHITECTURE.md)
 > with Luna's runtime evidence/map. It selects **A — coordinated multi-stage

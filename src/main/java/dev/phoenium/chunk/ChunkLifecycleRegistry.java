@@ -102,6 +102,15 @@ public final class ChunkLifecycleRegistry {
         } finally { metadataGate.unlock(); }
     }
 
+    void releaseRetired(ChunkCustodyModel.LifecycleId id) {
+        metadataGate.lock(); try {
+            if (!custody.canReleaseRetiredLifecycle(id)) throw new ChunkProtocolException("holder cleanup before terminal acknowledgment");
+            byHolder.values().removeIf(entry -> entry.id.equals(id));
+            current.values().removeIf(entry -> entry.id.equals(id));
+        } finally { metadataGate.unlock(); }
+    }
+    public int retainedEntries() { metadataGate.lock(); try { return current.size() + byHolder.size(); } finally { metadataGate.unlock(); } }
+
     private Entry entry(ChunkCustodyModel.LifecycleId id) {
         Entry entry = current.get(new Slot(id.worldInstanceSequence(), id.chunkKey()));
         return entry != null && entry.id.equals(id) && custodyAlive(id) ? entry : null;

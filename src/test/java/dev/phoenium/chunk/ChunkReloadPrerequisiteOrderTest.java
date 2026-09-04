@@ -35,27 +35,23 @@ class ChunkReloadPrerequisiteOrderTest {
         }
     }
 
-    @Test void preparedLightBatchIsNotAcceptedReceiptAndCannotOpenReloadGate() {
+    @Test void preparedLightBatchOpensReloadGateWithoutAnAcceptedReceipt() {
         var world = new WorldId("reload-order"); var target = new RoutingKey(world, 1, 2);
         var services = new ChunkPrerequisiteServices(world, "reload-order");
         var lifecycle = services.lifecycles().activateHolder(0, target, new Object());
         var work = services.works().beginOrResolveSharedWork(lifecycle, new ChunkWorkRegistry.WorkReservation("load","parsed",0));
         var poi = new PoiInstallService.InstallId(lifecycle, work, "all", 0);
-        var light = new LightInputService.BatchId(lifecycle, work, 0);
+        var stage = new ChunkCustodyModel.StageId(work, ChunkStageKind.PARSED_APPLY, "reload", 0);
+        var light = new LightInputService.BatchId(lifecycle, work, stage, 0);
         var block = new LightInputService.SectionInput(LightInputService.Layer.BLOCK, "0", 0);
         // Deliberately satisfy POI in the ledger to isolate the light prerequisite.
         assertEquals(PoiInstallService.Claim.WON, services.poi().claim(poi));
         assertEquals(PoiInstallService.Settlement.INSTALLED, services.poi().installed(poi));
-        assertTrue(services.light().register(light, true, Set.of(block)));
+        assertTrue(services.light().register(light, true, List.of(block)));
         assertTrue(services.light().receipt(light).isEmpty());
         var required = LoadApplyPrerequisites.Required.reload(poi, light);
-        assertEquals(LoadApplyPrerequisites.State.NOT_READY, services.prerequisites().evaluate(lifecycle, work, required));
-        // No production operation is invoked here. These ledger acknowledgments demonstrate
-        // the missing dependency, not physical light acceptance or a valid adapter.
-        services.light().retain(light);
-        assertEquals(LoadApplyPrerequisites.State.NOT_READY, services.prerequisites().evaluate(lifecycle, work, required));
-        services.light().section(light, block);
         assertEquals(LoadApplyPrerequisites.State.READY, services.prerequisites().evaluate(lifecycle, work, required));
+        assertTrue(services.light().receipt(light).isEmpty(), "registration still cannot certify ingress");
         services.shutdown();
     }
 

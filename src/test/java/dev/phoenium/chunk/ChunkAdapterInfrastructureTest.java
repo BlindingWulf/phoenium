@@ -119,7 +119,7 @@ class ChunkAdapterInfrastructureTest {
 
     @Test void inf12ThrownTypedContinuationTripsBarrierWithoutRetry() {
         Fixture f = new Fixture(); AtomicInteger invoked = new AtomicInteger();
-        PendingVanillaStage<Integer, Integer> pending = f.pending(1, ignored -> { invoked.incrementAndGet(); throw new IllegalStateException("boom"); });
+        PendingVanillaStage<Integer, Integer> pending = f.pending(1, ignored -> { invoked.incrementAndGet(); throw new ChunkProtocolException("adapter invariant"); });
         f.registration(pending).callback().apply(1);
         assertEquals(ChunkStageAdmission.Result.FAILED_BARRIER, f.inbox.drainOne());
         assertTrue(f.barrier.tripped()); assertEquals(1, invoked.get()); assertEquals(ChunkCustodyModel.StageState.FAILED_BARRIER, pending.state().orElseThrow());

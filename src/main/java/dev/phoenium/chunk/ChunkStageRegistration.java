@@ -16,6 +16,6 @@ public final class ChunkStageRegistration<I, O> {
         this.pending = Objects.requireNonNull(pending, "pending"); this.pump = Objects.requireNonNull(pump, "pump");
     }
     public Function<I, CompletionStage<ChunkStageOutcome<O>>> callback() {
-        return input -> { pending.bindInput(input); pump.publishAndDeliver(pending); return pending.outcome(); };
+        return input -> { if (pending.bindInput(input)) pump.publishAndDeliver(pending); return pending.outcome(); };
     }
 }

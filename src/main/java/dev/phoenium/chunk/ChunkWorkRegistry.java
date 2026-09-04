@@ -49,6 +49,20 @@ public final class ChunkWorkRegistry {
     public boolean isCurrentWork(ChunkCustodyModel.WorkId work) { return custody.workState(work).filter(state -> state == ChunkCustodyModel.WorkState.ACTIVE).isPresent(); }
     boolean hasReservation(ChunkCustodyModel.WorkId work) { return registered.contains(work); }
 
+    void releaseRetired(ChunkCustodyModel.LifecycleId id) {
+        metadataGate.lock(); try {
+            if (!custody.canReleaseRetiredLifecycle(id)) throw new ChunkProtocolException("work cleanup before terminal acknowledgment");
+            workByReservation.keySet().removeIf(slot -> slot.lifecycle().equals(id));
+            nextWorkSequence.remove(id);
+            nextDemandSequence.keySet().removeIf(work -> work.lifecycle().equals(id));
+            registered.removeIf(work -> work.lifecycle().equals(id));
+        } finally { metadataGate.unlock(); }
+    }
+    public int retainedEntries() {
+        metadataGate.lock(); try { return workByReservation.size() + nextWorkSequence.size() + nextDemandSequence.size() + registered.size(); }
+        finally { metadataGate.unlock(); }
+    }
+
     /** A stable, typed vanilla reservation lineage; callers must not use a demand count here. */
     public record WorkReservation(String family, String slot, long reservationSequence) {
         public WorkReservation {

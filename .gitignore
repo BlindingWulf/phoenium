@@ -1,4 +1,5 @@
 .gradle/
 build/
 run/
+logs/
 .stage2-server*/

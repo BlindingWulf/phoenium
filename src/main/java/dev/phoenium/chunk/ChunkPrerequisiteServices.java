@@ -18,13 +18,20 @@ public final class ChunkPrerequisiteServices {
     }
     public ChunkPrerequisiteServices(WorldId world, String serverSession, long worldInstanceSequence) {
         this.world = Objects.requireNonNull(world, "world"); lifecycles = new ChunkLifecycleRegistry(custody, serverSession); works = new ChunkWorkRegistry(custody);
-        poi = new PoiInstallService(lifecycles, works); light = new LightInputService(lifecycles, works); metadata = new ChunkTypeMetadataService(custody, works, world, serverSession, worldInstanceSequence);
+        poi = new PoiInstallService(lifecycles, works);
+        light = new LightInputService(custody, works, world, serverSession, worldInstanceSequence);
+        metadata = new ChunkTypeMetadataService(custody, works, world, serverSession, worldInstanceSequence);
         prerequisites = new LoadApplyPrerequisites(lifecycles, works, poi, light, metadata);
     }
     public WorldId world() { return world; } public ChunkCustodyModel custody() { return custody; } public ChunkLifecycleRegistry lifecycles() { return lifecycles; }
     public ChunkWorkRegistry works() { return works; } public PoiInstallService poi() { return poi; } public LightInputService light() { return light; }
     public ChunkTypeMetadataService metadata() { return metadata; } public LoadApplyPrerequisites prerequisites() { return prerequisites; }
     public void retire(ChunkCustodyModel.LifecycleId lifecycle) { poi.retire(lifecycle); light.retire(lifecycle); metadata.retire(lifecycle); }
-    public void shutdown() { prerequisites.shutdown(); poi.shutdown(); light.shutdown(); metadata.shutdown(); }
+    public void shutdown() { custody.closeAdmissions(); prerequisites.shutdown(); poi.shutdown(); light.shutdown(); metadata.shutdown(); }
+    /** Explicit final consumer acknowledgment; never called while its synchronous claim is active. */
+    public void releaseRetiredLifecycle(ChunkCustodyModel.LifecycleId lifecycle) {
+        if (!custody.canReleaseRetiredLifecycle(lifecycle)) throw new ChunkProtocolException("world-service cleanup before terminal acknowledgment");
+        retire(lifecycle); works.releaseRetired(lifecycle); lifecycles.releaseRetired(lifecycle); custody.releaseRetiredLifecycle(lifecycle);
+    }
     public int receiptEntries() { return poi.entries() + light.entries(); }
 }

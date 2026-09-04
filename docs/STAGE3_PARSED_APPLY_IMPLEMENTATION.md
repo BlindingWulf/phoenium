@@ -1,5 +1,16 @@
 # Stage 3 metadata correction and Decision A binding
 
+## Current pass: reload light protocol
+
+The approved registration-before-claim/ingress-during-read correction is now
+implemented as an independent Part A checkpoint. Baseline `54fe36e` had 134
+passing tests; this checkpoint has **177**, including LIO-01..16 and 27 additional
+adversarial cases. See [the light implementation record](STAGE3_LIGHT_INGRESS_IMPLEMENTATION.md)
+for exact receipt, failure, cleanup, real-method fixture and safety evidence.
+The historical circular prerequisite described below is superseded. No production
+PARSED_APPLY/recovery/holder transformation has been installed by this checkpoint.
+Decision A's atomic production binding and all FUT/live gates remain the next part.
+
 ## Part A metadata correction checkpoint
 
 Starting HEAD: `0f955548375f14c06578e2968b193f41e8d1939b`; clean tree.
