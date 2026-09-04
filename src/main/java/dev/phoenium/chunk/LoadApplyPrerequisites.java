@@ -25,7 +25,7 @@ public final class LoadApplyPrerequisites {
         if (required.poi().isPresent() && !poi.receipt(required.poi().get()).isPresent()) return State.NOT_READY;
         if (required.light().isPresent() && (!required.light().get().lifecycle().equals(lifecycle) || !required.light().get().work().equals(work))) return State.STALE;
         if (required.light().isPresent() && !light.receipt(required.light().get()).isPresent()) return State.NOT_READY;
-        return required.metadata() && !metadata.preconditionValid(lifecycle) ? State.STALE : State.READY;
+        return required.metadata() && !metadata.preconditionValid(work) ? State.STALE : State.READY;
     }
     public void shutdown() { open = false; }
 }

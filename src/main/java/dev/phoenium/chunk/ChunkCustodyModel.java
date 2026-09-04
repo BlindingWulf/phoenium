@@ -57,6 +57,16 @@ public final class ChunkCustodyModel {
 
     ReentrantLock gate() { return gate; }
 
+    /** Called only under the custody fence; pending unload preserves already reserved work. */
+    boolean metadataEntitledLocked(WorkId id) {
+        if (!gate.isHeldByCurrentThread()) throw new IllegalStateException("metadata requires custody fence");
+        LifecycleRecord lifecycle = lifecycleById.get(id.lifecycle());
+        WorkRecord work = works.get(id);
+        return lifecycle != null && lifecycle.state != LifecycleState.RETIRED
+            && lifecycles.get(new LifecycleSlot(id.lifecycle().worldInstanceSequence(), id.lifecycle().chunkKey())) == lifecycle
+            && work != null && work.state == WorkState.ACTIVE;
+    }
+
     /** Holder reference equality is evidence: the same active holder may be rescued from pending unload. */
     public LifecycleId activate(String serverSession, long worldInstanceSequence, RoutingKey key, Object holderEvidence) {
         Objects.requireNonNull(holderEvidence, "holderEvidence");

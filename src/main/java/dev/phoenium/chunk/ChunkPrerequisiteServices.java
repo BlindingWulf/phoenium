@@ -14,8 +14,11 @@ public final class ChunkPrerequisiteServices {
     private final ChunkTypeMetadataService metadata;
     private final LoadApplyPrerequisites prerequisites;
     public ChunkPrerequisiteServices(WorldId world, String serverSession) {
+        this(world, serverSession, 0);
+    }
+    public ChunkPrerequisiteServices(WorldId world, String serverSession, long worldInstanceSequence) {
         this.world = Objects.requireNonNull(world, "world"); lifecycles = new ChunkLifecycleRegistry(custody, serverSession); works = new ChunkWorkRegistry(custody);
-        poi = new PoiInstallService(lifecycles, works); light = new LightInputService(lifecycles, works); metadata = new ChunkTypeMetadataService(lifecycles);
+        poi = new PoiInstallService(lifecycles, works); light = new LightInputService(lifecycles, works); metadata = new ChunkTypeMetadataService(custody, works, world, serverSession, worldInstanceSequence);
         prerequisites = new LoadApplyPrerequisites(lifecycles, works, poi, light, metadata);
     }
     public WorldId world() { return world; } public ChunkCustodyModel custody() { return custody; } public ChunkLifecycleRegistry lifecycles() { return lifecycles; }

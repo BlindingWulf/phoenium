@@ -32,7 +32,7 @@ public final class ChunkLifecycleRegistry {
         metadataGate.lock(); try {
             Slot slot = new Slot(worldInstanceSequence, chunk);
             Entry existing = current.get(slot);
-            if (existing != null && existing.holder == holder && existing.state != State.RETIRED) {
+            if (existing != null && existing.holder == holder && existing.state != State.RETIRED && custodyAlive(existing.id)) {
                 if (existing.state == State.PENDING_UNLOAD) custody.rescue(existing.id, holder);
                 existing.state = State.ACTIVE;
                 return existing.id;
@@ -52,7 +52,7 @@ public final class ChunkLifecycleRegistry {
     public Optional<ChunkCustodyModel.LifecycleId> resolveCurrentLifecycle(long worldInstanceSequence, RoutingKey chunk) {
         metadataGate.lock(); try {
             Entry entry = current.get(new Slot(worldInstanceSequence, chunk));
-            return entry == null || entry.state == State.RETIRED ? Optional.empty() : Optional.of(entry.id);
+            return entry == null || entry.state == State.RETIRED || !custodyAlive(entry.id) ? Optional.empty() : Optional.of(entry.id);
         } finally { metadataGate.unlock(); }
     }
 
@@ -60,7 +60,7 @@ public final class ChunkLifecycleRegistry {
     public boolean observeSameHolder(ChunkCustodyModel.LifecycleId id, Object holder) {
         metadataGate.lock(); try {
             Entry entry = byHolder.get(holder);
-            return entry != null && entry.id.equals(id) && entry.state != State.RETIRED;
+            return entry != null && entry.id.equals(id) && entry.state != State.RETIRED && custodyAlive(id);
         } finally { metadataGate.unlock(); }
     }
 
@@ -98,13 +98,17 @@ public final class ChunkLifecycleRegistry {
     public boolean isCurrent(ChunkCustodyModel.LifecycleId id) {
         metadataGate.lock(); try {
             Entry entry = current.get(new Slot(id.worldInstanceSequence(), id.chunkKey()));
-            return entry != null && entry.id.equals(id) && entry.state != State.RETIRED;
+            return entry != null && entry.id.equals(id) && entry.state != State.RETIRED && custodyAlive(id);
         } finally { metadataGate.unlock(); }
     }
 
     private Entry entry(ChunkCustodyModel.LifecycleId id) {
         Entry entry = current.get(new Slot(id.worldInstanceSequence(), id.chunkKey()));
-        return entry != null && entry.id.equals(id) ? entry : null;
+        return entry != null && entry.id.equals(id) && custodyAlive(id) ? entry : null;
+    }
+
+    private boolean custodyAlive(ChunkCustodyModel.LifecycleId id) {
+        return custody.lifecycleState(id).filter(state -> state != ChunkCustodyModel.LifecycleState.RETIRED).isPresent();
     }
 
     private enum State { ACTIVE, PENDING_UNLOAD, RETIRED }

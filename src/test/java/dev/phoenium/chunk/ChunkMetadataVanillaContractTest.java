@@ -12,10 +12,10 @@ import net.minecraft.server.level.ChunkMap;
 import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.level.chunk.status.ChunkType;
 
-/** Stop-condition witness, not FUT acceptance. The constructorless fixture initializes only the
+/** Real vanilla parity regression, not FUT acceptance. The constructorless fixture initializes only the
  * field read by the actual private marker methods and fatal recovery branch. No world or I/O is used. */
 final class ChunkMetadataVanillaContractTest {
-    @org.junit.jupiter.api.Test void stop07CurrentFullProtectionDiffersFromRealVanillaRecovery() throws Exception {
+    @org.junit.jupiter.api.Test void currentMetadataMatchesRealVanillaRecovery() throws Exception {
         SharedConstants.tryDetectVersion();
         Bootstrap.bootStrap();
         Class<?> unsafeClass = Class.forName("sun.misc.Unsafe");
@@ -53,10 +53,34 @@ final class ChunkMetadataVanillaContractTest {
         var services = new ChunkPrerequisiteServices(world, "metadata-contract-probe");
         var lifecycle = services.lifecycles().activateHolder(0, new RoutingKey(world, 32, 4), new Object());
         var metadata = services.metadata();
-        require(metadata.markPosition(lifecycle, "target", ChunkTypeMetadataService.FULL).previous() == -1, "service missing previous");
-        require(metadata.markPositionReplaceable(lifecycle, "target").previous() == 1, "service previous FULL");
-        require(metadata.value("target").orElseThrow() == 1, "service retains FULL");
-        require(metadata.markPosition(lifecycle, "target", ChunkTypeMetadataService.FULL).previous() == 1, "service subsequent previous FULL");
+        var work = services.works().beginOrResolveSharedWork(lifecycle, new ChunkWorkRegistry.WorkReservation("load", "parsed", 0));
+        require(metadata.markPosition(work, lifecycle.chunkKey(), ChunkTypeMetadataService.Marker.FULL).previous() == 0, "service missing previous");
+        require(metadata.markPositionReplaceable(work, lifecycle.chunkKey()).previous() == 1, "service previous FULL");
+        require(metadata.value(lifecycle.chunkKey()).orElseThrow() == -1, "service replaces FULL");
+        require(metadata.markPosition(work, lifecycle.chunkKey(), ChunkTypeMetadataService.Marker.FULL).previous() == -1, "service subsequent previous replacement");
+        // Bind the real private recovery method's map operation to the normal typed facade.
+        // This map has no second backing cache and cannot bypass authorization.
+        cacheField.set(map, new Long2ByteOpenHashMap() {
+            @Override public byte put(long key, byte value) {
+                require(key == pos.pack(), "exact bound recovery target");
+                require(value == -1 || value == 1, "closed vanilla marker values");
+                var update = value == -1 ? metadata.markPositionReplaceable(work, lifecycle.chunkKey())
+                    : metadata.markPosition(work, lifecycle.chunkKey(), ChunkTypeMetadataService.Marker.FULL);
+                require(update.result() == ChunkTypeMetadataService.Result.APPLIED, "bound recovery entitlement");
+                return update.previous();
+            }
+        });
+        long beforeRecovery = metadata.backingWrites();
+        try {
+            recovery.invoke(map, pos, transportedError);
+            throw new AssertionError("bound fatal recovery must throw");
+        } catch (InvocationTargetException result) {
+            require(result.getCause() instanceof net.minecraft.ReportedException, "bound fatal recovery classification");
+            require(result.getCause().getCause() == exactError, "bound fatal recovery exact cause");
+        }
+        require(metadata.value(lifecycle.chunkKey()).orElseThrow() == -1, "bound fatal recovery replaces FULL");
+        require(metadata.backingWrites() == beforeRecovery + 1, "one bound recovery write");
+        require((byte) mark.invoke(map, pos, ChunkType.LEVELCHUNK) == -1, "bound subsequent previous byte");
     }
     private static void require(boolean condition, String label) { if (!condition) throw new AssertionError(label); }
 }

@@ -1,3 +1,64 @@
+# Stage 3 metadata correction and Decision A binding
+
+## Part A metadata correction checkpoint
+
+Starting HEAD: `0f955548375f14c06578e2968b193f41e8d1939b`; clean tree.
+Baseline clean build: 121 tests, zero failures/errors/skips.
+
+The metadata facade now uses ABSENT=0, REPLACEABLE=-1, FULL=1 and a closed
+PROTO/FULL marker type. Accepted replacement always writes -1 and returns the
+exact previous byte, including FULL -> -1. There is no bypass API.
+Load operations require a registered WorkId and exact bound server session,
+world instance, world identity, lifecycle and RoutingKey. Retired/cancelled work
+is rejected; another valid status reservation and demand-only cancellation do
+not revoke shared work. Pending unload preserves existing metadata entitlement.
+
+Validation and the single backing-map operation execute under the existing
+custody metadata fence used by lifecycle/work retirement. This replaces the
+independent 64 cache stripes, which could not order retirement. The section
+contains only identity checks and cache operations; no vanilla callback, region
+lease acquisition, future completion or storage I/O runs there. Different keys
+have independent values, but these very short metadata operations serialize on
+the custody fence. This is a shared metadata lock, not a gameplay lock.
+Cleanup and shutdown use the same fence. Old-lifecycle cleanup cannot delete a
+new lifecycle's entry. Cleanup retires the old custody lineage; the lifecycle
+registry consults that authoritative state before reuse/rescue/current lookup.
+The old no-op orderStorageMutation API has been replaced with an honest ordered
+observation; observations and prerequisite READY do not authorize later writes.
+
+PRQ-11..15 retain their logical assertions using real vanilla marker values and
+exact target keys. Added PRQ-15A/B/C and identity, shared-work, cancellation,
+pending-unload, cleanup, shutdown, and deterministic concurrent fence-order
+regressions in ChunkMetadataAuthorizationTest. The package-private write count
+proves rejected operations invoke zero backing puts, including same-value puts.
+
+ChunkMetadataVanillaContractTest retains the actual Minecraft 26.2 marker and
+fatal recovery methods. It now checks parity and additionally routes the real
+$4 -> handleChunkLoadFailure -> map put through the normal typed facade using a
+test-only forwarding map with no second cache. FULL changes to -1 exactly once;
+ReportedException's cause is the original Error by reference. This is a bound
+real-method metadata substitute, not a production Mixin or FUT acceptance.
+
+Minecraft bytecode was re-inspected for markPosition, markPositionReplaceable,
+lambda$scheduleChunkLoad$4 and handleChunkLoadFailure in the pinned 26.2 jar.
+Part A clean build: 132 tests PASS, zero failures/errors/skips.
+No authoritative PARSED_APPLY, recovery or holder Mixin is enabled by Part A.
+The separate metadata checkpoint SHA is recorded in the delivery report and in
+the subsequent Part B record, avoiding a self-referential commit hash here.
+
+## Part B production binding
+
+Not enabled by the metadata checkpoint. All FUT/live/production transformation
+acceptance remains pending; the approved Decision A contract is unchanged.
+No live counter or terminal-leak result is inferred from the service tests.
+
+---
+
+# Historical implementation stop record (before metadata correction)
+
+The following record documents the earlier mismatch; its unresolved disposition
+is superseded by the metadata decision and the Part A correction above.
+
 # Stage 3 Decision A implementation stop record
 
 ## Disposition

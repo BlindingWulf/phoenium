@@ -322,3 +322,13 @@ contracts during that proof.
 Do **not** revisit movement/packet architecture unless new evidence contradicts
 the accepted results above. The only substantial Stage 3 engineering problem
 remaining is authoritative chunk application / R-CHUNK-01.
+
+### Metadata implementation checkpoint (current)
+
+Part A now corrects the facade to vanilla bytes 0/-1/1, unconditional authorized
+FULL -> REPLACEABLE, registered WorkId validation and atomic metadata fencing
+against lifecycle/work retirement. PRQ-15A/B/C and bound real-Minecraft fatal
+recovery parity pass. Clean build: 132 tests PASS. See the current section of
+STAGE3_PARSED_APPLY_IMPLEMENTATION.md; historical mismatch text above is resolved.
+Decision A production binding and FUT/live acceptance remain pending at this
+separate metadata checkpoint. R-CHUNK-01/Stage 3 PARTIAL; Stage 4 NOT STARTED.

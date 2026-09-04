@@ -16,6 +16,7 @@ public final class ChunkWorkRegistry {
     private final Map<WorkSlot, ChunkCustodyModel.WorkId> workByReservation = new HashMap<>();
     private final Map<ChunkCustodyModel.LifecycleId, Long> nextWorkSequence = new HashMap<>();
     private final Map<ChunkCustodyModel.WorkId, Long> nextDemandSequence = new HashMap<>();
+    private final java.util.Set<ChunkCustodyModel.WorkId> registered = java.util.concurrent.ConcurrentHashMap.newKeySet();
 
     public ChunkWorkRegistry(ChunkCustodyModel custody) { this.custody = Objects.requireNonNull(custody, "custody"); }
 
@@ -32,6 +33,7 @@ public final class ChunkWorkRegistry {
             long sequence = nextWorkSequence.merge(lifecycle, 1L, Long::sum) - 1L;
             ChunkCustodyModel.WorkId work = custody.beginWork(lifecycle, sequence);
             workByReservation.put(slot, work);
+            registered.add(work);
             return work;
         } finally { metadataGate.unlock(); }
     }
@@ -45,6 +47,7 @@ public final class ChunkWorkRegistry {
     public void removeDemand(ChunkCustodyModel.DemandId demand) { custody.cancelDemand(Objects.requireNonNull(demand, "demand")); }
     public void retireWork(ChunkCustodyModel.WorkId work, boolean cancelled) { custody.retireWork(Objects.requireNonNull(work, "work"), cancelled); }
     public boolean isCurrentWork(ChunkCustodyModel.WorkId work) { return custody.workState(work).filter(state -> state == ChunkCustodyModel.WorkState.ACTIVE).isPresent(); }
+    boolean hasReservation(ChunkCustodyModel.WorkId work) { return registered.contains(work); }
 
     /** A stable, typed vanilla reservation lineage; callers must not use a demand count here. */
     public record WorkReservation(String family, String slot, long reservationSequence) {
