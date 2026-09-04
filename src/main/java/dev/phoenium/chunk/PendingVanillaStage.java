@@ -65,7 +65,7 @@ public final class PendingVanillaStage<I, O> {
     public boolean bindInput(I readyInput) {
         custody.gate().lock();
         try {
-            if (inputBound || outcome.isDone()) return false;
+            if (inputBound || outcome.isDone() || !custody.metadataEntitledLocked(work)) return false;
             input = readyInput; inputBound = true;
             return true;
         } finally { custody.gate().unlock(); }

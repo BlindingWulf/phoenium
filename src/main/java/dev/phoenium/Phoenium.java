@@ -55,6 +55,25 @@ public final class Phoenium implements DedicatedServerModInitializer {
                                 context.getSource().sendSuccess(() -> Component.literal(response), false);
                                 return 1;
                             }))))));
+        if (Boolean.getBoolean("phoenium.test.missingRouteCleanup")) {
+            dispatcher.register(Commands.literal("phoenium")
+                .then(Commands.literal("test-empty-load")
+                    .then(Commands.argument("x", IntegerArgumentType.integer())
+                        .then(Commands.argument("z", IntegerArgumentType.integer())
+                            .executes(context -> {
+                                int x = IntegerArgumentType.getInteger(context, "x");
+                                int z = IntegerArgumentType.getInteger(context, "z");
+                                // Pinned vanilla getChunkFuture pumps on the server thread.
+                                // Request only the bound EMPTY edge; forceload waits for FULL.
+                                var future = context.getSource().getLevel().getChunkSource()
+                                        .getChunkFuture(x, z, ChunkStatus.EMPTY, true);
+                                String response = "missingRouteEmpty chunk=" + x + "," + z
+                                        + " done=" + future.isDone()
+                                        + " unloaded=" + (future.getNow(null) == net.minecraft.server.level.GenerationChunkHolder.UNLOADED_CHUNK);
+                                context.getSource().sendSuccess(() -> Component.literal(response), false);
+                                return 1;
+                            })))));
+        }
         if (ChunkRuntimeTrace.enabled()) {
             dispatcher.register(Commands.literal("phoenium")
                 .then(Commands.literal("chunktrace")

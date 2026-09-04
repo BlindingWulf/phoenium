@@ -369,7 +369,13 @@ public final class ChunkLoadGraph {
         stateGate.lock();
         try {
             first = terminal == null;
-            if (first) terminal = new CustodyAborted(this, stage, reason, failure);
+            if (first) {
+                // Fence the existing work authority before any outward completion can
+                // reenter this graph. A winning claim and its holder/receipts survive
+                // until synchronous exit; only unclaimed work loses admission here.
+                custody.retireWork(token.work(), reason != ChunkStageAdmission.Result.SUPERSEDED);
+                terminal = new CustodyAborted(this, stage, reason, failure);
+            }
         } finally { stateGate.unlock(); }
         if (first) environment.terminal(this, stage, reason, failure);
         if (first && reason == ChunkStageAdmission.Result.FAILED_BARRIER) custody.closeAdmissions();
@@ -379,8 +385,9 @@ public final class ChunkLoadGraph {
 
     private void settleTerminal() {
         CustodyAborted stopped = terminalSnapshot();
-        if (stopped == null || List.of(poiInstall, parsed, recovery, publication).stream()
-                .anyMatch(p -> p.state().orElse(null) == ChunkCustodyModel.StageState.CLAIMED)) return;
+        // APPLIED/FAILED can already be recorded while the claim's finally block
+        // still owns the lease. Reclaim only after the claim itself is released.
+        if (stopped == null || custody.hasActiveClaim(token.work())) return;
 
         CompletableFuture<ChunkResult<ChunkAccess>> attached;
         boolean shouldUnload;
@@ -416,7 +423,7 @@ public final class ChunkLoadGraph {
         boolean settle;
         stateGate.lock();
         try {
-            settle = !cleaned && armed && publicationInner.isDone()
+            settle = !cleaned && armed && !custody.hasActiveClaim(token.work()) && publicationInner.isDone()
                     && dependent != null && dependent.isDone()
                     && poiDependent != null && poiDependent.isDone();
             if (settle) cleaned = true;

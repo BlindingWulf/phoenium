@@ -293,8 +293,8 @@ class ParsedApplyFutureBindingTest {
         assertEquals(0, f.services.custody().retainedEntries()); assertFalse(f.graph.retainsInputs());
     }
 
-    /** Characterizes the OPEN defect, not the desired cleanup contract. Replace 2/68 with 0 when fixed. */
-    @Test void missingRouteCancellationRecreatesTwoTerminalCustodyEntriesAfterCleanup() {
+    /** Historical baseline (8c0072a): 34 cancellations recreated 68 LOAD_RECOVERY/STATUS_PUBLISH records. */
+    @Test void missingRouteCancellationReclaimsAllTerminalCustodyEntries() {
         int retained = 0;
         for (int occurrence = 0; occurrence < 34; occurrence++) {
             Fixture f = new Fixture(false);
@@ -324,26 +324,165 @@ class ParsedApplyFutureBindingTest {
             assertEquals(0, f.services.works().retainedEntries());
             assertTrue(f.services.custody().stageState(f.graph.poiStage()).isEmpty());
             assertTrue(f.services.custody().stageState(f.graph.parsedStage()).isEmpty());
-            assertEquals(ChunkCustodyModel.StageState.CANCELLED,
-                    f.services.custody().stageState(f.graph.recoveryStage()).orElseThrow());
-            assertEquals(ChunkCustodyModel.StageState.CANCELLED,
-                    f.services.custody().stageState(f.graph.publicationStage()).orElseThrow());
+            assertTrue(f.services.custody().stageState(f.graph.recoveryStage()).isEmpty());
+            assertTrue(f.services.custody().stageState(f.graph.publicationStage()).isEmpty());
             f.graph.shutdown(); f.services.shutdown();
-            assertEquals(2, f.services.custody().retainedEntries(), "known orphan StageId entries survive shutdown");
+            assertEquals(0, f.services.custody().retainedEntries());
             retained += f.services.custody().retainedEntries();
         }
-        assertEquals(68, retained, "matches the preserved 34-cancellation server log; cleanup is still OPEN");
+        assertEquals(0, retained, "all 34 cancellations settle without orphan records");
+    }
+
+    @Test void terminalRetirementPrecedesSynchronousReentryAndDuplicateAbort() {
+        Fixture f = new Fixture(false);
+        AtomicReference<CompletableFuture<Void>> reentry = new AtomicReference<>();
+        CompletableFuture<Void> observed = f.returned.handle((value, failure) -> {
+            assertNotNull(failure);
+            assertFalse(f.services.custody().gate().isHeldByCurrentThread());
+            assertNotEquals(ChunkCustodyModel.WorkState.ACTIVE,
+                    f.services.custody().workState(f.work).orElse(null));
+            assertThrows(IllegalStateException.class, () -> f.services.custody().ready(f.graph.recoveryStage()));
+            f.graph.shutdown(); f.graph.superseded();
+            // Registering on this already-completed future executes inline too.
+            reentry.set(f.returned.handle((again, cause) -> { f.graph.shutdown(); return (Void) null; }));
+            return (Void) null;
+        });
+        cancelMissingRoute(f);
+        observed.join(); reentry.get().join();
+        assertEquals(List.of("POI_INSTALL:CANCELLED"), f.terminals);
+        assertTerminallyReleased(f);
+    }
+
+    @Test void completedProducerBeforeRegistrationAndTerminalBeforeHolderHandler() {
+        Fixture f = new Fixture(false, Runnable::run, false, true);
+        f.expectMissingRoute = true;
+        f.directory.publish(new TopologyGeneration(2), Map.of());
+        f.attach();
+        assertTerminallyReleased(f);
+        Fixture beforeHandler = new Fixture(false, Runnable::run, false, false);
+        beforeHandler.graph.shutdown();
+        assertTrue(beforeHandler.returned.isCompletedExceptionally());
+        assertTrue(beforeHandler.services.custody().retainedEntries() > 0);
+        beforeHandler.attach();
+        beforeHandler.parsedSource.complete(Optional.empty()); beforeHandler.poiSource.complete(Optional.empty());
+        assertTerminallyReleased(beforeHandler);
+    }
+
+    @Test void lateOldCallbacksCannotRecreateMetadataOrAffectReplacementAndUnrelatedWork() {
+        Fixture old = new Fixture(false);
+        Fixture unrelated = new Fixture(false, Runnable::run, true, false, old.services, new ChunkPos(8, 8));
+        cancelMissingRoute(old);
+        int unrelatedEntries = old.services.custody().retainedEntries();
+        assertTrue(unrelatedEntries > 0);
+        Fixture replacement = new Fixture(false, Runnable::run, true, false, old.services, old.position);
+        assertNotEquals(old.lifecycle, replacement.lifecycle);
+        int activeEntries = old.services.custody().retainedEntries();
+        PendingVanillaStage<String, String> late = new PendingVanillaStage<>(old.services.custody(),
+                old.lifecycle, old.work, old.graph.recoveryStage(), new TaskCorrelationId(90), input -> input);
+        assertFalse(late.bindInput("late old payload"));
+        late.control(ChunkStageAdmission.Result.CANCELLED);
+        late.control(ChunkStageAdmission.Result.CANCELLED);
+        assertInstanceOf(ChunkStageOutcome.Control.class, late.outcome().join());
+        assertFalse(late.retainsInputOrContinuation());
+        old.graph.shutdown(); old.graph.superseded();
+        old.services.custody().retireWork(old.work, true);
+        assertThrows(IllegalStateException.class, () -> old.services.custody().ready(old.graph.publicationStage()));
+        assertEquals(activeEntries, old.services.custody().retainedEntries());
+        replacement.succeed(); unrelated.succeed();
+        assertSame(replacement.value, replacement.holderFuture.join().orElse(null));
+        assertSame(unrelated.value, unrelated.holderFuture.join().orElse(null));
+        assertEquals(0, old.services.custody().retainedEntries());
+    }
+
+    @Test void claimedStageKeepsInputsAndReceiptsThroughReentrantTerminalNotification() {
+        Fixture f = new Fixture(true);
+        f.lightInputs = List.of(new LightInputService.SectionInput(LightInputService.Layer.BLOCK, "s0", 1));
+        f.duringApply = () -> {
+            f.graph.shutdown(); f.graph.shutdown();
+            assertEquals(ChunkCustodyModel.StageState.CLAIMED,
+                    f.services.custody().stageState(f.graph.parsedStage()).orElseThrow());
+            assertEquals(ChunkCustodyModel.WorkState.CANCELLED, f.services.custody().workState(f.work).orElseThrow());
+            assertFalse(f.holderFuture.isDone()); assertEquals(0, f.unloadCalls);
+            assertTrue(f.services.light().snapshot(f.graph.batch()).isPresent());
+            assertTrue(f.services.lifecycles().observeSameHolder(f.lifecycle, f.holder));
+        };
+        f.succeed();
+        assertEquals(1, f.applyCalls); assertEquals(0, f.recoveryCalls + f.publicationCalls);
+        assertTrue(f.events.contains("LIGHT-BLOCK")); assertTrue(f.events.contains("PARSED"));
+        assertTerminallyReleased(f);
+    }
+
+    @Test void repeatedCancellationBatchesOnOneServiceRootDoNotAccumulate() {
+        Fixture first = new Fixture(false);
+        for (int batch = 0; batch < 8; batch++) {
+            for (int item = 0; item < 34; item++) {
+                Fixture f = batch == 0 && item == 0 ? first
+                        : new Fixture(false, Runnable::run, true, false, first.services, first.position);
+                cancelMissingRoute(f);
+                assertTerminallyReleased(f);
+            }
+            assertEquals(0, first.services.custody().retainedEntries(), "batch " + batch);
+        }
+    }
+
+    @Test void appliedLedgerStateStillPinsTerminalSettlementUntilClaimAcknowledgment() throws Throwable {
+        Fixture f = new Fixture(false);
+        f.poiSource.complete(Optional.empty());
+        Item queued = f.inbox.removeFirst();
+        var custody = f.services.custody();
+        try (var lease = f.leaseA.acquire();
+             var scope = OwnershipContext.enter(f.a, lease.epoch(), dev.phoenium.ownership.OperationCategory.OWNER_TASK);
+             var claim = new ChunkStageClaim(custody, queued.stage().stage(), queued.route(), lease, null)) {
+            custody.gate().lock();
+            try { assertTrue(custody.claimLocked(queued.stage().stage())); }
+            finally { custody.gate().unlock(); }
+            queued.stage().invokeOriginal(claim);
+            custody.gate().lock();
+            try { custody.appliedLocked(queued.stage().stage()); }
+            finally { custody.gate().unlock(); }
+            // Deterministic boundary: the real body returned and released its
+            // inputs, but admission has not yet acknowledged synchronous exit.
+            f.graph.shutdown();
+            assertFalse(f.holderFuture.isDone()); assertEquals(0, f.unloadCalls);
+            assertTrue(custody.hasActiveClaim(f.work));
+        }
+        custody.gate().lock();
+        try { custody.releaseClaimLocked(queued.stage().stage()); }
+        finally { custody.gate().unlock(); }
+        queued.stage().applied(null);
+        f.parsedSource.complete(Optional.empty());
+        assertTerminallyReleased(f);
+    }
+
+    private static void cancelMissingRoute(Fixture f) {
+        f.expectMissingRoute = true;
+        f.directory.publish(new TopologyGeneration(2), Map.of());
+        f.parsedSource.complete(Optional.empty()); f.poiSource.complete(Optional.empty());
+    }
+
+    private static void assertTerminallyReleased(Fixture f) {
+        assertSame(GenerationChunkHolder.UNLOADED_CHUNK, f.holderFuture.join());
+        assertTrue(f.returned.isCompletedExceptionally());
+        assertTrue(f.graph.dependent().isDone()); assertTrue(f.graph.poiInner().isDone());
+        assertTrue(f.graph.parsedInner().isDone()); assertTrue(f.graph.recoveryInner().isDone());
+        assertTrue(f.graph.publicationInner().isDone());
+        assertEquals(1, f.unloadCalls); assertFalse(f.graph.retainsInputs());
+        assertFalse(f.leaseA.hasActiveLease()); assertFalse(f.leaseB.hasActiveLease());
+        assertFalse(f.barrier.tripped()); assertTrue(f.inbox.isEmpty());
+        assertEquals(0, f.services.receiptEntries()); assertEquals(0, f.services.metadata().entries());
+        assertEquals(0, f.services.works().retainedEntries()); assertEquals(0, f.services.lifecycles().retainedEntries());
+        assertEquals(0, f.services.custody().retainedEntries());
     }
 
     private static final class Fixture implements ChunkLoadGraph.Environment {
         private static long fixtureSequence;
-        final WorldId world = new WorldId("future-" + (++fixtureSequence));
-        final ChunkPrerequisiteServices services = new ChunkPrerequisiteServices(world, "future", 1);
-        final ChunkPos position = new ChunkPos(4, -4); final RoutingKey key = new RoutingKey(world, 4, -4);
-        final RegionId a = new RegionId(world, "FUT-A"), b = new RegionId(world, "FUT-B");
-        final RegionLeaseManager leaseA = new RegionLeaseManager(a), leaseB = new RegionLeaseManager(b);
+        final WorldId world;
+        final ChunkPrerequisiteServices services;
+        final ChunkPos position; final RoutingKey key;
+        final RegionId a, b;
+        final RegionLeaseManager leaseA, leaseB;
         final RegionDirectory directory = new RegionDirectory(); final FailureBarrier barrier = new FailureBarrier();
-        final ChunkHolder holder = actualHolder(position); final ChunkCustodyModel.LifecycleId lifecycle;
+        final ChunkHolder holder; final ChunkCustodyModel.LifecycleId lifecycle;
         final ChunkCustodyModel.WorkId work; final ChunkLoadGraph graph; final ChunkStageExecutor executor;
         final ChunkStageDeliveryPump pump; final ArrayDeque<Item> inbox = new ArrayDeque<>();
         final CompletableFuture<Object> poiSource = new CompletableFuture<>();
@@ -361,6 +500,15 @@ class ParsedApplyFutureBindingTest {
 
         Fixture(boolean reload) { this(reload, Runnable::run, true, false); }
         Fixture(boolean reload, Executor callbackExecutor, boolean arm, boolean precompleted) {
+            this(reload, callbackExecutor, arm, precompleted, null, new ChunkPos(4, -4));
+        }
+        Fixture(boolean reload, Executor callbackExecutor, boolean arm, boolean precompleted,
+                ChunkPrerequisiteServices shared, ChunkPos position) {
+            world = shared == null ? new WorldId("future-" + (++fixtureSequence)) : shared.world();
+            services = shared == null ? new ChunkPrerequisiteServices(world, "future", 1) : shared;
+            this.position = position; key = new RoutingKey(world, position.x(), position.z()); holder = actualHolder(position);
+            a = new RegionId(world, "FUT-A"); b = new RegionId(world, "FUT-B");
+            leaseA = new RegionLeaseManager(a); leaseB = new RegionLeaseManager(b);
             this.reload = reload; this.callbackExecutor = callbackExecutor;
             move(a, 1); lifecycle = services.lifecycles().activateHolder(1, key, holder);
             work = services.works().beginOrResolveSharedWork(lifecycle,

@@ -69,7 +69,10 @@ public final class ChunkCustodyModel {
     /** Terminal cleanup must not allow an unregistered/forgotten stage to resurrect. */
     void disarmLocked(StageId id, StageState terminal) {
         StageState state = stages.get(id);
-        if (state == null || state == StageState.READY || state == StageState.QUEUED) stages.put(id, terminal);
+        // Absence after reclamation is not a new registration entitlement. Existing
+        // active work still needs a terminal record to fence an unregistered branch.
+        if ((state == null && metadataEntitledLocked(id.work()))
+                || state == StageState.READY || state == StageState.QUEUED) stages.put(id, terminal);
     }
 
     /** Called only under the custody fence; pending unload preserves already reserved work. */
@@ -125,13 +128,10 @@ public final class ChunkCustodyModel {
     }
     public void retireWork(WorkId id, boolean cancelled) {
         gate.lock(); try {
-            WorkRecord work = requireWork(id);
-            work.state = cancelled ? WorkState.CANCELLED : WorkState.RETIRED;
-            for (Map.Entry<StageId, StageState> entry : stages.entrySet()) {
-                if (entry.getKey().work().equals(id) && entry.getValue() != StageState.CLAIMED && entry.getValue() != StageState.APPLIED) {
-                    entry.setValue(cancelled ? StageState.CANCELLED : StageState.SUPERSEDED);
-                }
-            }
+            WorkRecord work = works.get(id);
+            // Terminal notifications may arrive again after final acknowledgment.
+            if (work == null || work.state != WorkState.ACTIVE) return;
+            retireWorkLocked(id, work, cancelled);
         } finally { gate.unlock(); }
     }
     public Optional<WorkState> workState(WorkId id) { gate.lock(); try { return Optional.ofNullable(works.get(id)).map(record -> record.state); } finally { gate.unlock(); } }
@@ -173,6 +173,11 @@ public final class ChunkCustodyModel {
     }
     boolean targetClaimedLocked(StageId id) { return claims.containsKey(slot(id.work().lifecycle())); }
     boolean hasActiveClaimLocked(StageId id) { return id.equals(claims.get(slot(id.work().lifecycle()))); }
+    boolean hasActiveClaim(WorkId work) {
+        gate.lock();
+        try { return claims.values().stream().anyMatch(stage -> stage.work().equals(work)); }
+        finally { gate.unlock(); }
+    }
     void releaseClaimLocked(StageId id) { claims.remove(slot(id.work().lifecycle()), id); }
     boolean isEligibleLocked(StageId id) {
         return stages.get(id) == StageState.QUEUED && activeWorkLocked(id.work());
@@ -181,7 +186,10 @@ public final class ChunkCustodyModel {
         if (stages.get(id) != StageState.CLAIMED) throw new IllegalStateException("application requires claimed stage " + id);
         stages.put(id, StageState.APPLIED);
     }
-    void barrierLocked(StageId id) { stages.put(id, StageState.FAILED_BARRIER); }
+    void barrierLocked(StageId id) {
+        if (stages.containsKey(id) || metadataEntitledLocked(id.work()))
+            stages.put(id, StageState.FAILED_BARRIER);
+    }
     public void failVanilla(StageId id) {
         gate.lock(); try {
             StageState current = stages.get(id);
@@ -237,7 +245,10 @@ public final class ChunkCustodyModel {
     }
     private void retireWorkLocked(WorkId id, WorkRecord work, boolean cancelled) {
         work.state = cancelled ? WorkState.CANCELLED : WorkState.RETIRED;
-        for (Map.Entry<StageId, StageState> entry : stages.entrySet()) if (entry.getKey().work().equals(id) && entry.getValue() != StageState.CLAIMED && entry.getValue() != StageState.APPLIED) entry.setValue(cancelled ? StageState.CANCELLED : StageState.SUPERSEDED);
+        for (Map.Entry<StageId, StageState> entry : stages.entrySet())
+            if (entry.getKey().work().equals(id)
+                    && (entry.getValue() == StageState.READY || entry.getValue() == StageState.QUEUED))
+                entry.setValue(cancelled ? StageState.CANCELLED : StageState.SUPERSEDED);
     }
     private LifecycleRecord requireLifecycle(LifecycleId id) { LifecycleRecord record = lifecycleById.get(id); if (record == null) throw new IllegalStateException("unknown lifecycle " + id); return record; }
     private void requireLive(LifecycleId id) { if (requireLifecycle(id).state != LifecycleState.LIVE) throw new IllegalStateException("lifecycle is not live " + id); }

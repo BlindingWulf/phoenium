@@ -1,5 +1,53 @@
 # Stage 3 chunk-only handoff
 
+## Terminal cleanup correction — 2026-09-04
+
+**Cleanup defect: FIXED.** Starting HEAD `8c0072ac559bf53dee5672ee97c29f76020834c8`
+was clean; the rebuilt baseline was 206/206. The corrected build is **212/212**.
+The original 34-cancellation reproduction now requires **0** orphan records,
+and eight batches of 34 cancellations on one service root leave **0** after
+each settlement. Historical 2/68 assertions remain identified in the test
+comment and in the committed scoreboard decision; the original logs are intact.
+
+`ChunkLoadGraph.abort` retires its existing WorkId under custody before exposing
+terminal completion. It preserves holder evidence and already-winning claims.
+`disarmLocked` and `barrierLocked` cannot recreate absent records without active
+work entitlement; late `bindInput` cannot retain a retired payload. Final
+reclamation waits for the claim map, including APPLIED-before-claim-exit, rather
+than treating a terminal stage-state value as proof that its lease has exited.
+No new lifecycle authority, permanent tombstone, or lock across completion was
+introduced. Demand cancellation still does not retire shared work.
+
+Deterministic coverage includes inline/reentrant completion, handler registration
+on completed futures, duplicate abort, late old tokens, same-coordinate new
+lifecycles, unrelated active work, claimed reload/light completion and all
+required future outcomes. Missing-route classification remains CANCELLED.
+
+Live equivalent: after `gradlew.bat prepareStage3ClientServer`, run
+`python scripts/test_missing_route_cleanup.py`. It copies the production server
+into a new ignored directory and uses the unchanged finite fixture with an EMPTY
+request at (1000,1000). With the explicit test-only diagnostics flag this yields
+route=UNRESOLVED, one cancellation, the actual unloaded result, no parsed or
+recovery invocation for that request, zero retention counters and clean stop.
+Accepted evidence: `run/terminal-cleanup/missing-route-20260904-155234/acceptance.json`.
+JAR SHA-256: `347E1EB30F078CBFF4CBB969244AED6E0324A5C0486DA61B894566D46210F796`.
+
+An earlier `/forceload` probe reached cancellations but waited for unbound FULL;
+its watchdog/failed shutdown is preserved in `missing-route-20260904-154315`.
+It is not accepted evidence. The direct EMPTY probe does not enlarge topology.
+Normal fresh/fresh/reload and account-free real-client regression passed on the
+final artifact. One client attempt overshot the harness's same-owner movement
+window; its JSON/log are preserved in `run/terminal-cleanup/client-movement-failed`,
+and the unchanged harness passed on rerun. This is separate from invalid-demand
+acceptance. Logs: `run/scoreboard-service-review/cleanup-{build,live-regression,client-rerun}.log`.
+
+Scoreboard decision remains the accepted amendment, not automatically
+implemented. FULL callback closure is still being reviewed separately;
+production FULL is **NOT ENABLED**. Workers=1, parallel gameplay=OFF;
+R-CHUNK-01/Stage 3=PARTIAL; Stage 4=NOT STARTED.
+
+## Historical scoreboard review at 8c0072a
+
 > **Current review decision, 2026-09-04: AMENDED.** Read
 > [STAGE3_FULL_SCOREBOARD_SERVICE_DECISION.md](STAGE3_FULL_SCOREBOARD_SERVICE_DECISION.md)
 > before another FULL implementation. The existing scoreboard has one explicit
