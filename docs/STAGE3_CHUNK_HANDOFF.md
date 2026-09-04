@@ -258,6 +258,20 @@ No Minecraft authoritative continuation is bound by that infrastructure pass.
 
 ## J. Exact next task
 
+### Reload light ordering resolved; implementation remains pending
+
+Read [STAGE3_RELOAD_LIGHT_INPUT_DECISION.md](STAGE3_RELOAD_LIGHT_INPUT_DECISION.md).
+**Decision A: light ingress is a nested PARSED_APPLY sub-operation/postcondition.**
+Prepared batch registration gates entry; actual retain/BLOCK/SKY acceptance
+remains inside read and its receipt gates successful PARSED_APPLY completion,
+then accompanies the separately admitted EMPTY publication. No replay after
+partial ingress; original genuine recovery remains separate. POI installation
+is non-cyclic. thenComposeAsync and corrected metadata decisions are unchanged.
+Verified checkpoint `78334954078ecb8cb190204b9e8cd2a6f235c5dc`, clean start;
+rerun baseline **134 PASS, 0 failures/errors/skips**. This decision is docs-only.
+Terra next implements the narrow correction and LIO-01..16 before resuming
+atomic binding; FULL/ticking/send remain out of scope and all stage gates unchanged.
+
 ### Metadata contract resolved; prerequisite correction precedes binding
 
 Read [STAGE3_CHUNK_METADATA_TRANSITION_DECISION.md](STAGE3_CHUNK_METADATA_TRANSITION_DECISION.md).
@@ -333,7 +347,7 @@ STAGE3_PARSED_APPLY_IMPLEMENTATION.md; historical mismatch text above is resolve
 Decision A production binding and FUT/live acceptance remain pending at this
 separate metadata checkpoint. R-CHUNK-01/Stage 3 PARTIAL; Stage 4 NOT STARTED.
 
-### Decision A resumed: reload light-order gate blocked
+### Historical Decision A stop: reload light-order gate
 
 Metadata checkpoint: `4065883746456ce84e550689a438b9a4b64e5801`, CLEAN.
 Part B inspection found that B7 requires an accepted light receipt before

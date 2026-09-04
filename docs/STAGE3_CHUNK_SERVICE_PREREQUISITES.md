@@ -7,6 +7,8 @@ authoritative chunk-application binding.
 
 The architecture remains **A — coordinated multi-stage admission**.
 
+The reload light gate is amended by [the reload light-input decision](STAGE3_RELOAD_LIGHT_INPUT_DECISION.md): prepared service registration gates entry; actual ingress receipt gates successful PARSED_APPLY completion. The unbound code described here still awaits that correction.
+
 `R-CHUNK-01 = PARTIAL`
 
 `Stage 3 = PARTIAL`
@@ -232,8 +234,19 @@ It does not claim a stage or run an application continuation.
 `Required.fresh()` requires only valid lifecycle/work and metadata
 preconditions.
 
-`Required.reload(poi, light)` requires those plus exactly the named POI and
-light-input receipts.
+The current unbound `Required.reload(poi, light)` queries both named receipts.
+The approved reload contract instead requires current lifecycle/work, the
+installed POI receipt, metadata preconditions, original upstream readiness,
+and a prepared light-batch registration bound to the exact PARSED_APPLY stage.
+It must not require a completed `LightInputReceipt` before claim.
+The registration has no engine side effects and grants no ownership.
+Original retain/BLOCK/SKY calls execute once inside admitted read; their actual
+receipt is required at PARSED_APPLY successful completion, then carried into
+the separately admitted `STATUS_PUBLISH(EMPTY)` reload-success path.
+Fresh and genuine recovery retain their distinct paths; a failed reload batch
+is never a prerequisite for its original genuine recovery.
+The linked decision defines partial-failure, claimed-transaction and cleanup
+rules; current ledger acknowledgments/immediate clearing are not that binding.
 
 This difference is intentional: fresh generation cannot be made to wait for
 persisted-load inputs it never created.
@@ -312,6 +325,6 @@ Parallel gameplay remains off.
 
 ## Next task
 
-The next pass may bind Decision A's exact atomic `PARSED_APPLY` continuation
-only after using these receipts as non-blocking prerequisites and preserving
-the specified vanilla future and recovery semantics.
+The next pass first implements the corrected light registration/completion
+gates and LIO tests in the linked decision, then resumes Decision A's atomic
+binding with its specified vanilla future and recovery semantics.
