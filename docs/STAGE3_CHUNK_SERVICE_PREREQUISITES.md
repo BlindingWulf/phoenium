@@ -198,9 +198,9 @@ Before commit, every update checks lifecycle currentness.
 
 An old lifecycle write is rejected before it can replace current metadata.
 
-`markPositionReplaceable` refuses to downgrade a current `FULL` marker.
+`markPositionReplaceable` currently refuses to downgrade a current `FULL` marker; this over-broad behavior is superseded as an implementation contract by [the metadata transition decision](STAGE3_CHUNK_METADATA_TRANSITION_DECISION.md), which requires authorized vanilla replacement and stale lifecycle/work fencing.
 
-This protects the type-cache role used by vanilla full-chunk save protection.
+Full-chunk save protection requires rejecting stale lifecycle/work downgrades while preserving legitimate current vanilla transitions.
 
 Topology generation is intentionally not part of lifecycle equality.
 

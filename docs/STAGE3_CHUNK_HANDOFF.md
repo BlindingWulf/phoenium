@@ -258,7 +258,25 @@ No Minecraft authoritative continuation is bound by that infrastructure pass.
 
 ## J. Exact next task
 
-### Decision A binding stopped at metadata semantics
+### Metadata contract resolved; prerequisite correction precedes binding
+
+Read [STAGE3_CHUNK_METADATA_TRANSITION_DECISION.md](STAGE3_CHUNK_METADATA_TRANSITION_DECISION.md).
+**Metadata decision A:** current authorized vanilla operations may change FULL
+to REPLACEABLE; stale lifecycles and superseded work must be fenced before any
+write. Use vanilla bytes ABSENT=0, REPLACEABLE=-1, FULL=1 and validate WorkId for
+load-associated operations at mutation admission, not only at prerequisite lookup.
+PRQ-15 already covers stale lifecycle rejection: retain it as 15A and add 15B
+(current replacement/previous-byte parity) and 15C (superseded same-lifecycle work).
+The real Minecraft recovery contract test is a required regression; its current
+service-divergence assertions change to parity together with the production fix.
+Verified starting HEAD `40e999cb4bcf2a539a04faf1a0f4556420ae3d77`, clean tree;
+fresh clean build **121 PASS, 0 failures/errors/skips**, including the real witness.
+This decision is docs-only; the implementation mismatch still exists.
+Terra next corrects the façade, lineage/atomic fences and regressions, reruns the
+full suite, then resumes the existing atomic binding. thenComposeAsync Decision A
+is **UNCHANGED**. No PARSED_APPLY is implemented by this decision; gates stay PARTIAL.
+
+### Historical Decision A binding stop
 
 The implementation attempt from `070a720` hit user stop condition 7 before
 enabling any authority. The actual Minecraft 26.2 `$4` fatal recovery path
@@ -269,9 +287,9 @@ Read [STAGE3_PARSED_APPLY_IMPLEMENTATION.md](STAGE3_PARSED_APPLY_IMPLEMENTATION.
 for exact bytecode anchors and the real-method JUnit witness. Clean build:
 **121 tests PASS**, including all original 120; PRQ 18/18 remains PASS.
 FUT acceptance is 0/18; no production binding or new live acceptance run is
-claimed. Resolve the current-lifecycle invalidation/FULL-protection contract
-before resuming the atomic implementation. Decision A composition remains
-approved; R-CHUNK-01/Stage 3 remain PARTIAL and Stage 4 NOT STARTED.
+claimed. The metadata decision above now resolves the contract; implement and
+verify that prerequisite correction before resuming atomic binding. Decision A
+composition remains approved; R-CHUNK-01/Stage 3 remain PARTIAL and Stage 4 NOT STARTED.
 
 ### Prerequisite-service checkpoint
 
