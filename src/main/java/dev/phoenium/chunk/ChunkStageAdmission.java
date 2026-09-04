@@ -56,6 +56,13 @@ public final class ChunkStageAdmission {
             if (!custody.admissionsOpenLocked()) return result(Result.SHUTDOWN);
             if (!custody.isEligibleLocked(stage)) return result(classify(stage));
             if (custody.targetClaimedLocked(stage)) return result(Result.NOT_READY);
+            switch (pending.loadReadinessLocked()) {
+                case NOT_REGISTERED -> { return result(Result.NOT_READY); }
+                case STALE -> { return result(Result.SUPERSEDED); }
+                case SHUTDOWN -> { return result(Result.SHUTDOWN); }
+                case FAILED -> { return breachLocked(stage, null, new ChunkProtocolException("terminal load prerequisite")); }
+                case REGISTERED -> { }
+            }
             switch (pending.lightReadinessLocked()) {
                 case NOT_REGISTERED -> { return result(Result.NOT_READY); }
                 case STALE -> { return result(Result.SUPERSEDED); }

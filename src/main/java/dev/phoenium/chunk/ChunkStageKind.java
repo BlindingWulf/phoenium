@@ -4,6 +4,7 @@ package dev.phoenium.chunk;
 public enum ChunkStageKind {
     POI_INSTALL,
     PARSED_APPLY,
+    LOAD_RECOVERY,
     MAP_METADATA,
     LIGHT_INPUT,
     LIGHT_POST_UPDATE,

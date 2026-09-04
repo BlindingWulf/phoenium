@@ -28,6 +28,16 @@ public final class ChunkPrerequisiteServices {
     public ChunkTypeMetadataService metadata() { return metadata; } public LoadApplyPrerequisites prerequisites() { return prerequisites; }
     public void retire(ChunkCustodyModel.LifecycleId lifecycle) { poi.retire(lifecycle); light.retire(lifecycle); metadata.retire(lifecycle); }
     public void shutdown() { custody.closeAdmissions(); prerequisites.shutdown(); poi.shutdown(); light.shutdown(); metadata.shutdown(); }
+    public void releaseFinishedWork(ChunkCustodyModel.WorkId work, Object holderEvidence) {
+        Objects.requireNonNull(work); Objects.requireNonNull(holderEvidence);
+        ChunkCustodyModel.LifecycleId lifecycle = work.lifecycle();
+        if (!lifecycles.holderMatches(lifecycle, holderEvidence))
+            throw new ChunkProtocolException("finished work lost exact holder evidence");
+        if (custody.lifecycleState(lifecycle).orElse(null) != ChunkCustodyModel.LifecycleState.RETIRED
+                && !lifecycles.retireHolder(lifecycle, holderEvidence))
+            throw new ChunkProtocolException("finished work could not retire holder lifecycle");
+        releaseRetiredLifecycle(lifecycle);
+    }
     /** Explicit final consumer acknowledgment; never called while its synchronous claim is active. */
     public void releaseRetiredLifecycle(ChunkCustodyModel.LifecycleId lifecycle) {
         if (!custody.canReleaseRetiredLifecycle(lifecycle)) throw new ChunkProtocolException("world-service cleanup before terminal acknowledgment");

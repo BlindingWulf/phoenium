@@ -20,6 +20,8 @@ public final class ChunkWorkRegistry {
 
     public ChunkWorkRegistry(ChunkCustodyModel custody) { this.custody = Objects.requireNonNull(custody, "custody"); }
 
+    ChunkCustodyModel custody() { return custody; }
+
     /**
      * reservation is a real holder/status-work reservation (status slot, promotion slot, etc.),
      * not a public getChunkFuture demand.
@@ -56,6 +58,17 @@ public final class ChunkWorkRegistry {
             nextWorkSequence.remove(id);
             nextDemandSequence.keySet().removeIf(work -> work.lifecycle().equals(id));
             registered.removeIf(work -> work.lifecycle().equals(id));
+        } finally { metadataGate.unlock(); }
+    }
+    public void releaseRetiredWork(ChunkCustodyModel.WorkId work) {
+        Objects.requireNonNull(work, "work");
+        metadataGate.lock(); try {
+            if (custody.workState(work).filter(state -> state != ChunkCustodyModel.WorkState.ACTIVE).isEmpty())
+                throw new ChunkProtocolException("active work cannot be reclaimed");
+            workByReservation.values().removeIf(work::equals);
+            nextDemandSequence.remove(work);
+            registered.remove(work);
+            custody.releaseRetiredWork(work);
         } finally { metadataGate.unlock(); }
     }
     public int retainedEntries() {

@@ -1,15 +1,58 @@
 # Stage 3 chunk-only handoff
 
-> **Latest implementation checkpoint:** reload light protocol Part A is implemented
-> and passes a clean build with **177 tests**, including LIO-01..16. Exact registered
-> light evidence gates claim; actual original ingress plus normal read return gates
-> receipt and PARSED_APPLY success. The active claim freezes synchronous authority;
-> terminal acknowledgments release service, holder/work and stage records.
-> See [STAGE3_LIGHT_INGRESS_IMPLEMENTATION.md](STAGE3_LIGHT_INGRESS_IMPLEMENTATION.md).
-> This is an independent protocol checkpoint, not enabled Decision A production
-> authority. FUT-01..18, real holder/work/future/POI/metadata bindings and live reload
-> then fresh acceptance remain outstanding. Workers 1, parallel OFF, Stage 3 and
-> R-CHUNK-01 PARTIAL, Stage 4/C2ME NOT STARTED.
+> **Latest implementation checkpoint:** Part A is independently committed with
+> 178 tests. Part B now binds the real Minecraft 26.2 EMPTY load registrar,
+> original `$3` parsed apply, `$4` recovery, POI installation, read-time light
+> ingress, controlled metadata writes, the exact R/holder edge, and a separate
+> EMPTY publication stage. FUT-01..18 and the complete 196-test suite pass.
+> A production Fabric server completed two clean fresh worlds with distinct
+> fixed seeds and a final saved-world reload. Each fresh run completed 1,258
+> exact EMPTY graphs; the reload completed 49 exact graphs and observed 41
+> RETAIN, 29 BLOCK and 36 SKY batches in original read order. All three shutdowns
+> reported every chunk-binding and prerequisite-service retention counter at
+> zero, with no recovery, private control, duplicate, fallback, unleased access,
+> or barrier. See
+> [STAGE3_LIGHT_INGRESS_IMPLEMENTATION.md](STAGE3_LIGHT_INGRESS_IMPLEMENTATION.md)
+> and [STAGE3_PARSED_APPLY_IMPLEMENTATION.md](STAGE3_PARSED_APPLY_IMPLEMENTATION.md).
+> Workers remain 1 and parallel gameplay remains OFF. R-CHUNK-01 and Stage 3
+> remain PARTIAL because FULL and later status/readiness stages are outside this
+> pass. Stage 4 and C2ME remain NOT STARTED.
+
+## Decision A implementation boundary
+
+The exact `ChunkMap.applyStep` EMPTY registration supplies actual holder and
+winning `startedWork` evidence. `ChunkBindingRuntime` creates the unchanged P/Q/U
+producers, installs `thenComposeAsync` parsed application and
+`exceptionallyComposeAsync` recovery, and binds the exact returned future by
+reference at `GenerationChunkHolder.applyStep`. Future identity is only a finite
+locator; lifecycle, WorkId, holder and reservation identity remain authority.
+
+Typed pending stages are delivered from an owner-free event-loop pump and claim
+through the shared custody fence plus current `RegionDirectory` route and short
+RegionLease. Stale delivery reroutes the same StageId. Supersession, shutdown and
+barrier controls use the graph-private authenticated transport, skip vanilla
+corruption recovery and holder crash handling, and unload only the old bound
+holder/slot. Ordinary Minecraft exceptions remain FAILED_VANILLA and reach the
+original recovery once.
+
+Reload claims require the exact POI install receipt, metadata validity and light
+batch registration. The original `SerializableChunkData.read` keeps retain,
+BLOCK and SKY calls in their original section order. Actual mailbox insertion is
+acknowledged before an occurrence becomes ACCEPTED; normal read return seals the
+batch and creates the ingress-only receipt. Parsed success and the later EMPTY
+publication both validate that receipt. No lease survives into asynchronous
+lighting propagation.
+
+Terminal settlement removes the returned-future and POI locators, holder graph,
+pending callbacks, light batch/occurrences/receipt, POI receipt, metadata shadow,
+work reservation and finite holder lifecycle. The synchronous chunk-access guard
+rejects an owner wait on unfinished work while preserving already-ready access.
+
+Do not expand this checkpoint into FULL_CONVERT, FULL publication,
+BLOCK_TICKING, ENTITY_TICKING, TICK_READY, SEND_READY or DEMOTE. The next review
+may authorize FULL_CONVERT plus FULL status publication. It must retain this
+load graph's identity, private-control, no-wait and service-ordering contracts.
+
 
 > **IMPLEMENTATION AUTHORITY:** read
 > [STAGE3_CHUNK_OWNERSHIP_ARCHITECTURE.md](STAGE3_CHUNK_OWNERSHIP_ARCHITECTURE.md)

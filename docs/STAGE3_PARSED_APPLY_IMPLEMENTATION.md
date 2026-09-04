@@ -1,15 +1,96 @@
 # Stage 3 metadata correction and Decision A binding
 
-## Current pass: reload light protocol
+## Current pass: production Decision A EMPTY-load binding
 
-The approved registration-before-claim/ingress-during-read correction is now
-implemented as an independent Part A checkpoint. Baseline `54fe36e` had 134
-passing tests; this checkpoint has **177**, including LIO-01..16 and 27 additional
-adversarial cases. See [the light implementation record](STAGE3_LIGHT_INGRESS_IMPLEMENTATION.md)
-for exact receipt, failure, cleanup, real-method fixture and safety evidence.
-The historical circular prerequisite described below is superseded. No production
-PARSED_APPLY/recovery/holder transformation has been installed by this checkpoint.
-Decision A's atomic production binding and all FUT/live gates remain the next part.
+Starting HEAD `54fe36e0f3cead4517055fd7a0ed3c038c83fda9` had 134 tests.
+Part A is independently committed and has 178 tests: the original 134,
+LIO-01..16, and 28 additional light/terminal regressions. See
+[the light implementation record](STAGE3_LIGHT_INGRESS_IMPLEMENTATION.md).
+
+Part B installs the bounded Minecraft 26.2 EMPTY-load graph. The exact
+`ChunkMap.applyStep` call to `scheduleChunkLoad(ChunkPos)` is replaced before
+the legacy D/R graph exists. `ChunkBindingRuntime` preserves the original
+read/parse producer P, POI prefetch Q, `$2` combiner, `$3` parsed-apply body,
+`$4` recovery body, and `GenerationChunkHolder.lambda$applyStep$0` holder body.
+Its application and recovery edges use `thenComposeAsync` and
+`exceptionallyComposeAsync`; the exact adjacent R `handle` is flattened through
+a separately admitted EMPTY publication stage.
+
+The registrar verifies the actual `startedWork == EMPTY` reservation and binds
+the actual holder, lifecycle, shared work, world instance, ChunkPos and a private
+reservation object. An identity map locates only the exact returned R future at
+the adjacent holder edge. It grants no authority and is removed as soon as that
+edge captures the graph. Holder and POI indexes, graph registrations, stages,
+receipts, metadata and lifecycle/work state are reclaimed at terminal settlement.
+
+Q's completed packed value is installed once through the exact private
+`SectionStorage.unpackChunk(ChunkPos,PackedChunk)` method under a POI stage lease.
+The background pending-load iterator suppresses only a Q currently owned by this
+graph. No receipt lock overlaps lease acquisition or Minecraft POI mutation.
+Fresh parsed apply requires current lifecycle/work and metadata authorization.
+Reload adds the exact POI receipt and registered light batch; the completed light
+receipt remains a postcondition of the original read.
+
+`ParsedReadIngressMixin` wraps the exact read method and its one retain/two queue
+call sites. The witness follows each original task through
+`ThreadedLevelLightEngine.addTask`, `ChunkTaskDispatcher.submit`,
+`PriorityConsecutiveExecutor.schedule`, and the actual `StrictQueue.push`.
+Normal read return seals the batch. `$3` cannot expose success until every
+declared occurrence is ACCEPTED and the matching receipt exists. EMPTY
+publication revalidates that receipt for reloads.
+
+Metadata puts at the two controlled methods are routed through
+`ChunkTypeMetadataService.putClaimed`; the exact original fastutil put supplies
+the previous byte and authorized FULL-to-REPLACEABLE behavior. Stale work is
+rejected before that write. Ordinary Minecraft body exceptions are
+FAILED_VANILLA and reach one separately admitted `$4`; protocol breaches are
+FAILED_BARRIER. Authenticated supersession, shutdown and barrier controls bypass
+both `$4` and the original holder crash handler and settle the old holder as
+`UNLOADED_CHUNK`. Stale-route delivery remains pending and reuses the same
+StageId at the current route.
+
+The event-loop injection pumps one typed `PendingVanillaStage` at the head of
+`ServerChunkCache.MainThreadExecutor.pollTask`. It refuses ambient ownership and
+never waits. `ServerChunkCacheMixin` guards the existing synchronous
+`managedBlock`/`join` calls: an owner may use an already-ready result, but cannot
+wait for pending work while holding a region lease.
+
+`ParsedApplyFutureBindingTest` implements FUT-01..18 as 18 deterministic cases,
+including actual holder objects, actual old status-slot unload, exact result and
+throwable identity, cancellation forms, callback rejection, A/B reentrancy,
+same-coordinate replacement, stale reroute, shutdown/claim races, independent
+publication, and two independent executor threads for A-to-B delivery. The full
+suite is **196 tests PASS** before final live acceptance.
+
+Production Fabric boot used the final JAR with SHA-256
+`5153A71D455C600A8177D898DC4A32DC60156FEEF7A3E1C655E57282B32D4085`.
+Two clean worlds used fixed distinct seeds `31094401` and `31094402`. Each run
+created 529 real spawn-generation EMPTY graphs and 729 more graphs around a
+distant forced chunk: 1,258 exact registrar captures, POI installs, parsed
+applications, independent EMPTY publications and graph settlements per run.
+Fresh generation registered no reload light batches or receipts. Both runs had
+zero recovery, private unload, stale reroute, duplicate application, admission
+failure, or barrier.
+
+The final saved-world restart exercised 49 persisted reload graphs. All 49
+registered and sealed an exact light batch, obtained an ingress receipt, applied
+`$3`, published EMPTY and settled. The original read stream contained 41 RETAIN,
+29 BLOCK and 36 SKY batches; every recorded occurrence was ACCEPTED only after
+the original mailbox insertion witness. Original per-section order is retained
+in each `LIGHT_ACCEPTED` trace. There were zero duplicate ingress attempts,
+recoveries, private controls, admission failures, barriers, bypasses, fallbacks,
+foreign executions, unleased executions, and fake chunks.
+
+Every clean shutdown reported zero retained graphs, returned/POI future indexes,
+synchronous invocations, light batches, light occurrences, light receipts, POI
+entries, metadata entries, lifecycle entries, work entries and custody entries.
+The ignored evidence logs are `build/stage3-evidence/persisted-reload-final.log`,
+`build/stage3-evidence/fresh-a-seed-31094401.log`, and
+`build/stage3-evidence/fresh-b-seed-31094402.log`.
+
+## Historical implementation records
+
+The earlier blockers and checkpoint counts below are preserved as history.
 
 ## Part A metadata correction checkpoint
 

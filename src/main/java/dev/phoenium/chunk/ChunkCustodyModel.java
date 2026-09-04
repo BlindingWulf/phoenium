@@ -212,6 +212,19 @@ public final class ChunkCustodyModel {
             lifecycles.remove(slot(id), record);
         } finally { gate.unlock(); }
     }
+    /** Reclaims one finished producer while the holder lifecycle remains available to later stages. */
+    public void releaseRetiredWork(WorkId id) {
+        gate.lock(); try {
+            WorkRecord work = works.get(id);
+            if (work == null || work.state == WorkState.ACTIVE
+                    || claims.values().stream().anyMatch(stage -> stage.work().equals(id)))
+                throw new ChunkProtocolException("work cleanup before terminal acknowledgment");
+            stages.keySet().removeIf(stage -> stage.work().equals(id));
+            dispositions.keySet().removeIf(stage -> stage.work().equals(id));
+            demands.keySet().removeIf(demand -> demand.work().equals(id));
+            works.remove(id);
+        } finally { gate.unlock(); }
+    }
     public int retainedEntries() {
         gate.lock(); try { return lifecycles.size() + lifecycleById.size() + works.size() + demands.size() + stages.size() + dispositions.size() + claims.size(); }
         finally { gate.unlock(); }

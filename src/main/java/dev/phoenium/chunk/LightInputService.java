@@ -285,6 +285,10 @@ public final class LightInputService implements ChunkLightingApplicationBridge {
         custody.gate().lock(); try { return batches.values().stream().mapToInt(b -> b.occurrences.size()).sum(); }
         finally { custody.gate().unlock(); }
     }
+    public int receiptEntries() {
+        custody.gate().lock(); try { return (int) batches.values().stream().filter(b -> b.receipt != null).count(); }
+        finally { custody.gate().unlock(); }
+    }
 
     private Batch claimedBatchLocked(ChunkStageClaim claim, BatchId id) {
         Batch batch = batches.get(id);

@@ -102,6 +102,15 @@ public final class ChunkLifecycleRegistry {
         } finally { metadataGate.unlock(); }
     }
 
+    /** Exact holder evidence remains checkable while a superseded graph drains its terminal edges. */
+    boolean holderMatches(ChunkCustodyModel.LifecycleId id, Object holder) {
+        metadataGate.lock();
+        try {
+            Entry entry = byHolder.get(holder);
+            return entry != null && entry.holder == holder && entry.id.equals(id);
+        } finally { metadataGate.unlock(); }
+    }
+
     void releaseRetired(ChunkCustodyModel.LifecycleId id) {
         metadataGate.lock(); try {
             if (!custody.canReleaseRetiredLifecycle(id)) throw new ChunkProtocolException("holder cleanup before terminal acknowledgment");

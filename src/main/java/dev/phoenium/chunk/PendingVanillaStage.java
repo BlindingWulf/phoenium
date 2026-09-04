@@ -30,6 +30,9 @@ public final class PendingVanillaStage<I, O> {
     private LightInputService.BatchId lightBatch;
     private LightInputService publicationLight;
     private LightInputReceipt publicationReceipt;
+    private PoiInstallService prerequisitePoi;
+    private PoiInstallService.InstallId prerequisitePoiId;
+    private ChunkTypeMetadataService prerequisiteMetadata;
 
     public PendingVanillaStage(ChunkCustodyModel custody, ChunkCustodyModel.LifecycleId lifecycle,
                                ChunkCustodyModel.WorkId work, ChunkCustodyModel.StageId stage,
@@ -100,6 +103,27 @@ public final class PendingVanillaStage<I, O> {
     }
     Object lightRegistrationLocked() { return light == null ? null : light.registrationLocked(lightBatch); }
 
+    /** Exact load prerequisites are bound before input readiness and revalidated in the claim fence. */
+    public void requireLoadPrerequisites(PoiInstallService poi, PoiInstallService.InstallId poiId,
+                                         ChunkTypeMetadataService metadata) {
+        custody.gate().lock();
+        try {
+            if (inputBound || prerequisiteMetadata != null || (poi == null) != (poiId == null))
+                throw new ChunkProtocolException("wrong/duplicate load prerequisite binding");
+            prerequisitePoi = poi;
+            prerequisitePoiId = poiId;
+            prerequisiteMetadata = Objects.requireNonNull(metadata);
+        } finally { custody.gate().unlock(); }
+    }
+
+    LightInputService.Readiness loadReadinessLocked() {
+        if (prerequisiteMetadata == null) return LightInputService.Readiness.REGISTERED;
+        if (!prerequisiteMetadata.preconditionValidLocked(work, chunk)) return LightInputService.Readiness.STALE;
+        if (prerequisitePoi != null && prerequisitePoi.receiptLocked(prerequisitePoiId).isEmpty())
+            return LightInputService.Readiness.NOT_REGISTERED;
+        return LightInputService.Readiness.REGISTERED;
+    }
+
     /** EMPTY is a separate claim and consumes the original reload's authenticated ingress evidence. */
     public void requireReloadPublication(LightInputService service, LightInputReceipt receipt) {
         custody.gate().lock();
@@ -132,8 +156,21 @@ public final class PendingVanillaStage<I, O> {
     void stageExited() { if (light != null) light.stageExited(lightBatch); }
     private void releaseInput() {
         custody.gate().lock();
-        try { input = null; continuation = null; publicationLight = null; publicationReceipt = null; }
+        try {
+            input = null; continuation = null; publicationLight = null; publicationReceipt = null;
+            prerequisitePoi = null; prerequisitePoiId = null; prerequisiteMetadata = null;
+        }
         finally { custody.gate().unlock(); }
+    }
+    /** Releases a branch that the completed finite graph proved unreachable. */
+    void discardUnused() {
+        custody.gate().lock();
+        try {
+            if (invoked || inputBound || published || outcome.isDone()
+                    || custody.hasActiveClaimLocked(stage)) return;
+            input = null; continuation = null; publicationLight = null; publicationReceipt = null;
+            prerequisitePoi = null; prerequisitePoiId = null; prerequisiteMetadata = null;
+        } finally { custody.gate().unlock(); }
     }
     boolean retainsInputOrContinuation() {
         custody.gate().lock(); try { return input != null || continuation != null; } finally { custody.gate().unlock(); }

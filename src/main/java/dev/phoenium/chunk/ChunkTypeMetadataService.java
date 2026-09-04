@@ -23,6 +23,8 @@ public final class ChunkTypeMetadataService implements ChunkMetadataBridge {
     }
     public enum Result { APPLIED, STALE, SHUTDOWN }
     public record Update(Result result, byte previous) { }
+    /** Finite cache put at the original semantic call site, never a Minecraft mutation callback. */
+    @FunctionalInterface public interface OriginalCachePut { byte put(); }
     private record Entry(ChunkCustodyModel.LifecycleId lifecycle, byte value) { }
     private final ChunkCustodyModel custody;
     private final ChunkWorkRegistry works;
@@ -84,12 +86,41 @@ public final class ChunkTypeMetadataService implements ChunkMetadataBridge {
         return observe(work, work.lifecycle().chunkKey()).result() == Result.APPLIED;
     }
 
+    boolean preconditionValidLocked(ChunkCustodyModel.WorkId work, RoutingKey target) {
+        if (!custody.gate().isHeldByCurrentThread()) throw new ChunkProtocolException("metadata readiness outside custody fence");
+        return authorizationLocked(work, target) == Result.APPLIED;
+    }
+
+    public byte putClaimed(ChunkStageClaim claim,RoutingKey target,byte value,OriginalCachePut original) {
+        claim.require(claim.stage());
+        custody.gate().lock();
+        try {
+            if (!claim.belongsTo(custody) || !custody.hasActiveClaimLocked(claim.stage())
+                    || !target.equals(claim.stage().work().lifecycle().chunkKey())
+                    || value != REPLACEABLE && value != FULL)
+                throw new ChunkProtocolException("invalid claimed metadata put");
+            byte previous = original.put();
+            entries.put(target,new Entry(claim.stage().work().lifecycle(),value)); backingWrites++;
+            return previous;
+        } finally { custody.gate().unlock(); }
+    }
+
     /** Cleanup is also a terminal fence, so a caller cannot clear then reinsert using this lineage. */
     public void retire(ChunkCustodyModel.LifecycleId lifecycle) {
         Objects.requireNonNull(lifecycle);
         custody.gate().lock();
         try {
             if (custody.lifecycleState(lifecycle).isPresent()) custody.retire(lifecycle);
+            Entry entry = entries.get(lifecycle.chunkKey());
+            if (entry != null && entry.lifecycle().equals(lifecycle)) entries.remove(lifecycle.chunkKey());
+        } finally { custody.gate().unlock(); }
+    }
+
+    /** Drops only Phoenium's shadow after this work publishes; vanilla's cache remains authoritative. */
+    public void forget(ChunkCustodyModel.LifecycleId lifecycle) {
+        Objects.requireNonNull(lifecycle);
+        custody.gate().lock();
+        try {
             Entry entry = entries.get(lifecycle.chunkKey());
             if (entry != null && entry.lifecycle().equals(lifecycle)) entries.remove(lifecycle.chunkKey());
         } finally { custody.gate().unlock(); }

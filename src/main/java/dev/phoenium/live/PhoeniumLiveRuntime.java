@@ -8,6 +8,7 @@ import dev.phoenium.chunk.ChunkCompletionGateway;
 import dev.phoenium.chunk.ChunkCustody;
 import dev.phoenium.chunk.ChunkWorkRequest;
 import dev.phoenium.chunk.ChunkPrerequisiteServices;
+import dev.phoenium.chunk.ChunkBindingRuntime;
 import dev.phoenium.ownership.ObjectOwnershipRegistry;
 import dev.phoenium.ownership.ObjectOwnership;
 import dev.phoenium.ownership.ObjectOperationExecutor;
@@ -58,7 +59,7 @@ import org.slf4j.Logger;
  * Stage 2's serial live binding. A Minecraft level is represented by one real
  * Phoenium region; this is deliberately not geographical regionalization.
  */
-public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecutor, ObjectOperationExecutor {
+public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecutor, ObjectOperationExecutor, ChunkBindingRuntime.Authority {
     private final Logger logger;
     private final Map<WorldId, LiveRegion> regions = new LinkedHashMap<>();
     /** Per-world service lifetime only; no Minecraft chunk callback is bound to it in this pass. */
@@ -75,6 +76,7 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
     private final ThreadLocal<ReplayIdentity> replayIdentity = new ThreadLocal<>();
     private final java.util.Set<TaskCorrelationId> consumedInteractionReplays = ConcurrentHashMap.newKeySet();
     private final FailureBarrier barrier = new FailureBarrier();
+    private final ChunkBindingRuntime chunkBinding;
     private RegionScheduler scheduler;
     private OwnerGateway gateway;
     private ObjectOwnerGateway objectGateway;
@@ -112,7 +114,10 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
     private long sequence;
     private final long injectedFailureAt = Long.getLong("phoenium.test.failLiveTickAt", -1L);
 
-    public PhoeniumLiveRuntime(Logger logger) { this.logger = Objects.requireNonNull(logger, "logger"); }
+    public PhoeniumLiveRuntime(Logger logger) {
+        this.logger = Objects.requireNonNull(logger, "logger");
+        this.chunkBinding = new ChunkBindingRuntime(this, logger);
+    }
 
     public void start(MinecraftServer server) {
         if (state != State.NEW) throw new IllegalStateException("Phoenium lifecycle start repeated: " + state);
@@ -125,37 +130,19 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
             Class.forName("net.minecraft.server.players.PlayerList", true, loader);
             Class.forName(Entity.class.getName(), true, loader);
             Class.forName(ServerLevel.class.getName(), true, loader);
+            Class.forName("net.minecraft.server.level.ChunkMap", true, loader);
+            Class.forName("net.minecraft.server.level.GenerationChunkHolder", true, loader);
+            Class.forName("net.minecraft.server.level.ServerChunkCache$MainThreadExecutor", true, loader);
+            Class.forName("net.minecraft.world.level.chunk.storage.SerializableChunkData", true, loader);
+            Class.forName("net.minecraft.world.level.chunk.storage.SectionStorage", true, loader);
+            Class.forName("net.minecraft.server.level.ThreadedLevelLightEngine", true, loader);
+            Class.forName("net.minecraft.server.level.ChunkTaskDispatcher", true, loader);
+            Class.forName("net.minecraft.util.thread.AbstractConsecutiveExecutor", true, loader);
         } catch (ClassNotFoundException impossible) {
             throw new IllegalStateException("required Minecraft lifecycle class is unavailable", impossible);
         }
-        Map<WorldId, RegionRoute> worldDefaults = new LinkedHashMap<>();
-        Map<RoutingKey, RegionRoute> explicitRoutes = new LinkedHashMap<>();
-        explicitFixture = ExplicitLiveTopologyFixture.enabled();
-        for (ServerLevel level : server.getAllLevels()) {
-            WorldId world = worldId(level);
-            chunkPrerequisiteServices.put(world, new ChunkPrerequisiteServices(world, "live-" + (lifecycleStarts + 1)));
-            RoutingKey key = new RoutingKey(world, 0, 0);
-            RegionId region;
-            RegionRuntime runtime;
-            if (explicitFixture) {
-                ExplicitLiveTopologyFixture.Plan plan = ExplicitLiveTopologyFixture.plan(world, key,
-                    new TopologyGeneration(1), new OwnerEpoch(0), new OwnerEpoch(0));
-                region = plan.a();
-                runtime = readyRuntime(region);
-                RegionRuntime b = readyRuntime(plan.b());
-                runtimes.put(plan.b(), b);
-                explicitRoutes.putAll(plan.routes());
-            } else {
-                region = new RegionId(world, "stage2-live-world");
-                runtime = readyRuntime(region);
-                worldDefaults.put(world, new RegionRoute(region, new TopologyGeneration(1), runtime.ownerEpoch()));
-            }
-            LiveRegion previous = regions.put(world, new LiveRegion(level, region, key, runtime));
-            if (previous != null) throw new IllegalStateException("duplicate controlled world " + world.value());
-            runtimes.put(region, runtime);
-        }
+        for (ServerLevel level : server.getAllLevels()) requireChunkWorld(level);
         if (regions.isEmpty()) throw new IllegalStateException("no server levels available for Stage 2 live binding");
-        directory.publish(new TopologyGeneration(1), explicitRoutes, explicitFixture ? Map.of() : worldDefaults);
         scheduler = new RegionScheduler(runtimes, directory, barrier, this, this);
         gateway = new OwnerGateway(directory, runtimes, scheduler);
         objectGateway = new ObjectOwnerGateway(objects, directory, gateway);
@@ -225,6 +212,7 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
 
     public void stop() {
         if (state == State.STOPPED) return;
+        chunkBinding.shutdown();
         if (scheduler != null) { scheduler.quiesce(); scheduler.stop(); }
         chunkPrerequisiteServices.values().forEach(ChunkPrerequisiteServices::shutdown);
         chunkPrerequisiteServices.clear();
@@ -253,6 +241,67 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
     }
     public String failureDescription() {
         return barrier.record().map(record -> record.cause().toString()).orElse("");
+    }
+
+    public ChunkBindingRuntime chunkBinding() { return chunkBinding; }
+
+    @Override
+    public ChunkBindingRuntime.WorldAuthority requireChunkWorld(ServerLevel level) {
+        Objects.requireNonNull(level);
+        if (state == State.STOPPED) throw new IllegalStateException("chunk world requested after shutdown");
+        WorldId world = worldId(level);
+        LiveRegion existing = regions.get(world);
+        if (existing != null) {
+            if (existing.level() != level) throw new IllegalStateException("world instance changed without shutdown " + world.value());
+            return chunkAuthority(world);
+        }
+
+        explicitFixture = ExplicitLiveTopologyFixture.enabled();
+        TopologyGeneration generation = new TopologyGeneration(directory.snapshot().generation().value() + 1);
+        Map<RoutingKey, RegionRoute> routes = new LinkedHashMap<>();
+        directory.snapshot().routes().forEach((key, route) -> routes.put(key,
+                new RegionRoute(route.region(), generation, route.ownerEpoch())));
+        Map<WorldId, RegionRoute> defaults = new LinkedHashMap<>();
+        directory.snapshot().worldDefaults().forEach((key, route) -> defaults.put(key,
+                new RegionRoute(route.region(), generation, route.ownerEpoch())));
+
+        RoutingKey key = new RoutingKey(world, 0, 0);
+        RegionId region;
+        RegionRuntime runtime;
+        if (explicitFixture) {
+            ExplicitLiveTopologyFixture.Plan plan = ExplicitLiveTopologyFixture.plan(world, key, generation,
+                    new OwnerEpoch(0), new OwnerEpoch(0));
+            region = plan.a(); runtime = readyRuntime(region);
+            RegionRuntime b = readyRuntime(plan.b());
+            runtimes.put(plan.b(), b); routes.putAll(plan.routes());
+        } else {
+            region = new RegionId(world, "stage2-live-world"); runtime = readyRuntime(region);
+            defaults.put(world, new RegionRoute(region, generation, runtime.ownerEpoch()));
+        }
+        long worldInstanceSequence = lifecycleStarts + 1;
+        if (regions.put(world, new LiveRegion(level, region, key, runtime, worldInstanceSequence)) != null)
+            throw new IllegalStateException("duplicate controlled world " + world.value());
+        runtimes.put(region, runtime);
+        chunkPrerequisiteServices.put(world,
+                new ChunkPrerequisiteServices(world, "live-" + worldInstanceSequence, worldInstanceSequence));
+        directory.publish(generation, routes, defaults);
+        return chunkAuthority(world);
+    }
+
+    private ChunkBindingRuntime.WorldAuthority chunkAuthority(WorldId world) {
+        Map<RegionId, dev.phoenium.ownership.RegionLeaseManager> leases = new LinkedHashMap<>();
+        runtimes.forEach((id, runtime) -> { if (id.world().equals(world)) leases.put(id, runtime.leases()); });
+        LiveRegion region = Objects.requireNonNull(regions.get(world));
+        return new ChunkBindingRuntime.WorldAuthority(world, region.worldInstanceSequence(),
+                Objects.requireNonNull(chunkPrerequisiteServices.get(world)), directory, leases, barrier);
+    }
+
+    @Override
+    public void chunkBarrier(Throwable failure) {
+        if (!barrier.tripped()) {
+            barrier.trip(failure, directory.snapshot().generation(), new OwnerEpoch(0), null);
+            hardBarriers = 1;
+        }
     }
 
     /** Test-only route evidence reads the immutable directory; it grants no gameplay authority. */
@@ -588,7 +637,8 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
     }
     private enum ReplayKind { MOVE, INTERACT }
     private record ReplayIdentity(TaskCorrelationId correlation, ReplayKind kind, ServerGamePacketListenerImpl connection, Object packet) { }
-    private record LiveRegion(ServerLevel level, RegionId id, RoutingKey key, RegionRuntime runtime) { }
+    private record LiveRegion(ServerLevel level, RegionId id, RoutingKey key, RegionRuntime runtime,
+                              long worldInstanceSequence) { }
     private record PendingTick(ServerLevel level, BooleanSupplier shouldKeepTicking, RegionTaskEnvelope envelope) { }
     public enum State { NEW, RUNNING, STOPPED }
 }
