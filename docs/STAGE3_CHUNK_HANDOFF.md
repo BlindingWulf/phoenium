@@ -258,6 +258,21 @@ No Minecraft authoritative continuation is bound by that infrastructure pass.
 
 ## J. Exact next task
 
+### Decision A binding stopped at metadata semantics
+
+The implementation attempt from `070a720` hit user stop condition 7 before
+enabling any authority. The actual Minecraft 26.2 `$4` fatal recovery path
+unconditionally changes a cached FULL marker to -1; the prerequisite façade
+retains FULL for the same current lifecycle. The subsequent previous-value
+result also differs. Byte encoding translation alone cannot reconcile this.
+Read [STAGE3_PARSED_APPLY_IMPLEMENTATION.md](STAGE3_PARSED_APPLY_IMPLEMENTATION.md)
+for exact bytecode anchors and the real-method JUnit witness. Clean build:
+**121 tests PASS**, including all original 120; PRQ 18/18 remains PASS.
+FUT acceptance is 0/18; no production binding or new live acceptance run is
+claimed. Resolve the current-lifecycle invalidation/FULL-protection contract
+before resuming the atomic implementation. Decision A composition remains
+approved; R-CHUNK-01/Stage 3 remain PARTIAL and Stage 4 NOT STARTED.
+
 ### Prerequisite-service checkpoint
 
 The service prerequisite layer is now documented in
