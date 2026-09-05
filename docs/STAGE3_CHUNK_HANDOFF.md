@@ -8,7 +8,26 @@ The bounded D2-P/D3-X amendments are now explicitly approved in
 client harness compiled. Follow the current
 [implementation/gate ledger](STAGE3_FULL_APPROVED_IMPLEMENTATION.md), including
 its scope reconciliation, before the historical sections below. Do not ask
-for these same approvals again. FULL implementation/acceptance remains pending;
+for these same approvals again.
+
+**Current result: integrated FULL BLOCKED**, with a concrete original-method
+[non-self query cycle](STAGE3_FULL_NONSELF_QUERY_CONFLICT.md), not missing D2/D3
+consent. Saved mature tadpoles at X=(0,0)/(15.8,8,8) and Y=(1,0)/(16.2,8,8)
+query each other's unfinished FULL slots through collision after approved
+direct-self difficulty access. Both proto and original reload branches reproduce
+the dependency. Neighboring pre-publication access is outside D3-X. FULL_CONVERT,
+STATUS_PUBLISH(FULL), D1/D2 and shared service adapters are not enabled.
+
+Approval checkpoint 29773ab; actual query-guard/admission safety correction
+e2318a6; final production source 271cf0b also logs the original live-tick barrier
+cause once. Clean build/client compilation: **264/264**, all prior 253 passing.
+Final JAR SHA-256 `46E37BBE91CBCCD958656DA125ADC10ABCCA6DC090A2D0DE86E4BD79C6E7ACC2`.
+Fresh/fresh/reload, two real-client lifecycles and invalid-demand cleanup passed
+on that artifact; both external-server copies match. An earlier client run hit
+an unresolved `Ticking block entity` barrier and is retained separately, not
+erased by the final pass. The ledger lists measured counters, exact saved-branch
+coverage limits, failed attempts and all remaining Stage 3 gates. No Stage 4,
+general gameplay service or parallel implementation was started.
 Stage 3/R-CHUNK-01 PARTIAL, Stage 4 NOT STARTED, one worker, parallel OFF.
 
 ## Current D1–D3 resolution — 2026-09-04

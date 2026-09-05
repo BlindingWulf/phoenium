@@ -7,6 +7,12 @@ The original review's pending-approval statements below describe its historical
 state; their descriptions of observable differences and remaining obligations
 are preserved. Approval is not evidence of production implementation.
 
+Implementation checkpoint: [the concrete non-self collision/FULL cycle](STAGE3_FULL_NONSELF_QUERY_CONFLICT.md)
+now blocks integrated entry on both proto and reload branches. The existing
+admission has a tested out-of-band query-failure safeguard; D1/D2/services and
+production FULL/private access are not bound. Final build: 264 passing tests.
+See the ledger for final-artifact runtime results and preserved failed attempts.
+
 2026-09-04. Start: `84a01d4352dc5b937da8ff0c35dd1df9414bd017`, clean.
 Cleanup checkpoint `a99d647c1ed39b1a96d5267e6f08f06ba17d8945` is an ancestor
 and is preserved without modifying its implementation or assertions.

@@ -1,5 +1,12 @@
 # Stage 3 FULL conversion review and load regression repair
 
+2026-09-05 current checkpoint: [D2/D3 approved](STAGE3_FULL_D2_D3_APPROVAL.md),
+but a [concrete neighboring collision/FULL cycle](STAGE3_FULL_NONSELF_QUERY_CONFLICT.md)
+blocks integrated entry within that direct-self authority. The
+[implementation ledger](STAGE3_FULL_APPROVED_IMPLEMENTATION.md) records the
+query-failure safety correction, 264 passing tests, final runtime regressions
+and exact remaining gates. The review history below is preserved.
+
 ## Current D1–D3 disposition — 2026-09-04
 
 [STAGE3_FULL_D1_D3_DECISIONS.md](STAGE3_FULL_D1_D3_DECISIONS.md) supersedes

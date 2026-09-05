@@ -54,3 +54,134 @@ Clean build and client compilation: **264 passing tests**, all original 253
 plus eleven additions. Failed attempts and their diagnoses are preserved in
 the conflict record. Runtime regression/evidence collection follows on this
 buildable checkpoint; no authoritative FULL or publication has been enabled.
+
+## Final checkpoints and build
+
+- Approval: `29773ab`.
+- Query safety implementation and concrete conflict witnesses:
+  `e2318a61ced712657c8857e70713cf7df3139ffd`.
+- Final production source: `271cf0b5397d5401213f3f291eaa6c4111f2904c`;
+  adds one-time logging of the original live-tick barrier cause after a runtime
+  failure exposed that diagnostic gap. It does not change tick admission or recovery.
+- Final clean build: `clean build compileClientGameTestJava --no-daemon`,
+  **264 tests, 0 failures/errors/skips**, log `run/full-approved-diagnostic-build.log`.
+  All original 253 tests, including the 32 semantic witnesses and a99d647 cleanup
+  regressions, remain passing. The final delivery commit changes only records.
+- Production JAR SHA-256:
+  `46E37BBE91CBCCD958656DA125ADC10ABCCA6DC090A2D0DE86E4BD79C6E7ACC2`.
+  Build output, external normal server and isolated negative server copies match.
+  Both the earlier failed-client artifact and the final artifact are retained
+  under `run/full-approved-runtime-final/` with distinct filenames.
+- Pinned Minecraft JAR was rehashed and matches
+  `A9B82EED0C7F32D4EF1A057165D5EEFEA5D5E717138F4C65A13A7035B72C96B4`.
+  Fresh query/holder disassembly is retained alongside the runtime evidence.
+
+## Final-artifact runtime regression
+
+`runStage3ChunkTrace runStage3ClientGameTest --no-daemon` passed on the final
+artifact. These are regressions of the already-bound load/EMPTY path and
+ordinary vanilla FULL behavior. They do **not** establish an authoritative
+FULL_CONVERT or STATUS_PUBLISH(FULL) adapter.
+
+| Final-artifact lifecycle | Result | PARSED_APPLY / EMPTY publications | Specific evidence |
+| --- | --- | --- | --- |
+| Fresh generation 1 | PASS | 1058 / 1058 | Fresh seed -738643391458110988, target (32,4), original FULL future success |
+| Fresh generation 2 | PASS | 1081 / 1081 | Different fresh seed 201350631864005760, original FULL future success |
+| First-world persisted reload | PASS | 9 / 9 | Same first world/seed, actual saved data read, original Imposter conversion trace |
+| First real client lifecycle | PASS for the recorded movement/interaction harness | 2046 / 2046 | Offline PhoeniumTest0 over TCP, usable received world; same-owner movement/interaction; cross-owner packet rejection before lookup at distance 2.0; clean disconnect |
+| Second real client lifecycle | PASS | 1963 / 1963 | New fresh world, normal reconnect/login, projection cleanup and clean stop |
+| Isolated deliberately invalid EMPTY demand | PASS for cancellation cleanup only | 529 / 529 of 530 registered | Request (1000,1000), one CANCELLED/private unloaded result, no target apply/recovery, normal stop |
+
+The isolated negative probe used the unchanged
+`scripts/test_missing_route_cleanup.py`, with Mixin export/count checking enabled
+only for that process. Its exported **actual dedicated-server** ServerChunkCache
+has one managedBlock wrapper call and two join wrapper calls, each invoking
+ChunkSynchronousAccessGuard. Existing strict `require/expect` selectors remain
+unchanged. This verifies real transformation of the guard path, not an absent
+FULL registrar selector. No private in-progress capability is installed.
+
+All six final-artifact stops report zero retained graphs, returned/POI future
+indexes, synchronous invocation indexes, light batches/occurrences/receipts,
+POI/metadata/lifecycle/work/custody records, duplicate applications, recovery
+applications and chunk-binding barriers. Five normal runs have zero live
+scheduler barriers, bypasses, fallback, ownership violations and unleased
+execution. The negative run has one expected cancellation. Player projections
+clear on both successful client disconnects. Legitimate entity counts are not
+forced to zero: the final normal client stop still reports 55 ordinary entities.
+No Java test/server/client processes remained at the final process check.
+
+The new query fault scope retains one existing claim and the first failure only
+through synchronous exit; tests verify reentrant completion can immediately
+admit an independent stage without inheriting a prior failure. Preparation
+records, D1 facts, C/S/W journals and D3 private capabilities are **not implemented**,
+so their production cleanup is untested, not a measured zero. No heap, throughput,
+contention benchmark or Android suitability result is claimed.
+
+## Failure history and limits
+
+The first runtime command at e2318a6 passed fresh/fresh/reload, then FAILED its
+client interaction phase. It reached TCP login, a usable world, movement and
+boundary rejection, but the serial live scheduler entered its failure barrier
+with `ReportedException: Ticking block entity`. The chunk binding itself still
+settled 2046 graphs/publications with zero barriers/retention. The server saved
+and stopped during failure cleanup; the client test did not complete its normal
+disconnect/repeat-lifecycle assertions.
+
+That failure's world was `STAGE3-CLIENT-1-1788588887373`, seed
+`-663839099974294500`, JAR
+`FFAEF347B4FFD64A90F7E19C6EA4C472873176CAB21F042E7474EF5C973B2CEC`.
+Its JSON, seed and complete client/server logs remain in
+`run/full-approved-runtime-final/client-failed/`. The old diagnostic path
+exposed only the wrapper; the precise nested cause was not captured and remains
+**unresolved**. The one-time cause logging in 271cf0b improves future diagnosis;
+it is not a repair of that unknown underlying failure. A single fresh-world
+rerun of the complete final-artifact ladder then passed. No fixture, behavior,
+assertion or seed rule was weakened to obtain it. This later pass does not
+reclassify the earlier failed attempt as accepted or prove absence of its cause.
+
+Deterministic failed attempts 01–03 and their separate diagnoses remain in the
+linked conflict record. No actual hanging server, personal-account profile
+operation or external-network D2 acceptance was performed.
+
+## Actual saved-branch coverage
+
+| Branch | Original-method / adapter evidence | Final external-server acceptance |
+| --- | --- | --- |
+| Saved teams and conversion team prefixes | Existing real-scoreboard witnesses; new actual supplier tests retain the reached team prefix after a caught query breach | Saved restoration and C/S service ordering NOT ESTABLISHED; normal fixture interaction is separate |
+| Legacy Owner names | Original 13 controlled-provider/temporary-file semantic witnesses preserved | D2 preparation/consumption NOT IMPLEMENTED; no live legacy-owner branch claim |
+| Foreign entity-reference consumers | Original 10 D1 semantic witnesses preserved | Fact writers/consumers NOT IMPLEMENTED; no live D1 acceptance |
+| Underage/mature saved tadpoles | Original 9 D3 witnesses plus concrete proto/reload X/Y cycles, ready/absent neighbors, dynamic shapes and IMMEDIATE creation | No saved-tadpole FULL binding or live acceptance |
+| Dynamic FULL,true failure prefix | Original TicketStorage insertion and EntityType catch executed with the real existing guard/admission; failure recorded out of band | No named ticket service/private capability binding |
+| Waypoint/tracking/debug/boss/sound paths | Existing bounded original-method witnesses and caught-sound control preserved | Complete scoped saved FULL callback closure and shared C/S/W ordering NOT IMPLEMENTED |
+
+## Remaining Stage 3 gates after this session
+
+These are existing authoritative requirements, not new gates inferred from
+passing tests. Detailed references and scope assignments remain in the start
+table. General regional world services remain Stage 4; the named chunk-facing
+adapters below remain Stage 3 under A §§3–16.
+
+| Requirement | Implementation | Evidence | Next action |
+| --- | --- | --- | --- |
+| Non-self callback query closure | BLOCKED; production private access not installed | Concrete original X -> Y -> X FULL dependencies on proto and reload; non-air/ticket witnesses | Resolve the new neighboring input/access boundary described in the conflict record; do not reuse D3's direct-self approval |
+| D1 restricted reference facts | Not implemented | Ten preserved semantic witnesses | Bind all contributing writers, exact alias/revision/incarnation lookups and audited consumers; test later-use expiry and unauthorized-present rejection |
+| D2 preparation and settled persistence | Approved, not implemented | Thirteen original-cache/provider/temp-file witnesses | Implement bounded correlated preparation, cache/policy validation, ordered settled write attempts and original-edge consumption/cleanup |
+| C/P/S/W and complete FULL callback footprint | Contract accepted, not implemented | Preserved scoreboard/callback semantics; no service binding acceptance | Integrate all conflicting serial phases, login snapshot/catch-up/live session order, original sends and named world turns with FULL; release before waits |
+| FULL work/borrow lifetime and original supplier binding | Not implemented; FULL disabled | Actual supplier semantic tests and existing custody tests | Extend existing lifecycle/work through borrow drain and conversion, exact input/holder/route receipts, original supplier once |
+| Separate STATUS_PUBLISH(FULL) | Not implemented | Existing EMPTY admission only; ordinary FULL traces are observational | Bind exact actual holder edge with successful conversion evidence, fresh slot/reservation/route/fence validation |
+| Other applicable generation/light boundaries | Partial; read-time light ingress is bound, later LIGHT_POST_UPDATE/borrowed-input/publication scope is not | Existing ingress tests/runtime regression; no claim that those later stages are authoritative | Complete A §§3/4/9 generation borrow, live-light input/output/flags and per-target notification/status bindings; do not run propagation under R |
+| Permanently missing route versus real transition/cancellation | Still CANCELLED on any absent route in ChunkStageDeliveryPump | Cleanup probe passes, but proves no valid-demand classification | Reconcile A §7 and S §7: only real pending topology may park, valid permanently unroutable demand is a barrier, authentic terminal control settles normally |
+| TICK_READY / SEND_READY / DEMOTE | Not bound | Existing discovery traces and ordinary client receipt only | Separate later Stage 3 binding, full post-processing footprint, immediate/delayed send and promotion/demotion generation tests; outside this session |
+| Complete bound custody/terminal acceptance | Partial, existing load regressions retained | All 264 tests; 34 and 8×34 cancellation cleanup, late/reentrant/replacement/APPLIED-before-release; six final-artifact zero-retention stops | Extend actual FULL and remaining stages through topology changes, holder/demand replacement, pending shutdown, real failure/control and no-resurrection matrix |
+| Complete runtime/branch acceptance | Partial; normal final-artifact ladder passes, earlier live tick failure unresolved | Detailed runtime and branch tables above | Exercise actual bound saved teams/owners/references/tadpoles and shared sessions; reproduce/diagnose the retained tick failure rather than erase it |
+| R-CHUNK-01 and whole Stage 3 acceptance | PARTIAL | Required A §15 evidence is incomplete | Finish remaining bindings and all applicable C-A01–20/live rows, then perform final whole-stage acceptance audit; no PASS tag in this session |
+
+**FULL checkpoint: BLOCKED. R-CHUNK-01: PARTIAL. Stage 3: PARTIAL pending final
+whole-stage acceptance audit. Stage 4: NOT STARTED.** One simulation worker;
+parallel gameplay OFF. The complete Stage 3 matrix is not ready for that audit.
+
+Machine-readable evidence: `run/full-approved-runtime-final/acceptance-manifest.json`.
+Normal-run JSON/traces/seeds: `run/full-approved-runtime-final/final-evidence/`.
+Normal process/client logs and final JUnit XML are alongside it. Negative probe:
+`run/terminal-cleanup/missing-route-20260905-012038/acceptance.json`.
+Final report supplies the delivery HEAD; no self-referential commit hash is embedded.
