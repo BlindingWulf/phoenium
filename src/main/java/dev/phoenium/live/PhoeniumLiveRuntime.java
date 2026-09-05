@@ -191,7 +191,11 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
         } finally {
             pendingTick = null;
         }
-        if (scheduler.lifecycle() == SchedulerLifecycle.FAILED) hardBarriers = 1;
+        if (scheduler.lifecycle() == SchedulerLifecycle.FAILED) {
+            if (hardBarriers == 0) barrier.record().ifPresent(record ->
+                    logger.error("PHOENIUM_STAGE2 live tick failure; simulation remains fenced", record.cause()));
+            hardBarriers = 1;
+        }
     }
 
     @Override
