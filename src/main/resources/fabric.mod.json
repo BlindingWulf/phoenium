@@ -12,7 +12,8 @@
     ]
   },
   "mixins": [
-    "phoenium.mixins.json"
+    "phoenium.mixins.json",
+    "phoenium.full.mixins.json"
   ],
   "depends": {
     "fabricloader": ">=0.19.5",
