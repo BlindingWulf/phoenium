@@ -1,5 +1,11 @@
 # Non-self initialized inputs: test-only decision checkpoint — 2026-09-05
 
+Current implementation request: the bounded production amendment is recorded in
+[STAGE3_FULL_NONSELF_APPROVAL.md](STAGE3_FULL_NONSELF_APPROVAL.md). The historical
+proposal and test evidence below remain intact. Its pending-approval/stop text
+describes the prototype checkpoint; production correctness and enablement still
+require the [implementation gates](STAGE3_FULL_APPROVED_IMPLEMENTATION.md).
+
 **Tested design proposal; additional production approval is required.** Both
 original X/Y conversions finish on proto and persisted-reload paths in both
 orders. Neither uses a diagnostic stop as success or waits for the other's

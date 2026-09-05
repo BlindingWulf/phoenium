@@ -1,5 +1,16 @@
 # Stage 3 chunk-only handoff
 
+## Current production integration request — 2026-09-05
+
+Continue from clean `542b352eff9fbc8878d00cb07782b45460565f66` under the
+[bounded non-self amendment and production map](STAGE3_FULL_NONSELF_APPROVAL.md).
+Fresh focused 48/48 and complete 312/312 baseline tests passed; client harness
+compiles. Existing evidence was copied before rebuilding to
+`run/full-production-integration/session-20260905-114005/`.
+Production FULL remains disabled while integration is incomplete. Historical
+stop/approval passages below do not replace the current implementation request.
+Stage 3/R-CHUNK-01 PARTIAL; Stage 4 NOT STARTED; one worker, parallel OFF.
+
 ## Current prototype-validation checkpoint — 2026-09-05
 
 The interrupted non-self prototype is recovered and validated in
