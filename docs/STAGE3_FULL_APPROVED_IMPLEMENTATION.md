@@ -1,6 +1,74 @@
 # Approved FULL implementation and acceptance ledger
 
-## Current production integration interruption — 2026-09-05
+## Current gate status — 2026-09-05 registration/preparation checkpoint
+
+**REGISTRATION + ADMITTED PREPARATION: PASS within this session's bounded scope.**
+Integrated FULL/checkpoint B remains **PARTIAL**; general production FULL selection
+**DISABLED**. This is not completion of the wider FULL assignment. The
+[boundary record](STAGE3_FULL_PRODUCTION_BOUNDARY.md) supplies exact producers,
+future relationships, original entry points, retention conditions, executed
+commands and artifact-specific evidence. The approved non-self amendment and
+[route classification](STAGE3_ROUTE_CLASSIFICATION.md) remain in force.
+
+| Binding or obligation | Current implementation/evidence | Remaining work |
+| --- | --- | --- |
+| Scoped approval / prototype | Approved specification preserved; all 48 reference cases retained | No repeated approval or prototype rebuild |
+| Existing preparation/finishing split | Reused late Mixin adapter; strict original supplier/wrapper observations verified against actual installed modules | No new extraction work needed |
+| Winning FULL reservation / original async registration | Real CAS-dominated map call, live generation pin, exact holder/cache/world/work binding; pending stages exist before executor arming | Ordinary selection remains disabled pending integrated completion |
+| Adjacent result correlation | Actual R indexed before possibly-inline release; exact adjacent map/holder/step capture; proto dependent and Imposter identity paths covered | No future reference treated as authority |
+| Preparation generation/input/writer evidence | Actual slot refs, generation task borrows/save-sync lifetime and producer releases; reentrant SPAWN release witness blocks then wakes preparation | Broader initialized-input discovery and all later callback writer footprints remain open |
+| Preparation service subset | Actual immutable construction inputs and narrow Primary/Derived game-clock read turn for PotentSulfur constructor callback | No post-load D1/D2/C/P/S/W grants inferred |
+| Admitted preparation / actual receipt | Existing typed stage/current-route/lease/claim/outcome executes installed helper once; proto construction and Imposter reuse; successful exact receipt precedes inline consumer callbacks | Production discovery/consumer-operation binder for subsequent initialized-input use |
+| Private non-self query authority | No production private getter enabled | Exact operation/claim/holder/object/purpose validation at all approved queries; ready/absent/error preservation |
+| D1 | Original reference witnesses preserved | Actual fact producer/writer participation and ordered alias/predicate consumers |
+| D2 / P | Existing cache/provider/disposable-file witnesses preserved | Occurrence preparation, cache revisions, ordered settled persistence and original Owner-edge consumption |
+| C / S / W | Existing contract witnesses preserved; only the separately scoped constructor clock subset is now bound | Connection sessions, scoreboard/initialization ordering, named world turns and conflicting serial phases |
+| Finishing | Separate typed stage fails closed because its production prerequisite binding is absent; positive preparation does not admit suffix | Bind actual discovery/query/service prerequisites and execute original finishing helper under its own claim |
+| Separate FULL publication | Conversion/adjacent/public FULL/cache remain pending after preparation; loaded/finish callbacks absent | Independent STATUS_PUBLISH(FULL) claim, original conversion success and visibility contract |
+| Retention / replacement / shutdown | Finite registrar graph retains real pins and consumers; claim/reentry/queued-ack/replacement controls tested; terminal 1-until-ack then 0 | Production initialized-input consumer wiring, capacity/bytes/queue bounds and saturation/progress proofs |
+| Route classification | Current-owner reroute, actual pending proposal parking, unrelated proposal rejection and authentic terminal distinction preserved/tested | Integrated FULL input-window convergence remains open |
+| Installed runtime | Eight finite selected production-Mixin cases, no javaagent; separate baseline smoke; exact final JAR copies verified | Integrated saved-world acceptance is not claimed |
+| Integrated FULL saved-world/client acceptance | Not run; in-memory Imposter only for the new selected fixture | Real X/Y proto/disk-reload orders, non-air/shapes, shared/larger windows, teams/owners/references and FULL lifetime failures |
+| Vault tick | OPEN, unchanged; prior diagnostic and failure evidence preserved; no new client campaign | Ordinary tick callback readiness for synchronous neighbor-output queries; no FULL-only capability applied to ticks |
+| Other Stage 3 / Stage 4 | Stage 3/R-CHUNK-01 PARTIAL; Stage 4 NOT STARTED; workers=1, parallel gameplay OFF, no PASS tag | Ticking/readiness/send/demotion, whole-chunk acceptance and whole-stage audit remain open |
+
+Fresh baseline at clean `2f270ffc539f85050a50b22d44d68b7d2fa5369e`: **334 / 26**,
+exit 0. Final clean build/client compilation/server preparation: **365 / 27**,
+zero failures/errors/skips, exit 0; all 334 baseline occurrences retained, 31 added
+(28 production registration cases and three strict selector cases). Explicit
+cancellation reference fixtures and their 34 plus eight-times-34 zero-retention
+assertions remain preserved. Original-method tests use test-only hook plumbing;
+installed runtime tests execute the actual production Mixins without an agent.
+
+Evidence root `run/full-registration/session-20260905-135652/`; final files
+`final-clean-build-20.log`, `.exit`, `final-clean-build-20-xml/`,
+`final-baseline-20.*`, `final-controlled-20.*` and `final-verification.json`.
+Selected installed run `transform-20260905-145045`: eight cases, postLoad=0,
+publicFull=0, terminal graph/index/generation-holder/custody=0, child exit 0.
+Separate baseline `transform-20260905-145039`: 529 load/EMPTY publications, zero
+retained load roots, child exit 0. Controlled world endpoints, lower-generation
+outputs and an in-memory Imposter limit the selected evidence; no disk reload,
+client or general FULL acceptance is claimed.
+
+Final production JAR SHA-256:
+`BCD87DE959F1189594330ABB83488A5433B8287DCC3CC59AF62016CE05CBB97D`.
+272 entries; server-only; no JUnit, test agent/hooks/fixture/probe, prototype or
+client classes. Prepared and both newly tested external copies match. Exact
+installed module/class/log hashes and command exits are recorded in manifests;
+installed scope is base/command/lifecycle/Phoenium, plus the disposable test mod
+only in the selected run. Pinned dependencies are unchanged. Preserved failed
+iterations and historic server artifacts are not overwritten or reported as green.
+
+**Single next action:** implement the production initialized-input discovery and
+exact consumer/operation receipt binder feeding FULL_FINISH. All unimplemented
+service/publication/acceptance rows above remain open. Stop this session at the
+registration/preparation checkpoint. First implementation commit `d3a3643`; final
+HEAD/status are recorded in the ignored session manifest and final response.
+
+Everything below is historical evidence. Earlier incomplete counts, missing-test
+statements, pending approvals and old next actions do not supersede this table.
+
+## Historical production integration interruption — 2026-09-05
 
 **FULL checkpoint: PARTIAL. Assignment incomplete. Authoritative FULL remains
 DISABLED.** The [bounded non-self amendment](STAGE3_FULL_NONSELF_APPROVAL.md) is
@@ -17,7 +85,7 @@ boundary `067763f`; preserved vault diagnostic artifact check `ed787e6`.
 Final delivery HEAD/status are recorded in the ignored
 session manifest and final response, avoiding a self-referential commit hash.
 
-### Current gate status (supersedes historical pending-approval/stop passages)
+### Historical gate status (supersedes historical pending-approval/stop passages)
 
 | Binding or obligation | Current implementation/evidence | Remaining work |
 | --- | --- | --- |
@@ -118,7 +186,7 @@ The exact next missing test and binding sequence are in
 [STAGE3_FULL_PRODUCTION_BOUNDARY.md](STAGE3_FULL_PRODUCTION_BOUNDARY.md).
 There is no currently failing deterministic test to disguise as a new blocker.
 
-## Current test-only proposal — 2026-09-05
+## Historical test-only proposal — 2026-09-05
 
 The [non-self input decision](STAGE3_FULL_NONSELF_INPUT_DECISION.md) records the
 recovered prototype and its 48 focused / 312 full-suite passing tests. Both

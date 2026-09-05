@@ -46,13 +46,13 @@ public final class FullRegistrationTestTransform {
             for (MethodNode method : node.methods) if (method.name.equals("applyStep")) {
                 for (AbstractInsnNode instruction : method.instructions.toArray()) if (instruction instanceof MethodInsnNode call) {
                     if (call.owner.equals("net/minecraft/server/level/GeneratingChunkMap") && call.name.equals("applyStep")) {
-                        method.instructions.set(call, new MethodInsnNode(Opcodes.INVOKESTATIC, "dev/phoenium/chunk/FullRegistrationRuntime",
+                        method.instructions.set(call, new MethodInsnNode(Opcodes.INVOKESTATIC, "dev/phoenium/chunk/FullRegistrationTestHooks",
                                 "applyWinning", call.desc.replace("(", "(Lnet/minecraft/server/level/GeneratingChunkMap;"), false)); winning++;
                     } else if (call.owner.equals("java/util/concurrent/CompletableFuture") && call.name.equals("handle")) {
                         InsnList args = new InsnList();
                         for (int local : new int[]{0, 1, 2}) args.add(new VarInsnNode(Opcodes.ALOAD, local));
                         method.instructions.insertBefore(call, args);
-                        method.instructions.set(call, new MethodInsnNode(Opcodes.INVOKESTATIC, "dev/phoenium/chunk/FullRegistrationRuntime", "handle",
+                        method.instructions.set(call, new MethodInsnNode(Opcodes.INVOKESTATIC, "dev/phoenium/chunk/FullRegistrationTestHooks", "handle",
                                 "(Ljava/util/concurrent/CompletableFuture;Ljava/util/function/BiFunction;Lnet/minecraft/server/level/GenerationChunkHolder;"
                                         + "Lnet/minecraft/world/level/chunk/status/ChunkStep;Lnet/minecraft/server/level/GeneratingChunkMap;)Ljava/util/concurrent/CompletableFuture;", false)); adjacent++;
                     }

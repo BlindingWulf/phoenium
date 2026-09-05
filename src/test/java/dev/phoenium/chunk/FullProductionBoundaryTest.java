@@ -149,6 +149,39 @@ class FullProductionBoundaryTest {
         }
         return node;
     }
+
+    @Test void asyncRegistrationRetainsOriginalSupplierAndBindsExactlyOneGeneratedPreparationHandle() throws Exception {
+        ClassNode node = original(); FullStageBoundary.install(node); FullStageBoundary.installRegistration(node);
+        var wrapper = named(node, "full");
+        assertEquals(1, calls(wrapper, "registerAsync")); assertEquals(0, calls(wrapper, "supplyAsync"));
+        var handles = java.util.Arrays.stream(wrapper.instructions.toArray()).filter(i -> i instanceof InvokeDynamicInsnNode)
+                .map(i -> (Handle) ((InvokeDynamicInsnNode) i).bsmArgs[1]).map(Handle::getName).toList();
+        assertEquals(List.of(FullStageBoundary.SUPPLIER, FullStageBoundary.PREPARE), handles);
+        assertThrows(IllegalStateException.class, () -> FullStageBoundary.installRegistration(node));
+    }
+
+    @Test void asyncSelectorRejectsMissingAdapterChangedExecutorAndUnreviewedOperations() throws Exception {
+        assertThrows(IllegalStateException.class, () -> FullStageBoundary.installRegistration(original()));
+        var changed = original(); FullStageBoundary.install(changed);
+        for (AbstractInsnNode i : named(changed, "full").instructions) if (i instanceof MethodInsnNode call && call.name.equals("mainThreadExecutor"))
+            call.name = "otherExecutor";
+        assertThrows(IllegalStateException.class, () -> FullStageBoundary.installRegistration(changed));
+        var extra = original(); FullStageBoundary.install(extra);
+        named(extra, "full").instructions.insert(new MethodInsnNode(Opcodes.INVOKESTATIC, "unknown/Mod", "callback", "()V", false));
+        assertThrows(IllegalStateException.class, () -> FullStageBoundary.installRegistration(extra));
+    }
+
+    @Test void asyncSelectorRejectsChangedHolderCaptureAndSupplierLineage() throws Exception {
+        var changed = original(); FullStageBoundary.install(changed);
+        for (AbstractInsnNode i : named(changed, "full").instructions) if (i instanceof InvokeDynamicInsnNode indy)
+            indy.bsmArgs[1] = new Handle(Opcodes.H_INVOKESTATIC, FullStageBoundary.TARGET, "unknownSupplier", FullStageBoundary.DESCRIPTOR, false);
+        assertThrows(IllegalStateException.class, () -> FullStageBoundary.installRegistration(changed));
+        var local = original(); FullStageBoundary.install(local);
+        for (AbstractInsnNode i : named(local, "full").instructions) if (i instanceof InvokeDynamicInsnNode) {
+            ((VarInsnNode) i.getPrevious()).var = 4; break;
+        }
+        assertThrows(IllegalStateException.class, () -> FullStageBoundary.installRegistration(local));
+    }
     static Operations executable(ClassNode node) throws Exception {
         FullStageBoundary.install(node);
         String generated = node.name + "PhoeniumProductionBoundaryTest" + (++sequence);

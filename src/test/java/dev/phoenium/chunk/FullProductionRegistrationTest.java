@@ -55,6 +55,9 @@ class FullProductionRegistrationTest {
         assertTrue(f.world.inserted.isEmpty());
         assertFalse(graph.conversion().isDone()); assertFalse(graph.returned().isDone()); assertFalse(graph.adjacent().isDone());
         assertNull(holder.getChunkIfPresent(ChunkStatus.FULL));
+        assertNull(f.world.cache.getChunkNow(0, 0), "the original ordinary ready-cache getter cannot expose preparation");
+        assertTrue(Arrays.stream((ChunkAccess[]) field(f.world.cache, ServerChunkCache.class, "lastChunk")).allMatch(Objects::isNull));
+        assertNull(holder.getTickingChunk()); assertNull(holder.getChunkToSend());
         assertFalse(graph.missingFinishingBindings().isEmpty());
         assertEquals(1, f.runtime.measurements().get("preparationCalls"));
         assertFalse(f.owner.leases().hasActiveLease());
@@ -212,7 +215,9 @@ class FullProductionRegistrationTest {
     @Test void authenticShutdownBeforeOriginalExecutorRunsSettlesAndLateCallbackCannotResurrect() throws Exception {
         var f = new FullRegistrationFixture(false); f.start(ChunkPos.ZERO, ChunkStatus.FULL);
         var graph = f.runtime.graph(f.holder(ChunkPos.ZERO)); Runnable late = f.registrations.remove();
-        f.stop(); assertReleased(f); late.run(); f.drain();
+        f.stop(); assertEquals(1, f.runtime.measurements().get("graphs"),
+                "the withheld original executor callback has not acknowledged shutdown yet");
+        late.run(); f.drain();
         assertTrue(graph.prepared().isEmpty()); assertEquals(0, f.runtime.measurements().get("preparationCalls"));
         assertSame(GenerationChunkHolder.UNLOADED_CHUNK, graph.adjacent().join()); assertReleased(f);
     }
@@ -224,6 +229,19 @@ class FullProductionRegistrationTest {
         f.stop(); assertEquals(1, f.runtime.measurements().get("graphs"));
         assertSame(actual, graph.prepared().orElseThrow().actual());
         pin.close(); pin.close(); assertReleased(f); assertTrue(graph.prepared().isEmpty());
+    }
+
+    @Test void preparationReceiptIsInstalledBeforeAnInlineConsumerCanRetainIt() throws Exception {
+        var f = new FullRegistrationFixture(true); f.start(ChunkPos.ZERO, ChunkStatus.FULL);
+        var graph = f.runtime.graph(f.holder(ChunkPos.ZERO));
+        var pin = new java.util.concurrent.atomic.AtomicReference<AutoCloseable>();
+        var consumer = graph.preparation.outcome().thenRun(() -> {
+            assertFalse(f.owner.leases().hasActiveLease());
+            assertTrue(graph.prepared().isPresent()); pin.set(graph.retainPrepared());
+        });
+        f.drain(); consumer.join(); f.stop();
+        assertEquals(1, f.runtime.measurements().get("graphs"));
+        pin.get().close(); assertReleased(f);
     }
 
     @Test void pendingTopologyParksTheRealPreparationAndStaleDeliveryResolvesCurrentRoute() throws Exception {
@@ -324,6 +342,108 @@ class FullProductionRegistrationTest {
         assertEquals(0, f.services.works().retainedEntries());
         assertFalse(f.owner.leases().hasActiveLease());
     }
+
+    @Test void staleRouteRevalidationExecutesPreparationOnlyInTheNewCurrentOwner() throws Exception {
+        var f = new FullRegistrationFixture(true); f.start(ChunkPos.ZERO, ChunkStatus.FULL);
+        var holder = f.holder(ChunkPos.ZERO); var graph = f.runtime.graph(holder);
+        var generation = new TopologyGeneration(2);
+        f.directory.publish(generation, Map.of(), Map.of(f.worldId, new RegionRoute(f.otherId, generation, new OwnerEpoch(0))));
+        holder.afterReplace = () -> {
+            assertTrue(f.other.leases().hasActiveLease()); assertFalse(f.owner.leases().hasActiveLease());
+        };
+        assertTrue(f.runtime.pumpOne()); assertTrue(graph.prepared().isEmpty());
+        f.drain(); assertTrue(graph.prepared().isPresent());
+        assertEquals(1, holder.replacements); f.stop(); assertReleased(f);
+    }
+
+    @Test void completedGenerationRetentionIsReleasedAndLaterFullUsesItsActualExistingParentSlot() throws Exception {
+        var f = new FullRegistrationFixture(true); f.start(ChunkPos.ZERO, ChunkStatus.SPAWN);
+        assertEquals(0, f.runtime.measurements().get("generationHolders"));
+        var holder = f.holder(ChunkPos.ZERO); var parent = holder.getAllFutures().get(ChunkStatus.SPAWN.getIndex()).getSecond();
+        assertTrue(parent.isDone());
+        f.start(ChunkPos.ZERO, ChunkStatus.FULL); var graph = f.runtime.graph(holder); f.drain();
+        assertTrue(graph.prepared().isPresent()); assertSame(f.world.proto, parent.join().orElse(null));
+        f.stop(); assertReleased(f);
+    }
+
+    @Test void winningStatusWithoutAnActualGenerationBorrowCannotRegisterPreparation() throws Exception {
+        var f = new FullRegistrationFixture(true); var holder = f.holder(ChunkPos.ZERO);
+        var failure = assertThrows(java.lang.reflect.InvocationTargetException.class, () -> apply(holder,
+                ChunkPyramid.GENERATION_PYRAMID.getStepTo(ChunkStatus.EMPTY), f,
+                StaticCache2D.create(0, 0, 0, (x, z) -> holder)));
+        assertTrue(assertInstanceOf(ChunkProtocolException.class, failure.getCause()).getMessage().contains("no live generation borrow"));
+        assertEquals(0, f.mapCalls); assertEquals(0, f.runtime.measurements().get("preparationCalls"));
+        f.stop(); assertReleased(f);
+    }
+
+    @Test void explicitWorkCancellationBeforeRegistrationArmsRemainsDistinctFromSupersession() throws Exception {
+        var f = new FullRegistrationFixture(false); f.start(ChunkPos.ZERO, ChunkStatus.FULL);
+        var graph = f.runtime.graph(f.holder(ChunkPos.ZERO));
+        f.services.works().retireWork(graph.work, true); f.drain();
+        var failure = assertInstanceOf(FullRegistrationRuntime.Stopped.class,
+                assertThrows(CompletionException.class, graph.conversion()::join).getCause());
+        assertEquals(ChunkStageAdmission.Result.CANCELLED, failure.reason);
+        assertFalse(f.barrier.tripped()); assertTrue(graph.prepared().isEmpty()); f.stop(); assertReleased(f);
+    }
+
+    @Test void validFullWithoutRouteTripsBarrierAndDoesNotInventCancellation() throws Exception {
+        var f = new FullRegistrationFixture(false); f.start(ChunkPos.ZERO, ChunkStatus.FULL);
+        var graph = f.runtime.graph(f.holder(ChunkPos.ZERO));
+        f.directory.publish(new TopologyGeneration(2), Map.of()); f.drain();
+        assertTrue(f.barrier.tripped()); assertTrue(graph.prepared().isEmpty());
+        var failure = assertInstanceOf(FullRegistrationRuntime.Stopped.class,
+                assertThrows(CompletionException.class, graph.returned()::join).getCause());
+        assertEquals(ChunkStageAdmission.Result.FAILED_BARRIER, failure.reason);
+        f.stop(); assertReleased(f);
+    }
+
+    @Test void completedReturnedFutureIsCorrelatedBeforeInlineAdjacentHandlerReentry() throws Exception {
+        var f = new FullRegistrationFixture(true);
+        var observed = new java.util.concurrent.atomic.AtomicReference<FullRegistrationRuntime.Graph>();
+        f.beforeRegistration = () -> {
+            var graph = f.runtime.graph(f.holder(ChunkPos.ZERO)); observed.set(graph);
+            f.runtime.shutdown(); assertTrue(graph.conversion().isDone());
+        };
+        f.start(ChunkPos.ZERO, ChunkStatus.FULL);
+        var graph = observed.get(); assertNotNull(graph);
+        assertSame(GenerationChunkHolder.UNLOADED_CHUNK, graph.adjacent().join());
+        assertEquals(1, f.runtime.measurements().get("captures"));
+        f.stop(); assertReleased(f);
+    }
+
+    @Test void rejectedOriginalExecutorSettlesExactPrivateBarrierAndEveryGenerationPin() throws Exception {
+        var f = new FullRegistrationFixture(true);
+        var observed = new java.util.concurrent.atomic.AtomicReference<FullRegistrationRuntime.Graph>();
+        var exact = new RejectedExecutionException("controlled executor rejection");
+        f.beforeRegistration = () -> { observed.set(f.runtime.graph(f.holder(ChunkPos.ZERO))); throw exact; };
+        f.start(ChunkPos.ZERO, ChunkStatus.FULL);
+        var graph = observed.get(); assertNotNull(graph); assertTrue(graph.prepared().isEmpty());
+        var failure = assertInstanceOf(FullRegistrationRuntime.Stopped.class,
+                assertThrows(CompletionException.class, graph.conversion()::join).getCause());
+        assertSame(exact, failure.getCause()); assertEquals(ChunkStageAdmission.Result.FAILED_BARRIER, failure.reason);
+        assertSame(exact, f.barrier.record().orElseThrow().cause());
+        f.stop(); assertReleased(f);
+    }
+
+    @Test void constructorFailureRetainsTheOriginalBlockEntityPrefixAndCannotBeRetried() throws Exception {
+        var f = new FullRegistrationFixture(true);
+        var pos = new BlockPos(8, 8, 8); var state = Blocks.BEACON.defaultBlockState();
+        f.world.proto.getSection(0).setBlockState(8, 8, 8, state);
+        var exact = new IllegalStateException("constructor setLevel failure");
+        int[] attempts = {0};
+        var beacon = new BeaconBlockEntity(pos, state) {
+            @Override public void setLevel(Level level) { super.setLevel(level); attempts[0]++; throw exact; }
+        };
+        f.world.proto.setBlockEntity(beacon);
+        var delayed = net.minecraft.util.thread.BlockableEventLoop.class.getDeclaredField("delayedCrash"); delayed.setAccessible(true);
+        Object previous = delayed.get(null);
+        try {
+            f.start(ChunkPos.ZERO, ChunkStatus.FULL); var graph = f.runtime.graph(f.holder(ChunkPos.ZERO)); f.drain();
+            assertSame(exact, assertThrows(CompletionException.class, graph.conversion()::join).getCause());
+            assertSame(f.world.level, beacon.getLevel()); assertEquals(1, attempts[0]); assertTrue(graph.prepared().isEmpty());
+            assertSame(f.world.proto, graph.holder.getChunkIfPresentUnchecked(ChunkStatus.SPAWN));
+            f.runtime.pump.deliverPublished(graph.preparation); f.drain(); assertEquals(1, attempts[0]);
+            assertEquals(0, f.holder(ChunkPos.ZERO).replacements); f.stop(); assertReleased(f);
+        } finally { delayed.set(null, previous); }
+    }
 }
-
-

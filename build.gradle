@@ -241,6 +241,19 @@ tasks.named('test') {
     jvmArgumentProviders.add({ ["-javaagent:${fullRegistrationTestAgent.get().archiveFile.get().asFile.absolutePath}"] } as CommandLineArgumentProvider)
 }
 
+tasks.register('fullRegistrationHarness', Jar) {
+    description = 'Build a disposable server-only registration fixture; never included in the production artifact.'
+    dependsOn tasks.named('compileTestJava')
+    archiveFileName = 'full-registration-probe.jar'
+    destinationDirectory = layout.buildDirectory.dir('test-harness')
+    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+    from(sourceSets.test.output.classesDirs) { exclude '**/FullRegistrationTestAgent*.class', '**/FullRegistrationTestTransform*.class' }
+    from('src/testHarness/resources')
+    from({ configurations.testRuntimeClasspath.findAll {
+        it.name.startsWith('junit-') || it.name.startsWith('opentest4j-') || it.name.startsWith('apiguardian-')
+    }.collect { zipTree(it) } }) { exclude 'META-INF/**', 'module-info.class' }
+}
+
 processResources {
     inputs.property 'version', project.version
     filesMatching('fabric.mod.json') {

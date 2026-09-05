@@ -1,22 +1,43 @@
 # Stage 3 chunk-only handoff
 
-## Current resume — registration/preparation in progress, 2026-09-05
+## Current resume — registration/preparation checkpoint passed, 2026-09-05
 
-Read [the production boundary record](STAGE3_FULL_PRODUCTION_BOUNDARY.md).
-Original-method tests now execute the actual winning reservation, original FULL
-wrapper, exact adjacent future correlation and admitted preparation. Current
-passing command: `gradlew.bat test build prepareStage3ClientServer --no-daemon`,
-353 tests / 27 suites. Every prior baseline test remains; fresh start was
-334 / 26 at `2f270ffc539f85050a50b22d44d68b7d2fa5369e`.
+Read [the production boundary record](STAGE3_FULL_PRODUCTION_BOUNDARY.md) and the
+[current gate table](STAGE3_FULL_APPROVED_IMPLEMENTATION.md). The bounded
+**REGISTRATION + ADMITTED PREPARATION checkpoint is PASS**. Original winning holder
+reservation, original async FULL wrapper, exact adjacent R correlation, real
+producer-release/generation-pin eligibility and admitted installed preparation are
+connected. Proto/Imposter preparation is positive; finishing remains unbound and
+cannot claim. Preparation never publishes FULL or runs the original suffix.
 
-The next action is the finite test-only selected-path installed-server fixture,
-remaining lifetime/selector checks, and final clean build. Baseline transformed
-server already passes; that is not selected-path runtime acceptance.
-General FULL selection DISABLED; integrated FULL/checkpoint B PARTIAL;
-vault OPEN; Stage 3/R-CHUNK-01 PARTIAL; Stage 4 NOT STARTED; one worker, parallel OFF.
-Evidence and preserved failures: `run/full-registration/`; current session path
-is recorded in `run/full-registration-current.txt`. Only this session writes.
-## Current production integration request — 2026-09-05
+Verified clean start `2f270ffc539f85050a50b22d44d68b7d2fa5369e`: fresh **334 tests /
+26 suites**. Final `gradlew.bat clean build compileClientGameTestJava
+prepareStage3ClientServer --no-daemon`: exit 0, **365 / 27**, zero failures/errors/
+skips, all baseline occurrences and 48 prototype cases retained. The installed
+production artifact also passes eight selected cases through actual Mixins, with
+controlled world/lower-generation inputs and no javaagent. The in-memory Imposter
+is not disk-reload acceptance. Separate baseline server: 529 load/EMPTY publications,
+exit 0, zero retained load roots. No integrated saved-world/client campaign ran.
+
+Evidence: `run/full-registration/session-20260905-135652/`, especially
+`final-clean-build-20.*`, `final-clean-build-20-xml/` and `final-verification.json`.
+Production JAR: `BCD87DE959F1189594330ABB83488A5433B8287DCC3CC59AF62016CE05CBB97D`.
+The prepared and both newly tested external copies match; production JAR excludes
+test helpers/JUnit/client classes. Initial commit `d3a3643`; final HEAD/status are
+in the ignored session manifest and final response. Earlier failures are preserved.
+
+**Next action:** implement the production initialized-input discovery and exact
+consumer/operation receipt binder feeding FULL_FINISH. Do not repeat approval,
+rebuild the prototype or enable incomplete FULL for ordinary demand. D1/D2/C/P/S/W,
+finishing/publication, capacity/progress and integrated acceptance remain open.
+General FULL selection DISABLED; integrated FULL/checkpoint B PARTIAL; vault OPEN
+and unchanged; Stage 3/R-CHUNK-01 PARTIAL; Stage 4 NOT STARTED; one simulation worker,
+parallel gameplay OFF; no Stage 3 PASS tag. This session stops at this checkpoint.
+
+Everything below is historical evidence from prior checkpoints. Its earlier
+pending-approval, stop and next-test instructions do not supersede this resume.
+
+## Historical production integration request — 2026-09-05
 
 Continue from clean `542b352eff9fbc8878d00cb07782b45460565f66` under the
 [bounded non-self amendment and production map](STAGE3_FULL_NONSELF_APPROVAL.md).
@@ -27,7 +48,7 @@ Production FULL remains disabled while integration is incomplete. Historical
 stop/approval passages below do not replace the current implementation request.
 Stage 3/R-CHUNK-01 PARTIAL; Stage 4 NOT STARTED; one worker, parallel OFF.
 
-## Current prototype-validation checkpoint — 2026-09-05
+## Historical prototype-validation checkpoint — 2026-09-05
 
 The interrupted non-self prototype is recovered and validated in
 [STAGE3_FULL_NONSELF_INPUT_DECISION.md](STAGE3_FULL_NONSELF_INPUT_DECISION.md).
@@ -78,7 +99,7 @@ coverage limits, failed attempts and all remaining Stage 3 gates. No Stage 4,
 general gameplay service or parallel implementation was started.
 Stage 3/R-CHUNK-01 PARTIAL, Stage 4 NOT STARTED, one worker, parallel OFF.
 
-## Current D1–D3 resolution — 2026-09-04
+## Historical D1–D3 resolution — 2026-09-04
 
 Read [STAGE3_FULL_D1_D3_DECISIONS.md](STAGE3_FULL_D1_D3_DECISIONS.md) for the
 current dispositions, exact source paths, 32 new semantic witnesses, combined
@@ -317,7 +338,7 @@ supersedes the need to reread the historical Stage 3 reports for this task. The
 scope of this closeout is everything that can be accepted without implementing
 authoritative Minecraft chunk application.
 
-## A. Current accepted checkpoint
+## A. Historical accepted checkpoint
 
 ### Pure custody-model implementation status (2026-09-03)
 
@@ -415,7 +436,7 @@ Fresh P2 evidence from the current artifact:
   `ownershipViolations=0`, `unleased=0`; later calls were consumed and clean
   RCON `stop` succeeded.
 
-## C. Current zero-counter guarantees
+## C. Historical zero-counter guarantees
 
 The current authoritative runs and deterministic guards show zero for:
 
@@ -642,7 +663,7 @@ Do **not** revisit movement/packet architecture unless new evidence contradicts
 the accepted results above. The only substantial Stage 3 engineering problem
 remaining is authoritative chunk application / R-CHUNK-01.
 
-### Metadata implementation checkpoint (current)
+### Historical metadata implementation checkpoint
 
 Part A now corrects the facade to vanilla bytes 0/-1/1, unconditional authorized
 FULL -> REPLACEABLE, registered WorkId validation and atomic metadata fencing
@@ -664,4 +685,3 @@ for exact bytecode anchors, two deterministic witnesses and the required narrow
 ordering decision. Final clean build: 134 PASS. FUT 0/18 accepted; no production
 binding or new live acceptance. Resolve this gate before continuing Decision A;
 FULL expansion is not next yet. R-CHUNK-01/Stage 3 PARTIAL; Stage 4 NOT STARTED.
-

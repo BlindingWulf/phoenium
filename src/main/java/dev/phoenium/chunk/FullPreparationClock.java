@@ -29,10 +29,17 @@ public final class FullPreparationClock {
         metadataGate.lock(); try { readers.remove(graph); } finally { metadataGate.unlock(); }
     }
     public void beforeWrite() {
+        List<FullRegistrationRuntime.Graph> conflicts;
         metadataGate.lock(); try {
-            if (writing || !readers.isEmpty()) throw new ChunkProtocolException("game-time writer overlaps admitted FULL preparation turn");
-            writing = true;
+            if (writing) throw new ChunkProtocolException("overlapping game-time writers");
+            conflicts = List.copyOf(readers);
+            if (conflicts.isEmpty()) writing = true;
         } finally { metadataGate.unlock(); }
+        if (!conflicts.isEmpty()) {
+            var failure = new ChunkProtocolException("game-time writer overlaps admitted FULL preparation turn");
+            conflicts.forEach(graph -> graph.protocolFailure(failure));
+            throw failure;
+        }
     }
     public void afterWrite() {
         List<FullRegistrationRuntime.Graph> wake;

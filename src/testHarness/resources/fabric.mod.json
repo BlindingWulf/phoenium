@@ -1,0 +1,9 @@
+{
+  "schemaVersion": 1,
+  "id": "phoenium-full-registration-probe",
+  "version": "1.0.0",
+  "name": "Disposable FULL registration fixture",
+  "environment": "server",
+  "entrypoints": { "server": ["dev.phoenium.chunk.FullRegistrationServerProbe"] },
+  "depends": { "phoenium": "*", "fabric-lifecycle-events-v1": "*" }
+}

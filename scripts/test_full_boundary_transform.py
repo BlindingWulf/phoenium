@@ -23,6 +23,9 @@ for name in ("fabric-server-launch.jar", ".fabric", "libraries", "versions", "mo
     else:
         shutil.copy2(source, TARGET / name)
 artifact = next((TARGET / "mods").glob("phoenium-*.jar"))
+controlled = os.environ.get("PHOENIUM_FULL_REGISTRATION_PROBE") == "1"
+if controlled:
+    shutil.copy2(ROOT / "build/test-harness/full-registration-probe.jar", TARGET / "mods/full-registration-probe.jar")
 built = ROOT / "build/libs" / artifact.name
 digest = lambda path: hashlib.sha256(path.read_bytes()).hexdigest().upper()
 assert digest(artifact) == digest(built), "prepared server has a stale production artifact"
@@ -41,6 +44,9 @@ manifest = {"kind": "transformed boundary; baseline mode", "productionFullEnable
             "directory": str(TARGET), "jarSha256": digest(artifact),
             "modules": {path.name: digest(path) for path in (TARGET / "mods").glob("*.jar")},
             "command": command}
+if controlled:
+    manifest["kind"] = "installed production registrar; finite controlled world/generation fixtures"
+    manifest["testScopedHarness"] = True
 print(str(TARGET), flush=True)
 with log.open("w") as output:
     process = subprocess.Popen(command, cwd=TARGET, stdin=subprocess.PIPE, stdout=output,
@@ -71,7 +77,24 @@ with log.open("w") as output:
         assert finish.count("runPostLoad:") == 1 and finish.count("setLoaded:") == 1
         assert len(re.findall(r'onChunkLoad"?:', finish)) == 1, "installed Fabric return callback was not retained exactly once"
         assert "replaceProtoChunk:" not in finish
+        wrapper = next(part for part in parts if " full(" in part)
+        assert wrapper.count("FullRegistrationRuntime.registerAsync:") == 1, "missing exact FULL registrar"
+        holder_export = TARGET / ".mixin.out/class/net/minecraft/server/level/GenerationChunkHolder.class"
+        holder = subprocess.run([shutil.which("javap"), "-p", "-c", str(holder_export)],
+                                capture_output=True, text=True, check=True).stdout
+        (TARGET / "GenerationChunkHolder.javap.txt").write_text(holder)
+        assert "FullRegistrationRuntime.applyWinning:" in holder and "FullRegistrationRuntime.attach:" in holder
+        assert "phoenium$generationRefs" in holder and "phoenium$generationSaveSync" in holder
+        clock_export = TARGET / ".mixin.out/class/net/minecraft/world/level/storage/PrimaryLevelData.class"
+        clock = subprocess.run([shutil.which("javap"), "-p", "-c", str(clock_export)],
+                               capture_output=True, text=True, check=True).stdout
+        (TARGET / "PrimaryLevelData.javap.txt").write_text(clock)
+        assert "FullPreparationClock.beforeWrite:" in clock and "FullPreparationClock.afterWrite:" in clock
         text = log.read_text(errors="replace")
+        if controlled:
+            probe = [line for line in text.splitlines() if "PHOENIUM_FULL_REGISTRATION_PROBE PASS" in line]
+            assert len(probe) == 1, "selected installed registration fixture did not pass exactly once"
+            manifest["controlledProbe"] = probe
         stopped = [line for line in text.splitlines() if "PHOENIUM_CHUNK_BINDING STOPPED" in line]
         assert stopped, "missing real cleanup accounting"
         for line in stopped:
@@ -79,7 +102,8 @@ with log.open("w") as output:
                 assert re.search(r"\b" + name + r"=0\b", line), line
         manifest.update({"result": "PASS", "exitCode": process.returncode, "stopped": stopped,
                          "seedLines": [line for line in text.splitlines() if "Seed:" in line],
-                         "transformedClassSha256": digest(exported)})
+                         "transformedClassSha256": digest(exported), "holderClassSha256": digest(holder_export),
+                         "clockClassSha256": digest(clock_export)})
     except BaseException as failure:
         manifest.update({"result": "FAIL", "failure": repr(failure)})
         raise

@@ -19,6 +19,7 @@ public final class FullBoundaryPlugin implements IMixinConfigPlugin {
         if (!mixinClassName.equals("dev.phoenium.mixin.FullStageBoundaryMixin"))
             throw new IllegalStateException("unexpected FULL adapter mixin: " + mixinClassName);
         FullStageBoundary.requireInstalledCallbacks(targetClass);
+        FullStageBoundary.requireInstalledRegistrationCallbacks(targetClass);
         FullStageBoundary.install(targetClass);
         FullStageBoundary.installRegistration(targetClass);
     }

@@ -1,123 +1,176 @@
-# Production FULL registration and preparation — in progress
+# Production FULL registration and admitted preparation
 
-The registration/preparation implementation is now positive in original-method
-JUnit tests. **This is still an in-progress checkpoint, not checkpoint B or
-integrated FULL acceptance. General production FULL selection stays disabled.**
-Ordinary ChunkMap does not implement FullGenerationSource; its original whole
-supplier remains the baseline path. The approved method split is reused.
+## Current checkpoint — 2026-09-05
 
-Current code binds the winning GenerationChunkHolder.applyStep map invocation,
-the original async FULL wrapper, and the exact enclosing ChunkStep returned
-future at its adjacent handle. FULL_PREPARE runs through the existing typed
-stage, route, lease, claim and outcome adapters. Private preparation success
-does not settle the original conversion, adjacent holder result or public FULL.
-Finishing has no installed service bindings and cannot claim.
+**REGISTRATION + ADMITTED PREPARATION: PASS for the bounded checkpoint below.**
+Integrated FULL/checkpoint B remains **PARTIAL**. Ordinary production FULL selection
+is **DISABLED**: ordinary `ChunkMap` does not implement `FullGenerationSource`.
+Its original whole supplier remains the baseline path. There is no global property
+that enables the incomplete graph. The existing approved method split is reused.
+Stage 3/R-CHUNK-01 PARTIAL; Stage 4 NOT STARTED; one simulation worker; parallel
+gameplay OFF. No Stage 3 PASS tag. The vault incident remains OPEN and was not rerun.
 
-Generation proof comes from actual status-slot references, producer future
-completion/release, and generationRefCount/generationSaveSyncFuture retention.
-The original holder completion can reenter and register FULL before the parent
-producer's older release callback runs; the preparation stage waits for that
-release. The FULL task's own generation pin remains legitimate while its result
-is pending. Holder slots, input and world identity are checked again at claim.
-Preparation additionally binds immutable world construction inputs and the
-actual PrimaryLevelData game-time writer/read turn required by sulfur setLevel.
+Verified start: clean `2f270ffc539f85050a50b22d44d68b7d2fa5369e`, production JAR
+`1E368F022797143C6948C7A0DEBEC429C0D233D870DCFABB5CAF846C880F9F22`.
+The first implementation commit is `d3a3643`; the final delivery HEAD and clean
+status are in the ignored session manifest and final response, avoiding a
+self-referential commit hash. Only one agent wrote the checkout. Pinned Minecraft
+26.2, Java 25, Loader 0.19.5, Fabric API 0.159.0+26.2, Loom 1.17.20 and Gradle 9.5.1
+remain unchanged. Gradle build parallelism is distinct from gameplay parallelism.
 
-Current validation: `gradlew.bat test build prepareStage3ClientServer --no-daemon`
-passed 353 tests / 27 suites, including every prior baseline test. The original
-missing-connection test first failed on post-load/public completion, then passed
-through the registrar. Failures and all overwritten outputs are preserved in
-`run/full-registration/` under the session recorded in
-`run/full-registration-current.txt`. Baseline start: clean
-`2f270ffc539f85050a50b22d44d68b7d2fa5369e`, 334 / 26 freshly executed, exit 0.
+## Actual entry points and future graph
 
-Intermediate baseline-mode transformed server passed at
-`run/full-production-integration/transform-20260905-142746/`, artifact
-`FE0F38F9ADBD2C4370894E29FDD0C829B0A2EAF5F36D36CE1254BBBDDAEDCB13`.
-This is not the final artifact identity or selected-path runtime acceptance.
+`GenerationHolderCompletionMixin` wraps the real map invocation dominated by the
+successful `GenerationChunkHolder.acquireStatusBump` CAS in `applyStep`. The
+registrar checks the actual holder, started status, cache member and live generation
+pin. A losing reservation takes the original subscriber path. A winning reservation
+need not have created a public FULL slot; the implementation does not invent one.
 
-**Next action:** add and execute the finite test-only installed-server fixture
-for the production registrar/preparation path, finish the remaining lifetime
-and strict-selector checks, then run the requested clean final verification.
-No integrated services, finishing, private queries or publication are enabled.
-The vault incident remains OPEN; Stage 3/R-CHUNK-01 PARTIAL; Stage 4 NOT STARTED.
+`FullBoundaryPlugin` strictly verifies the installed wrapper observations and
+supplier callback inventory, reuses `FullStageBoundary`'s existing split, and
+binds the exact `CompletableFuture.supplyAsync` edge in the original
+`ChunkStatusTasks.full` wrapper to `FullRegistrationRuntime.registerAsync`.
+The finite synchronous invocation establishes lineage only across that map call;
+it is restored in `finally` and supplies no ambient asynchronous authority.
+The generated preparation supplier targets the installed `phoenium$prepareFull`.
 
-## Previous method-boundary checkpoint (historical)
-This checkpoint implements the semantic method boundary and the independent
-delivery correction. **It does not complete checkpoint B, the integrated FULL
-assignment, or the Stage 3 ledger. Authoritative FULL remains disabled.**
-The bounded [approval](STAGE3_FULL_NONSELF_APPROVAL.md) remains valid; no new
-semantic conflict or approval requirement has been demonstrated.
+The graph and both typed pending stages exist before the original executor is
+armed. Its callback arms metadata. The conversion future returned by this original
+wrapper remains the same conversion future throughout. For proto input,
+`ChunkStep.apply` adds its original `thenApply(completeChunkGeneration)`; the exact
+map result R is therefore a dependent future. For in-memory Imposter input,
+R is the wrapper result itself. The registrar indexes R before registering its
+possibly-inline release callback, and the adjacent holder handler captures and
+removes that exact reference together with map/holder/step/work lineage.
+R is correlation, never authority. Original holder failure behavior is retained.
+The selected path never runs the original whole supplier after preparation.
 
-## Implemented boundary
+## Preparation evidence and lifetime
 
-`FullBoundaryPlugin` is narrow Mixin instrumentation for exactly the pinned
-`ChunkStatusTasks.lambda$full$0` and descriptor. It runs after the installed
-Fabric/Phoenium injections and adds `phoenium$prepareFull` and
-`phoenium$finishFull`. It does not modify the original asynchronous wrapper or
-the original supplier, which continue to execute in baseline mode.
+| Evidence | Actual producer and condition proved | Lifetime and admission consumer |
+| --- | --- | --- |
+| Winning reservation | Original holder CAS and its dominated map invocation; actual started status, holder/cache identity | Finite synchronous registration; graph binds exact world/server/lifecycle/work/stage |
+| Returned R | Actual map result including the original ChunkStep dependent where present | Indexed before inline release; removed at the adjacent exact-reference capture |
+| Generation dependencies | Pinned generation/loading FULL step, original status-slot references and successful input objects; actual raw producer completion/release where still active | Rechecked under the existing custody claim fence, including holder/input/slot replacement; records released with original generation retention |
+| Conflicting writers | Original winning lower generation calls register their center/write-radius targets; raw result completion releases them | Preparation cannot claim until the actual producers release; release wakes the same pending work outside the metadata gate |
+| Generation pins | Original `ChunkGenerationTask.create/runUntilWait` and map acquire/release drive holder reference counts and `generationSaveSyncFuture` | A live pin is required. FULL's own legitimate pins remain until its pending result settles; zero borrows is not the eligibility predicate |
+| Construction inputs | Actual level/server, paletted-container factory and dimension object identities; exact proto or Imposter and lower holder slots | Captured at registration and rechecked before claim; no post-load service grant inferred |
+| Narrow game-clock turn | `PrimaryLevelData.setGameTime` writer hooks; `DerivedLevelData` delegates to the actual wrapped clock | Required for proto PotentSulfur `setLevel` game-time reads, reserved before regional claim, released after the original body; missing binding is ineligible, conflicting writer records a protocol breach |
+| Prepared object | Successful original preparation body under FULL_PREPARE lease/claim; receipt contains lifecycle, work, holder, attempt and actual LevelChunk | Installed before completing the preparation outcome so inline consumers can retain it; no successful receipt after constructor/replacement failure |
+| Consumer/callback acknowledgement | Explicit prepared consumer release and the original registration executor callback acknowledgement | Terminal graph remains while either is outstanding; cleanup also requires no claim, settled actual futures/producers and completed original generation retention |
 
-Preparation contains the actual Imposter reuse or original proto construction,
-Imposter construction and holder replacement, then full-status installation.
-It ends before `runPostLoad`, without running any RETURN injections. Finishing
-contains the original post-load/loaded/block-entity/tick/unsaved suffix and the
-entire installed Fabric and Phoenium return callbacks. No handwritten copy of
-Fabric event iteration, saved-entity reading or the post-load processor is used.
-The original proto callback and its two Throwable/collector handlers stay whole.
-Finishing restores the known locals, including one additional immutable
-`WorldGenContext.level()` read, as documented for the prototype boundary.
+The decisive release test completes an actual delayed SPAWN producer. Its newer
+original holder handler publishes SPAWN and reenters the original generation task
+before the older raw-producer release callback runs. FULL really registers at that
+point, but preparation remains ineligible without acquiring an owner lease. The
+actual older release then wakes the same graph, which prepares with its own FULL
+pins still live. A separate test proves an older neighboring FEATURES writer
+cannot win anew once the actual generation pyramid has reserved FULL.
 
-Selectors check the exact class and method descriptor, ordered original calls
-and their descriptors, no supplier exception region, no branch crossing the
-cut, the actual receiver local and suffix local availability. The production
-plugin additionally requires exactly the audited Fabric load callback and the
-two Phoenium observations at their respective positions; missing, duplicate,
-moved or unknown supplier injections fail startup explicitly. Byte offsets and
-class hashes are evidence, not rewrite selectors. This is not a general binary
-rewriting API. JUnit, class-remapping test helpers and generated test classes
-remain in the test source set and outside the production JAR.
+Preparation uses the existing typed pending stage, delivery pump, route
+revalidation, lease, claim and outcome protocol. Stale delivery resolves the new
+owner; an actual pending topology transition parks; an unrelated proposal does
+not justify parking. Invalid unroutable active demand trips the real barrier,
+whereas explicit cancellation, supersession and shutdown keep their distinct
+terminal identities. No owner waits for a prerequisite.
 
-`FullProductionBoundaryTest` executes this production selector on the pinned
-class and invokes its resulting operations on real LevelChunk/Imposter objects
-with controlled world endpoints. It verifies original reference identity,
-deferred post-load/loaded effects, unfinished public FULL slots and selector
-drift rejection. The reload helper is **in-memory Imposter reuse**, built with
-the proto constructor's dirty state; it is not persisted-disk acceptance.
+Proto preparation constructs the actual LevelChunk, preserves original lower-slot
+replacement/reentry, and installs its full-status supplier once. Imposter
+preparation reuses the wrapped LevelChunk and performs no second construction.
+Constructor and replacement failures preserve the original cause and committed
+prefix, produce no successful receipt, and are not retried under the same work.
 
-`scripts/test_full_boundary_transform.py` boots the actual production artifact
-on a disposable dedicated server with the recorded module set, exports the
-real transformed class, verifies the callback partition and records cleanup,
-seed, module and artifact hashes. This establishes transformation plus
-baseline-mode execution, not execution of an authoritative asynchronous FULL
-graph. The helpers themselves are not a grant to mutate a world.
+FULL_FINISH is a separately typed stage whose production prerequisite binding is
+absent and whose normal admission therefore returns NOT_READY without a claim.
+The missing obligations are initialized-input discovery/query-operation bindings,
+D1 identity facts, D2/P owner occurrences, C sessions, S ordering, W named turns
+and separate STATUS_PUBLISH(FULL). This is an intentionally unbound finishing gate,
+not an implementation of those service validators or of the finishing suffix.
+Preparation never calls runPostLoad, loaded/block-entity/tick suffixes or Fabric
+finishing callbacks. Its private receipt does not complete conversion, the adjacent
+holder result, public FULL, the ready cache, or ticking/sending readiness.
 
-## Exact remaining implementation
+At authentic shutdown/retirement, a private graph-authenticated `Stopped` control
+settles conversion and maps only that graph's holder result to original UNLOADED.
+Any loser-created FULL subscriber slot is failed/cleared by the original holder
+mechanism after the claim exits. A replacement holder is untouched. With a queued
+original callback withheld, retirement retains one graph until its callback runs;
+with a prepared consumer held, retirement retains one graph until release.
+Acknowledged terminal cases reach zero graphs, exact-future indexes, generation
+holder records, queued deliveries, clock entries and custody/lifecycle/work roots.
+No permanent strong-reference tombstone or second global ownership directory exists.
+These are finite graph measurements, not capacity, heap or integrated-service claims.
 
-No production caller currently selects these new entry points. The next code
-must bind the actual winning `GenerationChunkHolder.applyStep(FULL)` reservation
-and `ChunkStatusTasks.full` asynchronous edge to existing lifecycle/work/stage
-admission, with exact returned-future correlation at `R.handle`. Introduce a
-separate preparation stage and retain its successful actual-object receipt;
-only validated stage-specific input/writer/service evidence may enqueue it.
-Do not run the whole supplier after invoking preparation.
+## Executed verification and artifact
 
-Real generation writes/borrows, discovery and input revision writers, operation
-contexts at difficulty/collision/dynamic-shape queries, all D1/D2 and C/P/S/W
-bindings, acknowledged bounded retention, finite capacity/progress scheduling,
-original finishing execution and separate STATUS_PUBLISH(FULL) remain absent.
-An ordinary finishing failure must not revoke valid consumed construction
-receipts; failed construction and protocol barriers still cannot supply success.
-The original 48-case prototype outcome matrix is reference evidence only.
+Evidence root: `run/full-registration/session-20260905-135652/`.
+Existing XML, reports, JARs and logs were copied before replacement. Each iteration
+has preserved command output/exit and XML where tests executed. The first new
+`FullProductionRegistrationTest` failed on the missing split connection through
+the original async wrapper; it observed unwanted post-load execution. It was
+followed by positive production registration and admitted preparation tests.
 
-The next test to implement is
-`dev.phoenium.chunk.FullProductionRegistrationTest`: invoke the original async
-FULL wrapper through the installed production registrar, correlate the exact
-holder result, prove preparation leaves public FULL unfinished, and prove the
-finishing stage cannot claim with any required binding absent. This test/class
-does **not yet exist**; it is not reported as an executed failure. Start with
-the real reservation and generation-borrow producers, then the service adapters.
-Do not rerun the old cycle investigation or seek the same approvals again.
+| Command or check | Exit | Evidence/result |
+| --- | --- | --- |
+| `gradlew.bat build compileClientGameTestJava --rerun-tasks --no-daemon` | 0 | Fresh baseline 334 tests / 26 suites; `baseline.*`, `baseline-test-results/` |
+| `gradlew.bat test --tests "dev.phoenium.chunk.FullProductionRegistrationTest" --no-daemon` | 1 initially; 0 after implementation | Initial `registration-red-01.*`; later focused passes preserved, final class executes 28 cases |
+| `gradlew.bat clean build compileClientGameTestJava prepareStage3ClientServer --no-daemon` | 0 | Final `final-clean-build-20.*`, `final-clean-build-20-xml/`; 365 tests / 27 suites, zero failures/errors/skips, all 11 tasks executed |
+| Test occurrence multiset | 0 | All 334 baseline occurrences retained; 31 additions = 28 registration cases + 3 strict selector cases; original 48 prototype tests retained |
+| `gradlew.bat fullRegistrationHarness --no-daemon` | 0 | `final-harness-20.*`; separate disposable server-only test mod |
+| `python scripts/test_full_boundary_transform.py` | 0 | `final-baseline-20.*`; separate baseline server described below |
+| Same probe with test-scoped `PHOENIUM_FULL_REGISTRATION_PROBE=1` | 0 | `final-controlled-20.*`; eight installed-Mixin selected-path cases described below |
+| Production JAR / external-copy inspection | 0 | `final-verification.json`; 272 entries, server environment, no JUnit, test agent/hooks/fixture/probe, prototype or client classes |
+| `git diff --check` and full start-to-delivery diff check | 0 | Final reviewed paths only; exact results captured in session evidence |
 
-See the [current handoff](STAGE3_CHUNK_HANDOFF.md) and
-[acceptance ledger](STAGE3_FULL_APPROVED_IMPLEMENTATION.md) for final executed
-commands, counts and artifact-specific runtime results. No Stage 3 PASS tag.
+Original-method JUnit uses a test-only agent to supply Mixin-equivalent hook
+plumbing on the original holder, wrapper and clock classes. It does not replace
+the production registrar, original task/refcount mechanisms or preparation helper.
+Controlled lower-generation futures, world endpoints, executors and deterministic
+owner scheduling are test facilities. Existing 48 prototype cases and explicit
+cancellation fixtures with 34 plus eight-times-34 zero-retention assertions remain
+unchanged reference evidence. No fixture grants a fake preparation-ready flag.
 
+The real installed-artifact selected run is
+`run/full-production-integration/transform-20260905-145045/`, seed
+`1956211289291058007`, child exit 0. Its separate test mod executes eight original
+registration/preparation cases through the actual production Mixins with **no
+javaagent**: proto/Imposter with inline/delayed registration, genuine parent-release
+reentry, absent finishing prerequisites, actual clock writer and consumer retention.
+The PASS marker reports postLoad=0, publicFull=0 and terminal graph/index/generation
+holder/custody=0. These are controlled world/lower-generation inputs and an
+**in-memory Imposter**, not a saved-world reload or ordinary selected FULL demand.
+
+The separate baseline run is
+`run/full-production-integration/transform-20260905-145039/`, seed
+`-7902113717611656236`, child exit 0. It verifies installed selectors, method split,
+original callback placement, holder adapters and game-clock hooks, then reports
+529 load/EMPTY applies/publications and zero retained load roots. Baseline boot
+is not positive selected FULL evidence. Neither run is integrated saved-world or
+client acceptance. The known vault diagnostic was not rerun or repaired here.
+
+Final production JAR SHA-256:
+`BCD87DE959F1189594330ABB83488A5433B8287DCC3CC59AF62016CE05CBB97D`.
+The prepared server and both newly tested external-server copies match it.
+Historical server copies and prior evidence are preserved as historical artifacts.
+Installed module scope is Fabric API base, command-api-v2 3.1.0+00cb03469e,
+lifecycle-events-v1 4.1.4+29b6eb019e and Phoenium, plus Loader/Minecraft; the selected
+run adds only the disposable test mod. Exact module/class/log hashes, command
+arguments and process exits are in each `acceptance.json` and the session manifest.
+The full development Fabric API is not claimed as installed external scope.
+
+Preserved development failures include the initial desired missing-connection
+failure; compile-time fixture type/constructor and lambda errors; an overbroad
+metadata-monitor assertion and new-enum expectation; an invalid attempt to schedule
+a neighbor writer after the real pyramid had already excluded it; and proto
+section setup that incorrectly required a light engine. Each was corrected and
+followed by focused/full reruns. Their logs/XML remain alongside the final pass.
+None is hidden as an unexecuted test or treated as a new approval blocker.
+
+## Next implementation dependency
+
+Implement the production initialized-input discovery and exact consumer/operation
+receipt binder feeding FULL_FINISH, using the retained actual preparation receipt.
+That is the single next implementation action. Complete service reservation,
+finishing, separate publication, capacity/progress and integrated acceptance work
+remain open in the [acceptance ledger](STAGE3_FULL_APPROVED_IMPLEMENTATION.md).
+This session stops at registration/preparation and does not enable ordinary FULL.

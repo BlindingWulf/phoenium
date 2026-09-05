@@ -56,23 +56,13 @@ public final class FullRegistrationRuntime {
         return source.phoenium$fullRegistration().winning(map, holder, step, cache, original);
     }
 
-    public static CompletableFuture<ChunkAccess> applyWinning(GeneratingChunkMap map, GenerationChunkHolder holder,
-            ChunkStep step, StaticCache2D<GenerationChunkHolder> cache) {
-        return applyWinning(map, holder, step, cache, () -> map.applyStep(holder, step, cache));
-    }
-
-    public static CompletableFuture<ChunkResult<ChunkAccess>> handle(CompletableFuture<ChunkAccess> returned,
-            BiFunction<ChunkAccess, Throwable, ChunkResult<ChunkAccess>> handler, GenerationChunkHolder holder,
-            ChunkStep step, GeneratingChunkMap map) {
-        var bound = attach(map, returned, holder, step, handler);
-        return bound == null ? returned.handle(handler) : bound;
-    }
-
     private CompletableFuture<ChunkAccess> winning(GeneratingChunkMap map, GenerationChunkHolder holder,
             ChunkStep step, StaticCache2D<GenerationChunkHolder> cache, Supplier<CompletableFuture<ChunkAccess>> original) {
         FullHolderEvidence evidence = (FullHolderEvidence) holder;
         if (evidence.phoenium$startedWork().get() != step.targetStatus() || cache.get(holder.getPos().x(), holder.getPos().z()) != holder)
             throw new ChunkProtocolException("FULL generation did not receive the actual winning reservation");
+        if (evidence.phoenium$generationRefs().get() <= 0 || evidence.phoenium$generationSaveSync().isDone())
+            throw new ChunkProtocolException("winning generation reservation has no live generation borrow");
         Producer producer;
         List<Generation> watch;
         custody.gate().lock();
@@ -143,9 +133,13 @@ public final class FullRegistrationRuntime {
             if (invocation.producer.graph != null) throw new ChunkProtocolException("duplicate async FULL registration");
             invocation.producer.graph = graph; graphs.add(graph); registrations++;
         } finally { custody.gate().unlock(); }
+        if (graph.clock != null) graph.clock.subscribe(graph);
         // All pending stages exist before the executor is armed. Inline execution only arms metadata.
         try { originalExecutor.execute(graph::arm); }
-        catch (Throwable failure) { graph.stop(ChunkStageAdmission.Result.FAILED_BARRIER, failure); }
+        catch (Throwable failure) {
+            graph.acknowledgeRegistration();
+            graph.stop(ChunkStageAdmission.Result.FAILED_BARRIER, failure);
+        }
         return graph.conversion;
     }
 
@@ -176,6 +170,7 @@ public final class FullRegistrationRuntime {
             wake = List.copyOf(graphs);
         } finally { custody.gate().unlock(); }
         wake.forEach(Graph::wake);
+        cleanupGenerations();
     }
 
     public boolean pumpOne() {
@@ -262,10 +257,10 @@ public final class FullRegistrationRuntime {
 
     /** Only this exact graph can produce and authenticate its private terminal control. */
     public static final class Stopped extends RuntimeException {
-        private final Graph graph;
+        private final Object terminalIdentity;
         public final ChunkStageAdmission.Result reason;
         private Stopped(Graph graph, ChunkStageAdmission.Result reason, Throwable cause) {
-            super("private FULL " + reason, cause); this.graph = graph; this.reason = reason;
+            super("private FULL " + reason, cause); this.terminalIdentity = graph.terminalIdentity; this.reason = reason;
         }
     }
 
@@ -293,6 +288,9 @@ public final class FullRegistrationRuntime {
         private int consumers;
         private Prepared prepared;
         private Stopped stopped;
+        private final Object terminalIdentity = new Object();
+        private boolean registrationSettled;
+        private volatile ChunkProtocolException protocolFailure;
 
         Graph(Invocation invocation, WorldGenContext context, ChunkAccess input, Supplier<ChunkAccess> operation,
               ChunkCustodyModel.LifecycleId lifecycle, ChunkCustodyModel.WorkId work) {
@@ -302,7 +300,6 @@ public final class FullRegistrationRuntime {
             containerFactory = context.level().palettedContainerFactory();
             dimensionType = context.level().dimensionType();
             clock = level.getLevelData() instanceof FullPreparationClockAccess access ? access.phoenium$preparationClock() : null;
-            if (clock != null) clock.subscribe(this);
             slots = new ArrayList<>();
             for (int index = 0; index < ChunkStatus.FULL.getIndex(); index++) slots.add(evidence.phoenium$futures().get(index));
             var dependencies = invocation.step.directDependencies();
@@ -327,7 +324,13 @@ public final class FullRegistrationRuntime {
                         preparationCalls++;
                         try {
                             LevelChunk actual = (LevelChunk) operation.get();
+                            if (protocolFailure != null) throw protocolFailure;
                             return new Prepared(lifecycle, work, holder, attempt, actual);
+                        } catch (Throwable failure) {
+                            if (protocolFailure != null && protocolFailure != failure) {
+                                protocolFailure.addSuppressed(failure); throw protocolFailure;
+                            }
+                            throw failure;
                         } finally { if (clockReserved) clock.release(this); }
                     });
             preparation.requireFull(this);
@@ -340,13 +343,20 @@ public final class FullRegistrationRuntime {
             preparation.outcome().thenAccept(this::preparedOutcome);
         }
 
-        void arm() { custody.gate().lock(); try { armed = true; } finally { custody.gate().unlock(); } wake(); }
+        void arm() {
+            custody.gate().lock(); try { armed = true; registrationSettled = true; } finally { custody.gate().unlock(); }
+            wake();
+        }
+        void acknowledgeRegistration() {
+            custody.gate().lock(); try { registrationSettled = true; } finally { custody.gate().unlock(); }
+        }
+        void protocolFailure(ChunkProtocolException failure) { protocolFailure = failure; }
 
         CompletableFuture<ChunkResult<ChunkAccess>> attach(BiFunction<ChunkAccess, Throwable, ChunkResult<ChunkAccess>> original) {
             // R is already correlated. Do not arm admission until handle's result reference is retained.
             var result = returned.handle((value, failure) -> {
                 Throwable cause = failure instanceof CompletionException ? failure.getCause() : failure;
-                if (cause instanceof Stopped control && control == stopped && control.graph == this)
+                if (cause instanceof Stopped control && control == stopped && control.terminalIdentity == terminalIdentity)
                     return GenerationChunkHolder.UNLOADED_CHUNK;
                 if (failure == null) throw new ChunkProtocolException("FULL publication binding is absent");
                 return original.apply(value, failure);
@@ -435,7 +445,9 @@ public final class FullRegistrationRuntime {
             custody.gate().lock();
             try {
                 if (cleaned) return;
-                if (!custody.metadataEntitledLocked(work) && stopped == null) terminal = ChunkStageAdmission.Result.SUPERSEDED;
+                if (!custody.metadataEntitledLocked(work) && stopped == null)
+                    terminal = custody.workState(work).orElse(null) == ChunkCustodyModel.WorkState.CANCELLED
+                            ? ChunkStageAdmission.Result.CANCELLED : ChunkStageAdmission.Result.SUPERSEDED;
                 else if (stopped == null && !queued && readinessLocked(ChunkStageKind.FULL_PREPARE) == LightInputService.Readiness.REGISTERED) {
                     queued = true; submit = preparation.bindInput(input);
                 } else if (stopped == null && evidenceParked && readinessLocked(ChunkStageKind.FULL_PREPARE) == LightInputService.Readiness.REGISTERED) {
@@ -453,16 +465,21 @@ public final class FullRegistrationRuntime {
         }
         private void preparedOutcome(ChunkStageOutcome<Prepared> outcome) {
             if (outcome instanceof ChunkStageOutcome.Applied<Prepared> applied) {
-                custody.gate().lock(); try {
-                    prepared = applied.value(); invocation.producer.generation.prepared = prepared.actual();
-                } finally { custody.gate().unlock(); }
-                finishing.bindInput(prepared); // Private input retention; finishing's actual services are absent.
+                finishing.bindInput(applied.value()); // Private input retention; finishing's actual services are absent.
             } else if (outcome instanceof ChunkStageOutcome.VanillaFailure<Prepared> failure) {
                 conversion.completeExceptionally(failure.failure());
             } else if (outcome instanceof ChunkStageOutcome.BarrierFailure<Prepared> failure) {
                 stop(ChunkStageAdmission.Result.FAILED_BARRIER, failure.failure());
             } else if (outcome instanceof ChunkStageOutcome.Control<Prepared> control) stop(control.result(), null);
             settle();
+        }
+        void retainApplied(Object receipt) {
+            Prepared result = (Prepared) receipt;
+            custody.gate().lock(); try {
+                if (result.holder() != holder || !result.work().equals(work) || !result.attempt().equals(preparation.stage()))
+                    throw new ChunkProtocolException("successful preparation receipt lost its exact attempt");
+                prepared = result; invocation.producer.generation.prepared = result.actual();
+            } finally { custody.gate().unlock(); }
         }
         private void stop(ChunkStageAdmission.Result reason, Throwable cause) {
             if (reason != ChunkStageAdmission.Result.SHUTDOWN && reason != ChunkStageAdmission.Result.SUPERSEDED
@@ -500,7 +517,8 @@ public final class FullRegistrationRuntime {
             custody.gate().lock();
             try {
                 if (cleaned || stopped == null || consumers != 0 || custody.hasActiveClaim(work)
-                        || !attached || !adjacent.isDone() || !returned.isDone() || !retention.isDone()) return;
+                        || !registrationSettled || !attached || !adjacent.isDone() || !returned.isDone() || !retention.isDone()
+                        || !invocation.producer.finished || !invocation.producer.generation.writers.isEmpty()) return;
                 cleaned = true; graphs.remove(this); returnedIndex.remove(returned, this);
                 prepared = null; invocation.producer.generation.prepared = null;
                 generations.remove(holder, invocation.producer.generation);
@@ -511,4 +529,3 @@ public final class FullRegistrationRuntime {
         }
     }
 }
-

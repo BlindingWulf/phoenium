@@ -205,7 +205,11 @@ public final class PendingVanillaStage<I, O> {
     boolean retainsInputOrContinuation() {
         custody.gate().lock(); try { return input != null || continuation != null; } finally { custody.gate().unlock(); }
     }
-    void applied(O value) { outcome.complete(new ChunkStageOutcome.Applied<>(value)); }
+    void applied(O value) {
+        // Retain the actual receipt before any completed-future consumer can reenter the graph.
+        if (full != null && kind == ChunkStageKind.FULL_PREPARE) full.retainApplied(value);
+        outcome.complete(new ChunkStageOutcome.Applied<>(value));
+    }
     void control(ChunkStageAdmission.Result result) {
         custody.gate().lock();
         try {

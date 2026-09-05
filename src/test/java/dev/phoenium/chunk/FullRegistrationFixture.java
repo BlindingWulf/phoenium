@@ -19,6 +19,8 @@ final class FullRegistrationFixture implements GeneratingChunkMap, FullGeneratio
     final WorldId worldId = new WorldId("full-registration");
     final RegionId ownerId = new RegionId(worldId, "owner");
     final RegionRuntime owner = new RegionRuntime(ownerId, new OwnerEpoch(0));
+    final RegionId otherId = new RegionId(worldId, "other-owner");
+    final RegionRuntime other = new RegionRuntime(otherId, new OwnerEpoch(0));
     final RegionDirectory directory = new RegionDirectory();
     final FailureBarrier barrier = new FailureBarrier();
     final ChunkPrerequisiteServices services = new ChunkPrerequisiteServices(worldId, "registration", 1);
@@ -32,18 +34,32 @@ final class FullRegistrationFixture implements GeneratingChunkMap, FullGeneratio
     ChunkStatus delayedStatus;
     CompletableFuture<ChunkAccess> producer;
     int mapCalls;
+    Runnable beforeRegistration = () -> {};
 
     FullRegistrationFixture(boolean inline) throws Exception {
         owner.transitionTo(RegionLifecycle.READY);
+        other.transitionTo(RegionLifecycle.READY);
         var generation = new TopologyGeneration(1);
         directory.publish(generation, Map.of(), Map.of(worldId, new RegionRoute(ownerId, generation, new OwnerEpoch(0))));
         runtime = new FullRegistrationRuntime(world.level, new ChunkBindingRuntime.WorldAuthority(worldId, 1, services,
-                directory, Map.of(ownerId, owner.leases()), barrier));
-        context = new WorldGenContext(world.level, null, null, null, inline ? Runnable::run : registrations::add, ignored -> {});
+                directory, Map.of(ownerId, owner.leases(), otherId, other.leases()), barrier));
+        context = new WorldGenContext(world.level, null, null, null, command -> {
+            beforeRegistration.run();
+            if (inline) command.run(); else registrations.add(command);
+        }, ignored -> {});
         inputs.put(ChunkPos.ZERO.pack(), world.proto);
+        set(world.cache, ServerChunkCache.class, "mainThread", Thread.currentThread());
+        long[] emptyCache = new long[4]; Arrays.fill(emptyCache, Long.MAX_VALUE);
+        set(world.cache, ServerChunkCache.class, "lastChunkPos", emptyCache);
+        set(world.cache, ServerChunkCache.class, "lastChunkStatus", new ChunkStatus[4]);
+        set(world.cache, ServerChunkCache.class, "lastChunk", new ChunkAccess[4]);
     }
     public FullRegistrationRuntime phoenium$fullRegistration() { return runtime; }
-    Holder holder(ChunkPos pos) { return holders.computeIfAbsent(pos.pack(), ignored -> new Holder(pos)); }
+    Holder holder(ChunkPos pos) {
+        return holders.computeIfAbsent(pos.pack(), ignored -> {
+            Holder holder = new Holder(pos); world.visibleHolders.put(pos.pack(), holder); return holder;
+        });
+    }
     ProtoChunk input(ChunkPos pos) {
         return inputs.computeIfAbsent(pos.pack(), ignored -> {
             var proto = new ProtoChunk(pos, UpgradeData.EMPTY, world.level, world.level.palettedContainerFactory(), null);
@@ -74,10 +90,11 @@ final class FullRegistrationFixture implements GeneratingChunkMap, FullGeneratio
     void drain() { while (!registrations.isEmpty()) registrations.remove().run(); while (runtime.pumpOne()) { } }
     void stop() {
         runtime.shutdown();
+        while (!registrations.isEmpty()) registrations.remove().run();
         for (var task : List.copyOf(tasks)) { task.markForCancellation(); resume(task); }
         runtime.shutdown();
     }
-    static final class Holder extends GenerationChunkHolder {
+    static final class Holder extends ChunkHolder {
         final List<CompletableFuture<?>> saves = new ArrayList<>();
         Runnable afterReplace = () -> {};
         int replacements;
@@ -85,13 +102,10 @@ final class FullRegistrationFixture implements GeneratingChunkMap, FullGeneratio
             super.replaceProtoChunk(chunk); replacements++; afterReplace.run();
         }
         Holder(ChunkPos pos) {
-            super(pos);
-            try { set(this, GenerationChunkHolder.class, "highestAllowedStatus", ChunkStatus.FULL); }
-            catch (Exception e) { throw new AssertionError(e); }
+            super(pos, 33, net.minecraft.world.level.LevelHeightAccessor.create(0, 256), null,
+                    (position, previous, next, setter) -> setter.accept(next), (position, borderOnly) -> List.of());
+            updateHighestAllowedStatus(null);
         }
-        protected void addSaveDependency(CompletableFuture<?> future) { saves.add(future); }
-        public int getTicketLevel() { return 33; }
-        public int getQueueLevel() { return 33; }
+        protected void addSaveDependency(CompletableFuture<?> future) { super.addSaveDependency(future); saves.add(future); }
     }
 }
-
