@@ -129,6 +129,51 @@ public final class FullStageBoundary {
         target.methods.add(prepare); target.methods.add(finish);
     }
 
+    /** One exact asynchronous registration edge; the original supplier is the baseline branch. */
+    public static void installRegistration(ClassNode target) {
+        require(TARGET.equals(target.name), "wrong async target");
+        String wrapperDescriptor = "(L" + CONTEXT + ";Lnet/minecraft/world/level/chunk/status/ChunkStep;"
+                + "Lnet/minecraft/util/StaticCache2D;Lnet/minecraft/world/level/chunk/ChunkAccess;)Ljava/util/concurrent/CompletableFuture;";
+        MethodNode wrapper = target.methods.stream().filter(m -> m.name.equals("full") && m.desc.equals(wrapperDescriptor))
+                .findFirst().orElseThrow(() -> drift("missing exact async FULL wrapper"));
+        MethodInsnNode edge = null;
+        InvokeDynamicInsnNode supplier = null;
+        int holders = 0;
+        for (AbstractInsnNode instruction : wrapper.instructions) {
+            if (instruction instanceof InvokeDynamicInsnNode indy) {
+                require(supplier == null && indy.bsmArgs.length == 3 && indy.bsmArgs[1] instanceof org.objectweb.asm.Handle,
+                        "async supplier shape changed");
+                supplier = indy;
+                var implementation = (org.objectweb.asm.Handle) indy.bsmArgs[1];
+                require(implementation.getOwner().equals(TARGET) && implementation.getName().equals(SUPPLIER)
+                        && implementation.getDesc().equals(DESCRIPTOR), "async supplier lineage changed");
+            }
+            if (instruction instanceof MethodInsnNode call) {
+                if (call.owner.equals("net/minecraft/util/StaticCache2D") && call.name.equals("get")) holders++;
+                if (call.owner.equals("java/util/concurrent/CompletableFuture") && call.name.equals("supplyAsync")) {
+                    require(edge == null && call.desc.equals("(Ljava/util/function/Supplier;Ljava/util/concurrent/Executor;)Ljava/util/concurrent/CompletableFuture;"),
+                            "async registration changed"); edge = call;
+                }
+            }
+        }
+        require(edge != null && supplier != null && holders == 1, "missing exact async registration operations");
+        AbstractInsnNode holderStore = previousOperation(supplier);
+        require(holderStore instanceof VarInsnNode var && var.getOpcode() == Opcodes.ALOAD && var.var == 5,
+                "async captured holder local changed");
+        InsnList arguments = new InsnList();
+        for (int local : new int[]{0, 1, 2, 3, 5, 3, 0, 5}) arguments.add(new VarInsnNode(Opcodes.ALOAD, local));
+        Object[] preparationBootstrap = supplier.bsmArgs.clone();
+        preparationBootstrap[1] = new org.objectweb.asm.Handle(Opcodes.H_INVOKESTATIC, TARGET, PREPARE, DESCRIPTOR, false);
+        arguments.add(new InvokeDynamicInsnNode(supplier.name, supplier.desc, supplier.bsm, preparationBootstrap));
+        wrapper.instructions.insertBefore(edge, arguments);
+        wrapper.instructions.set(edge, new MethodInsnNode(Opcodes.INVOKESTATIC,
+                "dev/phoenium/chunk/FullRegistrationRuntime", "registerAsync",
+                "(Ljava/util/function/Supplier;Ljava/util/concurrent/Executor;L" + CONTEXT + ";"
+                        + "Lnet/minecraft/world/level/chunk/status/ChunkStep;Lnet/minecraft/util/StaticCache2D;"
+                        + "Lnet/minecraft/world/level/chunk/ChunkAccess;L" + HOLDER + ";Ljava/util/function/Supplier;)Ljava/util/concurrent/CompletableFuture;", false));
+        wrapper.maxStack += 10;
+    }
+
     private static AbstractInsnNode previousOperation(AbstractInsnNode node) {
         do { node = node.getPrevious(); } while (node != null && node.getOpcode() < 0);
         return node;

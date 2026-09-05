@@ -228,6 +228,19 @@ tasks.withType(Test).configureEach {
     useJUnitPlatform()
 }
 
+// Test-only adapter plumbing on original Minecraft classes, excluded from the production JAR.
+def fullRegistrationTestAgent = tasks.register('fullRegistrationTestAgent', Jar) {
+    dependsOn tasks.named('compileTestJava')
+    archiveFileName = 'full-registration-test-agent.jar'
+    destinationDirectory = layout.buildDirectory.dir('test-agent')
+    from(sourceSets.test.output.classesDirs) { include '**/FullRegistrationTestAgent*.class' }
+    manifest { attributes 'Premain-Class': 'dev.phoenium.chunk.FullRegistrationTestAgent' }
+}
+tasks.named('test') {
+    dependsOn fullRegistrationTestAgent
+    jvmArgumentProviders.add({ ["-javaagent:${fullRegistrationTestAgent.get().archiveFile.get().asFile.absolutePath}"] } as CommandLineArgumentProvider)
+}
+
 processResources {
     inputs.property 'version', project.version
     filesMatching('fabric.mod.json') {

@@ -1,5 +1,47 @@
-# Production FULL boundary adapter — implementation interruption
+# Production FULL registration and preparation — in progress
 
+The registration/preparation implementation is now positive in original-method
+JUnit tests. **This is still an in-progress checkpoint, not checkpoint B or
+integrated FULL acceptance. General production FULL selection stays disabled.**
+Ordinary ChunkMap does not implement FullGenerationSource; its original whole
+supplier remains the baseline path. The approved method split is reused.
+
+Current code binds the winning GenerationChunkHolder.applyStep map invocation,
+the original async FULL wrapper, and the exact enclosing ChunkStep returned
+future at its adjacent handle. FULL_PREPARE runs through the existing typed
+stage, route, lease, claim and outcome adapters. Private preparation success
+does not settle the original conversion, adjacent holder result or public FULL.
+Finishing has no installed service bindings and cannot claim.
+
+Generation proof comes from actual status-slot references, producer future
+completion/release, and generationRefCount/generationSaveSyncFuture retention.
+The original holder completion can reenter and register FULL before the parent
+producer's older release callback runs; the preparation stage waits for that
+release. The FULL task's own generation pin remains legitimate while its result
+is pending. Holder slots, input and world identity are checked again at claim.
+Preparation additionally binds immutable world construction inputs and the
+actual PrimaryLevelData game-time writer/read turn required by sulfur setLevel.
+
+Current validation: `gradlew.bat test build prepareStage3ClientServer --no-daemon`
+passed 353 tests / 27 suites, including every prior baseline test. The original
+missing-connection test first failed on post-load/public completion, then passed
+through the registrar. Failures and all overwritten outputs are preserved in
+`run/full-registration/` under the session recorded in
+`run/full-registration-current.txt`. Baseline start: clean
+`2f270ffc539f85050a50b22d44d68b7d2fa5369e`, 334 / 26 freshly executed, exit 0.
+
+Intermediate baseline-mode transformed server passed at
+`run/full-production-integration/transform-20260905-142746/`, artifact
+`FE0F38F9ADBD2C4370894E29FDD0C829B0A2EAF5F36D36CE1254BBBDDAEDCB13`.
+This is not the final artifact identity or selected-path runtime acceptance.
+
+**Next action:** add and execute the finite test-only installed-server fixture
+for the production registrar/preparation path, finish the remaining lifetime
+and strict-selector checks, then run the requested clean final verification.
+No integrated services, finishing, private queries or publication are enabled.
+The vault incident remains OPEN; Stage 3/R-CHUNK-01 PARTIAL; Stage 4 NOT STARTED.
+
+## Previous method-boundary checkpoint (historical)
 This checkpoint implements the semantic method boundary and the independent
 delivery correction. **It does not complete checkpoint B, the integrated FULL
 assignment, or the Stage 3 ledger. Authoritative FULL remains disabled.**
@@ -78,3 +120,4 @@ Do not rerun the old cycle investigation or seek the same approvals again.
 See the [current handoff](STAGE3_CHUNK_HANDOFF.md) and
 [acceptance ledger](STAGE3_FULL_APPROVED_IMPLEMENTATION.md) for final executed
 commands, counts and artifact-specific runtime results. No Stage 3 PASS tag.
+

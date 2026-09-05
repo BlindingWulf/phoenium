@@ -23,10 +23,15 @@ class ChunkCustodyModelTest {
         for (ChunkStageKind kind : ChunkStageKind.values()) {
             ChunkCustodyModel.StageId stage = f.stage(kind, kind.name().toLowerCase(), ++sequence);
             f.readyAndQueue(stage);
+            if (kind == ChunkStageKind.FULL_PREPARE || kind == ChunkStageKind.FULL_FINISH) {
+                assertEquals(ChunkStageAdmission.Result.NOT_READY, f.deliver(stage, f.a, invocations::incrementAndGet),
+                        "production FULL stages cannot claim without their actual bindings");
+                continue;
+            }
             assertEquals(ChunkStageAdmission.Result.APPLIED, f.deliver(stage, f.a, invocations::incrementAndGet));
             assertEquals(ChunkCustodyModel.StageState.APPLIED, f.model.stageState(stage).orElseThrow());
         }
-        assertEquals(ChunkStageKind.values().length, invocations.get());
+        assertEquals(ChunkStageKind.values().length - 2, invocations.get());
     }
 
     @Test void ca02OwnerChangesBeforeClaimReroutesSameStageToB() {

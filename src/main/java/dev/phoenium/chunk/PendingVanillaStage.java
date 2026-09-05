@@ -33,6 +33,20 @@ public final class PendingVanillaStage<I, O> {
     private PoiInstallService prerequisitePoi;
     private PoiInstallService.InstallId prerequisitePoiId;
     private ChunkTypeMetadataService prerequisiteMetadata;
+    private FullRegistrationRuntime.Graph full;
+
+    void requireFull(FullRegistrationRuntime.Graph graph) {
+        if (inputBound || full != null || !work.equals(graph.work)) throw new ChunkProtocolException("wrong FULL stage binding");
+        full = Objects.requireNonNull(graph);
+    }
+    LightInputService.Readiness fullReadinessLocked() {
+        if (kind != ChunkStageKind.FULL_PREPARE && kind != ChunkStageKind.FULL_FINISH)
+            return LightInputService.Readiness.REGISTERED;
+        return full == null ? LightInputService.Readiness.NOT_REGISTERED : full.readinessLocked(kind);
+    }
+    boolean reserveFullLocked() { return full == null || kind != ChunkStageKind.FULL_PREPARE || full.reserveLocked(); }
+    void unreserveFullLocked() { if (full != null && kind == ChunkStageKind.FULL_PREPARE) full.unreserveLocked(); }
+    void awaitFullEvidence() { if (full != null && kind == ChunkStageKind.FULL_PREPARE) full.awaitEvidence(); }
 
     public PendingVanillaStage(ChunkCustodyModel custody, ChunkCustodyModel.LifecycleId lifecycle,
                                ChunkCustodyModel.WorkId work, ChunkCustodyModel.StageId stage,

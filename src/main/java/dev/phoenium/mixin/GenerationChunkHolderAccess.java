@@ -13,7 +13,9 @@ import org.spongepowered.asm.mixin.gen.Accessor;
 import org.spongepowered.asm.mixin.gen.Invoker;
 
 @Mixin(GenerationChunkHolder.class)
-public interface GenerationChunkHolderAccess {
+public interface GenerationChunkHolderAccess extends dev.phoenium.chunk.FullHolderEvidence {
+    @Accessor("generationRefCount") java.util.concurrent.atomic.AtomicInteger phoenium$generationRefs();
+    @Accessor("generationSaveSyncFuture") CompletableFuture<Void> phoenium$generationSaveSync();
     @Accessor("startedWork") AtomicReference<ChunkStatus> phoenium$startedWork();
     @Accessor("futures") AtomicReferenceArray<CompletableFuture<ChunkResult<ChunkAccess>>> phoenium$futures();
     @Accessor("highestAllowedStatus") ChunkStatus phoenium$highestAllowed();

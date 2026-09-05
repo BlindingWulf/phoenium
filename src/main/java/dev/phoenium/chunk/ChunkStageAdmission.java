@@ -87,6 +87,13 @@ public final class ChunkStageAdmission {
                 case FAILED -> { return breachLocked(stage, null, new ChunkProtocolException("terminal light prerequisite")); }
                 case REGISTERED -> { }
             }
+            switch (pending.fullReadinessLocked()) {
+                case NOT_REGISTERED -> { return result(Result.NOT_READY); }
+                case STALE -> { return result(Result.SUPERSEDED); }
+                case SHUTDOWN -> { return result(Result.SHUTDOWN); }
+                case FAILED -> { return breachLocked(stage, null, new ChunkProtocolException("terminal FULL prerequisite")); }
+                case REGISTERED -> { }
+            }
             if (directory.pendingChange(pending.chunk()).filter(change -> !change.completed()).isPresent())
                 return result(Result.NOT_READY);
             route = directory.resolve(stage.work().lifecycle().chunkKey()).orElse(null);
@@ -96,9 +103,10 @@ public final class ChunkStageAdmission {
             RegionLeaseManager manager = leases.get(deliveredOwner);
             if (manager == null) return breachLocked(stage, route, new ChunkProtocolException("no lease manager for " + deliveredOwner));
             lightRegistration = pending.lightRegistrationLocked();
+            if (!pending.reserveFullLocked()) return result(Result.NOT_READY);
             try { lease = manager.acquire(); }
-            catch (Throwable failure) { return breachLocked(stage, route, failure); }
-            if (!custody.claimLocked(stage)) { lease.close(); return result(classify(stage)); }
+            catch (Throwable failure) { pending.unreserveFullLocked(); return breachLocked(stage, route, failure); }
+            if (!custody.claimLocked(stage)) { lease.close(); pending.unreserveFullLocked(); return result(classify(stage)); }
         } finally { custody.gate().unlock(); }
 
         try (lease;

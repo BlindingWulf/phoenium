@@ -166,6 +166,7 @@ final class FullTadpoleDecisionTest {
         final java.util.Map<Long, ChunkHolder> visibleHolders = new java.util.HashMap<>();
         final net.minecraft.world.level.TicketStorage tickets = new net.minecraft.world.level.TicketStorage();
         java.util.function.Function<Object[], ChunkAccess> queryEndpoint;
+        java.util.function.Function<Object[], Long> gameTimeEndpoint = args -> 100000L;
         ChunkAccess input;
         final RandomSource random = RandomSource.create(73031L);
         final RandomSource soundRandom = RandomSource.create(9157L);
@@ -212,7 +213,7 @@ final class FullTadpoleDecisionTest {
                     new Answer(ServerLevel.class.getMethod("getNextEntityId"), args -> ++nextId),
                     new Answer(ServerLevel.class.getMethod("enabledFeatures"), args -> FeatureFlags.DEFAULT_FLAGS),
                     new Answer(ServerLevel.class.getMethod("getDifficulty"), args -> Difficulty.HARD),
-                    new Answer(ServerLevel.class.getMethod("getGameTime"), args -> 100000L),
+                    new Answer(ServerLevel.class.getMethod("getGameTime"), args -> gameTimeEndpoint.apply(args)),
                     new Answer(ServerLevel.class.getMethod("getOverworldClockTime"), args -> 100000L),
                     new Answer(ServerLevel.class.getMethod("getMoonBrightness", BlockPos.class), args -> { moonReads++; return 0.75F; }),
                     new Answer(ServerLevel.class.getMethod("getRandom"), args -> random),

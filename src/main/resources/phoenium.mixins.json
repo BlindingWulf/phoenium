@@ -12,6 +12,8 @@
     "GenerationHolderCompletionMixin",
     "ChunkMapLoadAccess",
     "GenerationChunkHolderAccess",
+    "FullPreparationClockMixin",
+    "FullDerivedClockMixin",
     "PoiStorageAccess",
     "PoiPendingLoadMixin",
     "ChunkInvocationArgumentMixin",

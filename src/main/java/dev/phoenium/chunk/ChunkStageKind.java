@@ -9,6 +9,8 @@ public enum ChunkStageKind {
     LIGHT_INPUT,
     LIGHT_POST_UPDATE,
     FULL_CONVERT,
+    FULL_PREPARE,
+    FULL_FINISH,
     STATUS_PUBLISH,
     TICK_READY,
     SEND_READY,

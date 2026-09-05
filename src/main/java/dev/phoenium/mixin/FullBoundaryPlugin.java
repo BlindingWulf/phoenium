@@ -20,5 +20,6 @@ public final class FullBoundaryPlugin implements IMixinConfigPlugin {
             throw new IllegalStateException("unexpected FULL adapter mixin: " + mixinClassName);
         FullStageBoundary.requireInstalledCallbacks(targetClass);
         FullStageBoundary.install(targetClass);
+        FullStageBoundary.installRegistration(targetClass);
     }
 }

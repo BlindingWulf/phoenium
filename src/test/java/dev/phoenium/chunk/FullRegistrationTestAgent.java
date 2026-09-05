@@ -1,0 +1,22 @@
+package dev.phoenium.chunk;
+
+import java.lang.instrument.*;
+import java.security.ProtectionDomain;
+
+/** Test-scoped hook installation on original classes; no Minecraft imitation or production agent. */
+public final class FullRegistrationTestAgent {
+    public static void premain(String ignored, Instrumentation instrumentation) {
+        instrumentation.addTransformer(new ClassFileTransformer() {
+            @Override public byte[] transform(ClassLoader loader, String name, Class<?> redefining,
+                                               ProtectionDomain domain, byte[] bytes) {
+                if (!name.equals("net/minecraft/server/level/GenerationChunkHolder")
+                        && !name.equals("net/minecraft/world/level/chunk/status/ChunkStatusTasks")
+                        && !name.equals("net/minecraft/world/level/storage/PrimaryLevelData")) return null;
+                try {
+                    return (byte[]) Class.forName("dev.phoenium.chunk.FullRegistrationTestTransform", true, loader)
+                            .getMethod("transform", String.class, byte[].class).invoke(null, name, bytes);
+                } catch (Throwable failure) { throw new AssertionError("test hook installation failed for " + name, failure); }
+            }
+        });
+    }
+}
