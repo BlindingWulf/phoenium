@@ -1716,6 +1716,11 @@ public final class Stage3ClientTest implements FabricClientGameTest {
             .replace("\r", "\\r").replace("\n", "\\n").replace("\t", "\\t") + "\"";
     }
 
+    private static String diagnosticSeed() {
+        String seed = System.getenv("PHOENIUM_DIAGNOSTIC_SEED");
+        return seed == null ? "" : Long.toString(Long.parseLong(seed));
+    }
+
     private static final class ExternalServer {
         private final Path directory;
         private final Path latestLog;
@@ -1747,7 +1752,10 @@ public final class Stage3ClientTest implements FabricClientGameTest {
         }
 
         private static ExternalServer start(int lifecycle) throws IOException {
-            Path directory = Path.of(System.getProperty("phoenium.test.serverDirectory"));
+            // Explicit diagnostic replay only; the ordinary acceptance ladder still uses fresh seeds.
+            String diagnosticDirectory = System.getenv("PHOENIUM_DIAGNOSTIC_SERVER_DIR");
+            Path directory = Path.of(diagnosticDirectory == null
+                ? System.getProperty("phoenium.test.serverDirectory") : diagnosticDirectory);
             require(Files.isDirectory(directory), "prepared external server directory is missing: " + directory);
             ExternalServer server = new ExternalServer(directory, lifecycle);
             return start(server, false, false);
@@ -1813,7 +1821,7 @@ public final class Stage3ClientTest implements FabricClientGameTest {
                 "gamemode=creative",
                 "force-gamemode=true",
                 "level-name=" + worldName,
-                "level-seed=",
+                "level-seed=" + diagnosticSeed(),
                 "max-players=1",
                 "motd=Phoenium Stage 3 real-client evidence",
                 "online-mode=false",
@@ -2233,7 +2241,8 @@ public final class Stage3ClientTest implements FabricClientGameTest {
 
         private String worldSeedText() {
             return "Phoenium Stage 3 disposable world record\n"
-                + "Each lifecycle uses a unique level-name and a blank level-seed so the server creates a fresh world.\n"
+                + "Each lifecycle uses a unique level-name; configured diagnostic seed=" + diagnosticSeed() + ".\n"
+                + "Blank means ordinary fresh-seed acceptance; nonblank means diagnostic reproduction only.\n"
                 + "The /seed response is retained here and in STAGE3-CLIENT.json.\n\n"
                 + "firstWorldName=" + firstWorldName + "\n"
                 + "firstWorldSeed=" + firstWorldSeed + "\n"
