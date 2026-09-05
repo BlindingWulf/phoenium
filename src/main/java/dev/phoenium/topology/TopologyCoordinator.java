@@ -18,6 +18,7 @@ public final class TopologyCoordinator {
     private final ReentrantLock metadataGate = new ReentrantLock();
     private Transition pending;
     private Convergence pendingConvergence;
+    private RegionDirectory.PendingChange directoryChange;
     private Runnable publicationWindowProbe;
 
     /**
@@ -42,6 +43,7 @@ public final class TopologyCoordinator {
             if (pending != null) throw new IllegalStateException("topology transition already pending");
             if (pendingConvergence != null) throw new IllegalStateException("topology admission closed while convergence is pending: " + pendingConvergence.reason());
             transition.participants().forEach(id -> runtime(id).beginTransition());
+            directoryChange = directory.beginChange(transition.owners().keySet());
             pending = transition;
         } finally { metadataGate.unlock(); }
     }
@@ -58,11 +60,13 @@ public final class TopologyCoordinator {
             if (pending != null) throw new IllegalStateException("topology transition already pending");
             if (pendingConvergence != null) throw new IllegalStateException("convergence already pending");
             proposal.participants().forEach(id -> runtime(id).beginTransition());
+            directoryChange = directory.beginChange(proposal.owners().keySet());
             pendingConvergence = new Convergence(conflictedKeys, proposal, Objects.requireNonNull(reason, "reason"));
         } finally { metadataGate.unlock(); }
     }
     /** Called by the scheduler's event loop. It never blocks on a region. */
     public boolean advance() {
+        RegionDirectory.PendingChange completed = null;
         metadataGate.lock();
         try {
             if (pending == null && pendingConvergence == null) return false;
@@ -81,8 +85,14 @@ public final class TopologyCoordinator {
             transition.participants().forEach(id -> gateway.releaseTransitionMailbox(runtime(id)));
             pending = null;
             pendingConvergence = null;
+            completed = directoryChange;
+            directory.finishChange(completed);
+            directoryChange = null;
             return true;
-        } finally { metadataGate.unlock(); }
+        } finally {
+            metadataGate.unlock();
+            if (completed != null) directory.signalChange(completed);
+        }
     }
     public boolean hasPendingTransition() { return pending != null; }
     public boolean hasPendingConvergence() { return pendingConvergence != null; }

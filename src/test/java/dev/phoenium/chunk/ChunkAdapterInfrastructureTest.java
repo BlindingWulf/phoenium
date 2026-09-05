@@ -138,7 +138,7 @@ class ChunkAdapterInfrastructureTest {
             publish(a, 1); lifecycle = registry.activateHolder(1, key, holder);
             work = workRegistry.beginOrResolveSharedWork(lifecycle, new ChunkWorkRegistry.WorkReservation("generation", "parsed", 0));
             admission = new ChunkStageAdmission(model, directory, Map.of(a, leaseA, b, leaseB), barrier);
-            inbox = new Inbox(admission); pump = new ChunkStageDeliveryPump(directory, inbox);
+            inbox = new Inbox(admission); pump = new ChunkStageDeliveryPump(directory, inbox, new ChunkStageExecutor(admission));
         }
         void publish(RegionId owner, long generation) { TopologyGeneration g = new TopologyGeneration(generation); directory.publish(g, Map.of(key, new RegionRoute(owner, g, new OwnerEpoch(0)))); }
         PendingVanillaStage<Integer, Integer> pending(long sequence, VanillaChunkStage<Integer, Integer> continuation) {

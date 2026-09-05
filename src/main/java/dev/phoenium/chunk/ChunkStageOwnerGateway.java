@@ -6,5 +6,5 @@ import dev.phoenium.topology.RegionRoute;
 @FunctionalInterface
 public interface ChunkStageOwnerGateway {
     Delivery submit(RegionRoute currentRoute, PendingVanillaStage<?, ?> stage);
-    enum Delivery { QUEUED, REJECTED_SHUTDOWN, REJECTED_ROUTE }
+    enum Delivery { QUEUED, PARKED_TOPOLOGY, REJECTED_SHUTDOWN, REJECTED_ROUTE }
 }

@@ -293,6 +293,22 @@ class ParsedApplyFutureBindingTest {
         assertEquals(0, f.services.custody().retainedEntries()); assertFalse(f.graph.retainsInputs());
     }
 
+    @Test void validMissingRouteUsesPrivateBarrierWithoutParseRecovery() {
+        Fixture f = new Fixture(false);
+        f.expectRouteBarrier = true;
+        f.directory.publish(new TopologyGeneration(2), Map.of());
+        f.parsedSource.complete(Optional.empty()); f.poiSource.complete(Optional.empty());
+        assertTrue(f.barrier.tripped()); assertEquals(0, f.callbackBarriers, "no executor submission failure");
+        assertEquals(List.of("POI_INSTALL:FAILED_BARRIER"), f.terminals);
+        assertSame(GenerationChunkHolder.UNLOADED_CHUNK, f.holderFuture.join());
+        assertTrue(f.returned.isCompletedExceptionally());
+        assertEquals(0, f.poiInstalls + f.applyCalls + f.recoveryCalls + f.publicationCalls);
+        assertFalse(f.graph.retainsInputs()); assertTrue(f.inbox.isEmpty());
+        assertEquals(0, f.services.custody().retainedEntries());
+        assertEquals(0, f.services.works().retainedEntries());
+        assertEquals(0, f.services.lifecycles().retainedEntries());
+    }
+
     /** Historical baseline (8c0072a): 34 cancellations recreated 68 LOAD_RECOVERY/STATUS_PUBLISH records. */
     @Test void missingRouteCancellationReclaimsAllTerminalCustodyEntries() {
         int retained = 0;
@@ -496,6 +512,7 @@ class ParsedApplyFutureBindingTest {
         Runnable duringApply; RegionId applyOwner; String applyThread;
         int poiInstalls, applyCalls, recoveryCalls, publicationCalls, unloadCalls, callbackBarriers;
         long batchSequence; boolean applyHadLease, publicationHadLease, poiReceiptSeenAtRead, expectMissingRoute;
+        boolean expectRouteBarrier;
         CompletableFuture<ChunkResult<ChunkAccess>> oldStatus;
 
         Fixture(boolean reload) { this(reload, Runnable::run, true, false); }
@@ -518,7 +535,7 @@ class ParsedApplyFutureBindingTest {
                     Map.of(a, leaseA, b, leaseB), barrier));
             pump = new ChunkStageDeliveryPump(directory, (route, stage) -> {
                 inbox.addLast(new Item(route, stage)); return ChunkStageOwnerGateway.Delivery.QUEUED;
-            });
+            }, executor);
             if (precompleted) {
                 assertEquals(PoiInstallService.Claim.WON, services.poi().claim(graph.poiId()));
                 assertEquals(PoiInstallService.Settlement.INSTALLED, services.poi().installed(graph.poiId()));
@@ -560,11 +577,16 @@ class ParsedApplyFutureBindingTest {
 
         @Override public ChunkPrerequisiteServices services() { return services; }
         @Override public void enqueue(PendingVanillaStage<?, ?> pending) {
-            var delivery = pump.publishAndDeliver(pending);
+            pending.publishReady();
+            // These historical witnesses prove cancellation cleanup. Supply the actual terminal
+            // signal explicitly; a missing route alone no longer cancels valid production demand.
+            if (expectMissingRoute) services.works().retireWork(work, true);
+            var delivery = pump.deliverPublished(pending);
             if (expectMissingRoute) {
                 assertEquals(ChunkStageOwnerGateway.Delivery.REJECTED_ROUTE, delivery);
-                pending.control(ChunkStageAdmission.Result.CANCELLED); // Same redundant terminal call as LoadEnvironment.
-            } else assertEquals(ChunkStageOwnerGateway.Delivery.QUEUED, delivery);
+                pending.control(ChunkStageAdmission.Result.CANCELLED); // Preserve duplicate-terminal cleanup coverage.
+            } else if (expectRouteBarrier) assertEquals(ChunkStageOwnerGateway.Delivery.REJECTED_ROUTE, delivery);
+            else assertEquals(ChunkStageOwnerGateway.Delivery.QUEUED, delivery);
         }
         @Override public void requireHolder(ChunkLoadGraph.Token token) {
             if (token.holder() != holder || !services.lifecycles().observeSameHolder(token.lifecycle(), holder))

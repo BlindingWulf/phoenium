@@ -9,6 +9,33 @@ import java.util.concurrent.atomic.AtomicReference;
 /** Atomic publication makes lookups immutable snapshots, never mutation authority. */
 public final class RegionDirectory {
     private final AtomicReference<View> view = new AtomicReference<>(new View(new TopologyGeneration(0), Map.of(), Map.of()));
+    private final AtomicReference<PendingChange> pending = new AtomicReference<>();
+
+    /** Evidence of a real coordinator proposal, never authority to execute in its future route. */
+    public static final class PendingChange {
+        private final java.util.Set<RoutingKey> keys;
+        private volatile boolean completed;
+        private PendingChange(java.util.Set<RoutingKey> keys) { this.keys = java.util.Set.copyOf(keys); }
+        public boolean completed() { return completed; }
+    }
+
+    PendingChange beginChange(java.util.Set<RoutingKey> keys) {
+        PendingChange change = new PendingChange(keys);
+        if (!pending.compareAndSet(null, change)) throw new IllegalStateException("directory change already pending");
+        return change;
+    }
+
+    /** Detach after reconciliation, while the coordinator still excludes a new proposal. */
+    void finishChange(PendingChange change) {
+        if (!pending.compareAndSet(change, null)) throw new IllegalStateException("wrong directory change");
+    }
+
+    void signalChange(PendingChange change) { change.completed = true; }
+
+    public Optional<PendingChange> pendingChange(RoutingKey key) {
+        PendingChange change = pending.get();
+        return change != null && change.keys.contains(key) ? Optional.of(change) : Optional.empty();
+    }
     public View snapshot() { return view.get(); }
     public Optional<RegionRoute> resolve(RoutingKey key) {
         View current = view.get();

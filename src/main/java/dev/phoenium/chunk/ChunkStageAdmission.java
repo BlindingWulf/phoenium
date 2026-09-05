@@ -37,6 +37,23 @@ public final class ChunkStageAdmission {
     public long applications() { return applications; }
     public long staleRoutes() { return staleRoutes; }
 
+    /** Missing topology cannot cancel an active reservation. Settle without entering an owner. */
+    Execution<Void> unroutable(PendingVanillaStage<?, ?> pending) {
+        custody.gate().lock();
+        try {
+            if (!pending.belongsTo(custody)) return breachLocked(pending.stage(), null,
+                    new ChunkProtocolException("foreign custody in route delivery"));
+            var state = custody.stageState(pending.stage()).orElse(null);
+            if (custody.hasActiveClaimLocked(pending.stage()) || state == ChunkCustodyModel.StageState.APPLIED
+                    || state == ChunkCustodyModel.StageState.FAILED_VANILLA) return result(Result.DUPLICATE);
+            if (pending.outcome().isDone()) return result(Result.DUPLICATE);
+            if (!custody.admissionsOpenLocked()) return result(Result.SHUTDOWN);
+            if (!custody.isEligibleLocked(pending.stage())) return result(classify(pending.stage()));
+            return breachLocked(pending.stage(), null, new ChunkProtocolException(
+                    "permanently unroutable active chunk work: " + pending.stage()));
+        } finally { custody.gate().unlock(); }
+    }
+
     <I, O> Execution<O> execute(PendingVanillaStage<I, O> pending, RegionId deliveredOwner,
                                TopologyGeneration deliveredGeneration) {
         Objects.requireNonNull(pending); Objects.requireNonNull(deliveredOwner);

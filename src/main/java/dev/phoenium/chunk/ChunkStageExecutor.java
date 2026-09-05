@@ -9,6 +9,12 @@ public final class ChunkStageExecutor {
     private final ChunkStageAdmission admission;
     public ChunkStageExecutor(ChunkStageAdmission admission) { this.admission = Objects.requireNonNull(admission, "admission"); }
 
+    public void rejectUnroutable(PendingVanillaStage<?, ?> pending) {
+        ChunkStageAdmission.Execution<Void> result = admission.unroutable(pending);
+        if (result.result() == ChunkStageAdmission.Result.FAILED_BARRIER) pending.barrierFailure(result.failure());
+        else if (result.result() != ChunkStageAdmission.Result.DUPLICATE) pending.control(result.result());
+    }
+
     public <I, O> ChunkStageAdmission.Result execute(PendingVanillaStage<I, O> pending, RegionId deliveredOwner,
                                                        TopologyGeneration deliveredGeneration) {
         Objects.requireNonNull(pending, "pending");

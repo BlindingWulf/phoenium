@@ -61,6 +61,22 @@ public final class PendingVanillaStage<I, O> {
     public Optional<ChunkCustodyModel.StageState> state() { return custody.stageState(stage); }
     boolean belongsTo(ChunkCustodyModel expected) { return custody == expected; }
 
+    /** Terminal lineage is independent of routing and must not wait for a topology proposal. */
+    ChunkStageAdmission.Result deliveryControl() {
+        custody.gate().lock();
+        try {
+            if (outcome.isDone() || custody.hasActiveClaimLocked(stage)) return null;
+            var state = custody.stageState(stage).orElse(null);
+            if (state == ChunkCustodyModel.StageState.APPLIED || state == ChunkCustodyModel.StageState.FAILED_VANILLA
+                    || state == ChunkCustodyModel.StageState.FAILED_BARRIER) return null;
+            if (!custody.admissionsOpenLocked()) return ChunkStageAdmission.Result.SHUTDOWN;
+            if (state == ChunkCustodyModel.StageState.CANCELLED) return ChunkStageAdmission.Result.CANCELLED;
+            if (state == ChunkCustodyModel.StageState.SUPERSEDED || !custody.metadataEntitledLocked(work))
+                return ChunkStageAdmission.Result.SUPERSEDED;
+            return null;
+        } finally { custody.gate().unlock(); }
+    }
+
     /** Registration callback binds its immutable/exclusively-retained upstream input exactly once. */
     public boolean bindInput(I readyInput) {
         custody.gate().lock();

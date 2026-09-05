@@ -156,6 +156,7 @@ public final class ChunkBindingRuntime {
     /** Runs at an owner-free Minecraft event-loop poll point; one call performs at most one stage. */
     public boolean pumpOne() {
         if (OwnershipContext.current().isPresent()) return false;
+        worlds.values().forEach(world -> world.pump.retryTopology());
         Delivery delivery = deliveries.pollFirst();
         if (delivery == null) return false;
         WorldBinding binding = worlds.get(delivery.stage().world());
@@ -181,6 +182,7 @@ public final class ChunkBindingRuntime {
     public void shutdown() {
         if (!open) return;
         open = false;
+        worlds.values().forEach(world -> world.pump.shutdown());
         List<ChunkLoadGraph> graphs = graphs();
         graphs.forEach(ChunkLoadGraph::shutdown);
         Delivery delivery;
@@ -257,7 +259,7 @@ public final class ChunkBindingRuntime {
                 if (!route.region().world().equals(stage.world())) return ChunkStageOwnerGateway.Delivery.REJECTED_ROUTE;
                 deliveries.addLast(new Delivery(route.region(), route.generation(), stage));
                 return ChunkStageOwnerGateway.Delivery.QUEUED;
-            });
+            }, executor);
         }
     }
 
@@ -273,8 +275,7 @@ public final class ChunkBindingRuntime {
         }
         @Override public ChunkPrerequisiteServices services() { return world.authority.services(); }
         @Override public void enqueue(PendingVanillaStage<?, ?> pending) {
-            if (world.pump.publishAndDeliver(pending) != ChunkStageOwnerGateway.Delivery.QUEUED)
-                pending.control(open ? ChunkStageAdmission.Result.CANCELLED : ChunkStageAdmission.Result.SHUTDOWN);
+            world.pump.publishAndDeliver(pending);
         }
         @Override public void requireHolder(ChunkLoadGraph.Token token) {
             if (token.reservation() != reservation || token.holder().getPos() != position
