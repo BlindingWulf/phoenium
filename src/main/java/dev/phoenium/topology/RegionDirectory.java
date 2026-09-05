@@ -14,13 +14,21 @@ public final class RegionDirectory {
     /** Evidence of a real coordinator proposal, never authority to execute in its future route. */
     public static final class PendingChange {
         private final java.util.Set<RoutingKey> keys;
+        private final java.util.Set<dev.phoenium.core.WorldId> defaultWorlds;
         private volatile boolean completed;
-        private PendingChange(java.util.Set<RoutingKey> keys) { this.keys = java.util.Set.copyOf(keys); }
+        private PendingChange(java.util.Set<RoutingKey> keys, java.util.Set<dev.phoenium.core.WorldId> defaultWorlds) {
+            this.keys = java.util.Set.copyOf(keys); this.defaultWorlds = java.util.Set.copyOf(defaultWorlds);
+        }
         public boolean completed() { return completed; }
     }
 
-    PendingChange beginChange(java.util.Set<RoutingKey> keys) {
-        PendingChange change = new PendingChange(keys);
+    PendingChange beginChange(java.util.Set<RoutingKey> keys, java.util.Set<dev.phoenium.region.RegionId> participants) {
+        View before = view.get();
+        java.util.Set<RoutingKey> affected = new java.util.HashSet<>(keys);
+        java.util.Set<dev.phoenium.core.WorldId> defaultWorlds = new java.util.HashSet<>();
+        before.routes().forEach((key, route) -> { if (participants.contains(route.region())) affected.add(key); });
+        before.worldDefaults().forEach((world, route) -> { if (participants.contains(route.region())) defaultWorlds.add(world); });
+        PendingChange change = new PendingChange(affected, defaultWorlds);
         if (!pending.compareAndSet(null, change)) throw new IllegalStateException("directory change already pending");
         return change;
     }
@@ -34,7 +42,8 @@ public final class RegionDirectory {
 
     public Optional<PendingChange> pendingChange(RoutingKey key) {
         PendingChange change = pending.get();
-        return change != null && change.keys.contains(key) ? Optional.of(change) : Optional.empty();
+        return change != null && (change.keys.contains(key) || change.defaultWorlds.contains(key.world()))
+                ? Optional.of(change) : Optional.empty();
     }
     public View snapshot() { return view.get(); }
     public Optional<RegionRoute> resolve(RoutingKey key) {

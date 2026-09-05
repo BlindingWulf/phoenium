@@ -15,6 +15,10 @@ terminal cleanup. Production delivery now distinguishes three cases:
 
 `ChunkBindingRuntime.LoadEnvironment` no longer converts all non-QUEUED results
 to cancellation. Shutdown acknowledges and releases the parked entries.
+Already queued stages also revalidate actual pending topology at claim time.
+Proposals cover existing affected routes and world defaults as well as proposed
+keys, so neither old deliveries nor keys removed by a proposal can execute
+through the reconciliation interval.
 Production FULL is still disabled: this correction applies to existing typed
 delivery and is independently committed before FULL integration.
 
@@ -26,10 +30,11 @@ unroutable load graphs, the real topology coordinator/wakeup, unrelated
 proposals, cancelled/replaced parked work, shutdown and generation-lease drain.
 
 The old live missing-route cleanup script's CANCELLED expectation is historical.
-An active synthetic EMPTY reservation with missing routing now correctly
-produces FAILED_BARRIER, so that historical live result must not be claimed as
-acceptance of the new classification. The script/result needs a corresponding
-new final-artifact diagnostic run.
+The script now requires FAILED_BARRIER for its actual active synthetic EMPTY
+reservation, with no parse/recovery work at that position. The run at
+`run/terminal-cleanup/missing-route-20260905-121438/` passed on the intermediate
+artifact with one diagnostic terminal, zero cancellations and zero retained
+load/service/custody records. Final-artifact evidence is in the current ledger.
 
 Evidence root: `run/full-production-integration/session-20260905-114005/`.
 `route-focused-01` preserves a test compile failure (forward field reference);

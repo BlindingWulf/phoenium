@@ -37,15 +37,15 @@ public final class ChunkStageDeliveryPump {
             return terminal == ChunkStageAdmission.Result.SHUTDOWN ? ChunkStageOwnerGateway.Delivery.REJECTED_SHUTDOWN
                     : ChunkStageOwnerGateway.Delivery.REJECTED_ROUTE;
         }
+        RegionDirectory.PendingChange change = directory.pendingChange(stage.chunk()).orElse(null);
+        if (change != null && !change.completed() && !stage.outcome().isDone()) {
+            parked.put(stage, change);
+            // A racing shutdown must not leave a newly parked reference behind.
+            if (!open && parked.remove(stage, change)) stage.control(ChunkStageAdmission.Result.SHUTDOWN);
+            return ChunkStageOwnerGateway.Delivery.PARKED_TOPOLOGY;
+        }
         RegionRoute route = directory.resolve(stage.chunk()).orElse(null);
         if (route == null) {
-            RegionDirectory.PendingChange change = directory.pendingChange(stage.chunk()).orElse(null);
-            if (change != null && !change.completed() && !stage.outcome().isDone()) {
-                parked.put(stage, change);
-                // A racing shutdown must not leave a newly parked reference behind.
-                if (!open && parked.remove(stage, change)) stage.control(ChunkStageAdmission.Result.SHUTDOWN);
-                return ChunkStageOwnerGateway.Delivery.PARKED_TOPOLOGY;
-            }
             // Recheck publication: the proposal may have committed between the two observations.
             route = directory.resolve(stage.chunk()).orElse(null);
             if (route == null) {

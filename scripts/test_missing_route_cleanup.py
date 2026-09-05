@@ -1,7 +1,9 @@
-"""Isolated production-JAR invalid-demand witness; run after prepareStage3ClientServer.
+"""Isolated production-JAR unroutable-work witness; run after prepareStage3ClientServer.
 
 Uses the existing finite fixture unchanged. The distant EMPTY demand is deliberately
-outside that fixture. This is cancellation cleanup evidence, not valid-demand acceptance.
+outside that fixture. Its actual active reservation now requires a diagnostic barrier;
+absence of routing is not evidence of cancellation. Historical cancellation evidence
+is preserved in prior Git versions and in its original ignored run directories.
 Generated servers and evidence remain ignored under run/terminal-cleanup/.
 """
 import hashlib
@@ -75,7 +77,9 @@ text = read_log()
 summaries = [line for line in text.splitlines() if "PHOENIUM_CHUNK_BINDING STOPPED" in line]
 assert process.returncode == 0, process.returncode
 assert summaries, "missing shutdown binding accounting"
-assert "reason=CANCELLED" in text
+assert "reason=FAILED_BARRIER" in text
+assert "permanently unroutable active chunk work" in text
+assert "reason=CANCELLED" not in text
 for line in summaries:
     for field in ("retainedGraphs", "returnedIndex", "poiIndex", "synchronousInvocations", "custodyEntries",
                   "lifecycleEntries", "workEntries", "poiEntries", "lightBatches", "lightOccurrences",
@@ -88,9 +92,9 @@ for line in summaries:
 assert 'missingRouteEmpty chunk=1000,1000 done=true unloaded=true' in text
 assert not re.search(r'PARSED_APPLIED[^\n]*chunk=1000,1000\b', text)
 jar = next((target / "mods").glob("phoenium-*.jar"))
-manifest = {"kind": "live acceptance: deliberately invalid demand", "productionFullEnabled": False,
+manifest = {"kind": "live diagnostic: active reservation without route or topology producer", "productionFullEnabled": False,
             "directory": str(target), "exitCode": process.returncode,
-            "cancellations": text.count("reason=CANCELLED"), "stopped": summaries,
+            "cancellations": text.count("reason=CANCELLED"), "protocolTerminals": text.count("reason=FAILED_BARRIER"), "stopped": summaries,
             "jarSha256": hashlib.sha256(jar.read_bytes()).hexdigest(),
             "logSha256": hashlib.sha256(log.read_bytes()).hexdigest()}
 (target / "acceptance.json").write_text(json.dumps(manifest, indent=2))

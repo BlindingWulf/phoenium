@@ -87,6 +87,8 @@ public final class ChunkStageAdmission {
                 case FAILED -> { return breachLocked(stage, null, new ChunkProtocolException("terminal light prerequisite")); }
                 case REGISTERED -> { }
             }
+            if (directory.pendingChange(pending.chunk()).filter(change -> !change.completed()).isPresent())
+                return result(Result.NOT_READY);
             route = directory.resolve(stage.work().lifecycle().chunkKey()).orElse(null);
             if (route == null || !route.region().equals(deliveredOwner) || !route.generation().equals(deliveredGeneration)) {
                 staleRoutes++; return result(Result.STALE_ROUTE);

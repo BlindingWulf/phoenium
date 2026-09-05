@@ -43,7 +43,7 @@ public final class TopologyCoordinator {
             if (pending != null) throw new IllegalStateException("topology transition already pending");
             if (pendingConvergence != null) throw new IllegalStateException("topology admission closed while convergence is pending: " + pendingConvergence.reason());
             transition.participants().forEach(id -> runtime(id).beginTransition());
-            directoryChange = directory.beginChange(transition.owners().keySet());
+            directoryChange = directory.beginChange(transition.owners().keySet(), transition.participants());
             pending = transition;
         } finally { metadataGate.unlock(); }
     }
@@ -60,7 +60,7 @@ public final class TopologyCoordinator {
             if (pending != null) throw new IllegalStateException("topology transition already pending");
             if (pendingConvergence != null) throw new IllegalStateException("convergence already pending");
             proposal.participants().forEach(id -> runtime(id).beginTransition());
-            directoryChange = directory.beginChange(proposal.owners().keySet());
+            directoryChange = directory.beginChange(proposal.owners().keySet(), proposal.participants());
             pendingConvergence = new Convergence(conflictedKeys, proposal, Objects.requireNonNull(reason, "reason"));
         } finally { metadataGate.unlock(); }
     }

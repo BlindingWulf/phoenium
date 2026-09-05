@@ -57,6 +57,42 @@ class ChunkRouteClassificationTest {
         assertTrue(f.barrier.tripped()); assertEquals(0, f.pump.parkedCount());
     }
 
+    @Test void existingRouteCannotRunThroughARealPendingTransition() {
+        Fixture f = new Fixture();
+        var generation = new TopologyGeneration(1);
+        f.directory.publish(generation, Map.of(f.key, new RegionRoute(f.id, generation, new OwnerEpoch(0))));
+        f.propose();
+        assertEquals(ChunkStageOwnerGateway.Delivery.PARKED_TOPOLOGY, f.pump.publishAndDeliver(f.pending));
+        assertTrue(f.inbox.isEmpty()); assertEquals(0, f.calls);
+        f.topology.advance(); f.pump.retryTopology(); f.execute(); assertEquals(1, f.calls);
+    }
+
+    @Test void removedOldRouteWaitsForRealProposalThenDiagnosesUnroutableWork() {
+        Fixture f = new Fixture();
+        var generation = new TopologyGeneration(1);
+        f.directory.publish(generation, Map.of(f.key, new RegionRoute(f.id, generation, new OwnerEpoch(0))));
+        f.topology.request(new TopologyCoordinator.Transition(Set.of(f.id),
+                Map.of(new RoutingKey(f.world, 1, 0), f.id)));
+        assertEquals(ChunkStageOwnerGateway.Delivery.PARKED_TOPOLOGY, f.pump.publishAndDeliver(f.pending));
+        assertFalse(f.pending.outcome().isDone());
+        f.topology.advance(); f.pump.retryTopology();
+        assertInstanceOf(ChunkStageOutcome.BarrierFailure.class, f.pending.outcome().join());
+        assertEquals(0, f.pump.parkedCount()); assertTrue(f.inbox.isEmpty());
+    }
+
+    @Test void alreadyQueuedDeliveryRevalidatesPendingTopologyBeforeClaim() {
+        Fixture f = new Fixture();
+        var generation = new TopologyGeneration(1);
+        f.directory.publish(generation, Map.of(f.key, new RegionRoute(f.id, generation, new OwnerEpoch(0))));
+        assertEquals(ChunkStageOwnerGateway.Delivery.QUEUED, f.pump.publishAndDeliver(f.pending));
+        f.propose();
+        assertSame(f.pending, f.inbox.remove());
+        assertEquals(ChunkStageAdmission.Result.NOT_READY, f.executor.execute(f.pending, f.id, generation));
+        assertFalse(f.owner.leases().hasActiveLease()); assertEquals(0, f.calls);
+        assertEquals(ChunkStageOwnerGateway.Delivery.PARKED_TOPOLOGY, f.pump.deliverPublished(f.pending));
+        f.topology.advance(); f.pump.retryTopology(); f.execute(); assertEquals(1, f.calls);
+    }
+
     @Test void cancelledParkedWorkSettlesBeforeTopologyAndCannotResurrect() {
         Fixture f = new Fixture(); f.propose(); f.pump.publishAndDeliver(f.pending);
         f.custody.retireWork(f.work, true); f.pump.retryTopology();
