@@ -54,3 +54,10 @@ Start verified clean at the checkpoint above; production artifact SHA-256
 Fresh baseline: 48 focused tests, then 312 tests across 24 suites plus client
 harness compilation, both process exits 0 with `--rerun-tasks`.
 Evidence: `run/full-production-integration/session-20260905-114005/`.
+
+Implementation interruption: route classification and the checked transformed
+method boundary are committed; the authoritative async FULL registrar and
+required services remain incomplete and disabled. Final deterministic suite:
+334/334. See the [current acceptance ledger](STAGE3_FULL_APPROVED_IMPLEMENTATION.md)
+for artifact-specific baseline runs and the reproduced vault failure. This
+record remains authorization for the remaining scoped implementation, not PASS.

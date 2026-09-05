@@ -1,5 +1,123 @@
 # Approved FULL implementation and acceptance ledger
 
+## Current production integration interruption — 2026-09-05
+
+**FULL checkpoint: PARTIAL. Assignment incomplete. Authoritative FULL remains
+DISABLED.** The [bounded non-self amendment](STAGE3_FULL_NONSELF_APPROVAL.md) is
+recorded; [the production boundary adapter](STAGE3_FULL_PRODUCTION_BOUNDARY.md)
+and [route correction](STAGE3_ROUTE_CLASSIFICATION.md) are implemented and tested.
+This is a buildable interruption before completion of checkpoint B, not a new
+semantic blocker or a request to repeat approval. Checkpoints C and integrated
+D remain outstanding implementation work. Stage 3/R-CHUNK-01 PARTIAL;
+Stage 4 NOT STARTED; workers=1; parallel gameplay OFF; no new PASS tag.
+
+Start was clean `542b352eff9fbc8878d00cb07782b45460565f66`. Approval commit
+`41b8c76`; independent route commits `b2660a7` and `5ec2ad3`; production method
+boundary `067763f`; preserved vault diagnostic artifact check `ed787e6`.
+Final delivery HEAD/status are recorded in the ignored
+session manifest and final response, avoiding a self-referential commit hash.
+
+### Current gate status (supersedes historical pending-approval/stop passages)
+
+| Binding or obligation | Current implementation/evidence | Remaining work |
+| --- | --- | --- |
+| Scoped amendment / prototype map | Recorded in 41b8c76; exact producer/consumer map linked above | No repeated approval |
+| Preparation / finishing method boundary | Installed late Mixin adapter preserves exact original instructions and installed return callbacks; real server class verified | Actual work/stage admission and invocation binding; helpers alone confer no authority |
+| Original async FULL work / holder reservation | Baseline wrapper/supplier preserved and traced | Actual FULL registrar, exact R.handle correlation, stage mapping and receipt production remain absent |
+| Generation/input/writer evidence and discovery | Existing prototype tests preserved | Real borrow completion, all contributing writer revisions/exclusion, complete callback footprint and prepared-input discovery |
+| Private non-self query authority | No production private getter enabled | Typed operation/claim/holder/object/purpose validation at every audited call; ready/absent/error preservation |
+| D1 | Original reference witnesses preserved | Actual fact producer/writer participation and ordered alias/predicate consumers |
+| D2 / P | Existing cache/provider/disposable-file witnesses preserved | Occurrence preparation, cache revisions, ordered settled persistence, original Owner-edge consumption |
+| C/S/W | Existing contract witnesses preserved | Exact connection sessions, scoreboard/initialization ordering, named world turns and all conflicting serial phases |
+| Finishing / separate FULL publication | Original baseline FULL still runs; new semantic finishing entry point exists | Admitted execution with all prerequisites, per-work outcome records, independent STATUS_PUBLISH(FULL) claim |
+| Retention / replacement / shutdown / capacity | Existing load cleanup and 48 prototype cases preserved; real topology parking shutdown tested | Production initialized-input consumers, acknowledgements, payload/replacement/queue accounting, bounded progress and saturation cases |
+| Route classification | Real pending proposals park and wake; old queued deliveries revalidate; terminal lineage settles; permanently unroutable active work trips barrier | Preserve tests/runtime diagnostic; this does not provide FULL input-window convergence |
+| Integrated FULL saved-world/client acceptance | Not run: authoritative path remains disabled | Real X/Y proto/disk-reload orders, non-air/shapes, shared/larger windows, teams/owners/references and FULL lifetime failures |
+| Vault tick | Reproduced again on final artifact and original diagnostic seed | Ordinary ticking readiness/admission requirement remains unresolved; no FULL capability applied to ticks |
+| Other Stage 3 rows | Historical ledger preserved | Ticking/readiness/send/demotion, whole chunk acceptance and whole-stage audit remain outside this checkpoint |
+
+### Executed tests and final artifact
+
+Evidence root `run/full-production-integration/session-20260905-114005/` preserves
+the entire pre-session build/logs, pre-clean outputs, command exits and XML.
+Pinned dependencies/build options remain unchanged.
+
+| Executed command / evidence | Exit | Result |
+| --- | --- | --- |
+| Focused original non-self suite with `--rerun-tasks` | 0 | 48 tests |
+| Baseline `build compileClientGameTestJava --rerun-tasks --no-daemon` | 0 | 312 tests / 24 suites; harness compiled |
+| Final `clean build compileClientGameTestJava prepareStage3ClientServer --no-daemon` | 0 | **334 tests / 26 suites**, zero failures/errors/skips; all 10 tasks executed |
+| Test-case multiset comparison | 0 | All 312 baseline occurrences retained; 22 additions |
+| Production JAR inspection | 0 | 256 entries; server-only; no JUnit/client-test/prototype/generated-test classes |
+
+Final production JAR SHA-256:
+`1E368F022797143C6948C7A0DEBEC429C0D233D870DCFABB5CAF846C880F9F22`.
+Final build log/XML: `reviewed-clean-build.log`, `.exit`,
+`reviewed-clean-build-xml/`; identity and multiset reports:
+`reviewed-artifacts.json`, `artifact-verification.json`, `test-preservation.json`.
+The JAR hash changed because production code changed. No attempt was made to
+preserve the old hash. The new helpers are never selected as authoritative FULL
+by baseline execution; no early public future/cache/loaded flag was introduced.
+
+### Final-artifact runtime evidence (baseline mode)
+
+| Run | Exit/result | Actual coverage and measurements |
+| --- | --- | --- |
+| `test_full_boundary_transform.py`, `run/full-production-integration/transform-20260905-122305/` | 0 / PASS | Real dedicated transformed class; preparation has no runPostLoad/setLoaded/Fabric return callback; finishing retains each once. 529 load/EMPTY publications. Seed -8452850765743495409. |
+| `test_missing_route_cleanup.py`, `run/terminal-cleanup/missing-route-20260905-122311/` | 0 / diagnostic PASS | 530 registrations; 529 applies/publications; target (1000,1000) has one FAILED_BARRIER terminal, no CANCELLED, no target apply or recovery; one private unload. |
+| `runStage3ChunkTrace`, `reviewed-baseline-trace-*` | 0 / PASS | Two fresh worlds: 1058/1058 load/EMPTY publications each; actual disk reload: 9/9. Target (32,4) original FULL results successful, actual reference/branch observations. No client TCP connection in this trace mode. |
+| `reproduce_ticking_block_entity.py`, `run/nonself-input-decision/ticking-20260905-122520/` | Python 0; child Gradle 1 / reproduced failure | Actual offline client TCP login, seed -663839099974294500; same-region interaction phase fails after vault-tick barrier. Second lifecycle not reached; client acceptance FAIL. 2046 load/EMPTY publications and zero retained load roots at stop. |
+
+Fresh trace worlds are `STAGE3-CHUNK-GEN-1-1788629044774` (seed
+3295061012281824826) and `STAGE3-CHUNK-GEN-2-1788629052810` (seed
+-6747204512093792895); reload uses the first actual save and seed. All listed
+external servers carry the exact final JAR. Module manifests identify only
+fabric-api-base, fabric-command-api-v2 3.1.0+00cb03469e,
+fabric-lifecycle-events-v1 4.1.4+29b6eb019e and Phoenium, alongside Loader/Minecraft.
+The full development Fabric API is not claimed as installed external scope.
+
+Normal final server/trace stops report zero retained graphs/future indexes,
+synchronous invocations, lifecycle/work/custody and POI/light/metadata entries.
+The negative route run also releases these records. Its admission barrier is
+the live shared FailureBarrier; the separate callback-submission `barriers`
+counter remains zero and must not be reported as “no protocol fault.” No FULL
+capacity, consumer-pin, retained-byte or heap measurements are invented for
+the unimplemented graph. Production consumer/producer failure and separate
+publication matrices remain unexecuted; the original prototype matrices are
+unchanged reference evidence.
+
+### Preserved failures and vault disposition
+
+`route-focused-01` preserves an illegal forward field reference in the new test.
+`route-build-final` preserves an incorrect test expectation that an admission
+barrier also increments the independent executor-submission failure counter.
+`boundary-focused-01` records the strict selector rejecting an incorrectly
+specified UnsavedListener descriptor; it was corrected to the inspected pinned
+LevelChunk nested type. `boundary-focused-02` records an incorrect dirty-state
+expectation for the in-memory reload fixture; its proto constructor is dirty.
+The first transformed-server attempt at `transform-20260905-120722` booted but
+its inspection script did not account for javap quoting the Fabric handler
+name. The exported callback was present exactly once; the parser was fixed.
+All failed outputs were preserved before passing reruns.
+
+The intermediate artifact `A30784A750680C2C901C53C3EB021BE613E42ED0C279750C341FE69ECED918E5`
+also completed the fresh/fresh/reload trace, then failed real-client movement
+on fresh seed -6981155790638318274 with the same vault chain. This failed
+combined run is retained as `final-baseline-live.*` and its copied evidence;
+it is not final-artifact acceptance. The final-artifact original-seed diagnostic
+again records `VaultBlockEntity.Server.tick -> BlockEntity.setChanged ->
+Level.updateNeighbourForOutputSignal -> getBlockState -> ServerChunkCache.getChunk`
+and the unfinished synchronous dependency guard. The original historical save
+and timing remain unavailable. No repair, suppressed update, or broad
+rediscovery is claimed. The smallest unresolved requirement is readiness
+admission for the ordinary ticking callback's synchronous neighbor-output
+chunk queries before its owner body begins; that ticking-boundary work is not
+licensed by the FULL-only amendment.
+
+The exact next missing test and binding sequence are in
+[STAGE3_FULL_PRODUCTION_BOUNDARY.md](STAGE3_FULL_PRODUCTION_BOUNDARY.md).
+There is no currently failing deterministic test to disguise as a new blocker.
+
 ## Current test-only proposal — 2026-09-05
 
 The [non-self input decision](STAGE3_FULL_NONSELF_INPUT_DECISION.md) records the

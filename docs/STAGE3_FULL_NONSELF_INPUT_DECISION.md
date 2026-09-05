@@ -1,5 +1,15 @@
 # Non-self initialized inputs: test-only decision checkpoint — 2026-09-05
 
+Latest implementation result: **PARTIAL**, not integrated FULL acceptance.
+The [production boundary interruption](STAGE3_FULL_PRODUCTION_BOUNDARY.md) and
+[current ledger](STAGE3_FULL_APPROVED_IMPLEMENTATION.md) record 334 passing
+deterministic tests, installed/transformed semantic helpers, the independent
+route correction and final-artifact runtime evidence. Authoritative FULL,
+private neighboring access and shared-service bindings remain disabled/absent.
+The original-seed vault tick is reproduced again and remains unresolved.
+The prototype evidence below is preserved; it is not upgraded to production
+acceptance by the method adapter or the approved amendment.
+
 Current implementation request: the bounded production amendment is recorded in
 [STAGE3_FULL_NONSELF_APPROVAL.md](STAGE3_FULL_NONSELF_APPROVAL.md). The historical
 proposal and test evidence below remain intact. Its pending-approval/stop text

@@ -1,5 +1,43 @@
 # Stage 3 chunk-only handoff
 
+## Current resume — partial production boundary, 2026-09-05
+
+**The FULL assignment is incomplete; checkpoint B is partial.** Approval
+`41b8c76` remains valid. Route delivery is corrected in `b2660a7` / `5ec2ad3`;
+the actual transformed-method boundary is installed in `067763f`.
+Read [the exact implementation interruption](STAGE3_FULL_PRODUCTION_BOUNDARY.md)
+and [current acceptance ledger](STAGE3_FULL_APPROVED_IMPLEMENTATION.md) first.
+Authoritative FULL remains DISABLED; no current production caller invokes the
+new preparation/finishing helpers. Baseline vanilla FULL is preserved.
+
+Last passing build command:
+`./gradlew.bat clean build compileClientGameTestJava prepareStage3ClientServer --no-daemon`.
+It executed **334 tests in 26 suites**, zero failures/errors/skips, including
+all 312 baseline test occurrences. Final JAR:
+`1E368F022797143C6948C7A0DEBEC429C0D233D870DCFABB5CAF846C880F9F22`.
+Final transformed-server, fresh/fresh/disk-reload and unroutable-demand
+diagnostics passed in baseline mode. The final-artifact original-seed real
+client diagnostic reproduced the vault tick and failed; it is not client PASS.
+
+Next implementation: create `FullProductionRegistrationTest` and bind actual
+winning FULL holder/status work and original async R.handle correlation to
+separate admitted preparation. That test does not exist yet; no failing test
+is being claimed. After adding it, run
+`./gradlew.bat test --tests "dev.phoenium.chunk.FullProductionRegistrationTest" --no-daemon`.
+Real generation-borrow/writer evidence, discovery/private queries, D1/D2,
+C/P/S/W, bounded input retention/progress and separate FULL publication still
+need implementation. Do not treat their absence as a new semantic contradiction
+or repeat the earlier cycle review. No incomplete happy-path binder is enabled.
+
+Changed production areas: `FullStageBoundary`, its narrow Mixin plugin/config,
+`ChunkStageDeliveryPump` / `ChunkStageAdmission`, `RegionDirectory` /
+`TopologyCoordinator`, and existing load-delivery integration. Tests and scripts
+exercise those actual adapters and preserve prior cleanup assertions. Complete
+commits and final Git status are in the session manifest/final response.
+Evidence root: `run/full-production-integration/session-20260905-114005/`.
+Only one writing session used this checkout; no reset/discard or dependency
+change. Stage 3/R-CHUNK-01 PARTIAL; Stage 4 NOT STARTED; one worker, parallel OFF.
+
 ## Current production integration request — 2026-09-05
 
 Continue from clean `542b352eff9fbc8878d00cb07782b45460565f66` under the
