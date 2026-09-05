@@ -1,5 +1,16 @@
 # Stage 3 chunk-only handoff
 
+## Approved FULL implementation — 2026-09-05
+
+The bounded D2-P/D3-X amendments are now explicitly approved in
+[STAGE3_FULL_D2_D3_APPROVAL.md](STAGE3_FULL_D2_D3_APPROVAL.md). Start:
+`f09fe2ffb737ff9019c01cd01b7198b609fe9d38`, clean, rebuilt 253/253 tests and
+client harness compiled. Follow the current
+[implementation/gate ledger](STAGE3_FULL_APPROVED_IMPLEMENTATION.md), including
+its scope reconciliation, before the historical sections below. Do not ask
+for these same approvals again. FULL implementation/acceptance remains pending;
+Stage 3/R-CHUNK-01 PARTIAL, Stage 4 NOT STARTED, one worker, parallel OFF.
+
 ## Current D1–D3 resolution — 2026-09-04
 
 Read [STAGE3_FULL_D1_D3_DECISIONS.md](STAGE3_FULL_D1_D3_DECISIONS.md) for the

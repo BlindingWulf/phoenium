@@ -1,5 +1,12 @@
 # FULL D1–D3 decisions
 
+2026-09-05 update: the user has explicitly **APPROVED** the bounded D2-P and
+D3-X amendments below. See [the approval record](STAGE3_FULL_D2_D3_APPROVAL.md)
+and [implementation/gate ledger](STAGE3_FULL_APPROVED_IMPLEMENTATION.md).
+The original review's pending-approval statements below describe its historical
+state; their descriptions of observable differences and remaining obligations
+are preserved. Approval is not evidence of production implementation.
+
 2026-09-04. Start: `84a01d4352dc5b937da8ff0c35dd1df9414bd017`, clean.
 Cleanup checkpoint `a99d647c1ed39b1a96d5267e6f08f06ba17d8945` is an ancestor
 and is preserved without modifying its implementation or assertions.
