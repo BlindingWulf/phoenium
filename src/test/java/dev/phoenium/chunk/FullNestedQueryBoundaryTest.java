@@ -207,14 +207,19 @@ final class FullNestedQueryBoundaryTest {
         return new Node(node.holder(), input, node.full());
     }
     static void position(ProtoChunk input, double x) {
-        ListTag pos = new ListTag(); pos.add(DoubleTag.valueOf(x)); pos.add(DoubleTag.valueOf(8)); pos.add(DoubleTag.valueOf(8));
+        position(input, x, 8);
+    }
+    static void position(ProtoChunk input, double x, double z) {
+        ListTag pos = new ListTag(); pos.add(DoubleTag.valueOf(x)); pos.add(DoubleTag.valueOf(8)); pos.add(DoubleTag.valueOf(z));
         input.getEntities().getFirst().put("Pos", pos);
     }
     static Node neighbor(FullTadpoleDecisionTest.Fixture f, int age, double x) throws Exception {
-        ChunkPos pos = new ChunkPos(1, 0);
+        return neighbor(f, new ChunkPos(1, 0), age, x, 8);
+    }
+    static Node neighbor(FullTadpoleDecisionTest.Fixture f, ChunkPos pos, int age, double x, double z) throws Exception {
         ProtoChunk input = new ProtoChunk(pos, UpgradeData.EMPTY, f.level, f.level.palettedContainerFactory(), null);
         input.setPersistedStatus(ChunkStatus.FULL.getParent()); input.setInhabitedTime(900000L);
-        var tag = f.proto.getEntities().getFirst().copy(); tag.putInt("Age", age); input.addEntity(tag); position(input, x);
+        var tag = f.proto.getEntities().getFirst().copy(); tag.putInt("Age", age); input.addEntity(tag); position(input, x, z);
         ChunkHolder holder = stub(ChunkHolder.class, List.of(
                 new Answer(ChunkHolder.class.getMethod("getTicketLevel"), args -> 33),
                 new Answer(ChunkHolder.class.getMethod("getFullStatus"), args -> FullChunkStatus.FULL)));

@@ -233,7 +233,8 @@ final class FullTadpoleDecisionTest {
                             if (failRootInsertion) throw new IllegalStateException("controlled registration after prefix"); }); return null;
                     }),
                     new Answer(ServerLevel.class.getMethod("addLegacyChunkEntities", Stream.class), args -> {
-                        ((Stream<?>)args[0]).forEach(entity -> { inserted.add((Entity)entity); events.add("legacy-root"); }); return null;
+                        ((Stream<?>)args[0]).forEach(entity -> { inserted.add((Entity)entity); events.add("legacy-root");
+                            if (failRootInsertion) throw new IllegalStateException("controlled registration after prefix"); }); return null;
                     }),
                     new Answer(ServerLevel.class.getMethod("addFreshEntity", Entity.class), args -> {
                         inserted.add((Entity)args[0]); events.add("fresh-frog"); return true;

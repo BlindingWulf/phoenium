@@ -1,5 +1,19 @@
 # Approved FULL implementation and acceptance ledger
 
+## Current test-only proposal — 2026-09-05
+
+The [non-self input decision](STAGE3_FULL_NONSELF_INPUT_DECISION.md) records the
+recovered prototype and its 48 focused / 312 full-suite passing tests. Both
+original conversions finish in both orders on proto and reload paths without
+early public FULL or diagnostic-stop success. This proposes new construction,
+neighbor-access and mutation semantics; it does not approve production FULL.
+The production artifact is byte-identical to the historical final artifact below.
+All production gate rows remain open as recorded; Stage 3/R-CHUNK-01 PARTIAL,
+Stage 4 NOT STARTED. The separate interrupted same-seed live reproduction captured
+a vault-tick `setChanged`/neighbor-update unfinished-chunk guard breach. Its logs
+and diagnostic source are preserved, the historical incident remains unresolved,
+and no new live-server campaign was run in this prototype-validation pass.
+
 ## Verified start — 2026-09-05
 
 Repository: `C:/Users/Admin/Downloads/Project PHOENIUM/Phoenium`.

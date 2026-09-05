@@ -1,5 +1,26 @@
 # Stage 3 chunk-only handoff
 
+## Current prototype-validation checkpoint — 2026-09-05
+
+The interrupted non-self prototype is recovered and validated in
+[STAGE3_FULL_NONSELF_INPUT_DECISION.md](STAGE3_FULL_NONSELF_INPUT_DECISION.md).
+Start HEAD: `14dc1812c82106f9b9749f87e3ba83f348c8db4e`. Focused JUnit: 48/48;
+clean build plus client-harness compilation: **312/312**, zero failures/errors/skips.
+The original X/Y conversions actually finish on proto/reload and in both orders,
+with no diagnostic-stop substitute and no early public FULL. Shared/larger inputs,
+dynamic mutations, replacement, failures and acknowledged cleanup are test-only.
+Production JAR SHA-256 remains
+`46E37BBE91CBCCD958656DA125ADC10ABCCA6DC090A2D0DE86E4BD79C6E7ACC2`.
+
+This is a tested proposal requiring additional production approval for the
+construction split, neighboring initialized access/mutations and changed failure
+observation. Existing D2/direct-self D3 approval is unchanged. Production FULL
+**DISABLED**, Stage 3/R-CHUNK-01 **PARTIAL**, Stage 4 **NOT STARTED**. Stop here.
+Missing-route classification is separately open. The preserved interrupted live
+reproduction identified a vault-tick neighbor update reaching an unfinished
+owner chunk query; that incident remains unresolved and was not rerun here.
+Read this current decision before historical implementation instructions below.
+
 ## Approved FULL implementation — 2026-09-05
 
 The bounded D2-P/D3-X amendments are now explicitly approved in
