@@ -84,16 +84,19 @@ public final class ChunkStageAdmission {
 
         try (lease;
              OwnershipContext.Scope ignored = OwnershipContext.enter(deliveredOwner, lease.epoch(), OperationCategory.OWNER_TASK);
-             ChunkStageClaim claim = new ChunkStageClaim(custody, stage, route, lease, lightRegistration)) {
+             ChunkStageClaim claim = new ChunkStageClaim(custody, stage, route, lease, lightRegistration);
+             ChunkSynchronousAccessGuard.Invocation queryFaults = ChunkSynchronousAccessGuard.forClaim(claim)) {
             claim.require(stage);
             final O value;
             // Only the original, correctly admitted body is inside this vanilla-failure boundary.
             try { value = pending.invokeOriginal(claim); }
-            catch (ChunkProtocolException failure) { throw failure; }
+            catch (ChunkProtocolException failure) { queryFaults.requireNoBreach(failure); throw failure; }
             catch (Throwable failure) {
+                queryFaults.requireNoBreach(failure);
                 custody.failVanilla(stage);
                 return new Execution<>(Result.FAILED_VANILLA, null, failure);
             }
+            queryFaults.requireNoBreach(null);
             custody.gate().lock();
             try { custody.appliedLocked(stage); applications++; }
             finally { custody.gate().unlock(); }

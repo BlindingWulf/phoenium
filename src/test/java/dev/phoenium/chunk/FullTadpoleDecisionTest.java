@@ -157,12 +157,15 @@ final class FullTadpoleDecisionTest {
         assertSame(f.input, f.holder.getChunkIfPresentUnchecked(ChunkStatus.FULL.getParent())); assertFalse(f.fullSlot.isDone());
     }
 
-    private static final class Fixture {
+    static final class Fixture {
         final ArrayDeque<Runnable> execution = new ArrayDeque<>();
         final List<Entity> inserted = new ArrayList<>(); final List<String> events = new ArrayList<>();
         final Object work = new Object(); final net.minecraft.server.ServerScoreboard scoreboard;
         final CompletableFuture<ChunkResult<ChunkAccess>> fullSlot = new CompletableFuture<>();
         final ServerLevel level; final ChunkHolder holder; final ServerChunkCache cache; final ProtoChunk proto;
+        final java.util.Map<Long, ChunkHolder> visibleHolders = new java.util.HashMap<>();
+        final net.minecraft.world.level.TicketStorage tickets = new net.minecraft.world.level.TicketStorage();
+        java.util.function.Function<Object[], ChunkAccess> queryEndpoint;
         ChunkAccess input;
         final RandomSource random = RandomSource.create(73031L);
         final RandomSource soundRandom = RandomSource.create(9157L);
@@ -185,8 +188,10 @@ final class FullTadpoleDecisionTest {
             set(holder, GenerationChunkHolder.class, "startedWork", new AtomicReference<>(ChunkStatus.FULL));
             var task = allocate(ChunkGenerationTask.class); set(task, ChunkGenerationTask.class, "targetStatus", ChunkStatus.FULL);
             set(holder, GenerationChunkHolder.class, "task", new AtomicReference<>(task));
-            ChunkMap map = stub(ChunkMap.class, List.of(new Answer(ChunkMap.class.getDeclaredMethod("getVisibleChunkIfPresent", long.class), args -> holder)));
+            visibleHolders.put(ChunkPos.ZERO.pack(), holder);
+            ChunkMap map = stub(ChunkMap.class, List.of(new Answer(ChunkMap.class.getDeclaredMethod("getVisibleChunkIfPresent", long.class), args -> visibleHolders.get((long) args[0]))));
             cache = allocate(ServerChunkCache.class); set(cache, ServerChunkCache.class, "chunkMap", map);
+            set(cache, ServerChunkCache.class, "ticketStorage", tickets);
             var blockTicks = new LevelTicks<net.minecraft.world.level.block.Block>(pos -> true);
             var fluidTicks = new LevelTicks<net.minecraft.world.level.material.Fluid>(pos -> true);
             var players = stub(net.minecraft.server.players.PlayerList.class, List.of(new Answer(
@@ -218,6 +223,7 @@ final class FullTadpoleDecisionTest {
                     new Answer(ServerLevel.class.getMethod("getBlockTicks"), args -> blockTicks),
                     new Answer(ServerLevel.class.getMethod("getFluidTicks"), args -> fluidTicks),
                     new Answer(ServerLevel.class.getMethod("getChunk", int.class, int.class, ChunkStatus.class, boolean.class), args -> {
+                        if (queryEndpoint != null) return queryEndpoint.apply(args);
                         assertSame(ChunkStatus.FULL, args[2]); assertEquals(false, args[3]);
                         if (nullQuery) return null;
                         return borrow(work, (int)args[0], (int)args[1]);
@@ -237,6 +243,10 @@ final class FullTadpoleDecisionTest {
                         sounds++; events.add("sound"); if (failSound) throw new IllegalStateException("controlled sound failure"); return null;
                     })));
             set(level, Level.class, "random", random);
+            set(level, Level.class, "thread", Thread.currentThread());
+            set(level, Level.class, "blockEntityTickers", new ArrayList<>());
+            set(level, Level.class, "pendingBlockEntityTickers", new ArrayList<>());
+            set(level, ServerLevel.class, "debugSynchronizers", new net.minecraft.util.debug.LevelDebugSynchronizers(level));
             set(level, Level.class, "soundSeedGenerator", soundRandom);
             proto = new ProtoChunk(ChunkPos.ZERO, UpgradeData.EMPTY, level, base.factory, null);
             input = proto;
@@ -252,8 +262,13 @@ final class FullTadpoleDecisionTest {
         }
 
         LevelChunk run() {
+            return run(holder, input);
+        }
+
+        LevelChunk run(ChunkHolder target, ChunkAccess source) {
             var context = new WorldGenContext(level, null, null, null, execution::add, ignored -> {});
-            CompletableFuture<ChunkAccess> result = ChunkStatusTasks.full(context, null, StaticCache2D.create(0, 0, 0, (x, z) -> holder), input);
+            ChunkPos pos = target.getPos();
+            CompletableFuture<ChunkAccess> result = ChunkStatusTasks.full(context, null, StaticCache2D.create(pos.x(), pos.z(), 0, (x, z) -> target), source);
             assertFalse(result.isDone()); assertEquals(1, execution.size());
             admitted = true; executions++;
             try { Runnable delivery = execution.remove(); delivery.run(); if (duplicateDelivery) delivery.run(); }

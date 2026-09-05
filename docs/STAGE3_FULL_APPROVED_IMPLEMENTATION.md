@@ -39,6 +39,18 @@ This table distinguishes current implementation from historical live evidence.
 
 ## Implementation and acceptance results
 
-Pending. No supporting service or FULL acceptance is asserted by this approval
-checkpoint. Failed attempts will be retained with diagnoses rather than replaced
-by a later passing run. Scope conflicts are recorded in the approval document.
+The concrete [non-self query conflict](STAGE3_FULL_NONSELF_QUERY_CONFLICT.md)
+blocks integrated FULL enablement. Both proto and original reload suppliers
+demonstrate X -> Y -> X collision/FULL dependencies after the approved direct-self
+exception. Ready/absent neighbors and actual non-air shulker/FULL,true ticket
+prefixes are now measured. A neighboring pre-publication borrow would be a new
+amendment; it is not part of the accepted D3-X contract.
+
+The existing query guard/admission now retains a synchronous out-of-band breach
+until claim exit, so a Minecraft catch cannot turn it into APPLIED. The real
+supplier/catch chain and committed team/ticket prefixes are tested. This is
+production safety support, not the missing FULL registrar or callback services.
+Clean build and client compilation: **264 passing tests**, all original 253
+plus eleven additions. Failed attempts and their diagnoses are preserved in
+the conflict record. Runtime regression/evidence collection follows on this
+buildable checkpoint; no authoritative FULL or publication has been enabled.
