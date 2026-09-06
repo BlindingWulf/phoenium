@@ -29,6 +29,7 @@ final class FullRegistrationFixture implements GeneratingChunkMap, FullGeneratio
     final ArrayDeque<Runnable> registrations = new ArrayDeque<>();
     final FullRegistrationRuntime runtime;
     final WorldGenContext context;
+    ChunkMap fixtureMap;
     final Set<ChunkGenerationTask> tasks = new LinkedHashSet<>();
     ChunkPos delayedPosition;
     ChunkStatus delayedStatus;
@@ -37,12 +38,15 @@ final class FullRegistrationFixture implements GeneratingChunkMap, FullGeneratio
     Runnable beforeRegistration = () -> {};
 
     FullRegistrationFixture(boolean inline) throws Exception {
+        this(inline, FullInitializedInputs.Limits.production());
+    }
+    FullRegistrationFixture(boolean inline, FullInitializedInputs.Limits limits) throws Exception {
         owner.transitionTo(RegionLifecycle.READY);
         other.transitionTo(RegionLifecycle.READY);
         var generation = new TopologyGeneration(1);
         directory.publish(generation, Map.of(), Map.of(worldId, new RegionRoute(ownerId, generation, new OwnerEpoch(0))));
         runtime = new FullRegistrationRuntime(world.level, new ChunkBindingRuntime.WorldAuthority(worldId, 1, services,
-                directory, Map.of(ownerId, owner.leases(), otherId, other.leases()), barrier));
+                directory, Map.of(ownerId, owner.leases(), otherId, other.leases()), barrier), limits);
         context = new WorldGenContext(world.level, null, null, null, command -> {
             beforeRegistration.run();
             if (inline) command.run(); else registrations.add(command);
@@ -53,12 +57,30 @@ final class FullRegistrationFixture implements GeneratingChunkMap, FullGeneratio
         set(world.cache, ServerChunkCache.class, "lastChunkPos", emptyCache);
         set(world.cache, ServerChunkCache.class, "lastChunkStatus", new ChunkStatus[4]);
         set(world.cache, ServerChunkCache.class, "lastChunk", new ChunkAccess[4]);
+        set(world.level, ServerLevel.class, "chunkSource", world.cache);
+        var map = stub(ChunkMap.class, List.of(
+                new Answer(ChunkMap.class.getMethod("scheduleGenerationTask", ChunkStatus.class, ChunkPos.class), args -> scheduleGenerationTask((ChunkStatus) args[0], (ChunkPos) args[1])),
+                new Answer(ChunkMap.class.getMethod("runGenerationTasks"), args -> { runGenerationTasks(); return null; })));
+        set(world.cache, ServerChunkCache.class, "chunkMap", map);
+        set(map, ChunkMap.class, "phoenium$inputChanges", new FullInputNotifications());
+        fixtureMap = map; publishVisible();
     }
     public FullRegistrationRuntime phoenium$fullRegistration() { return runtime; }
     Holder holder(ChunkPos pos) {
         return holders.computeIfAbsent(pos.pack(), ignored -> {
-            Holder holder = new Holder(pos); world.visibleHolders.put(pos.pack(), holder); return holder;
+            Holder holder = new Holder(pos); world.visibleHolders.put(pos.pack(), holder); publishVisible(); return holder;
         });
+    }
+    /** Controlled updating-map contents; original volatile clone publication and production notice. */
+    void publishVisible() {
+        if (fixtureMap == null) return;
+        try {
+            var updating = new it.unimi.dsi.fastutil.longs.Long2ObjectLinkedOpenHashMap<ChunkHolder>();
+            world.visibleHolders.forEach(updating::put);
+            set(fixtureMap, ChunkMap.class, "updatingChunkMap", updating);
+            set(fixtureMap, ChunkMap.class, "modified", true);
+            var publish = ChunkMap.class.getDeclaredMethod("promoteChunkMap"); publish.setAccessible(true); publish.invoke(fixtureMap);
+        } catch (Exception failure) { throw new AssertionError(failure); }
     }
     ProtoChunk input(ChunkPos pos) {
         return inputs.computeIfAbsent(pos.pack(), ignored -> {

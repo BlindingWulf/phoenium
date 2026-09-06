@@ -95,6 +95,25 @@ with log.open("w") as output:
             probe = [line for line in text.splitlines() if "PHOENIUM_FULL_REGISTRATION_PROBE PASS" in line]
             assert len(probe) == 1, "selected installed registration fixture did not pass exactly once"
             manifest["controlledProbe"] = probe
+            input_probe = [line for line in text.splitlines() if "PHOENIUM_FULL_INPUT_BINDING_PROBE PASS" in line]
+            assert len(input_probe) == 1, "selected production discovery/input consumer did not pass exactly once"
+            manifest["initializedInputProbe"] = input_probe
+        input_exports = {}
+        for name, selectors in {
+            "world/level/chunk/ProtoChunk": ["phoenium$savedInput", "FullSavedInput.beforeWrite", "FullSavedInput.written"],
+            "world/level/chunk/storage/SerializableChunkData": ["FullSavedInput.reload"],
+            "world/level/chunk/LevelChunk": ["phoenium$postLoad"],
+            "server/level/ChunkMap": ["phoenium$visibleInput", "FullInputNotifications.published"],
+            "nbt/CompoundTag": ["phoenium$savedMap"],
+            "nbt/ListTag": ["phoenium$savedList"],
+        }.items():
+            path = TARGET / ".mixin.out/class/net/minecraft" / (name + ".class")
+            disassembly = subprocess.run([shutil.which("javap"), "-p", "-c", str(path)], capture_output=True, text=True, check=True).stdout
+            for selector in selectors:
+                assert selector in disassembly, (name, selector)
+            (TARGET / (name.rsplit("/", 1)[-1] + "-inputs.javap.txt")).write_text(disassembly)
+            input_exports[name] = digest(path)
+        manifest["inputProducerClassHashes"] = input_exports
         stopped = [line for line in text.splitlines() if "PHOENIUM_CHUNK_BINDING STOPPED" in line]
         assert stopped, "missing real cleanup accounting"
         for line in stopped:

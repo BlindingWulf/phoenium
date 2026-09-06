@@ -10,6 +10,10 @@ import java.util.concurrent.atomic.AtomicReference;
 public final class RegionDirectory {
     private final AtomicReference<View> view = new AtomicReference<>(new View(new TopologyGeneration(0), Map.of(), Map.of()));
     private final AtomicReference<PendingChange> pending = new AtomicReference<>();
+    private final java.util.concurrent.CopyOnWriteArraySet<Runnable> observations = new java.util.concurrent.CopyOnWriteArraySet<>();
+    /** Change notices contain no route authority; listeners must reobserve the published view. */
+    public AutoCloseable observeChanges(Runnable listener) { observations.add(listener); return () -> observations.remove(listener); }
+    private void changed() { observations.forEach(Runnable::run); }
 
     /** Evidence of a real coordinator proposal, never authority to execute in its future route. */
     public static final class PendingChange {
@@ -30,6 +34,7 @@ public final class RegionDirectory {
         before.worldDefaults().forEach((world, route) -> { if (participants.contains(route.region())) defaultWorlds.add(world); });
         PendingChange change = new PendingChange(affected, defaultWorlds);
         if (!pending.compareAndSet(null, change)) throw new IllegalStateException("directory change already pending");
+        changed();
         return change;
     }
 
@@ -38,7 +43,7 @@ public final class RegionDirectory {
         if (!pending.compareAndSet(change, null)) throw new IllegalStateException("wrong directory change");
     }
 
-    void signalChange(PendingChange change) { change.completed = true; }
+    void signalChange(PendingChange change) { change.completed = true; changed(); }
 
     public Optional<PendingChange> pendingChange(RoutingKey key) {
         PendingChange change = pending.get();
@@ -74,6 +79,7 @@ public final class RegionDirectory {
             if (!route.generation().equals(generation)) throw new IllegalArgumentException("default route generation differs from view");
         });
         view.set(new View(generation, Map.copyOf(routes), Map.copyOf(worldDefaults)));
+        changed();
     }
     public record View(TopologyGeneration generation, Map<RoutingKey, RegionRoute> routes, Map<dev.phoenium.core.WorldId, RegionRoute> worldDefaults) {
         public View { routes = Map.copyOf(routes); worldDefaults = Map.copyOf(worldDefaults); }

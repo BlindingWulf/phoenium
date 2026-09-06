@@ -37,16 +37,40 @@ public final class FullRegistrationRuntime {
     final ChunkStageDeliveryPump pump;
     private boolean open = true;
     private long registrations, captures, releases, preparationCalls;
+    private final Thread observationThread = Thread.currentThread();
+    public final FullInitializedInputs inputs;
+    private final AutoCloseable inputRouteSubscription;
+    private AutoCloseable inputViewSubscription;
 
     public FullRegistrationRuntime(ServerLevel level, ChunkBindingRuntime.WorldAuthority authority) {
+        this(level, authority, FullInitializedInputs.Limits.production());
+    }
+    public FullRegistrationRuntime(ServerLevel level, ChunkBindingRuntime.WorldAuthority authority, FullInitializedInputs.Limits limits) {
         this.level = Objects.requireNonNull(level); this.authority = Objects.requireNonNull(authority);
         server = Objects.requireNonNull(level.getServer());
         services = authority.services(); custody = services.custody();
+        inputs = new FullInitializedInputs(this, limits);
+        inputRouteSubscription = authority.directory().observeChanges(inputs::changed);
         executor = new ChunkStageExecutor(new ChunkStageAdmission(custody, authority.directory(), authority.leases(), authority.barrier()));
         pump = new ChunkStageDeliveryPump(authority.directory(), (route, pending) -> {
             deliveries.addLast(new Delivery(route.region(), route.generation(), pending));
             return ChunkStageOwnerGateway.Delivery.QUEUED;
         }, executor);
+    }
+    ServerLevel level() { return level; }
+    net.minecraft.server.MinecraftServer server() { return server; }
+    void requireObservationThread() {
+        if (Thread.currentThread() != observationThread) throw new ChunkProtocolException("FULL input directory observation outside its serial publication thread");
+    }
+    ChunkHolder visible(net.minecraft.world.level.ChunkPos position) {
+        requireObservationThread();
+        var view = (FullInputView) level.getChunkSource().chunkMap;
+        if (inputViewSubscription == null && open) inputViewSubscription = view.phoenium$inputChanges().subscribe(inputs::changed);
+        return view.phoenium$visibleInput(position.pack());
+    }
+    List<Graph> graphSnapshot() { custody.gate().lock(); try { return List.copyOf(graphs); } finally { custody.gate().unlock(); } }
+    Optional<Graph> findGraph(GenerationChunkHolder holder) {
+        return graphSnapshot().stream().filter(graph -> graph.holder == holder).findFirst();
     }
 
     /** Called only at the map invocation dominated by the holder's winning acquireStatusBump. */
@@ -134,6 +158,7 @@ public final class FullRegistrationRuntime {
             invocation.producer.graph = graph; graphs.add(graph); registrations++;
         } finally { custody.gate().unlock(); }
         if (graph.clock != null) graph.clock.subscribe(graph);
+        inputs.changed();
         // All pending stages exist before the executor is armed. Inline execution only arms metadata.
         try { originalExecutor.execute(graph::arm); }
         catch (Throwable failure) {
@@ -170,6 +195,7 @@ public final class FullRegistrationRuntime {
             wake = List.copyOf(graphs);
         } finally { custody.gate().unlock(); }
         wake.forEach(Graph::wake);
+        inputs.changed();
         cleanupGenerations();
     }
 
@@ -177,7 +203,7 @@ public final class FullRegistrationRuntime {
         if (OwnershipContext.current().isPresent()) return false;
         pump.retryTopology();
         Delivery delivery = deliveries.pollFirst();
-        if (delivery == null) return false;
+        if (delivery == null) return inputs.pump();
         var result = executor.execute(delivery.stage, delivery.owner, delivery.generation);
         if (result == ChunkStageAdmission.Result.STALE_ROUTE)
             pump.deliverPublished(delivery.stage);
@@ -192,6 +218,9 @@ public final class FullRegistrationRuntime {
         List<Graph> snapshot;
         custody.gate().lock(); try { open = false; snapshot = List.copyOf(graphs); } finally { custody.gate().unlock(); }
         snapshot.forEach(graph -> graph.stop(ChunkStageAdmission.Result.SHUTDOWN, null));
+        try { inputRouteSubscription.close(); } catch (Exception failure) { throw new ChunkProtocolException("input route acknowledgement", failure); }
+        if (inputViewSubscription != null) try { inputViewSubscription.close(); inputViewSubscription = null; }
+        catch (Exception failure) { throw new ChunkProtocolException("input directory acknowledgement", failure); }
         pump.shutdown();
         while (pumpOne()) { }
         cleanupGenerations();
@@ -291,6 +320,11 @@ public final class FullRegistrationRuntime {
         private final Object terminalIdentity = new Object();
         private boolean registrationSettled;
         private volatile ChunkProtocolException protocolFailure;
+        private FullSavedInput savedInput;
+        private final Runnable savedChanged = () -> inputs.changed();
+        private boolean inputRequested = true;
+        private boolean finishingInputBound;
+        private FullInitializedInputs.Evaluation lastInputEvaluation;
 
         Graph(Invocation invocation, WorldGenContext context, ChunkAccess input, Supplier<ChunkAccess> operation,
               ChunkCustodyModel.LifecycleId lifecycle, ChunkCustodyModel.WorkId work) {
@@ -323,7 +357,9 @@ public final class FullRegistrationRuntime {
                         claim.require(attempt);
                         preparationCalls++;
                         try {
+                            captureSavedInput();
                             LevelChunk actual = (LevelChunk) operation.get();
+                            if (actual.getLevel() != level) throw new ChunkProtocolException("FULL preparation returned a foreign world object");
                             if (protocolFailure != null) throw protocolFailure;
                             return new Prepared(lifecycle, work, holder, attempt, actual);
                         } catch (Throwable failure) {
@@ -370,7 +406,12 @@ public final class FullRegistrationRuntime {
 
         /** Called inside the existing claim fence; no future completion or callback occurs here. */
         LightInputService.Readiness readinessLocked(ChunkStageKind kind) {
-            if (kind == ChunkStageKind.FULL_FINISH) return LightInputService.Readiness.NOT_REGISTERED;
+            if (kind == ChunkStageKind.FULL_FINISH) {
+                lastInputEvaluation = inputs.inspect(this);
+                // A positive data component is consumed here. Independent query/D1/D2/C/P/S/W
+                // and enclosure validators have not been installed; there is still no claim.
+                return LightInputService.Readiness.NOT_REGISTERED;
+            }
             if (kind != ChunkStageKind.FULL_PREPARE) return LightInputService.Readiness.FAILED;
             if (!attached || !armed) return LightInputService.Readiness.NOT_REGISTERED;
             if (stopped != null || !custody.metadataEntitledLocked(work)) return LightInputService.Readiness.STALE;
@@ -416,18 +457,71 @@ public final class FullRegistrationRuntime {
             invocation.producer.generation.preparing = false;
         }
         public List<String> missingFinishingBindings() {
-            return List.of("initialized-input discovery and query operation bindings", "D1 identity facts", "D2/P owner occurrences",
-                    "C connection sessions", "S scoreboard ordering", "W named world turns", "STATUS_PUBLISH(FULL)");
+            var missing = new ArrayList<>(List.of("private query operation bindings and regional enclosure", "D1 identity facts", "D2/P owner occurrences",
+                    "C connection sessions", "S scoreboard ordering", "W named world turns", "STATUS_PUBLISH(FULL)"));
+            if (inputEvaluation().state() != FullInitializedInputs.State.SATISFIED) missing.add("initialized-input component");
+            return List.copyOf(missing);
         }
         public Optional<Prepared> prepared() {
             custody.gate().lock(); try { return Optional.ofNullable(prepared); } finally { custody.gate().unlock(); }
         }
+        private void captureSavedInput() {
+            if (input instanceof ImposterProtoChunk imposter) {
+                if (imposter.getWrapped() instanceof FullSavedInput.PostLoadAccess access
+                        && access.phoenium$postLoad() instanceof FullSavedInput.ReloadProcessor reload) savedInput = reload.input();
+            } else if (input instanceof FullSavedInput.Access access) {
+                savedInput = access.phoenium$savedInput();
+                // This is inside real admitted FULL_PREPARE: every older raw generation writer
+                // released and the original generation pins remain live. No unsynchronized live read.
+                // Fact allocation is admitted separately by the input component after preparation.
+            }
+            if (savedInput != null) savedInput.activate();
+        }
+        boolean hasSavedInput() { return savedInput != null; }
+        boolean savedAvailable() { return savedInput == null || savedInput.available(); }
+        FullSavedInput.Snapshot captureSavedSnapshot() {
+            if (savedInput == null) return null;
+            // Listener capacity belongs to the admitted plan, not every graph waiting for capacity.
+            savedInput.subscribe(savedChanged);
+            var current = savedInput.snapshot();
+            if (current != null) return current;
+            if (input instanceof ImposterProtoChunk imposter) {
+                var processor = ((FullSavedInput.PostLoadAccess) imposter.getWrapped()).phoenium$postLoad();
+                if (!(processor instanceof FullSavedInput.ReloadProcessor reload) || reload.input() != savedInput) return null;
+                return savedInput.capture(reload.entities());
+            }
+            return savedInput.capture(((ProtoChunk) input).getEntities());
+        }
+        void discardSavedSnapshot() {
+            if (savedInput != null) { savedInput.unsubscribe(savedChanged); savedInput.discardSnapshot(); }
+        }
+        void inputEvidenceReleased() { lastInputEvaluation = null; }
+        FullSavedInput.Snapshot savedSnapshot() { return savedInput == null ? null : savedInput.snapshot(); }
+        boolean inputActive() {
+            custody.gate().lock(); try { return stopped == null && !cleaned && custody.metadataEntitledLocked(work); }
+            finally { custody.gate().unlock(); }
+        }
+        boolean inputRequested() { return inputRequested && finishingInputBound && inputActive(); }
+        boolean inputsAcknowledged() { return !inputRequested; }
+        public FullInitializedInputs.Evaluation inputEvaluation() { return inputs.inspect(this); }
+        public FullInitializedInputs.Evaluation lastInputEvaluation() { return lastInputEvaluation; }
+        public FullInitializedInputs.Receipt inputReceipt() { return inputs.receipt(this); }
+        public List<FullInitializedInputs.Target> inputTargets() { return inputs.targets(this); }
+        public FullInitializedInputs.Evaluation validateInputs(ChunkCustodyModel.StageId operation, FullInitializedInputs.Receipt receipt) {
+            custody.gate().lock(); try { return inputs.evaluate(this, operation, receipt); } finally { custody.gate().unlock(); }
+        }
+        public void acknowledgeInputs() {
+            inputRequested = false; lastInputEvaluation = null;
+            if (savedInput != null) savedInput.unsubscribe(savedChanged);
+            inputs.release(this);
+        }
         public CompletableFuture<ChunkAccess> conversion() { return conversion; }
+        public int preparedConsumers() { custody.gate().lock(); try { return consumers; } finally { custody.gate().unlock(); } }
         public CompletableFuture<ChunkAccess> returned() { return returned; }
         public CompletableFuture<ChunkResult<ChunkAccess>> adjacent() { return adjacent; }
         public AutoCloseable retainPrepared() {
             custody.gate().lock(); try {
-                if (prepared == null || cleaned) throw new ChunkProtocolException("no successful preparation receipt to retain");
+                if (prepared == null || !inputActive()) throw new ChunkProtocolException("no current successful preparation receipt to retain");
                 consumers++;
             } finally { custody.gate().unlock(); }
             return new AutoCloseable() {
@@ -466,6 +560,8 @@ public final class FullRegistrationRuntime {
         private void preparedOutcome(ChunkStageOutcome<Prepared> outcome) {
             if (outcome instanceof ChunkStageOutcome.Applied<Prepared> applied) {
                 finishing.bindInput(applied.value()); // Private input retention; finishing's actual services are absent.
+                finishingInputBound = true;
+                inputs.changed();
             } else if (outcome instanceof ChunkStageOutcome.VanillaFailure<Prepared> failure) {
                 conversion.completeExceptionally(failure.failure());
             } else if (outcome instanceof ChunkStageOutcome.BarrierFailure<Prepared> failure) {
@@ -496,6 +592,9 @@ public final class FullRegistrationRuntime {
                 authority.barrier().trip(cause == null ? stopped : cause, authority.directory().snapshot().generation(),
                         new dev.phoenium.core.OwnerEpoch(0), null);
             }
+            inputs.release(this);
+            lastInputEvaluation = null;
+            if (savedInput != null) savedInput.unsubscribe(savedChanged);
             preparation.control(reason); finishing.control(reason); settle();
         }
         private void settle() {
@@ -521,6 +620,7 @@ public final class FullRegistrationRuntime {
                         || !invocation.producer.finished || !invocation.producer.generation.writers.isEmpty()) return;
                 cleaned = true; graphs.remove(this); returnedIndex.remove(returned, this);
                 prepared = null; invocation.producer.generation.prepared = null;
+                if (savedInput != null) { savedInput.unsubscribe(savedChanged); savedInput.discardSnapshot(); savedInput = null; }
                 generations.remove(holder, invocation.producer.generation);
             } finally { custody.gate().unlock(); }
             services.releaseFinishedWork(work, holder);

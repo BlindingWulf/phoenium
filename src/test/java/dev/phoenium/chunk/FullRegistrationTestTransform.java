@@ -9,6 +9,72 @@ public final class FullRegistrationTestTransform {
         ClassNode node = new ClassNode(); new ClassReader(bytes).accept(node, 0);
         if (name.equals(FullStageBoundary.TARGET)) {
             FullStageBoundary.install(node); FullStageBoundary.installRegistration(node);
+        } else if (name.equals("net/minecraft/nbt/CompoundTag") || name.equals("net/minecraft/nbt/ListTag")) {
+            boolean compound = name.endsWith("CompoundTag");
+            String field = compound ? "tags" : "list", method = compound ? "phoenium$savedMap" : "phoenium$savedList";
+            String desc = compound ? "Ljava/util/Map;" : "Ljava/util/List;";
+            node.interfaces.add("dev/phoenium/chunk/FullSavedCollections$" + (compound ? "CompoundAccess" : "ListAccess"));
+            node.fields.stream().filter(f -> f.name.equals(field)).forEach(f -> f.access &= ~Opcodes.ACC_FINAL);
+            getter(node, method, field, desc);
+            MethodNode setter = new MethodNode(Opcodes.ACC_PUBLIC, method, "(" + desc + ")V", null, null);
+            setter.instructions.add(new VarInsnNode(Opcodes.ALOAD, 0)); setter.instructions.add(new VarInsnNode(Opcodes.ALOAD, 1));
+            setter.instructions.add(new FieldInsnNode(Opcodes.PUTFIELD, name, field, desc)); setter.instructions.add(new InsnNode(Opcodes.RETURN)); node.methods.add(setter);
+        } else if (name.equals("net/minecraft/server/level/ChunkMap")) {
+            node.interfaces.add("dev/phoenium/chunk/FullInputView");
+            node.fields.add(new FieldNode(Opcodes.ACC_PRIVATE, "phoenium$inputChanges", "Ldev/phoenium/chunk/FullInputNotifications;", null, null));
+            getter(node, "phoenium$inputChanges", "phoenium$inputChanges", "Ldev/phoenium/chunk/FullInputNotifications;");
+            for (MethodNode method : node.methods) if (method.name.equals("promoteChunkMap")) {
+                for (AbstractInsnNode instruction : method.instructions.toArray()) if (instruction.getOpcode() == Opcodes.IRETURN) {
+                    InsnList notify = new InsnList(); notify.add(new InsnNode(Opcodes.DUP)); notify.add(new VarInsnNode(Opcodes.ALOAD, 0));
+                    notify.add(new MethodInsnNode(Opcodes.INVOKESTATIC, "dev/phoenium/chunk/FullRegistrationTestHooks", "visiblePublished", "(ZLnet/minecraft/server/level/ChunkMap;)V", false));
+                    method.instructions.insertBefore(instruction, notify);
+                }
+            }
+            MethodNode lookup = new MethodNode(Opcodes.ACC_PUBLIC, "phoenium$visibleInput", "(J)Lnet/minecraft/server/level/ChunkHolder;", null, null);
+            lookup.instructions.add(new VarInsnNode(Opcodes.ALOAD, 0)); lookup.instructions.add(new VarInsnNode(Opcodes.LLOAD, 1));
+            lookup.instructions.add(new MethodInsnNode(Opcodes.INVOKEVIRTUAL, name, "getVisibleChunkIfPresent", lookup.desc, false));
+            lookup.instructions.add(new InsnNode(Opcodes.ARETURN)); node.methods.add(lookup);
+        } else if (name.equals("net/minecraft/world/level/chunk/LevelChunk")) {
+            node.interfaces.add("dev/phoenium/chunk/FullSavedInput$PostLoadAccess");
+            getter(node, "phoenium$postLoad", "postLoad", "Lnet/minecraft/world/level/chunk/LevelChunk$PostLoadProcessor;");
+        } else if (name.equals("net/minecraft/world/level/chunk/storage/SerializableChunkData")) {
+            for (MethodNode method : node.methods) if (method.name.equals("postLoadChunk")) {
+                InsnList roots = new InsnList(); roots.add(new VarInsnNode(Opcodes.ALOAD, 1));
+                roots.add(new MethodInsnNode(Opcodes.INVOKESTATIC, "dev/phoenium/chunk/FullSavedInput", "reloadRoots", "(Ljava/util/List;)Ljava/util/List;", false));
+                roots.add(new VarInsnNode(Opcodes.ASTORE, 1)); method.instructions.insert(roots);
+                for (AbstractInsnNode instruction : method.instructions.toArray()) if (instruction.getOpcode() == Opcodes.ARETURN) {
+                    InsnList wrap = new InsnList(); wrap.add(new VarInsnNode(Opcodes.ALOAD, 1));
+                    wrap.add(new MethodInsnNode(Opcodes.INVOKESTATIC, "dev/phoenium/chunk/FullSavedInput", "reload",
+                            "(Lnet/minecraft/world/level/chunk/LevelChunk$PostLoadProcessor;Ljava/util/List;)Lnet/minecraft/world/level/chunk/LevelChunk$PostLoadProcessor;", false));
+                    method.instructions.insertBefore(instruction, wrap);
+                }
+            }
+        } else if (name.equals("net/minecraft/world/level/chunk/ProtoChunk")) {
+            node.interfaces.add("dev/phoenium/chunk/FullSavedInput$Access");
+            String descriptor = "Ldev/phoenium/chunk/FullSavedInput;";
+            node.fields.add(new FieldNode(Opcodes.ACC_PRIVATE, "phoenium$saved", descriptor, null, null));
+            getter(node, "phoenium$savedInput", "phoenium$saved", descriptor);
+            for (MethodNode method : node.methods) {
+                if (method.name.equals("<init>")) for (AbstractInsnNode instruction : method.instructions.toArray()) {
+                    if (instruction.getOpcode() == Opcodes.RETURN) {
+                        InsnList init = new InsnList(); init.add(new VarInsnNode(Opcodes.ALOAD, 0));
+                        init.add(new TypeInsnNode(Opcodes.NEW, "dev/phoenium/chunk/FullSavedInput")); init.add(new InsnNode(Opcodes.DUP));
+                        init.add(new MethodInsnNode(Opcodes.INVOKESPECIAL, "dev/phoenium/chunk/FullSavedInput", "<init>", "()V", false));
+                        init.add(new FieldInsnNode(Opcodes.PUTFIELD, name, "phoenium$saved", descriptor)); method.instructions.insertBefore(instruction, init);
+                    }
+                }
+                if (method.name.equals("addEntity") && method.desc.equals("(Lnet/minecraft/nbt/CompoundTag;)V")) method.name = "phoenium$originalAddEntity";
+                if (method.name.equals("getEntities")) method.name = "phoenium$originalGetEntities";
+            }
+            MethodNode entities = new MethodNode(Opcodes.ACC_PUBLIC, "getEntities", "()Ljava/util/List;", null, null);
+            entities.instructions.add(new VarInsnNode(Opcodes.ALOAD, 0));
+            entities.instructions.add(new MethodInsnNode(Opcodes.INVOKESTATIC, "dev/phoenium/chunk/FullRegistrationTestHooks", "savedEntities", "(Lnet/minecraft/world/level/chunk/ProtoChunk;)Ljava/util/List;", false));
+            entities.instructions.add(new InsnNode(Opcodes.ARETURN)); node.methods.add(entities);
+            MethodNode add = new MethodNode(Opcodes.ACC_PUBLIC, "addEntity", "(Lnet/minecraft/nbt/CompoundTag;)V", null, null);
+            add.instructions.add(new VarInsnNode(Opcodes.ALOAD, 0)); add.instructions.add(new VarInsnNode(Opcodes.ALOAD, 1));
+            add.instructions.add(new MethodInsnNode(Opcodes.INVOKESTATIC, "dev/phoenium/chunk/FullRegistrationTestHooks", "savedAdd",
+                    "(Lnet/minecraft/world/level/chunk/ProtoChunk;Lnet/minecraft/nbt/CompoundTag;)V", false));
+            add.instructions.add(new InsnNode(Opcodes.RETURN)); node.methods.add(add);
         } else if (name.equals("net/minecraft/world/level/storage/PrimaryLevelData")) {
             node.interfaces.add("dev/phoenium/chunk/FullPreparationClockAccess");
             String descriptor = "Ldev/phoenium/chunk/FullPreparationClock;";

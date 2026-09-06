@@ -1,5 +1,34 @@
 # Approved FULL implementation and acceptance ledger
 
+## Current resume — initialized-input component, 2026-09-05
+
+**INITIALIZED-INPUT DISCOVERY + RECEIPT BINDING: PARTIAL**, with positive production
+prepared-input evidence consumed by the actual FULL_FINISH prerequisite evaluator.
+See [the current input-binding record](STAGE3_FULL_INITIALIZED_INPUT_BINDING.md)
+for exact producer/custody contracts, supported discovery, bounds, runtime evidence
+and remaining branches. General production FULL selection remains DISABLED;
+integrated FULL, Stage 3 and R-CHUNK-01 PARTIAL; vault OPEN; Stage 4 NOT STARTED;
+one simulation worker, parallel gameplay OFF. No original selected finishing or
+FULL publication executes, and no Stage 3 PASS tag is created.
+
+| Current gate | Implementation / acceptance |
+| --- | --- |
+| Registration and admitted preparation | Preserved; all 28 cases and prior strict selectors retained |
+| Prepared-input discovery and exact consumer receipts | Production code; proto/Imposter and both X/Y orders positive; original FULL_FINISH consumes SATISFIED while aggregate stays NOT_READY |
+| Data/writer changes, demand, capacity and retention | Original producers/collection mutations, topology and visible publication; finite positive release-to-progress and acknowledged cleanup tests |
+| Already-published target input | Recognized but lifecycle/work/retention binding remains unbound; no positive branch-completion claim |
+| Complete reader/context and regional/service closure | Additional concrete contexts unresolved; private queries and D1/D2/C/P/S/W/enclosure/finishing/publication validators remain unimplemented |
+| Installed-runtime scope | Selected controlled data-only cases through actual Mixins, plus separate baseline smoke; no disk-reload/client integrated FULL claim |
+| Fresh final verification | 392 tests / 28 suites, all prior 365 preserved; final clean build exit 0; separate baseline and 19-input/8-registration installed probes launcher/child exits 0 |
+
+**One exact next dependency:** bind already-published FULL target provenance and
+acknowledged retention through the actual holder/lifecycle/work producer. Do not
+repeat approval, reconstruct prepared objects, enable ordinary FULL selection or
+start Stage 4. The current input-binding record supersedes all historical next-step
+and missing-registration statements below.
+
+## Historical registration/preparation checkpoint
+
 ## Current gate status — 2026-09-05 registration/preparation checkpoint
 
 **REGISTRATION + ADMITTED PREPARATION: PASS within this session's bounded scope.**
