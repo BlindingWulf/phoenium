@@ -1,31 +1,42 @@
 # Approved FULL implementation and acceptance ledger
 
-## Current resume — initialized-input component, 2026-09-05
+## Current resume — published input provenance, 2026-09-05
 
-**INITIALIZED-INPUT DISCOVERY + RECEIPT BINDING: PARTIAL**, with positive production
-prepared-input evidence consumed by the actual FULL_FINISH prerequisite evaluator.
+**PUBLISHED INPUT PROVENANCE + INDEPENDENT ACKNOWLEDGEMENT: PASS** for the connected
+original-producer scope. **Overall initialized-input checkpoint: PARTIAL.**
 See [the current input-binding record](STAGE3_FULL_INITIALIZED_INPUT_BINDING.md)
-for exact producer/custody contracts, supported discovery, bounds, runtime evidence
-and remaining branches. General production FULL selection remains DISABLED;
-integrated FULL, Stage 3 and R-CHUNK-01 PARTIAL; vault OPEN; Stage 4 NOT STARTED;
-one simulation worker, parallel gameplay OFF. No original selected finishing or
-FULL publication executes, and no Stage 3 PASS tag is created.
+for exact winning FULL reservation, original async/slot/result evidence, independent
+retention, actual invalidation, accounting and installed-runtime limits.
+
+General production FULL selection remains DISABLED; integrated FULL and Stage 3 /
+R-CHUNK-01 PARTIAL; vault OPEN and unchanged; Stage 4 NOT STARTED. One simulation
+worker, parallel gameplay OFF. No selected finishing claim, suffix or public FULL
+completion executes. No private getter, STATUS_PUBLISH(FULL) admission or PASS tag.
 
 | Current gate | Implementation / acceptance |
 | --- | --- |
-| Registration and admitted preparation | Preserved; all 28 cases and prior strict selectors retained |
-| Prepared-input discovery and exact consumer receipts | Production code; proto/Imposter and both X/Y orders positive; original FULL_FINISH consumes SATISFIED while aggregate stays NOT_READY |
-| Data/writer changes, demand, capacity and retention | Original producers/collection mutations, topology and visible publication; finite positive release-to-progress and acknowledged cleanup tests |
-| Already-published target input | Recognized but lifecycle/work/retention binding remains unbound; no positive branch-completion claim |
-| Complete reader/context and regional/service closure | Additional concrete contexts unresolved; private queries and D1/D2/C/P/S/W/enclosure/finishing/publication validators remain unimplemented |
-| Installed-runtime scope | Selected controlled data-only cases through actual Mixins, plus separate baseline smoke; no disk-reload/client integrated FULL claim |
-| Fresh final verification | 392 tests / 28 suites, all prior 365 preserved; final clean build exit 0; separate baseline and 19-input/8-registration installed probes launcher/child exits 0 |
+| Original registration and selected admitted preparation | Preserved, including existing registration and private X/Y cycle cases |
+| Published target input | Actual baseline original FULL producer and successful slot/result -> exact lifecycle/WorkId/object -> independently retained operation receipt |
+| Prepared plus published evaluator | Mixed prepared/published/absent windows; actual X input SATISFIED while aggregate FULL_FINISH remains NOT_READY |
+| Lifetime separation | Consumer acknowledgement releases its own use; original producer and successful EMPTY execution settle independently; actual holder retirement waits for retained uses and other work |
+| Replacement and retention | Original slot replacement, eligibility and pending-unload removal; H1/H2 identity, inline publication, reentrant/late acknowledgements and capacity-release cases |
+| Fresh verification | 392/28 baseline; final 419/29, all 392 baseline occurrences retained; clean build/client compilation/server preparation exit 0 |
+| Installed verification | Separate baseline smoke; selected 18 published + 19 prepared + 8 registration cases through actual Mixins, no JUnit agent; final launcher/child exits 0 and no crash |
+| Remaining initialized-input scope | Concrete saved readers/dimension contexts, target-demand routing gaps, private queries, full regional enclosure and D1/D2/C/P/S/W remain unresolved |
 
-**One exact next dependency:** bind already-published FULL target provenance and
-acknowledged retention through the actual holder/lifecycle/work producer. Do not
-repeat approval, reconstruct prepared objects, enable ordinary FULL selection or
-start Stage 4. The current input-binding record supersedes all historical next-step
-and missing-registration statements below.
+Evidence: `run/full-published-input/session-20260905/final-manifest.json`.
+The published target is honestly baseline-origin: its public success is not a
+Phoenium-admitted conversion. In-memory Imposter reload is not disk-reload or
+integrated saved-world acceptance. Logical record/fact charges do not measure JVM
+heap use or prove low-RAM/Android behavior. The old launcher's exit-0 baseline
+crash was diagnosed, retained as a failure and corrected before final verification.
+
+**One exact next implementation dependency:** bind a concrete saved villager reader
+contributor to production discovery of its actual initialization query-purpose
+footprint, feeding this same receipt without executing that reader during discovery.
+Do not implement general finishing/publication, enable another worker or repeat
+approval/prototype/registration work. This current resume supersedes historical
+next-step and missing-publication statements below.
 
 ## Historical registration/preparation checkpoint
 

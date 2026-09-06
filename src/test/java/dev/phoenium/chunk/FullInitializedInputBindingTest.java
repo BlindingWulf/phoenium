@@ -125,7 +125,7 @@ final class FullInitializedInputBindingTest {
             assertEquals(FullInitializedInputs.State.STALE, a.validateInputs(a.finishing.stage(), wrong).state());
             var t = r.targets().getFirst();
             var forgedTarget = new FullInitializedInputs.Target(t.position(), Set.of(FullInitializedInputs.Purpose.COLLISION), t.availability(), b.holder,
-                    b.lifecycle, b.work, b.preparation.stage(), b.prepared().orElseThrow().actual(), t.lowerSlot(), t.publicSlot(), t.generationRetention(), t.reservation(), t.route(), t.ticketLevel());
+                    b.lifecycle, b.work, b.preparation.stage(), b.prepared().orElseThrow().actual(), t.lowerSlot(), t.publicSlot(), t.generationRetention(), t.reservation(), t.route(), t.ticketLevel(), t.publication());
             var forged = new FullInitializedInputs.Receipt(r.server(), r.world(), r.source(), r.operation(), r.plan(), r.savedRevision(), r.routes(), List.of(forgedTarget));
             assertEquals(FullInitializedInputs.State.STALE, a.validateInputs(a.finishing.stage(), forged).state());
             assertEquals(FullInitializedInputs.State.SATISFIED, a.validateInputs(a.finishing.stage(), r).state());

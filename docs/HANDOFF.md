@@ -1,8 +1,10 @@
 # Handoff
 
 Current chunk implementation resume: [STAGE3_CHUNK_HANDOFF.md](STAGE3_CHUNK_HANDOFF.md).
-The 2026-09-05 production FULL boundary checkpoint is PARTIAL, with 334 passing
-tests and authoritative FULL still disabled. Its current ledger supersedes
+The 2026-09-05 published-input provenance and independent acknowledgement checkpoint
+is PASS within its connected scope, with 419 passing tests. Overall initialized
+inputs and integrated FULL remain PARTIAL; general production FULL selection is
+DISABLED. Its current ledger supersedes
 historical chunk-scope and pending-approval text below.
 
 > **BEFORE ANY LIVE MINECRAFT TEST: read [docs/AGENT_MINECRAFT_TESTING.md](AGENT_MINECRAFT_TESTING.md).**

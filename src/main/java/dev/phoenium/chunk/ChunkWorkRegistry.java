@@ -12,13 +12,13 @@ import java.util.concurrent.locks.ReentrantLock;
 public final class ChunkWorkRegistry {
     private final ChunkCustodyModel custody;
     /** Small work-lineage metadata gate only; no chunk or region mutation occurs under it. */
-    private final ReentrantLock metadataGate = new ReentrantLock();
+    private final ReentrantLock metadataGate;
     private final Map<WorkSlot, ChunkCustodyModel.WorkId> workByReservation = new HashMap<>();
     private final Map<ChunkCustodyModel.LifecycleId, Long> nextWorkSequence = new HashMap<>();
     private final Map<ChunkCustodyModel.WorkId, Long> nextDemandSequence = new HashMap<>();
     private final java.util.Set<ChunkCustodyModel.WorkId> registered = java.util.concurrent.ConcurrentHashMap.newKeySet();
 
-    public ChunkWorkRegistry(ChunkCustodyModel custody) { this.custody = Objects.requireNonNull(custody, "custody"); }
+    public ChunkWorkRegistry(ChunkCustodyModel custody) { this.custody = Objects.requireNonNull(custody, "custody"); metadataGate = custody.gate(); }
 
     ChunkCustodyModel custody() { return custody; }
 
@@ -50,6 +50,7 @@ public final class ChunkWorkRegistry {
     public void retireWork(ChunkCustodyModel.WorkId work, boolean cancelled) { custody.retireWork(Objects.requireNonNull(work, "work"), cancelled); }
     public boolean isCurrentWork(ChunkCustodyModel.WorkId work) { return custody.workState(work).filter(state -> state == ChunkCustodyModel.WorkState.ACTIVE).isPresent(); }
     boolean hasReservation(ChunkCustodyModel.WorkId work) { return registered.contains(work); }
+    boolean hasRetainedWork(ChunkCustodyModel.LifecycleId lifecycle) { return registered.stream().anyMatch(work -> work.lifecycle().equals(lifecycle)); }
 
     void releaseRetired(ChunkCustodyModel.LifecycleId id) {
         metadataGate.lock(); try {

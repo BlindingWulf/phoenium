@@ -1,6 +1,196 @@
 # Production initialized-input discovery and operation receipts
 
-## Current checkpoint — 2026-09-05
+## Current checkpoint — published provenance and independent acknowledgement, 2026-09-05
+
+**PUBLISHED INPUT PROVENANCE + INDEPENDENT ACKNOWLEDGEMENT: PASS** within the
+connected, controlled scope below. **Overall initialized-input checkpoint: PARTIAL.**
+The existing prepared branch remains implemented; published targets now supply
+independently retained evidence to the same actual FULL_FINISH input evaluator.
+This current section supersedes the published-input limitation and cleanup note
+in the historical prepared checkpoint retained below.
+
+Integrated FULL: PARTIAL. General production FULL selection: DISABLED. Vault: OPEN
+and unchanged. Stage 3 / R-CHUNK-01: PARTIAL. Stage 4: NOT STARTED. One simulation
+worker, parallel gameplay OFF. No Stage 3 PASS tag or private getter is enabled.
+
+Started clean at `cb47a8035a1205bea3bf95364c99f1f0fc69ef6a`, production SHA-256
+`2FF035AE64FF64D79158E8023D39794007A388F2987DDCC154460F04D24BED9E`.
+Minecraft 26.2 / Java 25 / Loader 0.19.5 / Fabric API 0.159.0+26.2 / Loom 1.17.20 /
+Gradle 9.5.1 and server properties are unchanged. One agent wrote this checkout.
+
+### Exact original producer and publication
+
+`GenerationHolderCompletionMixin` still intercepts the map call dominated by the
+original winning `GenerationChunkHolder.acquireStatusBump(FULL)` CAS. Selected
+maps keep the existing `FullGenerationSource` path. Ordinary ChunkMap takes its
+unchanged original supplier; `FullPublishedInputs` records that baseline origin.
+The fixture chooses separate baseline and selected maps before either task starts.
+No work changes mode, and no selected failure falls back to the original supplier.
+
+Before the original async FULL invocation can run inline, the holder carries its
+world/server, lifecycle, WorkId, exact holder/cache/step and reservation lineage.
+The actual `registerAsync` edge verifies the pinned generation/loading FULL step,
+original input and context, then runs the original baseline `supplyAsync` unchanged.
+The exact returned R is matched at the original adjacent handler. No new winning
+reservation, successful prepared receipt or admitted conversion is fabricated.
+
+`FullPublishedHolderMixin` observes both real publication winners inside
+`completeFuture`: an existing subscriber's `complete(result)`, and the null-slot
+CAS installing the original completed future. The exact `ChunkResult` wrapper and
+slot are installed as candidate evidence **before** those operations can reenter.
+Validation succeeds only when that very slot actually contains that very successful
+wrapper, original value and LevelChunk reference. Announcement follows the original
+winner. Duplicate notices cannot create another publication or retained use.
+Proto and in-memory Imposter producers both return their actual LevelChunk here;
+the evidence model also preserves wrapper/value identity rather than treating a
+nonnull object, coordinates, isDone or an identity hash as lineage.
+
+Exceptional/cancelled/incomplete/unloaded original results do not prove publication.
+Original pending-slot invalidation and lower-slot replacement fence old lineage;
+adversarial wrong-status, replacement-slot and copied-result tests reject forged
+evidence. Those corrupted negative slots are never successful fixture producers.
+Discovery uses nonblocking completion-state reads and never joins pending FULL.
+
+### Three lifetimes and actual ordering
+
+| Release | Actual producer / effect |
+| --- | --- |
+| Consumer input acknowledgement | Removes the source plan, receipt, saved subscription, facts, edges and its own target uses. Each published use owns an original `increaseGenerationRefCount` / `decreaseGenerationRefCount` pair and associated save-sync dependency. It creates no ticket. Receipt-specific acknowledgement ignores an older plan after rediscovery. |
+| Producing execution settlement | The baseline adjacent handler settles, then clears R, map/cache and transient value references and reclaims only its WorkId execution records through `settleFinishedExecution`. The historical WorkId remains a value in exact publication evidence; it is not revived or active authority. Successful load/EMPTY now uses the same execution-only cleanup. |
+| Holder retirement/replacement | The original pending-unload map removal, actual visible holder replacement, explicit lifecycle retirement or shutdown fences new acquisitions. Old evidence and lifecycle custody remain until outstanding uses acknowledge. Exact holder attachments prevent H1 cleanup from touching H2. |
+
+The two previous `releaseFinishedWork` callers were audited. Load success now
+settles only its execution; failed/terminal load and stopped preparation still
+perform genuine lifecycle retirement. Terminal reclamation waits for other
+registered work and the retained publication lifetime. Registry and custody
+metadata share the same short gate, avoiding inverse registry/custody lock order.
+No original generation or save pin is removed early to manufacture zero counts.
+
+Actual holder eligibility includes the visible holder identity, ticket entitlement,
+original highest allowed status, slot/lower-slot identity and current lifecycle.
+The original chunk cache's main-thread reference supplies observation affinity;
+ordinary generation registration may start on a different worker. Publication
+attachments are visible across those threads. Acquisition reserves metadata,
+takes the original save pin outside the gate, then revalidates before installing
+the operation receipt. Replacement during pin installation rejects the use and
+acknowledges only that pin. Completion and release callbacks run outside the gate.
+
+The original unload test schedules the real save-sync-dependent callback. The
+callback remains queued behind the retained input use; its eventual original
+pending-map removal retires the holder and then invokes the controlled world
+unload endpoint. This proves the permitted holder mechanism, not a new DEMOTE
+scheduler or regional-save implementation. The last consumer leaving a still
+resident target does not unload it. Publication does not freeze mutable chunk
+data or establish that gameplay writers are inactive.
+
+### Connected result, bounds and cleanup
+
+In each connected proto/Imposter and inline/deferred case, Y has one genuine
+original successful FULL publication. X has one selected admitted preparation.
+X's **actual input evaluator is SATISFIED**, its finishing stage remains QUEUED
+with aggregate **NOT_READY**, and its finishing claims, suffix execution and
+public FULL success remain zero. No post-load reexecution or preparation of Y
+occurs. Mixed windows retain prepared and published targets and record legitimate
+absence; existing private X/Y cycles retain their no-public-FULL-wait behavior.
+Collision purposes still require DYNAMIC_SHAPE_MUTATION and independent writer,
+query, regional-enclosure and service obligations.
+
+Two consumers retain two independent uses of Y; acknowledging the first leaves
+one, and cancelling the second leaves zero. Y's exact publication and resident
+lifecycle remain valid, including unrelated demand/work in that lifecycle.
+Acknowledgement reentry can acquire a newer use; closing the old use again leaves
+it intact. Actual target retirement retains one old record until its use closes.
+
+The two-consumer capacity test preserves pending source demand and progresses on
+real acknowledgement. An operation that cannot fit the configured consumer/edge
+limit is UNRESOLVED rather than promised a nonexistent release-to-progress event.
+Across 34 release/rebind cycles, the active plan count stays one and its consumers
+stay two; after acknowledgement plans/consumers are zero, published records one,
+published uses zero and transient producer executions zero. True teardown reclaims
+the remaining publication, holder, lifecycle, work and custody roots. External
+test receipt/future/actual-object aliases are explicitly outside these roots.
+
+Existing plan/edge/consumer/fact limits remain unchanged. The publication index
+caps 8192 resident records, charging 256 logical bytes per record; acquisition
+uses count against the shared input-consumer capacity. Allocation is at original
+winning FULL registration; transient references leave at original handler
+settlement; the compact record leaves at acknowledged true retirement. If tracking
+capacity refuses an original reservation, vanilla demand still runs, but its later
+publication is explicitly UNRESOLVED for this binder: no hot attachment or
+reconstructed provenance is promised. One coalesced input notification and one
+publication observer per map are reused, with a bounded index pass only on actual
+visible-map publication. There are no per-target polling listeners or no-progress
+resubmission loops. The 16 MiB fact charge and record charges are logical accounting,
+**not measured Java heap bounds, low-RAM proof or Android optimization evidence**.
+
+### Verification and evidence
+
+Evidence: `run/full-published-input/session-20260905/`. Prior XML/JAR were saved
+once. Fresh baseline: exit 0, **392 tests / 28 suites**. Final clean build,
+client-test compilation and server preparation: **419 / 29**, all 11 tasks
+executed, exit 0, zero failures/errors/skips. All 392 baseline classname/name
+occurrences remain; the new published class executes 27 cases. The existing
+34-cancellation and eight-times-34 cleanup regressions remain executed and pass.
+
+The selected disposable installed probe runs **18 published + 19 prepared-input
++ 8 registration cases**, with the actual production Mixins and no JUnit agent.
+A separate baseline smoke covers normal load/EMPTY and ordinary server operation.
+Both final runs must have launcher/child exits 0, no server crash or shutdown
+exception, an observed original seed command, and zero terminal registry roots.
+World endpoints, lower-generation outputs and scheduling remain controlled;
+in-memory reload is not disk reload or integrated saved-world/client acceptance.
+The installed Fabric lifecycle callback runs with its ordinary loaded-chunk
+collection initialized in the controlled endpoint. No callback is suppressed.
+
+Preserved failures include the initial fixture interface compile error; the genuine
+connected UNRESOLVED red test; test-accessor corrections; a forbidden broad-monitor
+regression and its removal; stale-artifact launcher refusal; Fabric's missing
+controlled-world loadedChunks field; and the baseline observation-thread defect.
+The old launcher incorrectly accepted the latter's exit-0 crash. A log audit
+corrected that result to FAIL and added crash-report/shutdown/seed assertions.
+Its original reported acceptance and corrected diagnosis are both retained.
+
+Final artifact identity, matching prepared/external copies, module/log hashes,
+world seeds, executed XML totals and wrapper/child exits are in
+`final-manifest.json`. The server-only production JAR excludes JUnit, test agents,
+hooks, probes, generated prototype fragments, Byte Buddy and client code.
+Generated evidence, worlds, caches and artifacts remain ignored.
+
+Final production SHA-256:
+`A4B57EAEC74D0072A82A4035111A3B44D2ECB928700FA9728475EF8171C7FAC5`.
+It matches the built JAR, prepared server and both final disposable copies. The
+315-entry ZIP inventory contains no prohibited test/client payloads and declares
+Fabric environment `server`. Final commands were
+`gradlew.bat clean build compileClientGameTestJava prepareStage3ClientServer --no-daemon`
+(all 11 tasks executed), the separate harness build, both installed probes and
+`git diff --check`, all exit 0.
+
+Final baseline: `run/full-production-integration/transform-20260905-231534/`,
+seed `2311601226506048603`. Final selected:
+`run/full-production-integration/transform-20260905-231543/`, seed
+`5491335090803380787`. Each has launcher/child exit 0 and no crash report or
+shutdown exception. Both separately report 529 ordinary load/EMPTY applications
+and publications; these are not X's selected FULL counters. Terminal load graph,
+R/POI indexes, custody, work and lifecycle counts are zero. Selected assertions
+add the publication/use/transient/holder teardown checks described above.
+
+Installed modules: Minecraft 26.2, Java 25, Loader 0.19.5 / MixinExtras 0.5.5,
+Fabric base 2.0.4+ece063239e, command API 3.1.0+00cb03469e, lifecycle events
+4.1.4+29b6eb019e, production Phoenium 0.2.0-stage2; the selected run additionally
+loads the separate phoenium-full-registration-probe 1.0.0. No all-module Fabric
+compatibility claim follows from this scope. No client/vault campaign, account,
+GUI, network profile experiment, Android change or compatibility mod was added.
+
+**One exact next implementation dependency:** add a concrete saved-reader/context
+contributor for the currently UNRESOLVED saved villager path, deriving its actual
+initialization query-purpose footprint and feeding this existing operation receipt
+without executing the reader during discovery. Further dimension contexts,
+target-demand routing gaps, private-query validation, full regional enclosure,
+D1/D2/C/P/S/W, original finishing and separate STATUS_PUBLISH(FULL) remain visible
+and unimplemented. This published-input checkpoint is not their authorization or
+completion and is not a repair for ordinary vault ticking.
+
+## Historical privately prepared checkpoint — 2026-09-05
 
 **INITIALIZED-INPUT DISCOVERY + RECEIPT BINDING: PARTIAL.** A functioning production
 component connects original asynchronous registration, actual admitted preparation,

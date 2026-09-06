@@ -6,8 +6,16 @@ import org.spongepowered.asm.mixin.Unique;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
+import com.llamalad7.mixinextras.injector.wrapoperation.*;
 @Mixin(ChunkMap.class)
 abstract class FullInputPublicationMixin {
+    @WrapOperation(method = "lambda$scheduleUnload$0", at = @At(value = "INVOKE", target = "Lit/unimi/dsi/fastutil/longs/Long2ObjectLinkedOpenHashMap;remove(JLjava/lang/Object;)Z"), require = 1, expect = 1)
+    private boolean phoenium$actualUnload(it.unimi.dsi.fastutil.longs.Long2ObjectLinkedOpenHashMap<?> pending,
+            long position, Object holder, Operation<Boolean> original) {
+        boolean removed = original.call(pending, position, holder);
+        if (removed) dev.phoenium.chunk.ChunkHolderLifetime.retired((net.minecraft.server.level.GenerationChunkHolder) holder);
+        return removed;
+    }
     @Unique private final FullInputNotifications phoenium$inputChanges = new FullInputNotifications();
     public FullInputNotifications phoenium$inputChanges() { return phoenium$inputChanges; }
     @Inject(method = "promoteChunkMap", at = @At("RETURN"), require = 1, expect = 1)

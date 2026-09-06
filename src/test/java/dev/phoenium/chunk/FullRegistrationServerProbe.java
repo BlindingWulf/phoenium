@@ -35,6 +35,28 @@ public final class FullRegistrationServerProbe implements DedicatedServerModInit
                 inputs.originalCompoundPositionAndPassengerWritersInvalidateProtoAndRetainedReload(false);
                 inputs.originalCompoundPositionAndPassengerWritersInvalidateProtoAndRetainedReload(true);
                 inputs.sharedMutableSavedPositionCannotBeReadUnderAnotherInputsCustody();
+                var published = new FullPublishedInputBindingTest();
+                for (boolean reload : new boolean[] {false, true}) for (boolean inline : new boolean[] {false, true})
+                    published.originalPublishedNeighborFeedsActualFinishingEvaluatorWithoutSourceFinishing(reload, inline);
+                published.inlinePublicSubscriberObservesInstalledLineageBeforeOriginalHandlerReturns();
+                published.targetPublicationWhileDiscoveryIsSubscribedReplacesPendingObservation();
+                published.independentConsumersAndSourceCancellationPreserveResidentTargetAndUnrelatedDemand();
+                published.mixedPreparedPublishedAndAbsentWindowPreservesMutationObligations();
+                published.realSlotReplacementAndTicketEligibilityRejectNewUseButPreserveOldAcknowledgement();
+                published.replacementDuringPinInstallationCannotExposeSuccessOrRemoveReplacement();
+                published.acknowledgementReentryInstallsANewerUseAndDuplicateOldCloseCannotRevokeIt();
+                published.capacityReleaseAndRepeatedPlanAcknowledgementsKeepOnlyResidentMetadata();
+                published.lateOriginalH1PublicationCannotBindToH2AndOldAcknowledgementLeavesH2Untouched();
+                published.sourceAcknowledgementDuringPublicationNotificationCannotResurrectAReceipt();
+                published.oldOperationReceiptAcknowledgementCannotRevokeNewPlanAndCopiedPublicationCannotBeRetained();
+                published.originalUnloadWaitsForRetainedUseThenReclaimsTheActualHolder();
+                published.trueTargetRetirementKeepsOldEvidenceUntilItsOwnUseAcknowledges();
+                published.operationLargerThanConfiguredConsumerCapacityIsNotAnEventualReleasePromise();
+                System.out.println("PHOENIUM_FULL_PUBLISHED_INPUT_PROBE PASS cases=18 targetOriginalFull=true exactResultWrapper=true "
+                        + "baselineOriginHonest=true proto=true inMemoryImposter=true diskReload=false targetProducerSettled=true "
+                        + "sourceInput=SATISFIED sourceAggregate=NOT_READY sourceFinishingClaims=0 sourceSuffix=0 sourcePublicFull=0 "
+                        + "independentConsumers=true originalSavePins=true originalUnload=true repeatedCycles=34 "
+                        + "residentRecordsAfterAck=1 usesAfterAck=0 transientExecutionsAfterAck=0 trueTeardownRecords=0 javaagent=false");
                 System.out.println("PHOENIUM_FULL_INPUT_BINDING_PROBE PASS cases=19 productionDiscovery=true exactInputConsumer=true "
                         + "proto=true inMemoryImposter=true bothPairOrders=true largerWindow=true savedWriter=true "
                         + "actualDemand=true capacityToProgress=true inputSatisfied=true aggregate=NOT_READY "

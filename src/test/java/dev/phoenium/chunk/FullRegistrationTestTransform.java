@@ -19,10 +19,17 @@ public final class FullRegistrationTestTransform {
             MethodNode setter = new MethodNode(Opcodes.ACC_PUBLIC, method, "(" + desc + ")V", null, null);
             setter.instructions.add(new VarInsnNode(Opcodes.ALOAD, 0)); setter.instructions.add(new VarInsnNode(Opcodes.ALOAD, 1));
             setter.instructions.add(new FieldInsnNode(Opcodes.PUTFIELD, name, field, desc)); setter.instructions.add(new InsnNode(Opcodes.RETURN)); node.methods.add(setter);
+        } else if (name.equals("net/minecraft/server/level/ServerChunkCache")) {
+            node.interfaces.add("dev/phoenium/chunk/FullInputObservationThread");
+            getter(node, "phoenium$inputThread", "mainThread", "Ljava/lang/Thread;");
         } else if (name.equals("net/minecraft/server/level/ChunkMap")) {
             node.interfaces.add("dev/phoenium/chunk/FullInputView");
             node.fields.add(new FieldNode(Opcodes.ACC_PRIVATE, "phoenium$inputChanges", "Ldev/phoenium/chunk/FullInputNotifications;", null, null));
             getter(node, "phoenium$inputChanges", "phoenium$inputChanges", "Ldev/phoenium/chunk/FullInputNotifications;");
+            for (MethodNode method : node.methods) if (method.name.equals("lambda$scheduleUnload$0"))
+                for (AbstractInsnNode instruction : method.instructions.toArray()) if (instruction instanceof MethodInsnNode call
+                        && call.owner.equals("it/unimi/dsi/fastutil/longs/Long2ObjectLinkedOpenHashMap") && call.name.equals("remove") && call.desc.equals("(JLjava/lang/Object;)Z"))
+                    method.instructions.set(call, new MethodInsnNode(Opcodes.INVOKESTATIC, "dev/phoenium/chunk/FullRegistrationTestHooks", "actualUnload", "(Lit/unimi/dsi/fastutil/longs/Long2ObjectLinkedOpenHashMap;JLjava/lang/Object;)Z", false));
             for (MethodNode method : node.methods) if (method.name.equals("promoteChunkMap")) {
                 for (AbstractInsnNode instruction : method.instructions.toArray()) if (instruction.getOpcode() == Opcodes.IRETURN) {
                     InsnList notify = new InsnList(); notify.add(new InsnNode(Opcodes.DUP)); notify.add(new VarInsnNode(Opcodes.ALOAD, 0));
@@ -99,6 +106,42 @@ public final class FullRegistrationTestTransform {
             }
         } else {
             node.interfaces.add("dev/phoenium/chunk/FullHolderEvidence");
+            String lifetimeDesc = "Ldev/phoenium/chunk/ChunkHolderLifetime;";
+            node.fields.add(new FieldNode(Opcodes.ACC_PRIVATE | Opcodes.ACC_VOLATILE, "phoenium$lifetime", lifetimeDesc, null, null));
+            getter(node, "phoenium$lifetime", "phoenium$lifetime", lifetimeDesc);
+            MethodNode lifetimeSetter = new MethodNode(Opcodes.ACC_PUBLIC, "phoenium$lifetime", "(" + lifetimeDesc + ")V", null, null);
+            lifetimeSetter.instructions.add(new VarInsnNode(Opcodes.ALOAD, 0)); lifetimeSetter.instructions.add(new VarInsnNode(Opcodes.ALOAD, 1));
+            lifetimeSetter.instructions.add(new FieldInsnNode(Opcodes.PUTFIELD, name, "phoenium$lifetime", lifetimeDesc));
+            lifetimeSetter.instructions.add(new InsnNode(Opcodes.RETURN)); node.methods.add(lifetimeSetter);
+            String publicationDesc = "Ldev/phoenium/chunk/FullPublishedInputs$Entry;";
+            node.fields.add(new FieldNode(Opcodes.ACC_PRIVATE | Opcodes.ACC_VOLATILE, "phoenium$publication", publicationDesc, null, null));
+            getter(node, "phoenium$publication", "phoenium$publication", publicationDesc);
+            MethodNode publicationSetter = new MethodNode(Opcodes.ACC_PUBLIC, "phoenium$publication", "(" + publicationDesc + ")V", null, null);
+            publicationSetter.instructions.add(new VarInsnNode(Opcodes.ALOAD, 0)); publicationSetter.instructions.add(new VarInsnNode(Opcodes.ALOAD, 1));
+            publicationSetter.instructions.add(new FieldInsnNode(Opcodes.PUTFIELD, name, "phoenium$publication", publicationDesc));
+            publicationSetter.instructions.add(new InsnNode(Opcodes.RETURN)); node.methods.add(publicationSetter);
+            getter(node, "phoenium$highestAllowed", "highestAllowedStatus", "Lnet/minecraft/world/level/chunk/status/ChunkStatus;");
+            for (MethodNode method : node.methods) {
+                if (method.name.equals("replaceProtoChunk")) method.instructions.insert(holderCall("replacing"));
+                if (method.name.equals("updateHighestAllowedStatus"))
+                    for (AbstractInsnNode instruction : method.instructions.toArray()) if (instruction.getOpcode() == Opcodes.RETURN)
+                        method.instructions.insertBefore(instruction, holderCall("eligibilityChanged"));
+                if (method.name.equals("failAndClearPendingFuture")) {
+                    InsnList args = new InsnList(); args.add(new VarInsnNode(Opcodes.ALOAD, 0)); args.add(new VarInsnNode(Opcodes.ILOAD, 1)); args.add(new VarInsnNode(Opcodes.ALOAD, 2));
+                    args.add(new MethodInsnNode(Opcodes.INVOKESTATIC, "dev/phoenium/chunk/FullRegistrationTestHooks", "invalidating", "(Lnet/minecraft/server/level/GenerationChunkHolder;ILjava/util/concurrent/CompletableFuture;)V", false));
+                    method.instructions.insert(args);
+                }
+                if (method.name.equals("completeFuture")) for (AbstractInsnNode instruction : method.instructions.toArray()) if (instruction instanceof MethodInsnNode call) {
+                    boolean complete = call.owner.equals("java/util/concurrent/CompletableFuture") && call.name.equals("complete");
+                    boolean install = call.owner.equals("java/util/concurrent/atomic/AtomicReferenceArray") && call.name.equals("compareAndSet");
+                    if (complete || install) {
+                        InsnList args = new InsnList(); args.add(new VarInsnNode(Opcodes.ALOAD, 0)); args.add(new VarInsnNode(Opcodes.ALOAD, 1)); method.instructions.insertBefore(call, args);
+                        method.instructions.set(call, new MethodInsnNode(Opcodes.INVOKESTATIC, "dev/phoenium/chunk/FullRegistrationTestHooks", complete ? "completeSlot" : "installSlot",
+                                complete ? "(Ljava/util/concurrent/CompletableFuture;Ljava/lang/Object;Lnet/minecraft/server/level/GenerationChunkHolder;Lnet/minecraft/world/level/chunk/status/ChunkStatus;)Z"
+                                : "(Ljava/util/concurrent/atomic/AtomicReferenceArray;ILjava/lang/Object;Ljava/lang/Object;Lnet/minecraft/server/level/GenerationChunkHolder;Lnet/minecraft/world/level/chunk/status/ChunkStatus;)Z", false));
+                    }
+                }
+            }
             getter(node, "phoenium$startedWork", "startedWork", "Ljava/util/concurrent/atomic/AtomicReference;");
             getter(node, "phoenium$futures", "futures", "Ljava/util/concurrent/atomic/AtomicReferenceArray;");
             getter(node, "phoenium$generationRefs", "generationRefCount", "Ljava/util/concurrent/atomic/AtomicInteger;");
@@ -133,6 +176,10 @@ public final class FullRegistrationTestTransform {
         result.add(new MethodInsnNode(Opcodes.INVOKEVIRTUAL, owner, "phoenium$preparationClock", "()Ldev/phoenium/chunk/FullPreparationClock;", false));
         result.add(new MethodInsnNode(Opcodes.INVOKEVIRTUAL, "dev/phoenium/chunk/FullPreparationClock", operation, "()V", false));
         return result;
+    }
+    private static InsnList holderCall(String operation) {
+        InsnList result = new InsnList(); result.add(new VarInsnNode(Opcodes.ALOAD, 0));
+        result.add(new MethodInsnNode(Opcodes.INVOKESTATIC, "dev/phoenium/chunk/FullPublishedInputs", operation, "(Lnet/minecraft/server/level/GenerationChunkHolder;)V", false)); return result;
     }
     private static void getter(ClassNode node, String methodName, String field, String descriptor) {
         MethodNode method = new MethodNode(Opcodes.ACC_PUBLIC, methodName, "()" + descriptor, null, null);

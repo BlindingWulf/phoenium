@@ -27,7 +27,8 @@ public final class FullInitializedInputs {
                          ChunkCustodyModel.WorkId work, ChunkCustodyModel.StageId preparationAttempt,
                          LevelChunk actual, CompletableFuture<ChunkResult<ChunkAccess>> lowerSlot,
                          CompletableFuture<ChunkResult<ChunkAccess>> publicSlot, CompletableFuture<Void> generationRetention,
-                         ChunkStatus reservation, RegionRoute route, int ticketLevel) {
+                         ChunkStatus reservation, RegionRoute route, int ticketLevel,
+                         FullPublishedInputs.Evidence publication) {
         public Target { purposes = Set.copyOf(purposes); }
     }
     public record Receipt(Object server, ServerLevel world, ChunkCustodyModel.WorkId source,
@@ -112,6 +113,9 @@ public final class FullInitializedInputs {
         if (required.size() > limits.targetsPerPlan) {
             plan.evaluation = new Evaluation(State.UNRESOLVED, "direct footprint exceeds per-operation input bound", null); return;
         }
+        if (required.size() > limits.edges) {
+            plan.evaluation = new Evaluation(State.UNRESOLVED, "operation cannot fit configured input edge capacity", null); return;
+        }
         if (edges - plan.targets.size() + required.size() > limits.edges) {
             plan.evaluation = new Evaluation(State.CAPACITY, "input edge capacity release", null); return;
         }
@@ -121,9 +125,9 @@ public final class FullInitializedInputs {
         for (var target : targets) {
             switch (target.availability) {
                 case PUBLISHED -> {
-                    // Ordinary already-public FULL currently has no installed FULL publication/work
-                    // receipt. Preserve the observed branch without minting private provenance.
-                    plan.evaluation = new Evaluation(State.UNRESOLVED, "already-published input at " + target.position + " needs its publication lifecycle/work retention binding", null); return;
+                    if (target.publication == null) {
+                        plan.evaluation = new Evaluation(State.UNRESOLVED, "already-published input at " + target.position + " lacks original publication evidence (including tracking capacity refusal)", null); return;
+                    }
                 }
                 case PREPARATION_PENDING -> { plan.evaluation = new Evaluation(State.PENDING, "original reservation/lower-generation producer then admitted preparation at " + target.position, null); return; }
                 case CAPACITY -> { plan.evaluation = new Evaluation(State.CAPACITY, "original input demand capacity release at " + target.position, null); return; }
@@ -134,14 +138,25 @@ public final class FullInitializedInputs {
                 default -> { }
             }
         }
-        int needed = (int) targets.stream().filter(t -> t.availability == Availability.PREPARED).count();
+        int needed = (int) targets.stream().filter(t -> t.availability == Availability.PREPARED || t.availability == Availability.PUBLISHED).count();
+        if (needed > limits.consumers) {
+            plan.evaluation = new Evaluation(State.UNRESOLVED, "operation cannot fit configured input consumer capacity", null); return;
+        }
         if (consumers + needed > limits.consumers) {
-            plan.evaluation = new Evaluation(State.CAPACITY, "prepared consumer acknowledgement", null); return;
+            plan.evaluation = new Evaluation(State.CAPACITY, "independent input consumer acknowledgement", null); return;
         }
         // All target preparations have settled before reserving capacity or retaining any target.
-        for (var target : targets) if (target.availability == Availability.PREPARED) {
-            plan.pins.add(runtime.findGraph(target.holder).orElseThrow().retainPrepared()); consumers++;
+        for (var target : targets) if (target.availability == Availability.PREPARED || target.availability == Availability.PUBLISHED) {
+            AutoCloseable pin = target.availability == Availability.PUBLISHED ? runtime.published.retain(target.publication)
+                    : runtime.findGraph(target.holder).orElseThrow().retainPrepared();
+            if (pin == null) { release(plan.graph); changed(); return; }
+            if (plans.get(plan.graph) != plan || !plan.graph.inputRequested()) {
+                try { pin.close(); } catch (Exception failure) { throw new ChunkProtocolException("abandoned input acquisition", failure); }
+                release(plan.graph); return;
+            }
+            plan.pins.add(pin); consumers++;
         }
+        if (!plan.graph.inputRequested() || plans.get(plan.graph) != plan || stale(plan)) { release(plan.graph); changed(); return; }
         plan.receipt = new Receipt(runtime.server(), runtime.level(), plan.graph.work, plan.graph.finishing.stage(),
                 plan.sequence, plan.saved.revision(), plan.routes, plan.targets);
         plan.evaluation = new Evaluation(State.SATISFIED, "exact operation's retained initialized inputs", plan.receipt);
@@ -166,8 +181,11 @@ public final class FullInitializedInputs {
         var full = ((FullHolderEvidence) holder).phoenium$futures().get(ChunkStatus.FULL.getIndex());
         if (full != null && full.isDone() && !full.isCompletedExceptionally()) {
             var value = full.getNow(null);
-            if (value != null && value.orElse(null) instanceof LevelChunk actual)
+            if (value != null && (value.orElse(null) instanceof LevelChunk || value.orElse(null) instanceof ImposterProtoChunk)) {
+                ChunkAccess original = value.orElse(null);
+                LevelChunk actual = original instanceof LevelChunk fullChunk ? fullChunk : ((ImposterProtoChunk) original).getWrapped();
                 return target(position, purposes, Availability.PUBLISHED, holder, null, actual, route, ticket);
+            }
         }
         var graph = runtime.findGraph(holder).orElse(null);
         if (graph == null) {
@@ -194,12 +212,13 @@ public final class FullInitializedInputs {
     private Target target(ChunkPos position, Set<Purpose> purposes, Availability availability, GenerationChunkHolder holder,
                           FullRegistrationRuntime.Graph graph, LevelChunk actual, RegionRoute route, int ticket) {
         FullHolderEvidence evidence = holder == null ? null : (FullHolderEvidence) holder;
-        return new Target(position, purposes, availability, holder, graph == null ? null : graph.lifecycle,
-                graph == null ? null : graph.work, graph == null ? null : graph.preparation.stage(), actual,
+        var publication = availability == Availability.PUBLISHED ? runtime.published.observe(holder) : null;
+        return new Target(position, purposes, availability, holder, publication != null ? publication.lifecycle() : graph == null ? null : graph.lifecycle,
+                publication != null ? publication.work() : graph == null ? null : graph.work, graph == null ? null : graph.preparation.stage(), actual,
                 evidence == null ? null : evidence.phoenium$futures().get(ChunkStatus.SPAWN.getIndex()),
                 evidence == null ? null : evidence.phoenium$futures().get(ChunkStatus.FULL.getIndex()),
                 evidence == null ? null : evidence.phoenium$generationSaveSync(),
-                evidence == null ? null : evidence.phoenium$startedWork().get(), route, ticket);
+                evidence == null ? null : evidence.phoenium$startedWork().get(), route, ticket, publication);
     }
     private boolean stale(Plan plan) {
         if (plan.graph.savedSnapshot() != plan.saved || runtime.authority.directory().snapshot() != plan.routes) return true;
@@ -209,11 +228,16 @@ public final class FullInitializedInputs {
             if (holder == null) continue;
             var evidence = (FullHolderEvidence) holder;
             if (target.availability == Availability.PREPARED || target.availability == Availability.PUBLISHED) {
-                if (target.reservation != evidence.phoenium$startedWork().get()
-                        || target.lowerSlot != evidence.phoenium$futures().get(ChunkStatus.SPAWN.getIndex())
-                        || target.publicSlot != evidence.phoenium$futures().get(ChunkStatus.FULL.getIndex())
-                        || target.generationRetention != evidence.phoenium$generationSaveSync()) return true;
-                if (target.availability == Availability.PREPARED) {
+                if (target.availability == Availability.PUBLISHED) {
+                    if (target.publication != null && !runtime.published.validates(target.publication)) return true;
+                    // Published pins may create a new generation-save incarnation after the producer settled.
+                    if (target.publicSlot != evidence.phoenium$futures().get(ChunkStatus.FULL.getIndex())
+                            || target.lowerSlot != evidence.phoenium$futures().get(ChunkStatus.SPAWN.getIndex())) return true;
+                } else {
+                    if (target.reservation != evidence.phoenium$startedWork().get()
+                            || target.lowerSlot != evidence.phoenium$futures().get(ChunkStatus.SPAWN.getIndex())
+                            || target.publicSlot != evidence.phoenium$futures().get(ChunkStatus.FULL.getIndex())
+                            || target.generationRetention != evidence.phoenium$generationSaveSync()) return true;
                     var graph = runtime.findGraph(holder).orElse(null);
                     if (graph == null || !graph.inputActive() || !graph.work.equals(target.work)
                             || graph.prepared().map(p -> p.actual() != target.actual || !p.attempt().equals(target.preparationAttempt)).orElse(true)) return true;

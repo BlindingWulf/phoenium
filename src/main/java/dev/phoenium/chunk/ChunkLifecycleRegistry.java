@@ -16,12 +16,13 @@ public final class ChunkLifecycleRegistry {
     private final ChunkCustodyModel custody;
     private final String serverSession;
     /** Small registry metadata gate only; it never protects Minecraft/gameplay mutation. */
-    private final ReentrantLock metadataGate = new ReentrantLock();
+    private final ReentrantLock metadataGate;
     private final Map<Slot, Entry> current = new HashMap<>();
     private final IdentityHashMap<Object, Entry> byHolder = new IdentityHashMap<>();
 
     public ChunkLifecycleRegistry(ChunkCustodyModel custody, String serverSession) {
         this.custody = Objects.requireNonNull(custody, "custody");
+        this.metadataGate = custody.gate();
         this.serverSession = Objects.requireNonNull(serverSession, "serverSession");
         if (serverSession.isBlank()) throw new IllegalArgumentException("blank server session");
     }

@@ -106,6 +106,7 @@ public final class ChunkBindingRuntime {
         if (prior.isPresent() && !prior.orElseThrow().equals(lifecycle)) supersedeLifecycle(prior.orElseThrow());
         ChunkCustodyModel.WorkId work = world.authority.services().works().beginOrResolveSharedWork(lifecycle,
                 new ChunkWorkRegistry.WorkReservation("generation-status", "EMPTY", 0));
+        world.authority.services().trackHolder(lifecycle, holder);
         ReservationEvidence reservation = new ReservationEvidence(started, slots);
         ChunkLoadGraph.Token token = new ChunkLoadGraph.Token(lifecycle, work, holder, reservation);
         LoadEnvironment environment = new LoadEnvironment(world, access, position, step, reservation);
@@ -185,6 +186,7 @@ public final class ChunkBindingRuntime {
         worlds.values().forEach(world -> world.pump.shutdown());
         List<ChunkLoadGraph> graphs = graphs();
         graphs.forEach(ChunkLoadGraph::shutdown);
+        worlds.values().forEach(world -> world.authority.services().stopResidentHolders());
         Delivery delivery;
         while ((delivery = deliveries.pollFirst()) != null) delivery.stage().control(ChunkStageAdmission.Result.SHUTDOWN);
         if (Boolean.getBoolean("phoenium.test.chunkBindingTrace"))
@@ -389,7 +391,11 @@ public final class ChunkBindingRuntime {
         }
         @Override public void settled(ChunkLoadGraph graph) {
             unbindGraph(graph);
-            services().releaseFinishedWork(graph.token().work(), graph.token().holder());
+            var publication = graph.publicationInner();
+            if (publication.isDone() && !publication.isCompletedExceptionally()
+                    && publication.getNow(null) != null && publication.getNow(null).isSuccess())
+                services().settleFinishedExecution(graph.token().work(), graph.token().holder());
+            else services().releaseFinishedWork(graph.token().work(), graph.token().holder());
             trace("GRAPH_SETTLED", graph, "retained=" + retainedGraphs());
         }
         private GenerationChunkHolder graphHolder(ChunkLoadGraph.Token token) { return token.holder(); }

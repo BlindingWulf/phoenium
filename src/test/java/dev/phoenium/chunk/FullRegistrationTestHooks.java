@@ -9,6 +9,26 @@ import net.minecraft.world.level.chunk.status.ChunkStep;
 
 /** Test-agent equivalents of only the installed Mixin call-site plumbing. */
 public final class FullRegistrationTestHooks {
+    public static boolean actualUnload(it.unimi.dsi.fastutil.longs.Long2ObjectLinkedOpenHashMap<?> pending, long position, Object holder) {
+        boolean removed = pending.remove(position, holder);
+        if (removed) ChunkHolderLifetime.retired((GenerationChunkHolder) holder);
+        return removed;
+    }
+    @SuppressWarnings("unchecked") public static boolean completeSlot(CompletableFuture<ChunkResult<ChunkAccess>> slot, Object value,
+            GenerationChunkHolder holder, net.minecraft.world.level.chunk.status.ChunkStatus status) {
+        var result = (ChunkResult<ChunkAccess>) value;
+        FullPublishedInputs.proposing(holder, status, slot, result);
+        boolean won = slot.complete(result); FullPublishedInputs.completed(holder, status, won); return won;
+    }
+    @SuppressWarnings("unchecked") public static boolean installSlot(java.util.concurrent.atomic.AtomicReferenceArray<Object> slots, int index, Object previous, Object value,
+            GenerationChunkHolder holder, net.minecraft.world.level.chunk.status.ChunkStatus status) {
+        var slot = (CompletableFuture<ChunkResult<ChunkAccess>>) value;
+        FullPublishedInputs.proposing(holder, status, slot, slot.getNow(null));
+        boolean won = slots.compareAndSet(index, previous, value); FullPublishedInputs.completed(holder, status, won); return won;
+    }
+    public static void invalidating(GenerationChunkHolder holder, int index, CompletableFuture<?> future) {
+        if (index == net.minecraft.world.level.chunk.status.ChunkStatus.FULL.getIndex() && !future.isDone()) FullPublishedInputs.invalidating(holder);
+    }
     public static void visiblePublished(boolean changed, ChunkMap map) { if (changed) ((FullInputView) map).phoenium$inputChanges().published(); }
 
     @SuppressWarnings("unchecked") public static java.util.List<net.minecraft.nbt.CompoundTag> savedEntities(net.minecraft.world.level.chunk.ProtoChunk proto) {

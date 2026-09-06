@@ -91,6 +91,10 @@ with log.open("w") as output:
         (TARGET / "PrimaryLevelData.javap.txt").write_text(clock)
         assert "FullPreparationClock.beforeWrite:" in clock and "FullPreparationClock.afterWrite:" in clock
         text = log.read_text(errors="replace")
+        assert "Encountered an unexpected exception" not in text, "server crashed despite a zero process exit"
+        assert "Exception stopping the server" not in text, "server shutdown failed despite a zero process exit"
+        assert not list((TARGET / "crash-reports").glob("*.txt")), "server wrote a crash report"
+        assert any("Seed:" in line for line in text.splitlines()), "original seed command was not observed"
         if controlled:
             probe = [line for line in text.splitlines() if "PHOENIUM_FULL_REGISTRATION_PROBE PASS" in line]
             assert len(probe) == 1, "selected installed registration fixture did not pass exactly once"
@@ -98,12 +102,17 @@ with log.open("w") as output:
             input_probe = [line for line in text.splitlines() if "PHOENIUM_FULL_INPUT_BINDING_PROBE PASS" in line]
             assert len(input_probe) == 1, "selected production discovery/input consumer did not pass exactly once"
             manifest["initializedInputProbe"] = input_probe
+            published_probe = [line for line in text.splitlines() if "PHOENIUM_FULL_PUBLISHED_INPUT_PROBE PASS" in line]
+            assert len(published_probe) == 1, "original published target/source consumer did not pass exactly once"
+            manifest["publishedInputProbe"] = published_probe
         input_exports = {}
         for name, selectors in {
             "world/level/chunk/ProtoChunk": ["phoenium$savedInput", "FullSavedInput.beforeWrite", "FullSavedInput.written"],
             "world/level/chunk/storage/SerializableChunkData": ["FullSavedInput.reload"],
             "world/level/chunk/LevelChunk": ["phoenium$postLoad"],
-            "server/level/ChunkMap": ["phoenium$visibleInput", "FullInputNotifications.published"],
+            "server/level/ChunkMap": ["phoenium$visibleInput", "FullInputNotifications.published", "ChunkHolderLifetime.retired"],
+            "server/level/GenerationChunkHolder": ["FullPublishedInputs.proposing", "FullPublishedInputs.completed", "FullPublishedInputs.replacing", "phoenium$lifetime"],
+            "server/level/ServerChunkCache": ["phoenium$inputThread"],
             "nbt/CompoundTag": ["phoenium$savedMap"],
             "nbt/ListTag": ["phoenium$savedList"],
         }.items():

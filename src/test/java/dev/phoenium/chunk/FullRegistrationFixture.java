@@ -45,6 +45,8 @@ final class FullRegistrationFixture implements GeneratingChunkMap, FullGeneratio
         other.transitionTo(RegionLifecycle.READY);
         var generation = new TopologyGeneration(1);
         directory.publish(generation, Map.of(), Map.of(worldId, new RegionRoute(ownerId, generation, new OwnerEpoch(0))));
+        set(world.cache, ServerChunkCache.class, "mainThread", Thread.currentThread());
+        set(world.level, ServerLevel.class, "chunkSource", world.cache);
         runtime = new FullRegistrationRuntime(world.level, new ChunkBindingRuntime.WorldAuthority(worldId, 1, services,
                 directory, Map.of(ownerId, owner.leases(), otherId, other.leases()), barrier), limits);
         context = new WorldGenContext(world.level, null, null, null, command -> {
@@ -52,12 +54,14 @@ final class FullRegistrationFixture implements GeneratingChunkMap, FullGeneratio
             if (inline) command.run(); else registrations.add(command);
         }, ignored -> {});
         inputs.put(ChunkPos.ZERO.pack(), world.proto);
-        set(world.cache, ServerChunkCache.class, "mainThread", Thread.currentThread());
+        // Installed Fabric lifecycle callback retains its real loaded-chunk collection. The
+        // endpoint world is allocated without constructors; supply that ordinary empty field.
+        try { set(world.level, net.minecraft.world.level.Level.class, "loadedChunks", new HashSet<LevelChunk>()); }
+        catch (NoSuchFieldException junitWithoutFabricLifecycleMixin) { /* The JUnit agent does not install Fabric's own Mixins. */ }
         long[] emptyCache = new long[4]; Arrays.fill(emptyCache, Long.MAX_VALUE);
         set(world.cache, ServerChunkCache.class, "lastChunkPos", emptyCache);
         set(world.cache, ServerChunkCache.class, "lastChunkStatus", new ChunkStatus[4]);
         set(world.cache, ServerChunkCache.class, "lastChunk", new ChunkAccess[4]);
-        set(world.level, ServerLevel.class, "chunkSource", world.cache);
         var map = stub(ChunkMap.class, List.of(
                 new Answer(ChunkMap.class.getMethod("scheduleGenerationTask", ChunkStatus.class, ChunkPos.class), args -> scheduleGenerationTask((ChunkStatus) args[0], (ChunkPos) args[1])),
                 new Answer(ChunkMap.class.getMethod("runGenerationTasks"), args -> { runGenerationTasks(); return null; })));
@@ -66,6 +70,23 @@ final class FullRegistrationFixture implements GeneratingChunkMap, FullGeneratio
         fixtureMap = map; publishVisible();
     }
     public FullRegistrationRuntime phoenium$fullRegistration() { return runtime; }
+    /** Separate map selects the ordinary original FULL supplier from the start of its task. */
+    final class BaselineMap implements GeneratingChunkMap, FullPublicationSource {
+        public FullPublishedInputs phoenium$publishedInputs() { return runtime.published; }
+        public ChunkGenerationTask scheduleGenerationTask(ChunkStatus status, ChunkPos pos) {
+            var task = ChunkGenerationTask.create(this, status, pos); tasks.add(task); return task;
+        }
+        public void runGenerationTasks() { FullRegistrationFixture.this.runGenerationTasks(); }
+        public GenerationChunkHolder acquireGeneration(long position) { return FullRegistrationFixture.this.acquireGeneration(position); }
+        public void releaseGeneration(GenerationChunkHolder holder) { FullRegistrationFixture.this.releaseGeneration(holder); }
+        public CompletableFuture<ChunkAccess> applyStep(GenerationChunkHolder holder, ChunkStep step, StaticCache2D<GenerationChunkHolder> cache) {
+            return FullRegistrationFixture.this.applyStep(holder, step, cache);
+        }
+    }
+    ChunkGenerationTask startBaseline(ChunkPos pos) {
+        var task = ChunkGenerationTask.create(new BaselineMap(), ChunkStatus.FULL, pos);
+        tasks.add(task); resume(task); return task;
+    }
     Holder holder(ChunkPos pos) {
         return holders.computeIfAbsent(pos.pack(), ignored -> {
             Holder holder = new Holder(pos); world.visibleHolders.put(pos.pack(), holder); publishVisible(); return holder;
@@ -119,6 +140,7 @@ final class FullRegistrationFixture implements GeneratingChunkMap, FullGeneratio
     static final class Holder extends ChunkHolder {
         final List<CompletableFuture<?>> saves = new ArrayList<>();
         Runnable afterReplace = () -> {};
+        Runnable afterSave = () -> {};
         int replacements;
         @Override public void replaceProtoChunk(ImposterProtoChunk chunk) {
             super.replaceProtoChunk(chunk); replacements++; afterReplace.run();
@@ -128,6 +150,7 @@ final class FullRegistrationFixture implements GeneratingChunkMap, FullGeneratio
                     (position, previous, next, setter) -> setter.accept(next), (position, borderOnly) -> List.of());
             updateHighestAllowedStatus(null);
         }
-        protected void addSaveDependency(CompletableFuture<?> future) { super.addSaveDependency(future); saves.add(future); }
+        protected void addSaveDependency(CompletableFuture<?> future) { super.addSaveDependency(future); saves.add(future); afterSave.run(); }
+        void eligibility(int ticket, ChunkMap map) { setTicketLevel(ticket); updateHighestAllowedStatus(map); }
     }
 }

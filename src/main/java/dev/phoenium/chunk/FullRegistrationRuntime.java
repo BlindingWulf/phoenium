@@ -39,6 +39,8 @@ public final class FullRegistrationRuntime {
     private long registrations, captures, releases, preparationCalls;
     private final Thread observationThread = Thread.currentThread();
     public final FullInitializedInputs inputs;
+    public final FullPublishedInputs published;
+    private final AutoCloseable publishedSubscription;
     private final AutoCloseable inputRouteSubscription;
     private AutoCloseable inputViewSubscription;
 
@@ -50,6 +52,8 @@ public final class FullRegistrationRuntime {
         server = Objects.requireNonNull(level.getServer());
         services = authority.services(); custody = services.custody();
         inputs = new FullInitializedInputs(this, limits);
+        published = services.publishedInputs(level, authority);
+        publishedSubscription = published.changes().subscribe(inputs::changed);
         inputRouteSubscription = authority.directory().observeChanges(inputs::changed);
         executor = new ChunkStageExecutor(new ChunkStageAdmission(custody, authority.directory(), authority.leases(), authority.barrier()));
         pump = new ChunkStageDeliveryPump(authority.directory(), (route, pending) -> {
@@ -76,7 +80,7 @@ public final class FullRegistrationRuntime {
     /** Called only at the map invocation dominated by the holder's winning acquireStatusBump. */
     public static CompletableFuture<ChunkAccess> applyWinning(GeneratingChunkMap map, GenerationChunkHolder holder,
             ChunkStep step, StaticCache2D<GenerationChunkHolder> cache, Supplier<CompletableFuture<ChunkAccess>> original) {
-        if (!(map instanceof FullGenerationSource source)) return original.get();
+        if (!(map instanceof FullGenerationSource source)) return FullPublishedInputs.winning(map, holder, step, cache, original);
         return source.phoenium$fullRegistration().winning(map, holder, step, cache, original);
     }
 
@@ -134,7 +138,7 @@ public final class FullRegistrationRuntime {
             WorldGenContext context, ChunkStep step, StaticCache2D<GenerationChunkHolder> cache,
             ChunkAccess input, GenerationChunkHolder holder, Supplier<ChunkAccess> preparation) {
         Invocation invocation = SYNCHRONOUS.get();
-        if (invocation == null) return CompletableFuture.supplyAsync(original, originalExecutor);
+        if (invocation == null) return FullPublishedInputs.originalAsync(original, originalExecutor, context, step, cache, input, holder);
         if (invocation.holder != holder || invocation.step != step || invocation.cache != cache
                 || step.targetStatus() != ChunkStatus.FULL || context.level() != invocation.runtime.level)
             throw new ChunkProtocolException("async FULL does not match its finite winning invocation");
@@ -151,6 +155,7 @@ public final class FullRegistrationRuntime {
         var lifecycle = services.lifecycles().activateHolder(authority.worldInstanceSequence(), key, holder);
         var work = services.works().beginOrResolveSharedWork(lifecycle,
                 new ChunkWorkRegistry.WorkReservation("generation-status", "FULL", 0));
+        services.trackHolder(lifecycle, holder);
         Graph graph = new Graph(invocation, context, input, preparation, lifecycle, work);
         custody.gate().lock();
         try {
@@ -171,7 +176,7 @@ public final class FullRegistrationRuntime {
     public static CompletableFuture<ChunkResult<ChunkAccess>> attach(GeneratingChunkMap map,
             CompletableFuture<ChunkAccess> returned, GenerationChunkHolder holder, ChunkStep step,
             BiFunction<ChunkAccess, Throwable, ChunkResult<ChunkAccess>> original) {
-        if (!(map instanceof FullGenerationSource source)) return null;
+        if (!(map instanceof FullGenerationSource source)) return FullPublishedInputs.attach(map, returned, holder, step, original);
         FullRegistrationRuntime runtime = source.phoenium$fullRegistration();
         Graph graph;
         runtime.custody.gate().lock();
@@ -218,6 +223,8 @@ public final class FullRegistrationRuntime {
         List<Graph> snapshot;
         custody.gate().lock(); try { open = false; snapshot = List.copyOf(graphs); } finally { custody.gate().unlock(); }
         snapshot.forEach(graph -> graph.stop(ChunkStageAdmission.Result.SHUTDOWN, null));
+        published.shutdown();
+        try { publishedSubscription.close(); } catch (Exception failure) { throw new ChunkProtocolException("publication subscription acknowledgement", failure); }
         try { inputRouteSubscription.close(); } catch (Exception failure) { throw new ChunkProtocolException("input route acknowledgement", failure); }
         if (inputViewSubscription != null) try { inputViewSubscription.close(); inputViewSubscription = null; }
         catch (Exception failure) { throw new ChunkProtocolException("input directory acknowledgement", failure); }
@@ -226,6 +233,8 @@ public final class FullRegistrationRuntime {
         cleanupGenerations();
     }
     public void retire(GenerationChunkHolder holder) {
+        FullPublishedInputs.retired(holder);
+        ChunkHolderLifetime.retired(holder);
         List<Graph> snapshot;
         custody.gate().lock(); try { snapshot = graphs.stream().filter(graph -> graph.holder == holder).toList(); }
         finally { custody.gate().unlock(); }
@@ -514,6 +523,11 @@ public final class FullRegistrationRuntime {
             inputRequested = false; lastInputEvaluation = null;
             if (savedInput != null) savedInput.unsubscribe(savedChanged);
             inputs.release(this);
+        }
+        /** Receipt-specific completion cannot close a newer discovery plan for this operation. */
+        public void acknowledgeInputs(FullInitializedInputs.Receipt receipt) {
+            requireObservationThread();
+            if (receipt != null && inputs.receipt(this) == receipt) acknowledgeInputs();
         }
         public CompletableFuture<ChunkAccess> conversion() { return conversion; }
         public int preparedConsumers() { custody.gate().lock(); try { return consumers; } finally { custody.gate().unlock(); } }

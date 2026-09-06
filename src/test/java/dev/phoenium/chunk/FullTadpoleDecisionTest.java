@@ -223,6 +223,7 @@ final class FullTadpoleDecisionTest {
                     new Answer(ServerLevel.class.getMethod("getWorldBorder"), args -> null),
                     new Answer(ServerLevel.class.getMethod("getBlockTicks"), args -> blockTicks),
                     new Answer(ServerLevel.class.getMethod("getFluidTicks"), args -> fluidTicks),
+                    new Answer(ServerLevel.class.getMethod("unload", LevelChunk.class), args -> { events.add("controlled-world-unload"); return null; }),
                     new Answer(ServerLevel.class.getMethod("getChunk", int.class, int.class, ChunkStatus.class, boolean.class), args -> {
                         if (queryEndpoint != null) return queryEndpoint.apply(args);
                         assertSame(ChunkStatus.FULL, args[2]); assertEquals(false, args[3]);

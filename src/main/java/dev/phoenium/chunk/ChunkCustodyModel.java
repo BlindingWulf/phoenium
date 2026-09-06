@@ -55,6 +55,17 @@ public final class ChunkCustodyModel {
     private final Map<StageId, StageState> stages = new HashMap<>();
     private final Map<StageId, DeliveryDisposition> dispositions = new HashMap<>();
     private final Map<LifecycleSlot, StageId> claims = new HashMap<>();
+    private final Map<LifecycleId, Integer> lifetimeUses = new HashMap<>();
+    void retainLifecycle(LifecycleId id) {
+        gate.lock(); try { requireLive(id); lifetimeUses.merge(id, 1, Integer::sum); } finally { gate.unlock(); }
+    }
+    void acknowledgeLifecycle(LifecycleId id) {
+        gate.lock(); try {
+            Integer count = lifetimeUses.get(id);
+            if (count == null) throw new ChunkProtocolException("unknown lifecycle acknowledgement");
+            if (count == 1) lifetimeUses.remove(id); else lifetimeUses.put(id, count - 1);
+        } finally { gate.unlock(); }
+    }
     private long nextActivation;
     private boolean admissionsOpen = true;
 
@@ -206,6 +217,7 @@ public final class ChunkCustodyModel {
         gate.lock(); try {
             LifecycleRecord record = lifecycleById.get(id);
             return record != null && record.state == LifecycleState.RETIRED
+                && !lifetimeUses.containsKey(id)
                 && claims.values().stream().noneMatch(stage -> stage.work().lifecycle().equals(id));
         } finally { gate.unlock(); }
     }
@@ -234,7 +246,7 @@ public final class ChunkCustodyModel {
         } finally { gate.unlock(); }
     }
     public int retainedEntries() {
-        gate.lock(); try { return lifecycles.size() + lifecycleById.size() + works.size() + demands.size() + stages.size() + dispositions.size() + claims.size(); }
+        gate.lock(); try { return lifecycles.size() + lifecycleById.size() + works.size() + demands.size() + stages.size() + dispositions.size() + claims.size() + lifetimeUses.size(); }
         finally { gate.unlock(); }
     }
     private LifecycleSlot slot(LifecycleId id) { return new LifecycleSlot(id.worldInstanceSequence(), id.chunkKey()); }
