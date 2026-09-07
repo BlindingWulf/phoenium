@@ -1912,10 +1912,13 @@ public final class Stage3ClientTest implements FabricClientGameTest {
     }
 
     private static boolean fullBedSupportSucceeded(String phase, String addResponse, String queryResponse) {
-        String add = addResponse.toLowerCase(java.util.Locale.ROOT);
-        boolean addAccepted = add.contains("marked 1 chunk")
-                || (phase.equals("reload") && add.contains("already") && add.contains("[127, -69]"));
-        return addAccepted && queryResponse.contains("[127, -69]");
+        boolean added = addResponse.contains(
+                "Marked chunk [127, -69] in minecraft:overworld to be force loaded");
+        boolean alreadyPresent = phase.equals("reload")
+                && addResponse.contains("No chunks were marked for force loading");
+        boolean queryConfirms = queryResponse.contains(
+                "Chunk at [127, -69] in minecraft:overworld is marked for force loading");
+        return (added || alreadyPresent) && queryConfirms;
     }
 
     private static boolean healthyFullAcceptanceLog(String log) {
