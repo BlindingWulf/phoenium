@@ -73,6 +73,20 @@ manifest = {
 print(str(OUTPUT), flush=True)
 process = None
 failure = None
+def force_kill_process_tree():
+    if process is None or process.poll() is not None:
+        return
+    if os.name == "nt":
+        subprocess.run(["taskkill", "/PID", str(process.pid), "/T", "/F"],
+                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False)
+    else:
+        process.kill()
+    try:
+        process.wait(timeout=15)
+    except subprocess.TimeoutExpired:
+        process.kill()
+        process.wait()
+
 try:
     with log.open("w") as output:
         process = subprocess.Popen(command, cwd=SERVER, stdin=subprocess.PIPE, stdout=output,
@@ -116,8 +130,7 @@ except BaseException as exception:
             pass
 finally:
     if process is not None and process.poll() is None:
-        process.kill()
-        process.wait()
+        force_kill_process_tree()
 
 text = log.read_text(errors="replace") if log.exists() else ""
 summary_lines = [line for line in text.splitlines() if "PHOENIUM_VAULT_DIAGNOSTICS" in line]
