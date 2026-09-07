@@ -116,6 +116,44 @@ class FullSavedContextInputTest {
         } finally { FullFinishingServices.stopped(f.level.getServer()); data.close(); }
     }
 
+    @Test void duplicateStorageAcknowledgementCannotRemoveAnIndependentSubscription() throws Exception {
+        var f = new FullTadpoleDecisionTest.Fixture(1);
+        var data = new SavedDataStorage(directory, null, f.level.registryAccess());
+        var storage = new CommandStorage(data); set(f.level.getServer(), MinecraftServer.class, "commandStorage", storage);
+        try {
+            var capture = FullCommandStorageInputs.observe(f.level.getServer(), FIRST);
+            var notices = new AtomicInteger(); Runnable shared = notices::incrementAndGet;
+            var first = capture.retain(shared); var second = capture.retain(shared);
+            first.close(); first.close();
+            try (var serial = FullFinishingServices.forServer(f.level.getServer()).serial(FullFinishingServices.Phase.SERVER_TASK)) {
+                var replacement = new CompoundTag(); replacement.putString("message", "changed");
+                FullCommandStorageInputs.set(storage, FIRST, replacement, () -> storage.set(FIRST, replacement));
+            }
+            assertEquals(1, notices.get(), "only the still-live independent consumer receives the change");
+            second.close(); second.close();
+            FullCommandStorageInputs.stopped(f.level.getServer());
+            assertEquals(1, notices.get()); assertFalse(capture.valid());
+        } finally { FullFinishingServices.stopped(f.level.getServer()); data.close(); }
+    }
+
+    @Test void storageShutdownAcknowledgesLaterConsumersAfterAnEarlierFailureAndCannotResurrect() throws Exception {
+        var f = new FullTadpoleDecisionTest.Fixture(1);
+        var data = new SavedDataStorage(directory, null, f.level.registryAccess());
+        var storage = new CommandStorage(data); set(f.level.getServer(), MinecraftServer.class, "commandStorage", storage);
+        var exact = new IllegalStateException("first storage consumer failed");
+        var second = new AtomicInteger();
+        var capture = FullCommandStorageInputs.observe(f.level.getServer(), FIRST);
+        var firstUse = capture.retain(() -> { throw exact; });
+        var secondUse = capture.retain(second::incrementAndGet);
+        try {
+            assertSame(exact, assertThrows(IllegalStateException.class, () -> FullFinishingServices.stopped(f.level.getServer())));
+            assertEquals(1, second.get()); assertFalse(capture.valid());
+            assertThrows(ChunkProtocolException.class, () -> FullCommandStorageInputs.observe(f.level.getServer(), FIRST));
+            FullFinishingServices.stopped(f.level.getServer());
+            assertEquals(1, second.get());
+        } finally { firstUse.close(); secondUse.close(); data.close(); }
+    }
+
     private static CompoundTag text(CompoundTag contents) { var tag = tag(8, 8, 0); tag.putString("id", "minecraft:text_display"); tag.put("text", contents); return tag; }
     private static CompoundTag storageText(Identifier id) {
         var text = new CompoundTag(); text.putString("nbt", "message"); text.putString("storage", id.toString()); text.putBoolean("interpret", true); return text;

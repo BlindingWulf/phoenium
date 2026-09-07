@@ -36,6 +36,7 @@ public final class FullSavedContextInputs {
         private final ServerLevel world;
         private final ChunkCustodyModel.StageId stage;
         private final FullSavedInput.Snapshot saved;
+        private final net.minecraft.core.RegistryAccess registry;
         private final Map<String, List<FullSavedTextInputs.Requirements>> texts = new LinkedHashMap<>();
         private final Map<Identifier, FullCommandStorageInputs.Capture> storage = new LinkedHashMap<>();
         private final List<AutoCloseable> consumers = new ArrayList<>();
@@ -47,11 +48,13 @@ public final class FullSavedContextInputs {
         private boolean closed;
         private Plan(ServerLevel world, ChunkCustodyModel.StageId stage, FullSavedInput.Snapshot saved, Runnable changed) {
             this.world = world; this.stage = stage; this.saved = saved; this.changed = changed;
+            registry = world.registryAccess();
         }
         public String unmet() { return unmet; }
         int payloadBytes() { return bytes; }
         public boolean valid(FullSavedInput.Snapshot current) {
-            return !closed && current == saved && storage.values().stream().allMatch(FullCommandStorageInputs.Capture::valid);
+            return !closed && current == saved && world.registryAccess() == registry
+                    && storage.values().stream().allMatch(FullCommandStorageInputs.Capture::valid);
         }
         List<FullSavedTextInputs.Requirements> requirements(String path) { return List.copyOf(texts.getOrDefault(path, List.of())); }
         private void discover(FullSavedInput.EntityFact fact) {
@@ -106,11 +109,19 @@ public final class FullSavedContextInputs {
             this.claim = claim; ACTIVE.set(this); return new Scope(this);
         }
         @Override public void close() {
+            if (closed) return;
             if (claim != null) throw new ChunkProtocolException("saved contexts released before original reader exit");
             closed = true; texts.clear(); storage.clear();
+            Throwable failure = null;
             for (AutoCloseable consumer : consumers) try { consumer.close(); }
-            catch (Exception failure) { throw new ChunkProtocolException("saved context acknowledgement failed", failure); }
+            catch (Throwable problem) {
+                if (failure == null) failure = problem;
+                else if (failure != problem) failure.addSuppressed(problem);
+            }
             consumers.clear();
+            if (failure instanceof Error error) throw error;
+            if (failure instanceof RuntimeException runtime) throw runtime;
+            if (failure != null) throw new ChunkProtocolException("saved context acknowledgement failed", failure);
         }
     }
     public static final class Scope implements AutoCloseable {

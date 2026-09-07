@@ -31,9 +31,21 @@ public final class FullCommandStorageInputs {
         }
         boolean valid() { return !state.closed && state.custodian.available() && state.revision == revision; }
         AutoCloseable retain(Runnable changed) {
+            var subscription = new Subscription(state, changed);
             state.listeners.add(changed);
-            if (!valid()) changed.run();
-            return () -> state.listeners.remove(changed);
+            try { if (!valid()) changed.run(); }
+            catch (Throwable failure) { subscription.close(); throw failure; }
+            return subscription;
+        }
+    }
+    /** Acknowledged aliases retain neither the storage world nor another subscriber. */
+    private static final class Subscription implements AutoCloseable {
+        private State state;
+        private Runnable listener;
+        Subscription(State state, Runnable listener) { this.state = state; this.listener = listener; }
+        @Override public synchronized void close() {
+            if (state == null) return;
+            state.listeners.remove(listener); state = null; listener = null;
         }
     }
     private static final class State {
@@ -60,13 +72,13 @@ public final class FullCommandStorageInputs {
     static Capture observe(MinecraftServer server, Identifier id) {
         if (OwnershipContext.current().isPresent() || FullFinishingServices.finishing())
             throw new ChunkProtocolException("command storage input discovered after FULL admission");
-        CommandStorage storage = Objects.requireNonNull(server.getCommandStorage(), "actual command storage");
-        State state;
-        synchronized (STATES) {
-            state = STATES.computeIfAbsent(storage, ignored -> new State(server, storage));
-            if (state.server != server || state.closed) throw new ChunkProtocolException("foreign command storage incarnation");
-        }
         try (var serial = FullFinishingServices.forServer(server).serial(FullFinishingServices.Phase.SERVER_TASK)) {
+            CommandStorage storage = Objects.requireNonNull(server.getCommandStorage(), "actual command storage");
+            State state;
+            synchronized (STATES) {
+                state = STATES.computeIfAbsent(storage, ignored -> new State(server, storage));
+                if (state.server != server || state.closed) throw new ChunkProtocolException("foreign command storage incarnation");
+            }
             CompoundTag original = storage.get(id);
             int[] size = {0, 0};
             FullSavedTextInputs.protect(original, state.custodian, 0, size);
@@ -102,9 +114,18 @@ public final class FullCommandStorageInputs {
                 stopped.add(entry.getValue()); return true;
             });
         }
+        Throwable failure = null;
         for (State state : stopped) {
-            for (Runnable listener : state.listeners) listener.run();
-            state.listeners.clear();
+            try {
+                for (Runnable listener : state.listeners) try { listener.run(); }
+                catch (Throwable problem) {
+                    if (failure == null) failure = problem;
+                    else if (failure != problem) failure.addSuppressed(problem);
+                }
+            } finally { state.listeners.clear(); }
         }
+        if (failure instanceof Error error) throw error;
+        if (failure instanceof RuntimeException runtime) throw runtime;
+        if (failure != null) throw new ChunkProtocolException("command storage shutdown acknowledgement", failure);
     }
 }
