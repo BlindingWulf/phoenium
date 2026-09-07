@@ -58,6 +58,30 @@ final class FullSavedTextInputs {
 
     private FullSavedTextInputs() { }
 
+    /** Reads only the already-validated selector syntax; it never resolves an option value. */
+    static boolean hasOption(String source, String expected) {
+        int open = source.indexOf('[');
+        if (open < 0) return false;
+        int nested = 0, start = open + 1; char quote = 0; boolean escaped = false;
+        for (int index = start; index < source.length(); index++) {
+            char current = source.charAt(index);
+            if (quote != 0) {
+                if (escaped) escaped = false;
+                else if (current == '\\') escaped = true;
+                else if (current == quote) quote = 0;
+                continue;
+            }
+            if (current == '\'' || current == '"') { quote = current; continue; }
+            if (current == '{' || current == '[' || current == '(') { nested++; continue; }
+            if (current == '}' || current == ')' || (current == ']' && nested > 0)) { nested--; continue; }
+            if (nested == 0 && current == '=') {
+                if (source.substring(start, index).trim().equals(expected)) return true;
+            } else if (nested == 0 && current == ',') start = index + 1;
+            else if (nested == 0 && current == ']') return false;
+        }
+        return false;
+    }
+
     static Saved capture(CompoundTag entity, FullSavedInput custodian) {
         Tag text = entity.get("text");
         if (text == null) return Saved.EMPTY;

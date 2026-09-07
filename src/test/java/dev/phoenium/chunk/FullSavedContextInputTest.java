@@ -253,6 +253,71 @@ class FullSavedContextInputTest {
         assertCleanup(f);
     }
 
+    @Test void sameWorldEntityNbtRunsTheOriginalWorldLimitedPredicateAndSerializer() throws Exception {
+        var f = new FullRegistrationFixture(true); var lookup = new EntityLookup<Entity>();
+        var candidate = EntityTypes.TEXT_DISPLAY.create(f.world.level, EntitySpawnReason.LOAD); assertNotNull(candidate);
+        candidate.setId(721); candidate.setPos(1608, 8, 8); candidate.setCustomName(Component.literal("serialized candidate"));
+        lookup.add(candidate); f.world.selectorEntities.add(candidate);
+        var source = "@e[type=minecraft:text_display,distance=..2000,nbt={},limit=1]";
+        try {
+            saved(f, ChunkPos.ZERO, false, text(entityText(source, "CustomName", false)));
+            f.start(ChunkPos.ZERO, ChunkStatus.FULL); f.drain(); var graph = f.runtime.graph(f.holder(ChunkPos.ZERO));
+            assertEquals(FullInitializedInputs.State.SATISFIED, graph.inputEvaluation().state(), graph.inputEvaluation().obligation());
+            var target = graph.inputReceipt().targets().stream().filter(input -> input.position().equals(new ChunkPos(100, 0))).findFirst().orElseThrow();
+            assertEquals(FullInitializedInputs.Availability.ROUTED, target.availability());
+
+            FullAuthoritativeFinishingTest.context(f); f.runtime.inputs.changed(); f.drain();
+            assertInstanceOf(ChunkStageOutcome.Applied.class, graph.finishing.outcome().join());
+            assertEquals("\"serialized candidate\"", FullSavedContextTestHooks.text(
+                    assertInstanceOf(Display.TextDisplay.class, f.world.inserted.getFirst())).getString());
+            assertFalse(f.barrier.tripped());
+        } finally {
+            lookup.remove(candidate); f.stop(); FullFinishingServices.stopped(f.world.level.getServer());
+        }
+        assertCleanup(f);
+    }
+
+    @Test void originalCaughtEntityNbtSerializerFailureRestoresTheNextExactSelectorScope() throws Exception {
+        var f = new FullRegistrationFixture(true); var lookup = new EntityLookup<Entity>();
+        var exact = new IllegalStateException("original entity serializer failure");
+        var candidate = new FailingTextDisplay(f.world.level, exact);
+        candidate.setId(722); candidate.setPos(1608, 8, 8); candidate.setCustomName(Component.literal("recovered candidate"));
+        lookup.add(candidate); f.world.selectorEntities.add(candidate);
+        var source = "@e[type=minecraft:text_display,distance=..2000,nbt={},limit=1]";
+        try {
+            saved(f, ChunkPos.ZERO, false, text(entityText(source, "CustomName", false)));
+            f.input(ChunkPos.ZERO).addEntity(text(entityText(source, "CustomName", false)));
+            f.start(ChunkPos.ZERO, ChunkStatus.FULL); f.drain(); var graph = f.runtime.graph(f.holder(ChunkPos.ZERO));
+            assertEquals(FullInitializedInputs.State.SATISFIED, graph.inputEvaluation().state(), graph.inputEvaluation().obligation());
+            FullAuthoritativeFinishingTest.context(f); f.runtime.inputs.changed(); f.drain();
+
+            assertEquals(3, candidate.saves, "predicate failure is caught once; the next predicate and data source serialize once each");
+            assertInstanceOf(ChunkStageOutcome.Applied.class, graph.finishing.outcome().join());
+            assertEquals(2, f.world.inserted.size());
+            assertEquals("", FullSavedContextTestHooks.text(
+                    assertInstanceOf(Display.TextDisplay.class, f.world.inserted.getFirst())).getString());
+            assertEquals("\"recovered candidate\"", FullSavedContextTestHooks.text(
+                    assertInstanceOf(Display.TextDisplay.class, f.world.inserted.get(1))).getString());
+            assertFalse(f.barrier.tripped());
+        } finally {
+            lookup.remove(candidate); f.stop(); FullFinishingServices.stopped(f.world.level.getServer());
+        }
+        assertCleanup(f);
+    }
+
+    @Test void registeredSelectorPredicateRemainsUnresolvedBeforeItsOriginalBody() throws Exception {
+        var f = new FullRegistrationFixture(true); var selector = new CompoundTag();
+        selector.putString("selector", "@e[distance=..32,predicate=minecraft:missing]");
+        try {
+            saved(f, ChunkPos.ZERO, false, text(selector));
+            f.start(ChunkPos.ZERO, ChunkStatus.FULL); f.drain(); var graph = f.runtime.graph(f.holder(ChunkPos.ZERO));
+            assertEquals(FullInitializedInputs.State.UNRESOLVED, graph.inputEvaluation().state());
+            assertTrue(graph.inputEvaluation().obligation().contains("registered selector predicate context producer pending"));
+            assertNull(graph.inputReceipt()); assertFalse(graph.finishing.outcome().isDone()); assertFalse(f.barrier.tripped());
+        } finally { f.stop(); FullFinishingServices.stopped(f.world.level.getServer()); }
+        assertCleanup(f);
+    }
+
     @Test void originalPersistedCommandStorageLoadsBeforeRegionalAdmissionAndIsReadWithoutConstruction() throws Exception {
         var f = new FullRegistrationFixture(true);
         var firstStore = new SavedDataStorage(directory, net.minecraft.util.datafix.DataFixers.getDataFixer(), f.world.level.registryAccess());
@@ -364,6 +429,10 @@ class FullSavedContextInputTest {
         text.putString("block", position.getX() + " " + position.getY() + " " + position.getZ());
         text.putBoolean("interpret", interpret); return text;
     }
+    private static CompoundTag entityText(String selector, String path, boolean interpret) {
+        var text = new CompoundTag(); text.putString("nbt", path); text.putString("entity", selector);
+        text.putBoolean("interpret", interpret); return text;
+    }
     private static final class FailingBlockEntity extends BlockEntity {
         private final RuntimeException failure;
         private int saves;
@@ -371,5 +440,16 @@ class FullSavedContextInputTest {
             super(BlockEntityTypes.BEACON, position, state); this.failure = failure;
         }
         @Override protected void saveAdditional(ValueOutput output) { if (++saves == 1) throw failure; }
+    }
+    private static final class FailingTextDisplay extends Display.TextDisplay {
+        private final RuntimeException failure;
+        private int saves;
+        private FailingTextDisplay(net.minecraft.world.level.Level level, RuntimeException failure) {
+            super(EntityTypes.TEXT_DISPLAY, level); this.failure = failure;
+        }
+        @Override protected void addAdditionalSaveData(ValueOutput output) {
+            if (++saves == 1) throw failure;
+            super.addAdditionalSaveData(output);
+        }
     }
 }

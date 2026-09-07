@@ -90,8 +90,10 @@ public final class FullSavedContextInputs {
                 Pending next = queue.remove(); var read = next.read;
                 if (read.source() != FullSavedTextInputs.Source.STORAGE) {
                     if (read.source() == FullSavedTextInputs.Source.BLOCK) continue;
-                    if (read.source() == FullSavedTextInputs.Source.ENTITY && ownedSelf(fact.path(), read.target(), FullSavedTextInputs.Use.NBT)
-                            && !read.interpreting()) continue;
+                    if (read.source() == FullSavedTextInputs.Source.ENTITY && !read.interpreting()) {
+                        var selector = declaredSelector(fact.path(), read.target(), FullSavedTextInputs.Use.NBT);
+                        if (selector != null && (selector.self() || selector.worldLimited())) continue;
+                    }
                     unmet = fact.path() + ": protected display " + read.source() + " context producer pending"; break;
                 }
                 Identifier id = Identifier.parse(read.target());
@@ -118,6 +120,9 @@ public final class FullSavedContextInputs {
             texts.computeIfAbsent(fact.path(), ignored -> new ArrayList<>()).add(requirements);
             if (requirements.unmet() != null) { unmet = requirements.unmet(); return; }
             for (var selector : requirements.selectors()) {
+                if (FullSavedTextInputs.hasOption(selector.source(), "predicate")) {
+                    unmet = fact.path() + ": registered selector predicate context producer pending for " + selector.source(); return;
+                }
                 boolean ownedSelf = selector.self();
                 boolean identityScore = selector.use() == FullSavedTextInputs.Use.SCORE && !selector.source().startsWith("@");
                 if (!ownedSelf && !identityScore && !selector.worldLimited()) {
@@ -130,9 +135,9 @@ public final class FullSavedContextInputs {
             }
             for (var read : requirements.nbtReads()) queue.add(new Pending(fact, read));
         }
-        private boolean ownedSelf(String path, String source, FullSavedTextInputs.Use use) {
+        private FullSavedTextInputs.Selector declaredSelector(String path, String source, FullSavedTextInputs.Use use) {
             return texts.getOrDefault(path, List.of()).stream().flatMap(requirements -> requirements.selectors().stream())
-                    .anyMatch(selector -> selector.source().equals(source) && selector.use() == use && selector.self());
+                    .filter(selector -> selector.source().equals(source) && selector.use() == use).findFirst().orElse(null);
         }
         public Scope enter(ChunkStageClaim claim) {
             claim.require(stage);

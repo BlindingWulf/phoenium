@@ -26,6 +26,10 @@ import static dev.phoenium.chunk.FullInitializedInputBindingTest.*;
 import static org.junit.jupiter.api.Assertions.*;
 
 final class FullSavedTextInputTest {
+    @Test void selectorOptionScanDoesNotTreatNestedNbtTextAsARegisteredPredicate() {
+        assertTrue(FullSavedTextInputs.hasOption("@e[distance=..32,predicate=minecraft:ready]", "predicate"));
+        assertFalse(FullSavedTextInputs.hasOption("@s[nbt={data:{text:\"x,predicate=minecraft:false\"}}]", "predicate"));
+    }
     @BeforeAll static void bootstrap() { FullSavedVillagerInputTest.bootstrap(); }
 
     @Test void originalTextReaderRetainsLiteralSiblingsAndHoverWithoutWorldResolution() throws Exception {
