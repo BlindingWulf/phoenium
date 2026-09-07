@@ -14,6 +14,7 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.network.chat.Component;
 import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.level.chunk.LevelChunk;
+import net.minecraft.world.level.chunk.status.ChunkPyramid;
 import net.minecraft.world.level.chunk.status.ChunkStatus;
 
 import java.io.BufferedInputStream;
@@ -1763,6 +1764,10 @@ public final class Stage3ClientTest implements FabricClientGameTest {
                 active = ExternalServer.start(new ExternalServer(directory, lifecycle, world, null), false, false);
                 active.waitUntilReady(context);
                 evidence.put(phase + "Seed", active.worldSeed());
+                String bedSupport = active.execute(fullBedSupportCommand());
+                require(bedSupport.contains("Marked"), active.serverFailure(
+                        "FULL saved-bed support was not force-loaded: " + bedSupport));
+                evidence.put(phase + "SavedBedSupport", bedSupport);
                 connectClient(context); connected = true;
                 require(clientName(context).equals(TEST_USERNAME), "FULL client identity mismatch");
                 if (lifecycle == 1) {
@@ -1886,6 +1891,16 @@ public final class Stage3ClientTest implements FabricClientGameTest {
             "FULL " + phase + " did not report a positive private-neighbor count: " + state);
     }
 
+    private static String fullBedSupportCommand() {
+        int radius = ChunkPyramid.GENERATION_PYRAMID.getStepTo(ChunkStatus.FULL)
+                .getAccumulatedRadiusOf(ChunkStatus.EMPTY);
+        int minChunkX = 127 - radius, maxChunkX = 127 + radius;
+        int minChunkZ = -69 - radius, maxChunkZ = -69 + radius;
+        int minBlockX = minChunkX * 16, maxBlockX = (maxChunkX + 1) * 16 - 1;
+        int minBlockZ = minChunkZ * 16, maxBlockZ = (maxChunkZ + 1) * 16 - 1;
+        return "forceload add " + minBlockX + " " + minBlockZ + " " + maxBlockX + " " + maxBlockZ;
+    }
+
     private static boolean healthyFullAcceptanceLog(String log) {
         return !log.contains("Encountered an unexpected exception")
             && !log.contains("Exception stopping the server")
@@ -1971,6 +1986,7 @@ public final class Stage3ClientTest implements FabricClientGameTest {
                 "-Dphoenium.test.diagnostics=true"));
             if ("fullacceptance".equals(System.getProperty("phoenium.test.mode"))) {
                 command.add("-Dphoenium.full.authoritative=true");
+                command.add("-Dphoenium.test.fullBedSupport=true");
                 command.add("-Dphoenium.test.fullFixturePhase=" + (server.lifecycle == 1 ? "fresh" : "reload"));
                 command.add("-Dphoenium.test.fullFixtureSeedDisk=" + (server.lifecycle == 1));
             }
