@@ -256,6 +256,12 @@ final class FullTadpoleDecisionTest {
             set(level, Level.class, "thread", Thread.currentThread());
             set(level, Level.class, "blockEntityTickers", new ArrayList<>());
             set(level, Level.class, "pendingBlockEntityTickers", new ArrayList<>());
+            // The production Entity.setPosRaw routing hook reads the dimension
+            // while EntityType creates saved entities.  This allocated test
+            // world bypasses ServerLevel's constructor, so install the same
+            // ordinary overworld identity before the fixture's ProtoChunk is
+            // populated and post-load entities are constructed.
+            set(level, Level.class, "dimension", Level.OVERWORLD);
             set(level, ServerLevel.class, "debugSynchronizers", new net.minecraft.util.debug.LevelDebugSynchronizers(level));
             set(level, Level.class, "soundSeedGenerator", soundRandom);
             proto = new ProtoChunk(ChunkPos.ZERO, UpgradeData.EMPTY, level, base.factory, null);
