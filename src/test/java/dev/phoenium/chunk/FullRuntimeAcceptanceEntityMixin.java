@@ -1,4 +1,5 @@
-package dev.phoenium.chunk;
+package dev.phoenium.acceptance;
+import dev.phoenium.chunk.FullRuntimeAcceptanceProbe;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.level.storage.ValueInput;
 import org.spongepowered.asm.mixin.Mixin;

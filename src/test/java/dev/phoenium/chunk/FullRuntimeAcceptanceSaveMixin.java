@@ -1,4 +1,5 @@
-package dev.phoenium.chunk;
+package dev.phoenium.acceptance;
+import dev.phoenium.chunk.FullRuntimeAcceptanceProbe;
 import com.llamalad7.mixinextras.injector.ModifyReturnValue;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.level.chunk.ChunkAccess;

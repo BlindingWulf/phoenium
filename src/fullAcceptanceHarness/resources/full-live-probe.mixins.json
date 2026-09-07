@@ -1,6 +1,6 @@
 {
   "required": true,
-  "package": "dev.phoenium.chunk",
+  "package": "dev.phoenium.acceptance",
   "compatibilityLevel": "JAVA_25",
   "mixins": ["FullRuntimeAcceptanceGenerationMixin", "FullRuntimeAcceptanceSaveMixin", "FullRuntimeAcceptanceEntityMixin"],
   "injectors": { "defaultRequire": 1 }

@@ -105,6 +105,25 @@ with log.open("w") as output:
             published_probe = [line for line in text.splitlines() if "PHOENIUM_FULL_PUBLISHED_INPUT_PROBE PASS" in line]
             assert len(published_probe) == 1, "original published target/source consumer did not pass exactly once"
             manifest["publishedInputProbe"] = published_probe
+            finishing_probe = [line for line in text.splitlines() if "PHOENIUM_FULL_FINISHING_PROBE PASS" in line]
+            assert len(finishing_probe) == 1, "installed FULL finishing fixture did not pass exactly once"
+            required_finishing_fields = (
+                "cases=15", "queryCases=13", "publicationCases=2",
+                "originalFinishing=true", "separatePublication=true",
+                "cyclicPreparedPair=true", "bothPairOrders=true",
+                "proto=true", "inMemoryImposter=true", "diskReload=false",
+                "originalDifficulty=true", "originalCollision=true",
+                "originalShulkerImmediate=true", "originalLaterRegistration=true",
+                "originalMovingPiston=true", "savedVillagerOriginalBiomeCacheAlias=true",
+                "originalCachedAbsentBiomeFallback=true", "originalReadyAbsent=true",
+                "caughtQueryBarrier=true", "noPrivateCacheEntries=true",
+                "claimedOperationRequired=true", "controlledWorldEndpoints=true",
+                "controlledLowerGenerationOutputs=true", "javaagent=false",
+            )
+            assert all(field in finishing_probe[0] for field in required_finishing_fields), (
+                "installed FULL finishing probe omitted an expected branch/counter: " + finishing_probe[0]
+            )
+            manifest["finishingProbe"] = finishing_probe
         input_exports = {}
         for name, selectors in {
             "world/level/chunk/ProtoChunk": ["phoenium$savedInput", "FullSavedInput.beforeWrite", "FullSavedInput.written"],

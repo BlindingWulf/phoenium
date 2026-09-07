@@ -1,4 +1,5 @@
-package dev.phoenium.chunk;
+package dev.phoenium.acceptance;
+import dev.phoenium.chunk.FullRuntimeAcceptanceProbe;
 import net.minecraft.server.level.GenerationChunkHolder;
 import net.minecraft.util.StaticCache2D;
 import net.minecraft.world.level.chunk.*;

@@ -1781,6 +1781,7 @@ public final class Stage3ClientTest implements FabricClientGameTest {
                     context.waitTick();
                 }
                 require(state.contains("FULL_LIVE_OK phase=" + phase), active.serverFailure("FULL demand timed out: " + state));
+                requireFullAcceptanceState(phase, state);
                 evidence.put(phase + "ServerAssertions", state);
                 active.execute("tp " + TEST_USERNAME + " 536 207 72");
                 boolean received = false;
@@ -1803,12 +1804,30 @@ public final class Stage3ClientTest implements FabricClientGameTest {
                 disconnectClient(context); connected = false;
                 require(active.stopNormally(context), active.serverFailure("FULL normal stop timed out"));
                 String log = active.readLatestLog();
-                require(active.process.exitValue() == 0 && !log.contains("Encountered an unexpected exception")
-                        && !log.contains("Exception stopping the server") && !log.contains("FULL_" + "LIVE_FAIL"),
+                String processLog = active.readProcessLog();
+                List<String> suffixLines = processLog.lines()
+                        .filter(line -> line.contains("PHOENIUM_FULL_LIVE_SUFFIX phase=" + phase))
+                        .toList();
+                require(suffixLines.size() == 4 && suffixLines.stream().allMatch(line ->
+                                line.contains("publicPending=true") && line.contains("admitted=true")),
+                        active.serverFailure("FULL suffix admission evidence was incomplete: " + suffixLines));
+                long generatedFixtures = processLog.lines()
+                        .filter(line -> line.contains("PHOENIUM_FULL_LIVE_GENERATED chunk=")).count();
+                require(generatedFixtures == (phase.equals("fresh") ? 4 : 0),
+                        active.serverFailure("FULL serializer/generation route was not phase-correct: generated="
+                                + generatedFixtures + " phase=" + phase));
+                require(active.process.exitValue() == 0 && healthyFullAcceptanceLog(log)
+                        && healthyFullAcceptanceLog(processLog),
                         active.serverFailure("FULL server health check failed"));
                 require(log.contains("PHOENIUM_FULL STOPPED"), "authoritative FULL teardown evidence missing");
-                Files.copy(active.latestLog, directory.resolve(phase + "-latest.log"));
+                Path savedLatestLog = directory.resolve(phase + "-latest.log");
+                Path savedProcessLog = directory.resolve(phase + "-server-process.log");
+                Files.copy(active.latestLog, savedLatestLog, StandardCopyOption.REPLACE_EXISTING);
+                Files.copy(active.processLog, savedProcessLog, StandardCopyOption.REPLACE_EXISTING);
                 evidence.put(phase + "Exit", active.process.exitValue());
+                evidence.put(phase + "LatestLog", savedLatestLog.toString());
+                evidence.put(phase + "ProcessLog", savedProcessLog.toString());
+                evidence.put(phase + "SuffixAdmissions", suffixLines.size());
                 active = null;
             }
             require(Objects.equals(evidence.get("freshSeed"), evidence.get("reloadSeed")), "reload did not use the actual saved world");
@@ -1818,10 +1837,54 @@ public final class Stage3ClientTest implements FabricClientGameTest {
             throw new AssertionError("authoritative FULL real-world/client acceptance failed", failure);
         } finally {
             if (connected) try { disconnectClient(context); } catch (Throwable ignored) { }
-            if (active != null) active.stopQuietly(context);
+            if (active != null) {
+                active.stopQuietly(context);
+                preserveFullAcceptanceLogs(active, evidence);
+            }
             if (output != null) try { Files.writeString(output, new com.google.gson.GsonBuilder().setPrettyPrinting().create().toJson(evidence)); }
             catch (IOException failure) { throw new IllegalStateException("could not preserve FULL acceptance evidence", failure); }
         }
+    }
+
+    private static void preserveFullAcceptanceLogs(ExternalServer server, Map<String, Object> evidence) {
+        String phase = server.lifecycle == 1 ? "fresh" : "reload";
+        Path directory = server.directory;
+        try {
+            Path savedLatestLog = directory.resolve(phase + "-latest.log");
+            Path savedProcessLog = directory.resolve(phase + "-server-process.log");
+            if (Files.exists(server.latestLog)) {
+                Files.copy(server.latestLog, savedLatestLog, StandardCopyOption.REPLACE_EXISTING);
+                evidence.put(phase + "LatestLog", savedLatestLog.toString());
+            }
+            if (Files.exists(server.processLog)) {
+                Files.copy(server.processLog, savedProcessLog, StandardCopyOption.REPLACE_EXISTING);
+                evidence.put(phase + "ProcessLog", savedProcessLog.toString());
+            }
+            if (!server.isAlive()) evidence.put(phase + "Exit", server.process.exitValue());
+        } catch (IOException | IllegalThreadStateException ignored) {
+            evidence.put(phase + "LogPreservationFailure", "unable to preserve lifecycle logs or exit code");
+        }
+    }
+
+    private static void requireFullAcceptanceState(String phase, String state) {
+        String origin = phase.equals("fresh") ? "ADMITTED_PROTO" : "ADMITTED_IMPOSTER";
+        String[] required = {
+            "FULL_LIVE_OK phase=" + phase,
+            "sources=4", "savedReaders=8", "richVillagers=4", "frogs=4",
+            "teams=true", "separatePublication=true", "origin=" + origin,
+        };
+        for (String field : required)
+            require(state.contains(field), "FULL " + phase + " assertion omitted " + field + ": " + state);
+        Matcher neighbors = Pattern.compile("(?:^|\\s)privateNeighbors=(\\d+)(?:\\s|$)").matcher(state);
+        require(neighbors.find() && Integer.parseInt(neighbors.group(1)) > 0,
+            "FULL " + phase + " did not report a positive private-neighbor count: " + state);
+    }
+
+    private static boolean healthyFullAcceptanceLog(String log) {
+        return !log.contains("Encountered an unexpected exception")
+            && !log.contains("Exception stopping the server")
+            && !log.contains("FULL_LIVE_FAIL")
+            && !log.contains("FULL fixture failed");
     }
 
     private static final class ExternalServer {
@@ -2057,6 +2120,14 @@ public final class Stage3ClientTest implements FabricClientGameTest {
         private String readLatestLog() {
             try {
                 return Files.exists(latestLog) ? Files.readString(latestLog) : "";
+            } catch (IOException ignored) {
+                return "";
+            }
+        }
+
+        private String readProcessLog() {
+            try {
+                return Files.exists(processLog) ? Files.readString(processLog) : "";
             } catch (IOException ignored) {
                 return "";
             }
