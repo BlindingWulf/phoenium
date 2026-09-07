@@ -12,6 +12,7 @@ import net.minecraft.nbt.*;
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.entity.Entity;
+import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.ai.attributes.Attributes;
 import net.minecraft.world.entity.npc.villager.Villager;
 import net.minecraft.world.entity.animal.frog.Frog;
@@ -28,6 +29,8 @@ public final class FullRuntimeAcceptanceProbe implements DedicatedServerModIniti
             new ChunkPos(34, 4).pack(), new ChunkPos(35, 4).pack());
     private static final Map<Long, String> SUFFIXES = new LinkedHashMap<>();
     private static final Map<String, Integer> READERS = new LinkedHashMap<>();
+    private static final BlockPos SAVED_BED = new BlockPos(2032, 75, -1104);
+    private static final Set<UUID> BED_CHECKS = new HashSet<>();
     private static int richVillagers, privateNeighbors;
     public static String phase() { return System.getProperty("phoenium.test.fullFixturePhase", ""); }
     private static boolean target(ChunkPos pos) { return CHUNKS.contains(pos.pack()); }
@@ -117,6 +120,14 @@ public final class FullRuntimeAcceptanceProbe implements DedicatedServerModIniti
         }
     }
 
+    /** Test-only witness that the original LivingEntity bed lookup consumed the saved position. */
+    public static void recordBedCheck(LivingEntity entity, BlockPos position, Boolean result) {
+        if (!entity.entityTags().contains(marker(phase())) || !SAVED_BED.equals(position)) return;
+        BED_CHECKS.add(entity.getUUID());
+        System.out.println("PHOENIUM_FULL_BED_CHECK phase=" + phase() + " entity=" + entity.getUUID()
+                + " position=" + position + " result=" + result + " distinct=" + BED_CHECKS.size());
+    }
+
     private static String verify(ServerLevel level) {
         if (SUFFIXES.size() != CHUNKS.size()) return "FULL_LIVE_PENDING phase=" + phase() + " suffixes=" + SUFFIXES.size();
         require(READERS.size() == 8 && richVillagers == 4, "saved reader completion/state missing: " + READERS);
@@ -137,9 +148,10 @@ public final class FullRuntimeAcceptanceProbe implements DedicatedServerModIniti
             else throw new IllegalStateException("unexpected surviving saved root " + entity);
         }
         require(frogs == 4 && villagers == 4, "real entity inventory differs: frogs=" + frogs + " villagers=" + villagers);
+        require(BED_CHECKS.size() == 4, "saved bed check witness missing: " + BED_CHECKS.size());
         require(!dev.phoenium.Phoenium.liveRuntime().diagnostics().toLogLine().contains("barriers=1"), "live scheduler barrier");
         return "FULL_LIVE_OK phase=" + phase() + " sources=4 savedReaders=8 richVillagers=4 frogs=4 teams=true"
-                + " separatePublication=true privateNeighbors=" + privateNeighbors + " origin="
+                + " separatePublication=true bedChecks=" + BED_CHECKS.size() + " privateNeighbors=" + privateNeighbors + " origin="
                 + (phase().equals("fresh") ? "ADMITTED_PROTO" : "ADMITTED_IMPOSTER");
     }
     private static void require(boolean condition, String reason) { if (!condition) throw new IllegalStateException(reason); }

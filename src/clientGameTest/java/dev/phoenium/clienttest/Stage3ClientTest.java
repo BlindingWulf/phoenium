@@ -14,7 +14,6 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.network.chat.Component;
 import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.level.chunk.LevelChunk;
-import net.minecraft.world.level.chunk.status.ChunkPyramid;
 import net.minecraft.world.level.chunk.status.ChunkStatus;
 
 import java.io.BufferedInputStream;
@@ -1765,7 +1764,7 @@ public final class Stage3ClientTest implements FabricClientGameTest {
                 active.waitUntilReady(context);
                 evidence.put(phase + "Seed", active.worldSeed());
                 String bedSupport = active.execute(fullBedSupportCommand());
-                require(bedSupport.contains("Marked"), active.serverFailure(
+                require(fullBedSupportSucceeded(bedSupport), active.serverFailure(
                         "FULL saved-bed support was not force-loaded: " + bedSupport));
                 evidence.put(phase + "SavedBedSupport", bedSupport);
                 connectClient(context); connected = true;
@@ -1882,7 +1881,7 @@ public final class Stage3ClientTest implements FabricClientGameTest {
         String[] required = {
             "FULL_LIVE_OK phase=" + phase,
             "sources=4", "savedReaders=8", "richVillagers=4", "frogs=4",
-            "teams=true", "separatePublication=true", "origin=" + origin,
+            "teams=true", "separatePublication=true", "bedChecks=4", "origin=" + origin,
         };
         for (String field : required)
             require(state.contains(field), "FULL " + phase + " assertion omitted " + field + ": " + state);
@@ -1892,13 +1891,12 @@ public final class Stage3ClientTest implements FabricClientGameTest {
     }
 
     private static String fullBedSupportCommand() {
-        int radius = ChunkPyramid.GENERATION_PYRAMID.getStepTo(ChunkStatus.FULL)
-                .getAccumulatedRadiusOf(ChunkStatus.EMPTY);
-        int minChunkX = 127 - radius, maxChunkX = 127 + radius;
-        int minChunkZ = -69 - radius, maxChunkZ = -69 + radius;
-        int minBlockX = minChunkX * 16, maxBlockX = (maxChunkX + 1) * 16 - 1;
-        int minBlockZ = minChunkZ * 16, maxBlockZ = (maxChunkZ + 1) * 16 - 1;
-        return "forceload add " + minBlockX + " " + minBlockZ + " " + maxBlockX + " " + maxBlockZ;
+        return "forceload add 2032 -1104 2047 -1089";
+    }
+
+    private static boolean fullBedSupportSucceeded(String response) {
+        return response.contains("Marked 1 chunk")
+            && response.contains("[127, -69] to [127, -69]");
     }
 
     private static boolean healthyFullAcceptanceLog(String log) {
