@@ -124,6 +124,8 @@ public final class FullRegistrationServerProbe implements DedicatedServerModInit
             contexts.pendingBlockEntityCustomNamePublishesNestedStorageBlockAndSelfSelectorDependencies(false);
             contexts.directory = java.nio.file.Files.createTempDirectory("phoenium-full-pending-block-reload-probe");
             contexts.pendingBlockEntityCustomNamePublishesNestedStorageBlockAndSelfSelectorDependencies(true);
+            contexts.repeatedInterpretedReadsOfOnePendingBlockReuseOneCaptureAndBothOriginalSuffixes();
+            contexts.overlappingPendingTagProducerLeavesRefinementPendingAndItsCompletionRetriesThePlan();
             contexts.filteredSelfSelectorRunsItsOriginalNbtPredicateWithoutAWorldCandidateGrant();
             contexts.selectorValuedSeparatorRestoresTheOuterSameWorldCandidateGrant();
             contexts.sameWorldEntityNbtRunsTheOriginalWorldLimitedPredicateAndSerializer();
@@ -137,7 +139,7 @@ public final class FullRegistrationServerProbe implements DedicatedServerModInit
             var completion = new FullAuthoritativeFinishingTest();
             completion.originalFinishingAndSeparatePublicationCompleteExactlyOnce(false);
             completion.originalFinishingAndSeparatePublicationCompleteExactlyOnce(true);
-            System.out.println("PHOENIUM_FULL_FINISHING_PROBE PASS cases=47 queryCases=13 serviceCases=7 d1Cases=7 contextCases=18 publicationCases=2 "
+            System.out.println("PHOENIUM_FULL_FINISHING_PROBE PASS cases=49 queryCases=13 serviceCases=7 d1Cases=7 contextCases=20 publicationCases=2 "
                     + "originalFinishing=true separatePublication=true cyclicPreparedPair=true bothPairOrders=true "
                     + "proto=true inMemoryImposter=true diskReload=false originalDifficulty=true originalCollision=true "
                     + "originalShulkerImmediate=true originalLaterRegistration=true originalMovingPiston=true "

@@ -52,6 +52,7 @@ public final class FullSavedContextInputs {
         private final List<Pending> pendingBlocks = new ArrayList<>();
         private final Set<Pending> refinedBlocks = Collections.newSetFromMap(new IdentityHashMap<>());
         private final Map<BlockPos, FullBlockEntityTagInputs.Capture> blockTags = new HashMap<>();
+        private final Map<BlockPos, AutoCloseable> blockWaiters = new HashMap<>();
         private final List<AutoCloseable> consumers = new ArrayList<>();
         private final Runnable changed;
         private FullEntityFacts.Cut entityCut;
@@ -60,6 +61,7 @@ public final class FullSavedContextInputs {
         private long bytes;
         private ChunkStageClaim claim;
         private String currentText;
+        private boolean refinementWaiting;
         private boolean closed;
         private Plan(ServerLevel world, WorldId worldId, RegionDirectory directory, ChunkCustodyModel.StageId stage,
                      FullSavedInput.Snapshot saved, Runnable changed) {
@@ -69,6 +71,8 @@ public final class FullSavedContextInputs {
         }
         public String unmet() { return unmet; }
         long payloadBytes() { return bytes; }
+        int blockTagCaptures() { return blockTags.size(); }
+        boolean refinementWaiting() { return refinementWaiting; }
         public boolean valid(FullSavedInput.Snapshot current) {
             return !closed && current == saved && world.registryAccess() == registry
                     && storage.values().stream().allMatch(FullCommandStorageInputs.Capture::valid)
@@ -137,19 +141,38 @@ public final class FullSavedContextInputs {
          * pending-tag producer, never the chunk's live block entities or serializer. */
         boolean refineBlocks(List<FullInitializedInputs.Target> targets) {
             boolean changedPlan = false;
+            refinementWaiting = false;
             var byPosition = new HashMap<net.minecraft.world.level.ChunkPos, FullInitializedInputs.Target>();
             for (var target : targets) byPosition.put(target.position(), target);
             for (int index = 0; index < pendingBlocks.size() && unmet == null; index++) {
                 Pending pending = pendingBlocks.get(index);
                 if (refinedBlocks.contains(pending)) continue;
-                refinedBlocks.add(pending); changedPlan = true;
                 var read = pending.read;
                 var target = byPosition.get(new net.minecraft.world.level.ChunkPos(read.block().getX() >> 4, read.block().getZ() >> 4));
-                if (target == null || target.actual() == null) continue; // Original isLoaded false/absent branch.
-                var capture = FullBlockEntityTagInputs.observe(target.actual(), read.block(), world.registryAccess());
+                if (target == null || target.actual() == null) {
+                    refinedBlocks.add(pending); changedPlan = true;
+                    continue; // Original isLoaded false/absent branch.
+                }
+                var capture = blockTags.get(read.block());
+                if (capture == null) {
+                    try {
+                        capture = FullBlockEntityTagInputs.observe(target.actual(), read.block(), world.registryAccess(), changed);
+                    } catch (FullBlockEntityTagInputs.Retry retry) {
+                        AutoCloseable prior = blockWaiters.putIfAbsent(read.block(), retry.waiter);
+                        if (prior == null) consumers.add(retry.waiter);
+                        else close(retry.waiter, "duplicate pending block dependency waiter");
+                        refinementWaiting = true; changedPlan = true;
+                        continue;
+                    }
+                    AutoCloseable waiter = blockWaiters.remove(read.block());
+                    if (waiter != null) close(waiter, "completed pending block dependency waiter");
+                    if (capture != null) {
+                        blockTags.put(read.block(), capture); bytes = Math.addExact(bytes, capture.bytes());
+                        consumers.add(capture.retain(changed));
+                    }
+                }
+                refinedBlocks.add(pending); changedPlan = true;
                 if (capture == null) continue; // Instantiated named-field producer is a separate audited source.
-                blockTags.put(read.block(), capture); bytes = Math.addExact(bytes, capture.bytes());
-                consumers.add(capture.retain(changed));
                 if (!read.path().equals("CustomName")) {
                     unmet = pending.fact.path() + ": pending block-entity interpreted path producer pending for " + read.path();
                     break;
@@ -160,6 +183,11 @@ public final class FullSavedContextInputs {
                 process(queue);
             }
             return changedPlan;
+        }
+        private static void close(AutoCloseable value, String message) {
+            try { value.close(); }
+            catch (RuntimeException | Error failure) { throw failure; }
+            catch (Exception failure) { throw new ChunkProtocolException(message, failure); }
         }
         private void add(FullSavedInput.EntityFact fact, FullSavedTextInputs.Requirements requirements, ArrayDeque<Pending> queue) {
             texts.computeIfAbsent(fact.path(), ignored -> new ArrayList<>()).add(requirements);
@@ -197,7 +225,8 @@ public final class FullSavedContextInputs {
         @Override public void close() {
             if (closed) return;
             if (claim != null) throw new ChunkProtocolException("saved contexts released before original reader exit");
-            closed = true; texts.clear(); storage.clear(); pendingBlocks.clear(); refinedBlocks.clear(); blockTags.clear();
+            closed = true; texts.clear(); storage.clear(); pendingBlocks.clear(); refinedBlocks.clear();
+            blockTags.clear(); blockWaiters.clear();
             Throwable failure = null;
             for (AutoCloseable consumer : consumers) try { consumer.close(); }
             catch (Throwable problem) {

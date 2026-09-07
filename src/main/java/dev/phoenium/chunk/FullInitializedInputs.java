@@ -184,7 +184,8 @@ public final class FullInitializedInputs {
             plan.evaluation = plan.contexts.unmet() == null
                     ? new Evaluation(State.PENDING, "protected block context dependency refinement", null)
                     : new Evaluation(State.UNRESOLVED, plan.contexts.unmet(), null);
-            changed(); return;
+            if (!plan.contexts.refinementWaiting()) changed();
+            return;
         }
         int needed = (int) targets.stream().filter(t -> t.availability == Availability.PREPARED || t.availability == Availability.PUBLISHED || t.availability == Availability.BIOMES).count();
         if (needed > limits.consumers && !expand(plan)) {

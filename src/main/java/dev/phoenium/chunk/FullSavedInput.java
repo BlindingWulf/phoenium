@@ -41,6 +41,19 @@ public final class FullSavedInput {
         if (!observing.compareAndSet(false, true)) throw new ChunkProtocolException("saved input observation overlaps its writer");
         try { return captureExclusive(roots); } finally { endWrite(); }
     }
+    record CaptureAttempt(boolean acquired, Snapshot snapshot) { }
+    /** Nonblocking producer observation used where an overlapping legitimate writer supplies a
+     * completion notification. An unacquired attempt means retry after that producer releases its
+     * turn. The current snapshot is reused under the observation fence so a read can never retain
+     * the old snapshot while a writer is active. */
+    CaptureAttempt captureIfAvailable(List<CompoundTag> roots) {
+        tracking = true;
+        if (!observing.compareAndSet(false, true)) return new CaptureAttempt(false, null);
+        try {
+            Snapshot current = snapshot;
+            return new CaptureAttempt(true, current == null ? captureExclusive(roots) : current);
+        } finally { endWrite(); }
+    }
     private Snapshot captureExclusive(List<CompoundTag> roots) {
         paths.clear();
         var facts = new ArrayList<EntityFact>();

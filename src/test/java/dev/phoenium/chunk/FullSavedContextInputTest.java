@@ -2,6 +2,7 @@ package dev.phoenium.chunk;
 
 import java.nio.file.Path;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.world.level.storage.ValueOutput;
@@ -13,6 +14,7 @@ import net.minecraft.world.entity.EntityTypes;
 import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.level.entity.EntityLookup;
 import net.minecraft.world.level.chunk.status.ChunkStatus;
+import net.minecraft.world.level.chunk.LevelChunk;
 import net.minecraft.world.level.storage.CommandStorage;
 import net.minecraft.world.level.storage.SavedDataStorage;
 import net.minecraft.core.BlockPos;
@@ -159,16 +161,129 @@ class FullSavedContextInputTest {
         var exact = new IllegalStateException("controlled pending tag retention failure");
         AutoCloseable later = null;
         try {
-            var stale = FullBlockEntityTagInputs.observe(f.input(ChunkPos.ZERO), position, f.world.level.registryAccess());
+            var stale = FullBlockEntityTagInputs.observe(f.input(ChunkPos.ZERO), position, f.world.level.registryAccess(), () -> { });
             customName.putString("storage", SECOND.toString());
             assertSame(exact, assertThrows(IllegalStateException.class,
                     () -> stale.retain(() -> { failedCalls.incrementAndGet(); throw exact; })));
-            var current = FullBlockEntityTagInputs.observe(f.input(ChunkPos.ZERO), position, f.world.level.registryAccess());
+            var current = FullBlockEntityTagInputs.observe(f.input(ChunkPos.ZERO), position, f.world.level.registryAccess(), () -> { });
             later = current.retain(laterCalls::incrementAndGet); assertTrue(current.valid());
             f.input(ChunkPos.ZERO).setBlockEntityNbt(pendingBeacon(position, net.minecraft.nbt.StringTag.valueOf("replacement")));
             assertFalse(current.valid()); assertEquals(1, failedCalls.get()); assertEquals(1, laterCalls.get());
             later.close(); later.close(); later = null;
         } finally { if (later != null) later.close(); f.stop(); FullFinishingServices.stopped(f.world.level.getServer()); }
+        assertCleanup(f);
+    }
+
+    @Test void protoAndLevelMapOccurrencesShareCustodyUntilTheLastRemovalAndThenPermitExactTagReuse() throws Exception {
+        var f = new FullRegistrationFixture(true); var position = new BlockPos(8, 8, 8);
+        var customName = storageText(FIRST); var original = pendingBeacon(position, customName);
+        var proto = f.input(ChunkPos.ZERO); proto.setBlockEntityNbt(original);
+        var level = new LevelChunk(f.world.level, proto, null);
+        var changed = new AtomicInteger(); AutoCloseable use = null;
+        try {
+            var shared = FullBlockEntityTagInputs.observe(level, position, f.world.level.registryAccess(), changed::incrementAndGet);
+            assertNotNull(shared); use = shared.retain(changed::incrementAndGet);
+            proto.setBlockEntityNbt(pendingBeacon(position, net.minecraft.nbt.StringTag.valueOf("proto replacement")));
+            assertTrue(shared.valid(), "the surviving LevelChunk map occurrence retains the shared source");
+            customName.putString("storage", SECOND.toString());
+            assertFalse(shared.valid()); assertEquals(1, changed.get());
+            use.close(); use = null;
+
+            var levelCapture = FullBlockEntityTagInputs.observe(level, position, f.world.level.registryAccess(), () -> { });
+            assertNotNull(levelCapture); use = levelCapture.retain(changed::incrementAndGet);
+            level.setBlockEntityNbt(pendingBeacon(position, net.minecraft.nbt.StringTag.valueOf("level replacement")));
+            assertFalse(levelCapture.valid()); assertEquals(2, changed.get());
+            use.close(); use = null;
+
+            proto.setBlockEntityNbt(original);
+            var reused = FullBlockEntityTagInputs.observe(proto, position, f.world.level.registryAccess(), () -> { });
+            assertNotNull(reused); assertTrue(reused.valid(), "last-owner retirement does not poison later exact-tag custody reuse");
+        } finally { if (use != null) use.close(); f.stop(); FullFinishingServices.stopped(f.world.level.getServer()); }
+        assertCleanup(f);
+    }
+
+    @Test void pendingTagNotificationsAndMapClearCompleteEveryListenerAndSourceAfterFailures() throws Exception {
+        var f = new FullRegistrationFixture(true); var firstPosition = new BlockPos(8, 8, 8);
+        var secondPosition = new BlockPos(9, 8, 8); var firstName = storageText(FIRST);
+        f.input(ChunkPos.ZERO).setBlockEntityNbt(pendingBeacon(firstPosition, firstName));
+        f.input(ChunkPos.ZERO).setBlockEntityNbt(pendingBeacon(secondPosition, net.minecraft.nbt.StringTag.valueOf("second")));
+        var firstFailure = new IllegalStateException("first pending listener failure");
+        var secondFailure = new IllegalArgumentException("second pending listener failure");
+        AutoCloseable firstUse = null, secondUse = null;
+        try {
+            var firstCapture = FullBlockEntityTagInputs.observe(f.input(ChunkPos.ZERO), firstPosition,
+                    f.world.level.registryAccess(), () -> { });
+            firstUse = firstCapture.retain(() -> { throw firstFailure; });
+            secondUse = firstCapture.retain(() -> { throw secondFailure; });
+            var thrown = assertThrows(IllegalStateException.class, () -> firstName.putString("storage", SECOND.toString()));
+            assertSame(firstFailure, thrown); assertArrayEquals(new Throwable[]{secondFailure}, thrown.getSuppressed());
+            firstUse.close(); firstUse = null; secondUse.close(); secondUse = null;
+
+            var currentFirst = FullBlockEntityTagInputs.observe(f.input(ChunkPos.ZERO), firstPosition,
+                    f.world.level.registryAccess(), () -> { });
+            var currentSecond = FullBlockEntityTagInputs.observe(f.input(ChunkPos.ZERO), secondPosition,
+                    f.world.level.registryAccess(), () -> { });
+            var later = new AtomicInteger();
+            firstUse = currentFirst.retain(() -> { throw firstFailure; });
+            secondUse = currentSecond.retain(later::incrementAndGet);
+            var state = ((FullBlockEntityTagInputs.Access) f.input(ChunkPos.ZERO)).phoenium$blockEntityTags();
+            @SuppressWarnings("unchecked") var guarded = (Map<BlockPos, CompoundTag>) field(state,
+                    FullBlockEntityTagInputs.State.class, "guarded");
+            assertSame(firstFailure, assertThrows(IllegalStateException.class, guarded::clear));
+            assertEquals(1, later.get()); assertFalse(currentFirst.valid()); assertFalse(currentSecond.valid());
+        } finally {
+            if (firstUse != null) firstUse.close(); if (secondUse != null) secondUse.close();
+            f.stop(); FullFinishingServices.stopped(f.world.level.getServer());
+        }
+        assertCleanup(f);
+    }
+
+    @Test void repeatedInterpretedReadsOfOnePendingBlockReuseOneCaptureAndBothOriginalSuffixes() throws Exception {
+        var f = new FullRegistrationFixture(true); var position = new BlockPos(8, 8, 8);
+        f.input(ChunkPos.ZERO).getSection(0).setBlockState(8, 8, 8, Blocks.BEACON.defaultBlockState());
+        f.input(ChunkPos.ZERO).setBlockEntityNbt(pendingBeacon(position, net.minecraft.nbt.StringTag.valueOf("repeat")));
+        var root = new CompoundTag(); root.putString("text", ""); var extra = new net.minecraft.nbt.ListTag();
+        extra.add(blockText(position)); extra.add(blockText(position)); root.put("extra", extra);
+        try {
+            saved(f, ChunkPos.ZERO, false, text(root)); f.start(ChunkPos.ZERO, ChunkStatus.FULL); f.drain();
+            var graph = f.runtime.graph(f.holder(ChunkPos.ZERO));
+            assertEquals(FullInitializedInputs.State.SATISFIED, graph.inputEvaluation().state(), graph.inputEvaluation().obligation());
+            assertEquals(1, graph.inputReceipt().contexts().blockTagCaptures());
+            FullAuthoritativeFinishingTest.context(f); f.runtime.inputs.changed(); f.drain();
+            assertInstanceOf(ChunkStageOutcome.Applied.class, graph.finishing.outcome().join());
+            assertEquals("repeatrepeat", FullSavedContextTestHooks.text(
+                    assertInstanceOf(Display.TextDisplay.class, f.world.inserted.getFirst())).getString());
+            assertFalse(f.barrier.tripped());
+        } finally { f.stop(); FullFinishingServices.stopped(f.world.level.getServer()); }
+        assertCleanup(f);
+    }
+
+    @Test void overlappingPendingTagProducerLeavesRefinementPendingAndItsCompletionRetriesThePlan() throws Exception {
+        var f = new FullRegistrationFixture(true); var position = new BlockPos(8, 8, 8);
+        f.input(ChunkPos.ZERO).getSection(0).setBlockState(8, 8, 8, Blocks.BEACON.defaultBlockState());
+        var pending = pendingBeacon(position, net.minecraft.nbt.StringTag.valueOf("after producer"));
+        f.input(ChunkPos.ZERO).setBlockEntityNbt(pending); var producer = FullSavedCollections.source(pending);
+        producer.beforeWrite(); boolean producerActive = true;
+        try {
+            saved(f, ChunkPos.ZERO, false, text(blockText(position)));
+            f.start(ChunkPos.ZERO, ChunkStatus.FULL); f.drain(); var graph = f.runtime.graph(f.holder(ChunkPos.ZERO));
+            assertEquals(FullInitializedInputs.State.PENDING, graph.inputEvaluation().state());
+            assertTrue(graph.inputEvaluation().obligation().contains("dependency refinement"));
+            assertNull(graph.inputReceipt()); assertFalse(f.barrier.tripped());
+
+            Runnable notify = producer.written(List.of(pending)); producer.endWrite(); producerActive = false;
+            if (notify != null) notify.run();
+            f.drain(); assertEquals(FullInitializedInputs.State.SATISFIED,
+                    graph.inputEvaluation().state(), graph.inputEvaluation().obligation());
+            FullAuthoritativeFinishingTest.context(f); f.runtime.inputs.changed(); f.drain();
+            assertInstanceOf(ChunkStageOutcome.Applied.class, graph.finishing.outcome().join());
+            assertEquals("after producer", FullSavedContextTestHooks.text(
+                    assertInstanceOf(Display.TextDisplay.class, f.world.inserted.getFirst())).getString());
+            assertFalse(f.barrier.tripped());
+        } finally {
+            if (producerActive) { Runnable notify = producer.written(List.of(pending)); producer.endWrite(); if (notify != null) notify.run(); }
+            f.stop(); FullFinishingServices.stopped(f.world.level.getServer());
+        }
         assertCleanup(f);
     }
 
