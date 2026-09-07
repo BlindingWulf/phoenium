@@ -43,6 +43,8 @@ shutil.copytree(PRESERVED_WORLD, SERVER / WORLD_NAME)
 
 artifact = next((SERVER / "mods").glob("phoenium-*.jar"))
 digest = lambda path: hashlib.sha256(path.read_bytes()).hexdigest().upper()
+built = ROOT / "build/libs" / artifact.name
+assert digest(artifact) == digest(built), "prepared server has a stale production artifact"
 (SERVER / "eula.txt").write_text("eula=true\n")
 (SERVER / "server.properties").write_text("\n".join([
     "level-name=" + WORLD_NAME, "level-seed=", "online-mode=false",
