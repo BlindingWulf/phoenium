@@ -49,6 +49,9 @@ public final class FullSavedContextInputs {
         private final net.minecraft.core.RegistryAccess registry;
         private final Map<String, List<FullSavedTextInputs.Requirements>> texts = new LinkedHashMap<>();
         private final Map<Identifier, FullCommandStorageInputs.Capture> storage = new LinkedHashMap<>();
+        private final List<Pending> pendingBlocks = new ArrayList<>();
+        private final Set<Pending> refinedBlocks = Collections.newSetFromMap(new IdentityHashMap<>());
+        private final Map<BlockPos, FullBlockEntityTagInputs.Capture> blockTags = new HashMap<>();
         private final List<AutoCloseable> consumers = new ArrayList<>();
         private final Runnable changed;
         private FullEntityFacts.Cut entityCut;
@@ -69,6 +72,7 @@ public final class FullSavedContextInputs {
         public boolean valid(FullSavedInput.Snapshot current) {
             return !closed && current == saved && world.registryAccess() == registry
                     && storage.values().stream().allMatch(FullCommandStorageInputs.Capture::valid)
+                    && blockTags.values().stream().allMatch(FullBlockEntityTagInputs.Capture::valid)
                     && (entityCut == null || FullFinishingServices.forServer(world.getServer()).entityFacts.valid(entityCut));
         }
         List<FullSavedTextInputs.Requirements> requirements(String path) { return List.copyOf(texts.getOrDefault(path, List.of())); }
@@ -86,15 +90,22 @@ public final class FullSavedContextInputs {
         private void discover(FullSavedInput.EntityFact fact) {
             var queue = new ArrayDeque<Pending>();
             add(fact, FullSavedTextInputs.discover(fact, world.registryAccess()), queue);
+            process(queue);
+        }
+        private void process(ArrayDeque<Pending> queue) {
             while (!queue.isEmpty() && unmet == null) {
-                Pending next = queue.remove(); var read = next.read;
+                Pending next = queue.remove(); var fact = next.fact; var read = next.read;
                 if (read.source() != FullSavedTextInputs.Source.STORAGE) {
-                    if (read.source() == FullSavedTextInputs.Source.BLOCK) continue;
+                    if (read.source() == FullSavedTextInputs.Source.BLOCK) {
+                        if (read.interpreting() && read.recursionDepth() <= 100) pendingBlocks.add(next);
+                        continue;
+                    }
                     if (read.source() == FullSavedTextInputs.Source.ENTITY) {
                         var selector = declaredSelector(fact.path(), read.target(), FullSavedTextInputs.Use.NBT);
                         if (selector != null && !read.interpreting() && (selector.self() || selector.worldLimited())) continue;
-                        if (selector != null && selector.self() && read.interpreting()
-                                && read.recursionDepth() <= 100 && read.path().equals("CustomName")) {
+                        if (selector != null && selector.self() && read.interpreting() && read.recursionDepth() > 100)
+                            continue;
+                        if (selector != null && selector.self() && read.interpreting() && read.path().equals("CustomName")) {
                             FullSavedTextInputs.decode(fact.services().customName(), world.registryAccess()).ifPresent(component ->
                                     add(fact, FullSavedTextInputs.discoverInterpreted(fact, component, read.recursionDepth()), queue));
                             continue;
@@ -121,6 +132,34 @@ public final class FullSavedContextInputs {
                     // Original NbtContents treats a missing path as an empty stream.
                 }
             }
+        }
+        /** Called only after the exact BLOCK_CONTEXT preparation has settled. Reads the guarded
+         * pending-tag producer, never the chunk's live block entities or serializer. */
+        boolean refineBlocks(List<FullInitializedInputs.Target> targets) {
+            boolean changedPlan = false;
+            var byPosition = new HashMap<net.minecraft.world.level.ChunkPos, FullInitializedInputs.Target>();
+            for (var target : targets) byPosition.put(target.position(), target);
+            for (int index = 0; index < pendingBlocks.size() && unmet == null; index++) {
+                Pending pending = pendingBlocks.get(index);
+                if (refinedBlocks.contains(pending)) continue;
+                refinedBlocks.add(pending); changedPlan = true;
+                var read = pending.read;
+                var target = byPosition.get(new net.minecraft.world.level.ChunkPos(read.block().getX() >> 4, read.block().getZ() >> 4));
+                if (target == null || target.actual() == null) continue; // Original isLoaded false/absent branch.
+                var capture = FullBlockEntityTagInputs.observe(target.actual(), read.block(), world.registryAccess());
+                if (capture == null) continue; // Instantiated named-field producer is a separate audited source.
+                blockTags.put(read.block(), capture); bytes = Math.addExact(bytes, capture.bytes());
+                consumers.add(capture.retain(changed));
+                if (!read.path().equals("CustomName")) {
+                    unmet = pending.fact.path() + ": pending block-entity interpreted path producer pending for " + read.path();
+                    break;
+                }
+                var queue = new ArrayDeque<Pending>();
+                FullSavedTextInputs.decode(capture.customName(), world.registryAccess()).ifPresent(component ->
+                        add(pending.fact, FullSavedTextInputs.discoverInterpreted(pending.fact, component, read.recursionDepth()), queue));
+                process(queue);
+            }
+            return changedPlan;
         }
         private void add(FullSavedInput.EntityFact fact, FullSavedTextInputs.Requirements requirements, ArrayDeque<Pending> queue) {
             texts.computeIfAbsent(fact.path(), ignored -> new ArrayList<>()).add(requirements);
@@ -158,7 +197,7 @@ public final class FullSavedContextInputs {
         @Override public void close() {
             if (closed) return;
             if (claim != null) throw new ChunkProtocolException("saved contexts released before original reader exit");
-            closed = true; texts.clear(); storage.clear();
+            closed = true; texts.clear(); storage.clear(); pendingBlocks.clear(); refinedBlocks.clear(); blockTags.clear();
             Throwable failure = null;
             for (AutoCloseable consumer : consumers) try { consumer.close(); }
             catch (Throwable problem) {
@@ -230,6 +269,14 @@ public final class FullSavedContextInputs {
         if (!FullFinishingServices.finishing()) return original.get();
         requireBlock(world, position);
         return FullFinishingQueries.blockEntity(world, position, original);
+    }
+    /** Marks this plan's exact retained pending-tag fact before the original IMMEDIATE getter
+     * removes/promotes it. Other plans see that source removal as stale. */
+    static void consumingBlockTag(net.minecraft.world.level.chunk.LevelChunk chunk, BlockPos position) {
+        Plan plan = ACTIVE.get();
+        if (plan == null || plan.currentText == null) throw new ChunkProtocolException("pending block tag consumed outside saved text occurrence");
+        var capture = plan.blockTags.get(position);
+        if (capture != null) capture.consuming();
     }
     /** Executes one admitted same-world selector body at its original component/NBT/score resolution point. */
     private static <T> T selector(String source, FullSavedTextInputs.Use use, SelectorCall<T> original) throws CommandSyntaxException {

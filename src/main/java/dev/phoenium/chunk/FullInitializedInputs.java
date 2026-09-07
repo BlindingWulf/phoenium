@@ -180,6 +180,12 @@ public final class FullInitializedInputs {
                 default -> { }
             }
         }
+        if (plan.contexts != null && plan.contexts.refineBlocks(targets)) {
+            plan.evaluation = plan.contexts.unmet() == null
+                    ? new Evaluation(State.PENDING, "protected block context dependency refinement", null)
+                    : new Evaluation(State.UNRESOLVED, plan.contexts.unmet(), null);
+            changed(); return;
+        }
         int needed = (int) targets.stream().filter(t -> t.availability == Availability.PREPARED || t.availability == Availability.PUBLISHED || t.availability == Availability.BIOMES).count();
         if (needed > limits.consumers && !expand(plan)) {
             plan.evaluation = new Evaluation(State.CAPACITY, "expanded operation acknowledgement", null); return;

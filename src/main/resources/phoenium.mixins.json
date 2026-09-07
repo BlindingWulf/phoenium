@@ -15,6 +15,7 @@
     "GenerationChunkHolderAccess",
     "FullPreparationClockMixin",
     "FullSavedProtoMixin",
+    "FullBlockEntityTagInputMixin",
     "FullSavedCompoundAccess",
     "FullSavedListAccess",
     "FullSavedReloadMixin",

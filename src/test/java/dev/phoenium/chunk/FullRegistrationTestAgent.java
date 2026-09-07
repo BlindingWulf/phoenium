@@ -12,6 +12,7 @@ public final class FullRegistrationTestAgent {
                 if (!name.equals("net/minecraft/server/level/GenerationChunkHolder")
                         && !name.equals("net/minecraft/world/level/chunk/status/ChunkStatusTasks")
                         && !name.equals("net/minecraft/world/level/chunk/ProtoChunk")
+                        && !name.equals("net/minecraft/world/level/chunk/ChunkAccess")
                         && !name.equals("net/minecraft/world/level/chunk/LevelChunk")
                         && !name.equals("net/minecraft/world/level/chunk/storage/SerializableChunkData")
                         && !name.equals("net/minecraft/server/level/ChunkMap")

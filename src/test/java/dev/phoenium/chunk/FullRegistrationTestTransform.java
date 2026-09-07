@@ -51,6 +51,27 @@ public final class FullRegistrationTestTransform {
             lookup.instructions.add(new VarInsnNode(Opcodes.ALOAD, 0)); lookup.instructions.add(new VarInsnNode(Opcodes.LLOAD, 1));
             lookup.instructions.add(new MethodInsnNode(Opcodes.INVOKEVIRTUAL, name, "getVisibleChunkIfPresent", lookup.desc, false));
             lookup.instructions.add(new InsnNode(Opcodes.ARETURN)); node.methods.add(lookup);
+        } else if (name.equals("net/minecraft/world/level/chunk/ChunkAccess")) {
+            node.interfaces.add("dev/phoenium/chunk/FullBlockEntityTagInputs$Access");
+            String state = "Ldev/phoenium/chunk/FullBlockEntityTagInputs$State;";
+            node.fields.add(new FieldNode(Opcodes.ACC_PRIVATE, "phoenium$blockTags", state, null, null));
+            getter(node, "phoenium$blockEntityTags", "phoenium$blockTags", state);
+            node.fields.stream().filter(field -> field.name.equals("pendingBlockEntities")).forEach(field -> field.access &= ~Opcodes.ACC_FINAL);
+            for (MethodNode method : node.methods) if (method.name.equals("<init>"))
+                for (AbstractInsnNode instruction : method.instructions.toArray()) if (instruction.getOpcode() == Opcodes.RETURN) {
+                    InsnList init = new InsnList();
+                    init.add(new VarInsnNode(Opcodes.ALOAD, 0));
+                    init.add(new MethodInsnNode(Opcodes.INVOKESTATIC, "dev/phoenium/chunk/FullBlockEntityTagInputs", "create", "()" + state, false));
+                    init.add(new FieldInsnNode(Opcodes.PUTFIELD, name, "phoenium$blockTags", state));
+                    init.add(new VarInsnNode(Opcodes.ALOAD, 0)); init.add(new VarInsnNode(Opcodes.ALOAD, 0));
+                    init.add(new FieldInsnNode(Opcodes.GETFIELD, name, "phoenium$blockTags", state));
+                    init.add(new VarInsnNode(Opcodes.ALOAD, 0));
+                    init.add(new FieldInsnNode(Opcodes.GETFIELD, name, "pendingBlockEntities", "Ljava/util/Map;"));
+                    init.add(new MethodInsnNode(Opcodes.INVOKESTATIC, "dev/phoenium/chunk/FullBlockEntityTagInputs", "guard",
+                            "(" + state + "Ljava/util/Map;)Ljava/util/Map;", false));
+                    init.add(new FieldInsnNode(Opcodes.PUTFIELD, name, "pendingBlockEntities", "Ljava/util/Map;"));
+                    method.instructions.insertBefore(instruction, init);
+                }
         } else if (name.equals("net/minecraft/world/level/chunk/LevelChunk")) {
             node.interfaces.add("dev/phoenium/chunk/FullSavedInput$PostLoadAccess");
             getter(node, "phoenium$postLoad", "postLoad", "Lnet/minecraft/world/level/chunk/LevelChunk$PostLoadProcessor;");

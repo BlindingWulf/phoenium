@@ -305,6 +305,7 @@ public final class FullFinishingQueries {
                 if (!world.isInValidBounds(position)
                         || !world.isClientSide() && Thread.currentThread() != ((FullLevelThreadAccessMixin) world).phoenium$levelThread())
                     return null;
+                FullSavedContextInputs.consumingBlockTag(target.actual(), position);
                 return target.actual().getBlockEntity(position, LevelChunk.EntityCreationType.IMMEDIATE);
             }
             BlockEntity reached = original.get();

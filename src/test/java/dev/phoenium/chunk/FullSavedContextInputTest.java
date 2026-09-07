@@ -91,6 +91,108 @@ class FullSavedContextInputTest {
     }
 
     @ParameterizedTest @ValueSource(booleans = {false, true})
+    void pendingBlockEntityCustomNamePublishesNestedStorageBlockAndSelfSelectorDependencies(boolean reload) throws Exception {
+        var f = new FullRegistrationFixture(true); var firstPosition = new BlockPos(8, 8, 8); var secondPosition = new BlockPos(9, 8, 8);
+        var data = new SavedDataStorage(directory, net.minecraft.util.datafix.DataFixers.getDataFixer(), f.world.level.registryAccess());
+        var storage = new CommandStorage(data); set(f.world.level.getServer(), MinecraftServer.class, "commandStorage", storage);
+        var stored = new CompoundTag(); stored.putString("message", "storage "); storage.set(SECOND, stored);
+        f.input(ChunkPos.ZERO).getSection(0).setBlockState(8, 8, 8, Blocks.BEACON.defaultBlockState());
+        f.input(ChunkPos.ZERO).getSection(0).setBlockState(9, 8, 8, Blocks.BEACON.defaultBlockState());
+        var customName = new CompoundTag(); customName.putString("text", "root "); var extra = new net.minecraft.nbt.ListTag();
+        extra.add(storageText(SECOND)); extra.add(blockText(secondPosition));
+        var selector = new CompoundTag(); selector.putString("selector", "@s"); extra.add(selector); customName.put("extra", extra);
+        f.input(ChunkPos.ZERO).setBlockEntityNbt(pendingBeacon(firstPosition, customName));
+        f.input(ChunkPos.ZERO).setBlockEntityNbt(pendingBeacon(secondPosition, net.minecraft.nbt.StringTag.valueOf("block ")));
+        var source = text(blockText(firstPosition)); source.putString("CustomName", "self");
+        try {
+            saved(f, ChunkPos.ZERO, reload, source);
+            f.start(ChunkPos.ZERO, ChunkStatus.FULL); f.drain(); var graph = f.runtime.graph(f.holder(ChunkPos.ZERO));
+            assertEquals(FullInitializedInputs.State.SATISFIED, graph.inputEvaluation().state(), graph.inputEvaluation().obligation());
+            assertTrue(graph.inputReceipt().contexts().requirements("root[0]").size() >= 4);
+            assertEquals(0, f.world.nextId); assertTrue(f.world.inserted.isEmpty());
+
+            FullAuthoritativeFinishingTest.context(f); f.runtime.inputs.changed(); f.drain();
+            var outcome = graph.finishing.outcome().join();
+            assertInstanceOf(ChunkStageOutcome.Applied.class, outcome,
+                    outcome instanceof ChunkStageOutcome.BarrierFailure failed ? failed.failure().toString() : outcome.toString());
+            assertEquals("root storage block self", FullSavedContextTestHooks.text(
+                    assertInstanceOf(Display.TextDisplay.class, f.world.inserted.getFirst())).getString());
+            var prepared = graph.prepared().orElseThrow().actual();
+            assertInstanceOf(BeaconBlockEntity.class, prepared.getBlockEntities().get(firstPosition));
+            assertInstanceOf(BeaconBlockEntity.class, prepared.getBlockEntities().get(secondPosition));
+            assertFalse(f.barrier.tripped());
+        } finally { f.stop(); FullFinishingServices.stopped(f.world.level.getServer()); data.close(); }
+        assertCleanup(f);
+    }
+
+    @Test void pendingBlockEntityNestedAliasMutationInvalidatesAndRebuildsItsRefinedContextPlan() throws Exception {
+        var f = new FullRegistrationFixture(true); var position = new BlockPos(8, 8, 8);
+        var data = new SavedDataStorage(directory, net.minecraft.util.datafix.DataFixers.getDataFixer(), f.world.level.registryAccess());
+        var storage = new CommandStorage(data); set(f.world.level.getServer(), MinecraftServer.class, "commandStorage", storage);
+        var first = new CompoundTag(); first.putString("message", "first pending result"); storage.set(FIRST, first);
+        var second = new CompoundTag(); second.putString("message", "second pending result"); storage.set(SECOND, second);
+        f.input(ChunkPos.ZERO).getSection(0).setBlockState(8, 8, 8, Blocks.BEACON.defaultBlockState());
+        var customName = storageText(FIRST); var pending = pendingBeacon(position, customName);
+        f.input(ChunkPos.ZERO).setBlockEntityNbt(pending);
+        try {
+            saved(f, ChunkPos.ZERO, false, text(blockText(position)));
+            f.start(ChunkPos.ZERO, ChunkStatus.FULL); f.drain(); var graph = f.runtime.graph(f.holder(ChunkPos.ZERO));
+            var old = graph.inputReceipt(); assertNotNull(old);
+            customName.putString("storage", SECOND.toString());
+            assertEquals(FullInitializedInputs.State.STALE, graph.validateInputs(graph.finishing.stage(), old).state());
+            f.drain(); assertNotSame(old, graph.inputReceipt());
+            assertTrue(graph.inputReceipt().contexts().valid(graph.savedSnapshot()));
+
+            FullAuthoritativeFinishingTest.context(f); f.runtime.inputs.changed(); f.drain();
+            assertInstanceOf(ChunkStageOutcome.Applied.class, graph.finishing.outcome().join());
+            assertEquals("second pending result", FullSavedContextTestHooks.text(
+                    assertInstanceOf(Display.TextDisplay.class, f.world.inserted.getFirst())).getString());
+            assertFalse(f.barrier.tripped());
+        } finally { f.stop(); FullFinishingServices.stopped(f.world.level.getServer()); data.close(); }
+        assertCleanup(f);
+    }
+
+    @Test void failedPendingTagRetentionDoesNotLeakAndLaterConsumerReceivesRemovalInvalidation() throws Exception {
+        var f = new FullRegistrationFixture(true); var position = new BlockPos(8, 8, 8);
+        var customName = storageText(FIRST); f.input(ChunkPos.ZERO).setBlockEntityNbt(pendingBeacon(position, customName));
+        var failedCalls = new AtomicInteger(); var laterCalls = new AtomicInteger();
+        var exact = new IllegalStateException("controlled pending tag retention failure");
+        AutoCloseable later = null;
+        try {
+            var stale = FullBlockEntityTagInputs.observe(f.input(ChunkPos.ZERO), position, f.world.level.registryAccess());
+            customName.putString("storage", SECOND.toString());
+            assertSame(exact, assertThrows(IllegalStateException.class,
+                    () -> stale.retain(() -> { failedCalls.incrementAndGet(); throw exact; })));
+            var current = FullBlockEntityTagInputs.observe(f.input(ChunkPos.ZERO), position, f.world.level.registryAccess());
+            later = current.retain(laterCalls::incrementAndGet); assertTrue(current.valid());
+            f.input(ChunkPos.ZERO).setBlockEntityNbt(pendingBeacon(position, net.minecraft.nbt.StringTag.valueOf("replacement")));
+            assertFalse(current.valid()); assertEquals(1, failedCalls.get()); assertEquals(1, laterCalls.get());
+            later.close(); later.close(); later = null;
+        } finally { if (later != null) later.close(); f.stop(); FullFinishingServices.stopped(f.world.level.getServer()); }
+        assertCleanup(f);
+    }
+
+    @Test void interpretedSelfAtTheOriginalResolutionDepthCutoffDoesNotBecomePermanentlyPending() throws Exception {
+        var f = new FullRegistrationFixture(true);
+        var root = new CompoundTag(); root.putString("text", ""); var current = root;
+        for (int depth = 1; depth <= 100; depth++) {
+            var next = depth == 100 ? entityText("@s", "CustomName", true) : new CompoundTag();
+            if (depth != 100) next.putString("text", "");
+            var extra = new net.minecraft.nbt.ListTag(); extra.add(next); current.put("extra", extra); current = next;
+        }
+        var source = text(root); source.put("CustomName", storageText(FIRST));
+        try {
+            saved(f, ChunkPos.ZERO, false, source); f.start(ChunkPos.ZERO, ChunkStatus.FULL); f.drain();
+            var graph = f.runtime.graph(f.holder(ChunkPos.ZERO));
+            assertEquals(FullInitializedInputs.State.SATISFIED, graph.inputEvaluation().state(), graph.inputEvaluation().obligation());
+            FullAuthoritativeFinishingTest.context(f); f.runtime.inputs.changed(); f.drain();
+            assertInstanceOf(ChunkStageOutcome.Applied.class, graph.finishing.outcome().join());
+            assertFalse(f.barrier.tripped());
+        } finally { f.stop(); FullFinishingServices.stopped(f.world.level.getServer()); }
+        assertCleanup(f);
+    }
+
+    @ParameterizedTest @ValueSource(booleans = {false, true})
     void ownedSelfCustomNamePublishesNestedStorageDependenciesBeforeOriginalEntitySerialization(boolean reload) throws Exception {
         var f = new FullRegistrationFixture(true);
         var data = new SavedDataStorage(directory, net.minecraft.util.datafix.DataFixers.getDataFixer(), f.world.level.registryAccess());
@@ -514,6 +616,11 @@ class FullSavedContextInputTest {
     private static CompoundTag entityText(String selector, String path, boolean interpret) {
         var text = new CompoundTag(); text.putString("nbt", path); text.putString("entity", selector);
         text.putBoolean("interpret", interpret); return text;
+    }
+    private static CompoundTag pendingBeacon(BlockPos position, net.minecraft.nbt.Tag customName) {
+        var tag = new CompoundTag(); tag.putString("id", "minecraft:beacon");
+        tag.putInt("x", position.getX()); tag.putInt("y", position.getY()); tag.putInt("z", position.getZ());
+        tag.put("CustomName", customName); return tag;
     }
     private static final class FailingBlockEntity extends BlockEntity {
         private final RuntimeException failure;
