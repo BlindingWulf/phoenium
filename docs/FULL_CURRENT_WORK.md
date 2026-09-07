@@ -1,141 +1,120 @@
 # Current FULL integration — 2026-09-07
 
-## Scope and recovered state
+## Scope, recovery and owners
 
-Complete original authoritative FULL finishing and separately admitted publication,
-then installed controlled and actual fresh/saved-disk/client acceptance. Existing
-D1-F, D2-P, D3 and non-self contracts apply. Historical contributor-only stops are
-superseded. Stage 3/R-CHUNK-01 stay PARTIAL; Stage 4 NOT STARTED. One gameplay
-worker, parallel OFF, pinned 26.2/Java25/Fabric environment, disposable offline
-PhoeniumTest0 only. No production worlds, remote push, release or PASS tag.
+Complete authoritative original FULL finishing and independent publication, installed
+probes, real fresh generation, actual saved-disk reload and offline-client acceptance.
+Stage 3/R-CHUNK-01 PARTIAL; Stage 4 NOT STARTED. Minecraft26.2 / Java25 / Loader0.19.5 /
+Fabric0.159.0+26.2 / Loom1.17.20 / Gradle9.5.1; view/simulation5, one gameplay worker,
+parallel OFF, disposable PhoeniumTest0 only. No push/release/PASS tag.
 
-Recovery commit `39105d25f879795dcd178fba741f1b59b2d7c782` preserves all dirty
-implementation from interrupted `a7b40743` and is marked UNVERIFIED. No Java or
-Gradle processes were alive at recovery. Historical 419-test evidence is not a
-current result. Old logs/worlds retained; no source reset/stash/reconstruction.
+Recovery `39105d25f879795dcd178fba741f1b59b2d7c782` preserves all interrupted dirty source
+as UNVERIFIED. Historical `a7b40743` / 419 tests are not current proof. Source and failed
+worlds/logs retained; no reset/stash. Main checkpoint `664ab21` includes PARTIAL same-world
+selectors. No final clean build or same-artifact complete acceptance yet.
 
-## Owners and actual worker selection
+Lead retains selected Astra/Max and existing service_tier="default". Supported spawn
+fields selected Sol as gpt-5.6-sol/high and Luna as gpt-5.6-luna/high, fork_turns=none.
+Minimal useful tasks completed before sustained delegation. Resolved runtime identity
+metadata is not exposed; no identity claim from nickname/self-report. No recursive agents,
+Astra workers, tier override, API keys, account changes or purchases.
 
-Lead: existing Astra/Max, unchanged. Local config `service_tier="default"`.
-Supported collaboration fields explicitly selected these workers:
-
-| Worker | Requested configuration | Current ownership |
+| Owner | Isolated checkout / branch | Active work |
 | --- | --- | --- |
-| `/root/sol_services` | `gpt-5.6-sol`, `high`, `fork_turns=none` | Services/D1 checkpoint integrated; now saved text, selectors, block NBT and registry contexts with matching producers/consumers/tests |
-| `/root/luna_harness` | `gpt-5.6-luna`, `high`, `fork_turns=none` | Controlled fixtures, installed probe and existing real-client harness; sole live-run owner |
+| Root | Phoenium / recovery integration | Contracts, capacity, production review/integration and ledger |
+| /root/sol_services | ../Phoenium-full-sol / recovery/full-services-sol | Contexts/selectors/NBT producers, consumers and focused tests |
+| /root/luna_harness | ../Phoenium-full-luna / recovery/full-harness-luna | Fixture repair, installed probes; sole live/client/vault run owner |
 
-Spawn accepted the explicit model/effort fields; initial useful bounded tasks
-completed. Spawn/list metadata exposes task/status, **not resolved runtime model**.
-No model identity is inferred from nickname or self-report. No recursive agents,
-Astra workers, config edits, tier override, account change, API key or purchases.
-Two workers only for independent isolated edits. Sol checkout:
-`../Phoenium-full-sol`, branch `recovery/full-services-sol`; Luna checkout:
-`../Phoenium-full-luna`, branch `recovery/full-harness-luna`. Both started at exact
-recovery source. Focused builds/output isolated; final broad/live owner is Luna.
-Root owns capacity/acknowledgement review, cross-cutting integration, tick review and ledger.
+## Integrated repairs and focused evidence
 
-## Integrated and last tested source
+* Capacity `f3961da`: one expanded finite operation can exceed normal allowances; other
+  oversized demand parks before copying. Long logical charges (`4d7df64`), real holder
+  retirement and constant transient provenance scan space. Not a measured fixed heap
+  bound. capacity-context-05: 75 tests / 6 suites green, including 600 entities/4097 occurrences.
+* Services/D1 `7b49fea`, `c6c542b`: adapters, constructor ownership before first routing
+  callback, no stopped-service resurrection, independent child shutdown after reentrant
+  owner exit and lazy reached scoreboard effects. `acf544f` independently acknowledges
+  context listeners. `069957a` long scoreboard allowance; maximum-int finite operation
+  performs a reached effect. scoreboard-capacity-14: 17 tests / 2 suites green.
+* Input acknowledgements `62fac95`: detach pins/accounting before callbacks, close all
+  consumers despite failure, acknowledge committed BIOMES borrow after save callback
+  throws. input-ack-11: 42 tests / 4 suites green; two old-path leak failures preserved
+  in input-ack-09-before.*. BIOMES stays BIOMES.
+* Saved text/storage `d1f2278`: actual admitted recursive resolution and independent
+  proto/in-memory Imposter publication. Block NBT `4d7df64` retains ready/absent branches;
+  IMMEDIATE-creation mismatch is under repair. `664ab21` same-world route-only selector
+  candidates demand no chunks; Sol 42 tests / 5 suites and harness build green, not
+  final root/installed proof. Recursive block/entity and broader selectors remain open.
+* Worldgen `eba8d6f`: only original moon getter uses existing chunk event loop and named
+  environment turn, worker waits owner-free. Original spawn body/RNG stays in place.
+  worldgen-environment-12: 17 tests / 2 suites green.
+* Client continuation `0b0f2c0`: exact original TickTask submitted under ownership queues
+  on existing server executor for owner-free execution. Original inline behavior,
+  result/failure and terminal acknowledgements retained. Old wrapper fails 3/4
+  (server-task-16-before.*); server-task-18: 23 tests / 3 suites green, actual original
+  BlockableEventLoop/CompletableFuture delivery and exact task identity.
 
-Luna commits integrated: dimension fixture (`0b066db`), probe evidence/package
-isolation (`6361095`), saved world evidence (`6462316`), registry fixture (`1d9d76f`).
-Root input expansion now supports one finite operation beyond normal payload,
-footprint and consumer allowances, with acknowledged cleanup. Other source demand
-parks without copying another oversized payload. Provenance iteration uses constant
-transient scan space; one resident lineage still follows each actual FULL holder.
-This is logical/workload accounting, **not a measured fixed Java heap bound**.
+Focused logs/XML above: main run/full-resume/session-20260907/. No focused/historical
+result substitutes for installed and actual persisted-disk proof.
 
-Capacity checkpoint `f3961da`: 75 tests / 6 suites, zero failures/errors/skips, in
-`run/full-resume/session-20260907/capacity-context-05.log` (exit 0). Includes original
-600-entity finishing/separate publication above 64KiB, 4097 saved occurrences,
-shared expansion progress, prepared/published consumers, replacement and retirement,
-partial original failure/reentrant shutdown, saved text/storage and prior queries.
-Earlier recovery 26/5 green includes service/D1/legacy-cache/tick tests.
+## Latest installed/client evidence
 
-Services checkpoints `7b49fea` and `c6c542b` register D1 adapters, reject service
-resurrection, stop children despite partial failure, defer reentrant FULL shutdown
-until the actual owner-free claim exit, mark new entity ownership before the first
-constructor routing callback, and lazily retain reached scoreboard changes.
-`acf544f` acknowledges saved-context listeners independently; `d1f2278` connects
-test hooks to actual text/storage bodies. The recursive storage text test now runs
-through admitted original finishing and independent publication for both proto and
-in-memory Imposter, rather than a separate unadmitted original-method witness.
-Root service/context/tick suites green in `services-context-tick-08.log`.
+Luna run/full-production-integration/transform-20260907-171759 controlled installed PASS:
+registration8, input21, published18, finishing34/query13/service7/D1=7/context5/publication2.
+Recursive storage, retained block NBT, original absent branch and complete acknowledgements
+positive. 529 EMPTY registrations/captures/publications; barriers0, all retained graph/input/
+lifecycle/work/custody records0, child exit0, no crash/shutdown exception. Includes spawn
+fix and private display test accessor (`cc700b2`), predates `664ab21`/pending contexts.
 
-Input acknowledgement checkpoint `62fac95`: 42 tests / 4 suites, zero failures/errors/
-skips in `input-ack-11.log` and `input-ack-11-xml/`. Two regressions first reproduced
-actual leaked pins after a publication notification failure and a committed biome
-borrow/save-callback failure (`input-ack-09-before.*` retained). All consumers now
-acknowledge before the original failure propagates. Other generation borrows remain
-independent. No final clean build or complete installed/client acceptance claim.
+Exact login cause: Luna live-1788818902542 original range future succeeds, exact holder
+FULL, but same-thread server executor rejects serial entry under region ownership before
+spawn callback. Vanilla discards failed dependent; spawnPosition stays pending. Early
+immediate holder snapshots/fixed-neighbor trace were insufficient and later corrected.
 
-Environment bridge `eba8d6f` moves only the original WorldGenRegion moon-brightness
-getter to the existing chunk event loop; the generation worker waits owner-free.
-Five regressions cover exact original result/failure, rejected submission, shutdown
-acknowledgement and forbidden owner-held entry. Seventeen tests / two suites pass
-in `worldgen-environment-12.log` with XML retained. This repairs the actual service
-collision from the negative pre-login experiment, not the login diagnosis itself.
+After `0b0f2c0`, Luna run/full-authoritative/live-1788819525569 reaches FinishConfiguration,
+login/player insertion and usable chunk packets. Fresh FAILS on original saved villager
+bed check at (2032,75,-1104), chunk[127,-69], outside the disposable fixture's finite routes:
+new unfinished terrain requested during owned tick. Scheduler FAILED/barriers1; no reload.
+122 actual FULL preparations/finishes/publications and all FULL retained records0 at stop
+are cleanup evidence, not successful acceptance.
+Production SHA256 9EA68C2D04D8867B71F96625BD83E3E9ABC01994D06608FED51AFCAAD5E9D3B6;
+probe SHA256 479575FC30FDCDE13138264393896E4145A1AC620A1101B2D8A33E8CE8B5E957.
+Production JAR contains zero acceptance/diagnostic classes.
 
-Sol block-NBT/long payload checkpoint `24fa787` integrated as `4d7df64`: exact
-retained block input after original isLoaded, original NBT serialization, absent
-chunk branch without new demand, and wider logical payload charges. Sol combined
-92 tests / seven suites passed on its merge `c0ccaaa`; fullRegistrationHarness also
-built. Main `6c1f578` includes its two acknowledgement probe additions. Current
-probe expected counts: input21, finishing34/query13/service7/D1=7/context5/pub2.
-Recursive block/entity interpreted components and general selectors remain open.
+Luna test-only bed setup `7835bc0`/`8a6711d`/`bcf1f5d` awaits integration/review:
+preserve exact saved sleeping position, finite forced-ticket FULL halo + generation
+support routes, pin only one exact bed chunk, verify query/actual readiness across
+reload and require original bed callback on four villagers. Focused harness/client
+compile green. No production default route, broad forceload or private FULL tick grant.
+General new distant requests during owned ticks remain an explicit coverage limit.
 
-Latest Luna installed controlled PASS at `transform-20260907-165238` on its merge
-`d904aaa` containing root `eba8d6f`: registration8, input19, published18,
-finishing29/query13/service7/D1=7/publication2, actual Mixins/no javaagent. Stop
-reports 529 actual EMPTY publications, barriers0, no retained graphs/indices or
-metadata/lifecycle/work/custody records; child exit0 and no live Java afterward.
-This precedes block-NBT/ack probe integration and the pending scoreboard widening.
-Main earlier installed failure `transform-20260907-154405` preserved (fixture had
-null dimension; child exit0 was correctly rejected as crash). Exact artifacts vary
-between these checkpoints; final same-JAR acceptance remains outstanding.
+## Vault evidence and next work
 
-## Next unresolved cases and commands
+Luna run/nonself-input-decision/ticking-20260907-172641 passes the existing ordinary client
+campaign on two fresh same-seed lifecycles, seed -663839099974294500, FULL disabled,
+artifact 9EA68C...: real interactions/disconnect/save/stop, barriers/violations/fallback0.
+No positive vault dirty-output witness; this alone does not validate the required branch.
+Earlier 172513 failed startup from stale full-live-probe in ordinary prepared mods;
+contamination corrected, failed evidence retained.
 
-1. Main `069957a` widens the lazy scoreboard allowance to long without an eager
-   allocation. A maximum-int finite occurrence allowance enters the actual claimed
-   journal, commits a reached effect and acknowledges cleanly; negative counts are
-   still rejected. Seventeen tests / two suites (services and original scoreboard
-   contracts) pass in `scoreboard-capacity-14.log` and `scoreboard-capacity-14-xml/`.
-   Luna next integrates main and updates its strict parser to the counters above.
-2. Exact real-client wait: Luna dynamic-target diagnostic
-   `run/full-authoritative/live-1788818436217/` corrects the earlier immediate holder
-   snapshot. Candidate0 at block(4,4), chunk[0,0] progresses through every original
-   generation layer and its exact holder FULL slot is done, while
-   PrepareSpawnTask.spawnPosition remains pending and chunkLoad=null through tick1100.
-   The first fixed-position diagnostic traced a neighbor and is not target proof.
-   Luna `live-1788818902542` then proves the exact range future succeeds with the
-   same holder, but server.execute throws "serial finishing service entered after
-   regional admission" before PlayerSpawnFinder callback entry. Vanilla discards
-   that failed whenCompleteAsync dependent, leaving spawnPosition pending.
-   Root fix `0b0f2c0` enqueues the exact original TickTask on the existing server
-   queue when an owner is present; actual execution later acquires its serial turn
-   owner-free. No spawn body/future or public FULL result is replaced. Original
-   owner-free inline behavior and terminal producer acknowledgements remain.
-   Old-wrapper regression fails 3/4 (`server-task-16-before.*`); fixed 23 tests /
-   three suites pass in `server-task-18.log` and `server-task-18-xml/`, including
-   original BlockableEventLoop/CompletableFuture delivery and exact task identity.
-   Luna owns the next installed probe and actual client campaign on this fix.
-   No forceload, timeout, spawn-rule or handshake workaround. Trace `f4ef244`
-   integrated as `98cb517`, with later dynamic/callback traces in `192dbab` and
-   `6ae1095`; `7fb4a91` updates strict installed counters. Before the new run,
-   FinishConfiguration/player insertion are still unverified.
-3. Sol owns same-world selector candidate-index producers/consumers, with a narrow
-   route-only ENTITY_CONTEXT convergence hunk in FullRegistrationRuntime. Root
-   retains all other changes to that runtime. Original predicates, NBT/name reads,
-   ordering and RNG must stay at their original call points. Recursive interpreted
-   block/entity data remains required. BIOMES inputs remain BIOMES.
-   Cross-world owner authority is **approval pending**, with a concrete proposal in
-   `STAGE3_FULL_SELECTOR_CONTEXT_DECISION.md` and an unanswered async user question.
-   D1-F forbids arbitrary foreign calls and same-world convergence across dimensions;
-   do not implement the proposed owner bundle before an actual answer arrives.
-4. Validate checked tick-phase/vault repair in actual original reproduction. Preserve
-   prefix once, owner-free readiness, suffix once; no private FULL grant to ticks.
-5. Stable integrated clean build, installed probes, existing fresh + actual persisted
-   reload + real client campaign on the same JAR, final diff review/ledger/commit.
+The pre-reproducer save was unavailable, but the failed reproduction save itself EXISTS:
+main run/nonself-input-decision/ticking-20260905-122520/server/STAGE3-CLIENT-1-1788629132903.
+Its log fails at VaultBlockEntity.Server.tick → setChanged → updateNeighbourForOutputSignal
+→ unfinished owned wait. Read-only 2000-chunk inventory found 37 vaults:
+run/full-resume/session-20260907/vault-saved-inventory.json. Use a disposable copy or exact
+positive original vault tick/dirty-neighbor witness; never mutate preserved failed save.
 
-Current usage telemetry at integration: Codex weekly 14% used (start1%); reserve7%
-(start7%). Per-task/per-worker tokens unknown. No resets redeemed.
+1. Sol: block-NBT IMMEDIATE creation, filtered self, nested selector scopes, recursive
+   interpreted block/entity contexts. No virtual gameplay callbacks under metadata lock.
+   Review/integrate; current same-world checkpoint is partial.
+2. Cross-world saved-selector authority **approval pending**. Concrete proposal:
+   STAGE3_FULL_SELECTOR_CONTEXT_DECISION.md; async user question unanswered. D1-F forbids
+   arbitrary foreign calls/cross-dimension same-world convergence. Do not enable the
+   proposed all-or-release bundle without an actual answer.
+3. Luna: finish bed setup review, integrate stable root/Sol source, strict current probe
+   counters; installed and existing FULL fresh/reload/client campaign; positive vault proof.
+4. Final clean build, installed probes and client campaign must share recorded production
+   JAR; final diff review, acceptance ledger and verified commit. No optimistic PASS.
+
+Latest supported account-wide weekly usage:14% used (start1%); reserve7% (start7%).
+Per-worker/task tokens unknown. No usage reset or additional spending.
