@@ -35,6 +35,7 @@ public final class FullFinishingServices {
     private final IdentityHashMap<ServerLevel, Long> worlds = new IdentityHashMap<>();
     private final IdentityHashMap<ServerLevel, Object> environments = new IdentityHashMap<>();
     private final IdentityHashMap<Object, Reservation> reservations = new IdentityHashMap<>();
+    private final Set<java.util.concurrent.CompletableFuture<?>> environmentRequests = Collections.newSetFromMap(new IdentityHashMap<>());
     private final EnumMap<Kind, Long> revisions = new EnumMap<>(Kind.class);
     private long worldSequence, sequence, serialEntries, fullEntries, releases;
     private volatile long revision;
@@ -237,6 +238,43 @@ public final class FullFinishingServices {
         Scope serial = resource.service.serial(Phase.SERVER_TASK);
         return new Access(resource.service, serial, Kind.ENVIRONMENT);
     }
+    /** World-generation workers enqueue a named environment read before acquiring any
+     * service turn. The original chunk event loop runs the getter once, without R.
+     * Pending requests hold only their original continuation and outcome, not a turn. */
+    static <T> java.util.concurrent.CompletableFuture<T> scheduleEnvironment(ServerLevel world,
+            java.util.concurrent.Executor executor, java.util.function.Supplier<T> original) {
+        FullFinishingServices service;
+        DIRECTORY.lock(); try { service = SERVERS.get(world.getServer()); } finally { DIRECTORY.unlock(); }
+        if (service == null) throw new ChunkProtocolException("world-generation environment has no installed world service");
+        var result = new java.util.concurrent.CompletableFuture<T>();
+        service.metadata.lock();
+        try {
+            if (service.stopped || !service.worlds.containsKey(world))
+                throw new ChunkProtocolException("world-generation environment requested after world retirement");
+            service.environmentRequests.add(result);
+        } finally { service.metadata.unlock(); }
+        try {
+            executor.execute(() -> {
+                service.metadata.lock();
+                try { if (!service.environmentRequests.remove(result)) return; }
+                finally { service.metadata.unlock(); }
+                try {
+                    if (!world.getServer().isSameThread() || OwnershipContext.current().isPresent())
+                        throw new ChunkProtocolException("world-generation environment delivery is not owner-free on the original server thread");
+                    T value;
+                    try (var turn = service.serial(Phase.SERVER_TASK)) {
+                        requireWorld(world, Kind.ENVIRONMENT);
+                        value = original.get();
+                    }
+                    result.complete(value);
+                } catch (Throwable failure) { result.completeExceptionally(failure); }
+            });
+        } catch (Throwable failure) {
+            service.metadata.lock(); try { service.environmentRequests.remove(result); } finally { service.metadata.unlock(); }
+            result.completeExceptionally(failure);
+        }
+        return result;
+    }
     public void changed(Kind kind) {
         metadata.lock(); try { revisions.put(kind, Math.incrementExact(revisions.get(kind))); revision = Math.incrementExact(revision); }
         finally { metadata.unlock(); }
@@ -245,7 +283,7 @@ public final class FullFinishingServices {
         metadata.lock();
         try { return Map.of("serialEntries", serialEntries, "fullEntries", fullEntries, "releases", releases,
                 "reservations", (long) reservations.size(), "active", active == null ? 0L : 1L,
-                "worlds", (long) worlds.size()); }
+                "worlds", (long) worlds.size(), "environmentRequests", (long) environmentRequests.size()); }
         finally { metadata.unlock(); }
     }
     /** Mark terminal before touching a child service. A winning synchronous body drains first. */
@@ -271,6 +309,13 @@ public final class FullFinishingServices {
     }
     private void finishShutdown() {
         Throwable failure = null;
+        List<java.util.concurrent.CompletableFuture<?>> pendingEnvironment;
+        metadata.lock();
+        try { pendingEnvironment = List.copyOf(environmentRequests); environmentRequests.clear(); }
+        finally { metadata.unlock(); }
+        // A queued callback loses only its own accepted request; it cannot revive after stop.
+        for (var request : pendingEnvironment)
+            request.completeExceptionally(new java.util.concurrent.CancellationException("world-generation environment service stopped"));
         // No service/directory/region lock spans a child callback or executor transition.
         try { FullCommandStorageInputs.stopped(server); } catch (Throwable problem) { failure = accumulate(failure, problem); }
         try { legacyOwners.shutdown(); } catch (Throwable problem) { failure = accumulate(failure, problem); }
