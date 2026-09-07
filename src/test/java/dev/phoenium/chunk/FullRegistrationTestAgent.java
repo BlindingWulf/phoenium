@@ -23,7 +23,8 @@ public final class FullRegistrationTestAgent {
                         && !name.equals("net/minecraft/nbt/CompoundTag")
                         && !name.equals("net/minecraft/nbt/ListTag")
                         && !name.equals("net/minecraft/world/level/storage/PrimaryLevelData")
-                        && !FullFinishingServicesTestTransform.supports(name)) return null;
+                        && !FullFinishingServicesTestTransform.supports(name)
+                        && !FullSavedContextTestTransform.supports(name)) return null;
                 try {
                     return (byte[]) Class.forName("dev.phoenium.chunk.FullRegistrationTestTransform", true, loader)
                             .getMethod("transform", String.class, byte[].class).invoke(null, name, bytes);

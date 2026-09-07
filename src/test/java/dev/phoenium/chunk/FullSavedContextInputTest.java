@@ -41,16 +41,14 @@ class FullSavedContextInputTest {
             assertEquals(3, contexts.requirements("root[0]").size());
             assertTrue(contexts.valid(graph.savedSnapshot())); assertEquals(0, f.world.nextId);
 
-            // Separate original-method witness consumes the same actual service data.
-            var original = new FullTadpoleDecisionTest.Fixture(1);
-            set(original.level.getServer(), MinecraftServer.class, "commandStorage", storage);
-            original.proto.getEntities().clear(); original.proto.addEntity(text(storageText(FIRST)).copy());
-            try (var serial = FullFinishingServices.forServer(f.world.level.getServer()).serial(FullFinishingServices.Phase.SERVER_TASK)) {
-                original.run();
-            }
-            assertEquals(1, original.inserted.size());
-            assertEquals("resolved saved storage", assertInstanceOf(Display.TextDisplay.class, original.inserted.getFirst()).getText().getString());
-            assertEquals(0, original.localReads);
+            FullAuthoritativeFinishingTest.context(f); f.runtime.inputs.changed(); f.drain();
+            assertInstanceOf(ChunkStageOutcome.Applied.class, graph.finishing.outcome().join());
+            assertInstanceOf(ChunkStageOutcome.Applied.class, graph.publication.outcome().join());
+            assertEquals(1, f.world.inserted.size());
+            assertEquals("resolved saved storage", assertInstanceOf(Display.TextDisplay.class, f.world.inserted.getFirst()).getText().getString());
+            assertEquals(1L, f.runtime.measurements().get("finishingCalls"));
+            assertEquals(1L, f.runtime.measurements().get("publicationCalls"));
+            assertEquals(0, f.world.localReads); assertFalse(f.barrier.tripped());
         } finally { f.stop(); FullFinishingServices.stopped(f.world.level.getServer()); data.close(); }
         assertCleanup(f);
     }
@@ -127,7 +125,7 @@ class FullSavedContextInputTest {
             first.close(); first.close();
             try (var serial = FullFinishingServices.forServer(f.level.getServer()).serial(FullFinishingServices.Phase.SERVER_TASK)) {
                 var replacement = new CompoundTag(); replacement.putString("message", "changed");
-                FullCommandStorageInputs.set(storage, FIRST, replacement, () -> storage.set(FIRST, replacement));
+                storage.set(FIRST, replacement);
             }
             assertEquals(1, notices.get(), "only the still-live independent consumer receives the change");
             second.close(); second.close();

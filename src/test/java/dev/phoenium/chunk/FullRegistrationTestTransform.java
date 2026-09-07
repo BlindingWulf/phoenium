@@ -9,6 +9,7 @@ public final class FullRegistrationTestTransform {
         ClassNode node = new ClassNode(); new ClassReader(bytes).accept(node, ClassReader.EXPAND_FRAMES);
         FullFinishingQueryTestTransform.install(node);
         FullFinishingServicesTestTransform.install(node);
+        FullSavedContextTestTransform.install(node);
         if (name.equals(dev.phoenium.live.LiveTickPhaseBoundary.LEVEL)) dev.phoenium.live.LiveTickPhaseBoundary.installLevel(node);
         if (name.equals(dev.phoenium.live.LiveTickPhaseBoundary.CACHE)) dev.phoenium.live.LiveTickPhaseBoundary.installCache(node);
         if (name.equals(FullStageBoundary.TARGET)) {
@@ -113,7 +114,8 @@ public final class FullRegistrationTestTransform {
                         method.instructions.insertBefore(instruction, clockCall(name, "afterWrite"));
                 }
             }
-        } else if (FullFinishingQueryTestTransform.supports(name) || FullFinishingServicesTestTransform.supports(name)) {
+        } else if (FullFinishingQueryTestTransform.supports(name) || FullFinishingServicesTestTransform.supports(name)
+                || FullSavedContextTestTransform.supports(name)) {
             // Query/service-only classes need no holder/saved-input fixture plumbing.
         } else {
             node.interfaces.add("dev/phoenium/chunk/FullHolderEvidence");
