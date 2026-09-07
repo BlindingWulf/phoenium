@@ -1,0 +1,7 @@
+{
+  "required": true,
+  "package": "dev.phoenium.clienttrace",
+  "compatibilityLevel": "JAVA_25",
+  "client": ["ClientConnectionTraceMixin"],
+  "injectors": { "defaultRequire": 1 }
+}
