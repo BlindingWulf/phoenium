@@ -61,38 +61,61 @@ through admitted original finishing and independent publication for both proto a
 in-memory Imposter, rather than a separate unadmitted original-method witness.
 Root service/context/tick suites green in `services-context-tick-08.log`.
 
-Latest production checkpoint `62fac95`: 42 tests / 4 suites, zero failures/errors/
+Input acknowledgement checkpoint `62fac95`: 42 tests / 4 suites, zero failures/errors/
 skips in `input-ack-11.log` and `input-ack-11-xml/`. Two regressions first reproduced
 actual leaked pins after a publication notification failure and a committed biome
 borrow/save-callback failure (`input-ack-09-before.*` retained). All consumers now
 acknowledge before the original failure propagates. Other generation borrows remain
 independent. No final clean build or complete installed/client acceptance claim.
 
-Luna installed controlled PASS at its `transform-20260907-155221`: registration8,
-input19, published18, finishing15 (query13/publication2), actual Mixins/no javaagent.
+Environment bridge `eba8d6f` moves only the original WorldGenRegion moon-brightness
+getter to the existing chunk event loop; the generation worker waits owner-free.
+Five regressions cover exact original result/failure, rejected submission, shutdown
+acknowledgement and forbidden owner-held entry. Seventeen tests / two suites pass
+in `worldgen-environment-12.log` with XML retained. This repairs the actual service
+collision from the negative pre-login experiment, not the login diagnosis itself.
+
+Sol block-NBT/long payload checkpoint `24fa787` integrated as `4d7df64`: exact
+retained block input after original isLoaded, original NBT serialization, absent
+chunk branch without new demand, and wider logical payload charges. Sol combined
+92 tests / seven suites passed on its merge `c0ccaaa`; fullRegistrationHarness also
+built. Main `6c1f578` includes its two acknowledgement probe additions. Current
+probe expected counts: input21, finishing34/query13/service7/D1=7/context5/pub2.
+Recursive block/entity interpreted components and general selectors remain open.
+
+Latest Luna installed controlled PASS at `transform-20260907-165238` on its merge
+`d904aaa` containing root `eba8d6f`: registration8, input19, published18,
+finishing29/query13/service7/D1=7/publication2, actual Mixins/no javaagent. Stop
+reports 529 actual EMPTY publications, barriers0, no retained graphs/indices or
+metadata/lifecycle/work/custody records; child exit0 and no live Java afterward.
+This precedes block-NBT/ack probe integration and the pending scoreboard widening.
 Main earlier installed failure `transform-20260907-154405` preserved (fixture had
 null dimension; child exit0 was correctly rejected as crash). Exact artifacts vary
 between these checkpoints; final same-JAR acceptance remains outstanding.
 
 ## Next unresolved cases and commands
 
-1. Luna rerun installed controlled probe on `c6c542b` or newer. The earlier
-   `transform-20260907-160954` installed failure exposed the pre-RETURN constructor
-   identity gap; `c6c542b` has its focused fix. Probe now finishing29/query13/service7/
-   D1=7/publication2; parser must match. Test-only login tracing and strict counter
-   validation are integrated (`ef01fcf`, `34047d0`, `10d4cca`).
-2. Luna `runStage3FullAcceptance` diagnostic02 reached real authoritative startup
-   (2 preparation/finishing/publication), then client login stalled before player
-   insertion. No player join, barriers0; target fixture not yet demanded. Capture
-   configuration-finished/player-list entry boundaries stayed absent in diagnostic03;
-   TCP was ESTABLISHED and the server was idle in its normal wait. Diagnose client/
-   handshake path from actual client thread dumps before another identical attempt.
-   Latest logs: Luna `run/full-authoritative/live-1788815178737/`.
-3. Sol owns saved text's pending general entity-selector and block-NBT context
-   producers; storage/self/static paths are only partial coverage. Preserve original
-   observation/RNG/exception semantics and foreign-reference restrictions. BIOMES
-   inputs stay BIOMES. Also avoid integer overflow in large finite payload accounting.
-   Finish these bindings, do not claim an allowlist as completion.
+1. Root scoreboard allowance widening is under focused test in
+   `scoreboard-capacity-13.log`; inspect `.exit` and XML before commit. Luna next
+   integrates current main and updates its strict probe parser to the counters above.
+2. Exact real-client wait: Luna `run/full-authoritative/live-1788817757089/` stays
+   in PrepareSpawnTask.spawnPosition=pending, chunkLoad=null through tick1100.
+   Candidate0 at block(2,-3), chunk[0,-1] waits the SPAWN_SEARCH FULL result. Its
+   replacement holder lifecycle533 completes EMPTY reload at 16:49:23; no observed
+   FULL graph/delivery follows. The all-null earlier-status snapshot is immediate
+   request return, not a later holder observation. Root reviews original generation
+   lifecycle; Luna adds exact pending-layer/task/current-holder diagnostics. No
+   forceload, timeout, spawn-rule or handshake workaround. Trace `f4ef244` integrated
+   as `98cb517`; client still has no FinishConfiguration or player insertion.
+3. Sol owns same-world selector candidate-index producers/consumers, with a narrow
+   route-only ENTITY_CONTEXT convergence hunk in FullRegistrationRuntime. Root
+   retains all other changes to that runtime. Original predicates, NBT/name reads,
+   ordering and RNG must stay at their original call points. Recursive interpreted
+   block/entity data remains required. BIOMES inputs remain BIOMES.
+   Cross-world owner authority is **approval pending**, with a concrete proposal in
+   `STAGE3_FULL_SELECTOR_CONTEXT_DECISION.md` and an unanswered async user question.
+   D1-F forbids arbitrary foreign calls and same-world convergence across dimensions;
+   do not implement the proposed owner bundle before an actual answer arrives.
 4. Validate checked tick-phase/vault repair in actual original reproduction. Preserve
    prefix once, owner-free readiness, suffix once; no private FULL grant to ticks.
 5. Stable integrated clean build, installed probes, existing fresh + actual persisted
