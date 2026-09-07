@@ -13,6 +13,7 @@ from pathlib import Path
 import shutil
 import subprocess
 import time
+import re
 
 ROOT = Path(__file__).resolve().parents[1]
 PREPARED = ROOT / "build/stage3-client-server"
@@ -70,50 +71,78 @@ manifest = {
     "sourceWorldUntouched": True, "command": command,
 }
 print(str(OUTPUT), flush=True)
-with log.open("w") as output:
-    process = subprocess.Popen(command, cwd=SERVER, stdin=subprocess.PIPE, stdout=output,
-                               stderr=subprocess.STDOUT, text=True,
-                               creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0)
-    try:
+process = None
+failure = None
+try:
+    with log.open("w") as output:
+        process = subprocess.Popen(command, cwd=SERVER, stdin=subprocess.PIPE, stdout=output,
+                                   stderr=subprocess.STDOUT, text=True,
+                                   creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0)
+        def issue(command_line):
+            if process.poll() is not None:
+                return
+            try:
+                process.stdin.write(command_line + "\n")
+                process.stdin.flush()
+            except BrokenPipeError:
+                pass
         deadline = time.monotonic() + 150
         while True:
-            text = log.read_text(errors="replace")
-            if "Done (" in text:
-                break
-            if process.poll() is not None:
+            current_log = log.read_text(errors="replace")
+            if "Done (" in current_log or process.poll() is not None:
                 break
             if time.monotonic() > deadline:
                 raise AssertionError("server startup timeout")
             time.sleep(0.25)
         if process.poll() is None:
-            process.stdin.write("forceload add 2272 -496 2287 -481\n")
-            process.stdin.flush()
+            issue("forceload add 2272 -496 2287 -481")
             time.sleep(30)
-            process.stdin.write("phoenium vaultprobe\n")
-            process.stdin.flush()
+            issue("phoenium vaultprobe")
             time.sleep(2)
-            process.stdin.write("stop\n")
-            process.stdin.flush()
+            issue("stop")
         try:
             process.wait(timeout=60)
         except subprocess.TimeoutExpired:
             process.kill()
             process.wait()
-    finally:
-        if process.poll() is None:
-            process.kill()
-            process.wait()
+except BaseException as exception:
+    failure = repr(exception)
+finally:
+    if process is not None and process.poll() is None:
+        process.kill()
+        process.wait()
 
-text = log.read_text(errors="replace")
+text = log.read_text(errors="replace") if log.exists() else ""
+summary_lines = [line for line in text.splitlines() if "PHOENIUM_VAULT_DIAGNOSTICS" in line]
+summary = summary_lines[-1] if summary_lines else ""
+counter_values = {key: int(value) for key, value in re.findall(r"\b(\w+)=(\d+)\b", summary)}
+cleanup_lines = [line for line in text.splitlines() if "PHOENIUM_CHUNK_BINDING STOPPED" in line]
+zero_barriers = any(re.search(r"\bbarriers=0\b", line) for line in cleanup_lines)
+zero_cleanup = bool(cleanup_lines) and all(
+    re.search(r"\b%s=0\b" % key, line) for line in cleanup_lines for key in
+    ("retainedGraphs", "returnedIndex", "poiIndex", "custodyEntries", "workEntries", "lifecycleEntries"))
 manifest.update({
-    "exitCode": process.returncode,
+    "exitCode": None if process is None else process.returncode,
+    "failure": failure,
     "forceLoadSuccess": "Marked chunk [142, -31] in minecraft:overworld to be force loaded" in text,
     "vaultTickObserved": "PHOENIUM_VAULT_TICK" in text,
     "vaultNeighborObserved": "PHOENIUM_VAULT_NEIGHBOR" in text,
-    "diagnosticSummary": [line for line in text.splitlines() if "PHOENIUM_VAULT_DIAGNOSTICS" in line],
+    "diagnosticSummary": summary_lines,
+    "vaultCounters": counter_values,
+    "positiveChosenVault": counter_values.get("dirtyCompleted", 0) > 0
+        and counter_values.get("crossChunkReads", 0) > 0
+        and counter_values.get("ownerScopes", 0) > 0
+        and counter_values.get("ordinaryScopes", 0) > 0,
     "tickingFailureObserved": "Ticking block entity" in text,
-    "cleanShutdown": "Stopping the server" in text and "Exception stopping the server" not in text,
+    "cleanupLines": cleanup_lines,
+    "zeroBarriers": zero_barriers,
+    "zeroCleanupResidue": zero_cleanup,
+    "cleanShutdown": process is not None and process.returncode == 0 and "Stopping the server" in text
+        and "Encountered an unexpected exception" not in text and "Exception stopping the server" not in text
+        and zero_barriers and zero_cleanup,
     "serverLog": str(log),
 })
 (OUTPUT / "manifest.json").write_text(json.dumps(manifest, indent=2))
 print(json.dumps(manifest, indent=2), flush=True)
+if failure is not None:
+    raise SystemExit(failure)

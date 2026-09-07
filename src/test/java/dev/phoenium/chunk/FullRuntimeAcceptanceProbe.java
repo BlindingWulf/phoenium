@@ -2,6 +2,7 @@ package dev.phoenium.chunk;
 
 import java.nio.charset.StandardCharsets;
 import java.util.*;
+import dev.phoenium.ownership.OwnershipContext;
 import net.fabricmc.api.DedicatedServerModInitializer;
 import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerChunkEvents;
@@ -19,6 +20,7 @@ import net.minecraft.world.entity.animal.frog.Frog;
 import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.chunk.*;
 import net.minecraft.world.level.chunk.status.ChunkStatus;
 import net.minecraft.world.level.chunk.storage.SerializableChunkData;
@@ -31,8 +33,10 @@ public final class FullRuntimeAcceptanceProbe implements DedicatedServerModIniti
     private static final Map<String, Integer> READERS = new LinkedHashMap<>();
     private static final BlockPos SAVED_BED = new BlockPos(2032, 75, -1104);
     private static final Set<UUID> BED_CHECKS = new HashSet<>();
-    private static final Set<BlockPos> VAULT_POSITIONS = new HashSet<>();
-    private static int vaultTicks, vaultNeighborReads;
+    private static final BlockPos SAVED_VAULT = new BlockPos(2272, 7, -496);
+    private static int vaultTicks, vaultDirtyAttempts, vaultDirtyCompleted;
+    private static int vaultNeighborReads, vaultCrossChunkReads, vaultOwnerScopes, vaultOrdinaryScopes;
+    private static final ThreadLocal<VaultDirtyScope> VAULT_SCOPE = new ThreadLocal<>();
     private static int richVillagers, privateNeighbors;
     public static String phase() { return System.getProperty("phoenium.test.fullFixturePhase", ""); }
     private static boolean target(ChunkPos pos) { return CHUNKS.contains(pos.pack()); }
@@ -146,24 +150,60 @@ public final class FullRuntimeAcceptanceProbe implements DedicatedServerModIniti
 
     public static void recordVaultTick(ServerLevel level, BlockPos position) {
         if (!Boolean.getBoolean("phoenium.test.vaultDiagnostic")) return;
+        if (!SAVED_VAULT.equals(position)) return;
         vaultTicks++;
-        VAULT_POSITIONS.add(position);
         if (vaultTicks <= 5 || vaultTicks % 100 == 0)
-            System.out.println("PHOENIUM_VAULT_TICK position=" + position + " ticks=" + vaultTicks);
+            System.out.println("PHOENIUM_VAULT_TICK world=" + level.dimension()
+                    + " position=" + position + " tick=" + level.getGameTime() + " ticks=" + vaultTicks);
     }
 
-    public static void recordVaultNeighbor(BlockPos position) {
-        if (!Boolean.getBoolean("phoenium.test.vaultDiagnostic") || !VAULT_POSITIONS.contains(position)) return;
+    public static void beginVaultDirtyOutput(ServerLevel level, BlockPos position, BlockState state) {
+        if (!Boolean.getBoolean("phoenium.test.vaultDiagnostic") || !SAVED_VAULT.equals(position)) return;
+        if (VAULT_SCOPE.get() != null) throw new IllegalStateException("nested saved vault dirty-output scope");
+        boolean owner = OwnershipContext.current().isPresent();
+        boolean finishing = FullFinishingServices.finishing();
+        if (!owner || finishing) throw new IllegalStateException("saved vault ordinary tick context owner="
+                + owner + " finishing=" + finishing);
+        vaultDirtyAttempts++;
+        vaultOwnerScopes++;
+        vaultOrdinaryScopes++;
+        VaultDirtyScope scope = new VaultDirtyScope(level, position, level.getGameTime(), state);
+        VAULT_SCOPE.set(scope);
+        System.out.println("PHOENIUM_VAULT_DIRTY_BEGIN world=" + level.dimension()
+                + " position=" + position + " tick=" + scope.tick + " owner=true finishing=false");
+    }
+
+    public static void recordVaultNeighborRead(ServerLevel level, BlockPos position) {
+        VaultDirtyScope scope = VAULT_SCOPE.get();
+        if (scope == null || scope.level != level) return;
         vaultNeighborReads++;
+        if (ChunkPos.containing(position).equals(ChunkPos.containing(scope.position))) return;
+        vaultCrossChunkReads++;
         if (vaultNeighborReads <= 5 || vaultNeighborReads % 100 == 0)
-            System.out.println("PHOENIUM_VAULT_NEIGHBOR position=" + position + " reads=" + vaultNeighborReads);
+            System.out.println("PHOENIUM_VAULT_NEIGHBOR world=" + level.dimension()
+                    + " source=" + scope.position + " neighbor=" + position + " tick=" + scope.tick
+                    + " reads=" + vaultNeighborReads + " crossChunk=" + vaultCrossChunkReads);
+    }
+
+    public static void completeVaultDirtyOutput(ServerLevel level, BlockPos position) {
+        VaultDirtyScope scope = VAULT_SCOPE.get();
+        if (scope == null || scope.level != level || !scope.position.equals(position)) return;
+        vaultDirtyCompleted++;
+        System.out.println("PHOENIUM_VAULT_DIRTY_COMPLETE world=" + level.dimension()
+                + " position=" + position + " tick=" + scope.tick + " completed=" + vaultDirtyCompleted);
+    }
+
+    public static void endVaultDirtyOutput() {
+        VAULT_SCOPE.remove();
     }
 
     private static void registerVaultDiagnosticCommand() {
         CommandRegistrationCallback.EVENT.register((dispatcher, access, selection) -> dispatcher.register(
                 Commands.literal("phoenium").then(Commands.literal("vaultprobe").executes(context -> {
                     String result = "PHOENIUM_VAULT_DIAGNOSTICS ticks=" + vaultTicks
-                            + " neighborReads=" + vaultNeighborReads + " positions=" + VAULT_POSITIONS.size();
+                            + " dirtyAttempts=" + vaultDirtyAttempts + " dirtyCompleted=" + vaultDirtyCompleted
+                            + " neighborReads=" + vaultNeighborReads + " crossChunkReads=" + vaultCrossChunkReads
+                            + " ownerScopes=" + vaultOwnerScopes + " ordinaryScopes=" + vaultOrdinaryScopes;
                     context.getSource().sendSuccess(() -> Component.literal(result), false); return 1;
                 }))));
     }
@@ -195,4 +235,5 @@ public final class FullRuntimeAcceptanceProbe implements DedicatedServerModIniti
                 + (phase().equals("fresh") ? "ADMITTED_PROTO" : "ADMITTED_IMPOSTER");
     }
     private static void require(boolean condition, String reason) { if (!condition) throw new IllegalStateException(reason); }
+    private record VaultDirtyScope(ServerLevel level, BlockPos position, long tick, BlockState state) { }
 }
