@@ -13,8 +13,8 @@ as UNVERIFIED. Historical `a7b40743` / 419 tests are not current proof. Source a
 worlds/logs retained; no reset/stash. Main production checkpoint `9bcb6e2` includes PARTIAL
 same-world selectors/entity NBT and interpreted saved-self CustomName discovery.
 Test witness `481d5c5` proves private collision access at its actual call point; reviewed
-Luna script cleanup/startup/assertion fixes are integrated through `b33600f`. No final
-clean build or same-artifact complete acceptance yet.
+Luna cleanup/readiness/vault and original discard/team-transfer witnesses are integrated
+through `2c34435`. No final clean build or same-artifact complete acceptance yet.
 
 Lead retains selected Astra/Max and existing service_tier="default". Supported spawn
 fields selected Sol as gpt-5.6-sol/high and Luna as gpt-5.6-luna/high, fork_turns=none.
@@ -57,7 +57,13 @@ Astra workers, tier override, API keys, account changes or purchases.
   `9bcb6e2` / Sol `4d2b558` adds interpreted saved-self CustomName dependency discovery,
   nested storage and alias revision invalidation, preserving the original serializer.
   61 tests / 3 suites plus registration harness green; not yet installed at this source.
-  Pending block-entity tags, live interpreted field producers and broader selectors remain open.
+  Sol `11164a3` pending block-tag context refinement has 78 focused tests and harness green,
+  but is NOT integrated: root review requires shared map-occurrence lifetime/reuse,
+  independent failure cleanup, repeated same-block capture and observation-busy retry fixes.
+  Live interpreted field producers and broader selectors remain open. MutableComponent
+  siblings and TranslatableContents.getArgs expose raw mutable aliases; setter-only facts
+  cannot be claimed complete. Sol will assess owner-executed dependency refinement before
+  original invocation, with release before demand and exact recapture under final ownership.
 * Worldgen `eba8d6f`: only original moon getter uses existing chunk event loop and named
   environment turn, worker waits owner-free. Original spawn body/RNG stays in place.
   worldgen-environment-12: 17 tests / 2 suites green.
@@ -115,12 +121,23 @@ retained target identity and original IMMEDIATE shulker getter before counting a
 shape call. Both border ends have original nonair fixture blocks. Actual Luna runs
 live-1788823152361 and live-1788823230045 each show eight completed private collision/
 IMMEDIATE witnesses across both pairs, public FULL still pending. Main harness/client
-compile passed (witness-compile-24). Fresh inventory assertion then failed frogs0/villagers0;
-no reload. Diagnostic run3230045 identifies the exact failure before four later bed checks.
-Minecraft queues ChunkHolder's full-status promotion after public FULL, while getAllEntities
-enumerates only visibleEntityStorage. Luna is adding a test-only pending check using original
-areEntitiesActuallyLoadedAndTicking for all four forced chunks, retaining exact inventory
-assertions once ready and waiting for the original first bed callback. No manual tick/pump.
+compile passed (witness-compile-24). Fresh inventory assertion initially failed before
+Minecraft's queued full-status promotion exposed visibleEntityStorage. The integrated
+test-only readiness check uses original areEntitiesActuallyLoadedAndTicking for four forced
+chunks, with exact subsequent inventory assertions; no manual tick/pump.
+
+Fresh real acceptance PASSES in Luna live-1788824539897 and live-1788824870657 on F3CE:
+sources4/savedReaders8/richVillagers4/frogs4/bedChecks4, teams and independent publication,
+collisionQueries8/immediateShulkerReads8/privateNeighbors4, usable offline client chunks.
+Original conversion leaves four discarded Tadpole aliases in the raw visible store. Exact
+live-1788824270895 original scoreboard traces prove add(new frog UUID)/remove(old tadpole)
+and loaded-RETURN DISCARDED witnesses; verifier counts live survivors and validates all
+four discarded aliases/transfers separately (`2c34435`). This is unchanged vanilla behavior.
+Reload still FAILS with savedReaders={} despite four suffixes. Pinned SerializableChunkData
+write459-466 writes its entity list only for PROTOCHUNK, so copyOf injection into a FULL
+record is omitted. Luna is correcting test-only legacy-root seeding at original write's
+output, before normal storage, and adding an actual r.1.0.mca payload check before restart.
+Target chunks32..35,z4 are region1,0 in dimensions/minecraft/overworld, not region2,0.
 
 ## Vault evidence and next work
 
@@ -149,7 +166,8 @@ fallback/ownershipViolations/barriers0; 112 chunk registrations/captures/publica
 all retained records0. Source failed save untouched. Earlier failed/no-positive attempts
 preserved: 181221 omitted fixture support and timed out; 182128 had healthy startup but
 wrong target [2272,7,-496] (lead confused block coordinates with chunk coordinates).
-Luna's corrected target commit is pending integration, then final same-artifact rerun.
+Corrected target/readiness and support routes are integrated in `744bf17`/`da7d80e`;
+the finite support preserves existing A/B ownership. Final same-artifact rerun remains.
 
 1. Sol: block-NBT IMMEDIATE creation, filtered self, nested selector scopes, recursive
    interpreted block/entity contexts. First three are now integrated; active work is typed
@@ -161,12 +179,11 @@ Luna's corrected target commit is pending integration, then final same-artifact 
    STAGE3_FULL_SELECTOR_CONTEXT_DECISION.md; async user question unanswered. D1-F forbids
    arbitrary foreign calls/cross-dimension same-world convergence. Do not enable the
    proposed all-or-release bundle without an actual answer.
-3. Luna: finish the existing FULL fresh/reload/client campaign on F3CE with actual entity
-   visibility readiness. Positive vault proof now exists; integrate corrected target and
-   readiness checkpoint, then update to stable root/Sol source and exact probe counters.
-   One live owner only. Test-only obsolete CollisionMixin was never added to main.
+3. Luna: finish actual legacy-root serialization and persisted reload/client campaign on
+   F3CE; fresh and positive ordinary vault proof now exist. Then update to stable root/Sol
+   source and exact probe counters. One live owner only; no root competing live run.
 4. Final clean build, installed probes and client campaign must share recorded production
    JAR; final diff review, acceptance ledger and verified commit. No optimistic PASS.
 
-Latest supported account-wide weekly usage:22% used (start1%); reserve7% (start7%).
+Latest supported account-wide weekly usage:28% used (start1%); reserve7% (start7%).
 Per-worker/task tokens unknown. No usage reset or additional spending.
