@@ -122,6 +122,8 @@ public final class FullRuntimeAcceptanceProbe implements DedicatedServerModIniti
                 || !target(data.chunkPos()) || data.chunkStatus() != ChunkStatus.FULL) return data;
         var entities = new ArrayList<>(data.entities());
         entities.addAll(roots(data.chunkPos(), "reload"));
+        System.out.println("PHOENIUM_FULL_LIVE_PERSISTED chunk=" + data.chunkPos()
+                + " originalEntities=" + data.entities().size() + " fixtureRoots=2");
         return new SerializableChunkData(data.containerFactory(), data.chunkPos(), data.minSectionY(), data.lastUpdateTime(),
                 data.inhabitedTime(), data.chunkStatus(), data.blendingData(), data.belowZeroRetrogen(), data.upgradeData(),
                 data.carvingMask(), data.heightmaps(), data.packedTicks(), data.postProcessingSections(), data.lightCorrect(),
@@ -422,6 +424,17 @@ public final class FullRuntimeAcceptanceProbe implements DedicatedServerModIniti
         }
         int frogs = 0, villagers = 0;
         for (Entity entity : level.getAllEntities()) if (entity.entityTags().contains(marker(phase()))) {
+            // Vanilla can retain the discarded source alias in its raw visible entity store even
+            // after the original reader has returned a discarded Tadpole. Validate it by the
+            // exact prior reader/transfer witness and never count it as a surviving root.
+            if (expectedDiscarded.contains(entity.getUUID())) {
+                require(entity instanceof Tadpole && DISCARDED_TADPOLES.contains(entity.getUUID())
+                        && entity.getTeam() == null, "unexpected discarded saved entity alias: " + entity.getUUID()
+                                + " type=" + entity.getType() + " removed=" + entity.isRemoved()
+                                + " reason=" + entity.getRemovalReason() + " team="
+                                + (entity.getTeam() == null ? "<none>" : entity.getTeam().getName()));
+                continue;
+            }
             if (entity.isRemoved()) {
                 require(entity instanceof Tadpole && expectedDiscarded.contains(entity.getUUID())
                         && DISCARDED_TADPOLES.contains(entity.getUUID())
