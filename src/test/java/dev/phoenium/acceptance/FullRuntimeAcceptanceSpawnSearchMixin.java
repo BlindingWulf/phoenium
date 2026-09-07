@@ -47,7 +47,20 @@ abstract class FullRuntimeAcceptanceSpawnSearchMixin {
         CompletableFuture<?> future = callback.getReturnValue();
         FullSpawnDiagnosticState.record(pos, holder);
         System.out.println("PHOENIUM_FULL_SPAWN_SEARCH sequence=" + sequence + " pos=" + pos
-                + " radius=" + radius + " future=" + futureState(future) + " holder=" + holderState);
+                + " radius=" + radius + " future=" + futureState(future)
+                + " holderIdentity=" + identity(holder) + " holder=" + holderState);
+        if (future != null) {
+            future.whenComplete((value, failure) -> {
+                ChunkHolder currentHolder = chunkMap.getUpdatingChunkIfPresent(pos.pack());
+                System.out.println("PHOENIUM_FULL_SPAWN_RANGE_COMPLETE sequence=" + sequence
+                        + " pos=" + pos + " value=" + valueState(value)
+                        + " failure=" + failureState(failure)
+                        + " capturedHolderIdentity=" + identity(holder)
+                        + " currentHolderIdentity=" + identity(currentHolder)
+                        + " sameHolder=" + (holder == currentHolder)
+                        + " currentHolder=" + holderState(currentHolder));
+            });
+        }
     }
 
     @Unique
@@ -58,6 +71,28 @@ abstract class FullRuntimeAcceptanceSpawnSearchMixin {
             states.append(entry.getFirst()).append('=').append(futureState(entry.getSecond()));
         }
         return states.toString();
+    }
+
+    @Unique
+    private static String holderState(ChunkHolder holder) {
+        if (holder == null) return "none";
+        return "latest=" + holder.getLatestStatus() + ",full=" + holder.getFullStatus()
+                + ",ticket=" + holder.getTicketLevel();
+    }
+
+    @Unique
+    private static String identity(Object value) {
+        return value == null ? "null" : Integer.toHexString(System.identityHashCode(value));
+    }
+
+    @Unique
+    private static String valueState(Object value) {
+        return value == null ? "null" : value.getClass().getName();
+    }
+
+    @Unique
+    private static String failureState(Throwable failure) {
+        return failure == null ? "none" : failure.getClass().getName() + ":" + failure.getMessage();
     }
 
     @Unique
