@@ -1,6 +1,19 @@
 # Stage 3 chunk-only handoff
 
-## Current resume — published input provenance, 2026-09-05
+## Active FULL integration — 2026-09-07
+
+The expanded FULL assignment is in progress. Read [FULL_CURRENT_WORK.md](FULL_CURRENT_WORK.md)
+for the exact integrated checkpoint, actual Sol/Luna selections and ownership, focused and
+installed evidence, live-client failure history, and next unresolved bindings. Original
+finishing and independent publication now execute in scoped controlled/installed tests;
+the actual fresh/reload/client and vault campaigns are still under integration. No final
+same-artifact acceptance is claimed. Cross-world selector authority remains a pending
+decision. Stage 3/R-CHUNK-01 remain PARTIAL and Stage 4 NOT STARTED.
+
+Historical contributor-only stops and next-step directions below are superseded by the
+expanded assignment; approved semantic and ownership contracts remain in force.
+
+## Historical resume — published input provenance, 2026-09-05
 
 **PUBLISHED INPUT PROVENANCE + INDEPENDENT ACKNOWLEDGEMENT: PASS** for the connected
 original-producer scope. **Overall initialized-input checkpoint: PARTIAL.**
