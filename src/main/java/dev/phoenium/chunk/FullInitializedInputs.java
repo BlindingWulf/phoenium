@@ -51,9 +51,11 @@ public final class FullInitializedInputs {
         final List<AutoCloseable> pins = new ArrayList<>();
         Receipt receipt;
         FullSavedContextInputs.Plan contexts;
+        long factCharge;
         Evaluation evaluation = new Evaluation(State.PENDING, "direct preparation availability", null);
         Plan(FullRegistrationRuntime.Graph graph, FullSavedInput.Snapshot saved, long sequence, RegionDirectory.View routes) {
             this.graph = graph; this.saved = saved; this.sequence = sequence; this.routes = routes;
+            factCharge = Math.max(FullSavedInput.MAX_FACT_BYTES, saved.payloadBytes());
         }
     }
     private final FullRegistrationRuntime runtime;
@@ -62,7 +64,10 @@ public final class FullInitializedInputs {
     private final Set<GenerationChunkHolder> requested = Collections.newSetFromMap(new IdentityHashMap<>());
     private final java.util.concurrent.atomic.AtomicBoolean dirty = new java.util.concurrent.atomic.AtomicBoolean();
     private long nextPlan, validations;
-    private int edges, consumers, bytes;
+    private long edges, consumers, bytes;
+    /** Extra retention is bounded by one finite operation and expires on acknowledgement.
+     * This is workload-proportional accounting, not a fixed Java heap-byte guarantee. */
+    private Plan expanded;
     FullInitializedInputs(FullRegistrationRuntime runtime, Limits limits) { this.runtime = runtime; this.limits = limits; }
     public void changed() { dirty.set(true); }
 
@@ -81,11 +86,12 @@ public final class FullInitializedInputs {
             if (prior != null && prior.receipt != null) { progress |= graph.retryFinishing(); continue; }
             if (prior == null) {
                 if (!graph.hasSavedInput()) continue;
-                if (plans.size() >= limits.plans || bytes + FullSavedInput.MAX_FACT_BYTES > limits.factBytes) continue;
+                if (expanded != null || plans.size() >= limits.plans || bytes + FullSavedInput.MAX_FACT_BYTES > limits.factBytes) continue;
                 var saved = graph.captureSavedSnapshot();
                 if (saved == null) continue;
                 prior = new Plan(graph, saved, nextPlan++, runtime.authority.directory().snapshot());
-                plans.put(graph, prior); bytes += FullSavedInput.MAX_FACT_BYTES;
+                plans.put(graph, prior); bytes += prior.factCharge;
+                if (prior.factCharge > FullSavedInput.MAX_FACT_BYTES) expanded = prior;
             }
             bind(prior);
             progress = true;
@@ -101,6 +107,15 @@ public final class FullInitializedInputs {
             catch (ChunkProtocolException bound) { unmet = bound.getMessage(); }
         }
         if (unmet == null && plan.contexts != null) unmet = plan.contexts.unmet();
+        if (plan.contexts != null) {
+            long charge = Math.max(FullSavedInput.MAX_FACT_BYTES,
+                    (long) plan.saved.payloadBytes() + plan.contexts.payloadBytes());
+            if (charge > plan.factCharge && !expand(plan)) {
+                plan.contexts.close(); plan.contexts = null;
+                plan.evaluation = new Evaluation(State.CAPACITY, "expanded operation acknowledgement", null); return;
+            }
+            bytes += charge - plan.factCharge; plan.factCharge = charge;
+        }
         for (var fact : plan.saved.entities()) {
             if (!Double.isFinite(fact.x()) || !Double.isFinite(fact.y()) || !Double.isFinite(fact.z())) {
                 unmet = fact.path() + ": invalid saved position retains original load failure; no input closure"; break;
@@ -110,7 +125,6 @@ public final class FullInitializedInputs {
                     for (ChunkPos position : FullSavedVillagerInputs.environmentPositions(fact))
                         add(required, position, Purpose.ENVIRONMENT);
                 } catch (IllegalArgumentException invalid) { unmet = invalid.getMessage(); break; }
-                if (required.size() > limits.targetsPerPlan) { unmet = "direct footprint exceeds per-operation input bound"; break; }
                 continue;
             }
             if (FullSavedEntityInputs.supports(fact)) continue;
@@ -123,7 +137,7 @@ public final class FullInitializedInputs {
                 for (ChunkPos position : FullSavedEntityInputs.conversionBiomePositions(fact))
                     add(required, position, Purpose.ENVIRONMENT);
                 Set<ChunkPos> collision;
-                try { collision = FullSavedInput.collisionPositions(fact, limits.targetsPerPlan); }
+                try { collision = FullSavedInput.collisionPositions(fact, Integer.MAX_VALUE); }
                 catch (IllegalArgumentException bound) { unmet = bound.getMessage(); break; }
                 for (ChunkPos position : collision) {
                     add(required, position, Purpose.COLLISION);
@@ -131,21 +145,18 @@ public final class FullInitializedInputs {
                     // Identifying this potential mutation never grants its ticket/world/enclosure turn.
                     add(required, position, Purpose.DYNAMIC_SHAPE_MUTATION);
                 }
-                if (required.size() > limits.targetsPerPlan) { unmet = "direct footprint exceeds per-operation input bound"; break; }
             }
         }
         if (unmet != null) { plan.evaluation = new Evaluation(State.UNRESOLVED, unmet, null); return; }
-        if (required.size() > limits.targetsPerPlan) {
-            plan.evaluation = new Evaluation(State.UNRESOLVED, "direct footprint exceeds per-operation input bound", null); return;
+        if ((required.size() > limits.targetsPerPlan || required.size() > limits.edges) && !expand(plan)) {
+            plan.evaluation = new Evaluation(State.CAPACITY, "expanded operation acknowledgement", null); return;
         }
-        if (required.size() > limits.edges) {
-            plan.evaluation = new Evaluation(State.UNRESOLVED, "operation cannot fit configured input edge capacity", null); return;
-        }
-        if (edges - plan.targets.size() + required.size() > limits.edges) {
+        long otherExpandedEdges = expanded != null && expanded != plan ? expanded.targets.size() : 0;
+        if (expanded != plan && edges - otherExpandedEdges - plan.targets.size() + required.size() > limits.edges) {
             plan.evaluation = new Evaluation(State.CAPACITY, "input edge capacity release", null); return;
         }
         var targets = new ArrayList<Target>();
-        for (var entry : required.entrySet()) targets.add(resolve(plan.graph, entry.getKey(), entry.getValue()));
+        for (var entry : required.entrySet()) targets.add(resolve(plan, entry.getKey(), entry.getValue(), required.size()));
         edges += targets.size() - plan.targets.size(); plan.targets = List.copyOf(targets);
         for (var target : targets) {
             switch (target.availability) {
@@ -164,10 +175,11 @@ public final class FullInitializedInputs {
             }
         }
         int needed = (int) targets.stream().filter(t -> t.availability == Availability.PREPARED || t.availability == Availability.PUBLISHED || t.availability == Availability.BIOMES).count();
-        if (needed > limits.consumers) {
-            plan.evaluation = new Evaluation(State.UNRESOLVED, "operation cannot fit configured input consumer capacity", null); return;
+        if (needed > limits.consumers && !expand(plan)) {
+            plan.evaluation = new Evaluation(State.CAPACITY, "expanded operation acknowledgement", null); return;
         }
-        if (consumers + needed > limits.consumers) {
+        long otherExpandedConsumers = expanded != null && expanded != plan ? expanded.pins.size() : 0;
+        if (expanded != plan && consumers - otherExpandedConsumers + needed > limits.consumers) {
             plan.evaluation = new Evaluation(State.CAPACITY, "independent input consumer acknowledgement", null); return;
         }
         // All target preparations have settled before reserving capacity or retaining any target.
@@ -192,7 +204,13 @@ public final class FullInitializedInputs {
     private static void add(Map<ChunkPos, Set<Purpose>> required, ChunkPos position, Purpose purpose) {
         required.computeIfAbsent(position, ignored -> EnumSet.noneOf(Purpose.class)).add(purpose);
     }
-    private Target resolve(FullRegistrationRuntime.Graph source, ChunkPos position, Set<Purpose> purposes) {
+    private boolean expand(Plan plan) {
+        if (expanded != null && expanded != plan) return false;
+        expanded = plan; return true;
+    }
+    private Target resolve(Plan plan, ChunkPos position, Set<Purpose> purposes, int footprint) {
+        FullRegistrationRuntime.Graph source = plan.graph;
+        long demandCapacity = (long) limits.edges + (expanded == plan ? footprint : 0);
         ChunkHolder holder = runtime.visible(position);
         var key = new RoutingKey(runtime.authority.world(), position.x(), position.z());
         RegionRoute route = runtime.authority.directory().resolve(key).orElse(null);
@@ -206,7 +224,7 @@ public final class FullInitializedInputs {
             var biome = FullBiomeInputs.capture(holder);
             if (biome != null && runtime.biomesReleased(holder))
                 return target(position, purposes, Availability.BIOMES, holder, null, null, route, ticket);
-            if (requested.size() >= limits.edges && !requested.contains(holder))
+            if (requested.size() >= demandCapacity && !requested.contains(holder))
                 return target(position, purposes, Availability.CAPACITY, holder, null, null, route, ticket);
             if (requested.add(holder)) {
                 holder.scheduleChunkGenerationTask(ChunkStatus.BIOMES, runtime.level().getChunkSource().chunkMap)
@@ -233,9 +251,9 @@ public final class FullInitializedInputs {
         }
         var graph = runtime.findGraph(holder).orElse(null);
         if (graph == null) {
-            if (!requested.contains(holder) && requested.size() >= limits.edges)
+            if (!requested.contains(holder) && requested.size() >= demandCapacity)
                 return target(position, purposes, Availability.CAPACITY, holder, null, null, route, ticket);
-            if (requested.size() < limits.edges && requested.add(holder)) {
+            if (requested.size() < demandCapacity && requested.add(holder)) {
                 // Exactly the original FULL,false holder policy: no new ticket and no invented reservation.
                 // Observe preparation events from the registrar; never subscribe to this public FULL future.
                 holder.scheduleChunkGenerationTask(ChunkStatus.FULL, runtime.level().getChunkSource().chunkMap);
@@ -331,7 +349,8 @@ public final class FullInitializedInputs {
         Plan plan = plans.remove(graph);
         if (plan == null) return;
         graph.inputEvidenceReleased();
-        edges -= plan.targets.size(); bytes -= FullSavedInput.MAX_FACT_BYTES;
+        edges -= plan.targets.size(); bytes -= plan.factCharge;
+        if (expanded == plan) expanded = null;
         graph.discardSavedSnapshot();
         var pins = List.copyOf(plan.pins); consumers -= pins.size();
         plan.pins.clear(); plan.targets = List.of(); plan.receipt = null;
@@ -343,6 +362,7 @@ public final class FullInitializedInputs {
     public Map<String, Long> measurements() {
         return Map.of("plans", (long) plans.size(), "edges", (long) edges, "consumers", (long) consumers,
                 "factBytes", (long) bytes, "pendingNotifications", dirty.get() ? 1L : 0L,
-                "requestedPreparations", (long) requested.size(), "validations", validations);
+                "requestedPreparations", (long) requested.size(), "validations", validations,
+                "expandedOperations", expanded == null ? 0L : 1L);
     }
 }

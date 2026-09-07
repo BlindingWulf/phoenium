@@ -361,15 +361,21 @@ final class FullPublishedInputBindingTest {
         } finally { f.stop(); }
         assertCleanup(f);
     }
-    @Test void operationLargerThanConfiguredConsumerCapacityIsNotAnEventualReleasePromise() throws Exception {
+    @Test void operationConsumerExpansionAcknowledgesEveryPreparedAndPublishedUse() throws Exception {
         var f = new FullRegistrationFixture(true, new FullInitializedInputs.Limits(4, 16, 32, 1, 1024 * 1024)); var y = new ChunkPos(1, 0);
         try {
             f.startBaseline(y); f.runGenerationTasks(); var graph = source(f, ChunkPos.ZERO, 15.8);
-            assertEquals(FullInitializedInputs.State.UNRESOLVED, graph.inputEvaluation().state());
-            assertTrue(graph.inputEvaluation().obligation().contains("cannot fit"));
-            assertEquals(0L, f.runtime.inputs.measurements().get("consumers"));
+            assertEquals(FullInitializedInputs.State.SATISFIED, graph.inputEvaluation().state());
+            assertEquals(2L, f.runtime.inputs.measurements().get("consumers"));
+            assertEquals(1L, f.runtime.inputs.measurements().get("expandedOperations"));
+            assertEquals(1L, f.runtime.published.measurements().get("uses"));
             assertFalse(graph.conversion().isDone()); assertTrue(graph.inputActive());
             assertNotNull(f.runtime.published.observe(f.holder(y)));
+            graph.acknowledgeInputs(); f.drain();
+            assertEquals(0L, f.runtime.inputs.measurements().get("consumers"));
+            assertEquals(0L, f.runtime.inputs.measurements().get("expandedOperations"));
+            assertEquals(0L, f.runtime.published.measurements().get("uses"));
+            assertNotNull(f.runtime.published.observe(f.holder(y)), "consumer release preserves resident publication");
         } finally { f.stop(); }
         assertCleanup(f);
     }

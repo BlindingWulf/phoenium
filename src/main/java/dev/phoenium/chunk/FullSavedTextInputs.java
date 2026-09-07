@@ -74,8 +74,9 @@ final class FullSavedTextInputs {
     }
 
     static void protect(Tag tag, FullSavedInput source, int depth, int[] budget) {
-        if (depth > 128 || ++budget[0] > FullSavedInput.MAX_ENTITIES)
-            throw new ChunkProtocolException("saved display component structure exceeds admission bound");
+        if (depth > FullSavedInput.MAX_DEPTH)
+            throw new ChunkProtocolException("saved display component exceeds the serialized NBT depth limit");
+        ++budget[0];
         budget[1] += 16;
         if (tag instanceof CompoundTag compound) {
             if (source != null) FullSavedCollections.watch(compound, source);
@@ -87,8 +88,6 @@ final class FullSavedTextInputs {
             if (source != null) FullSavedCollections.watch(list, source);
             for (Tag child : list) protect(child, source, depth + 1, budget);
         } else budget[1] += tag.sizeInBytes();
-        if (budget[1] > FullSavedInput.MAX_FACT_BYTES)
-            throw new ChunkProtocolException("saved display component payload exceeds admission bound");
     }
 
     static Requirements discover(FullSavedInput.EntityFact fact, HolderLookup.Provider registries) {
@@ -123,9 +122,7 @@ final class FullSavedTextInputs {
         void visit(Component component, int depth) {
             // Original ResolutionContext default copies the remaining subtree beyond 100.
             if (depth > 100 || unmet != null) return;
-            if (++nodes > FullSavedInput.MAX_ENTITIES) {
-                unmet = fact.path() + ": resolved display component exceeds admission bound"; return;
-            }
+            ++nodes;
             var contents = component.getContents();
             if (contents instanceof TranslatableContents translation) {
                 for (Object argument : translation.getArgs()) if (argument instanceof Component nested) visit(nested, depth + 1);

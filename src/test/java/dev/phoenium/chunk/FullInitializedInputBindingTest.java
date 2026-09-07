@@ -299,13 +299,16 @@ final class FullInitializedInputBindingTest {
         } finally { f.stop(); }
         assertCleanup(f);
     }
-    @Test void oversizedDiscoveryIsAnUnresolvedBoundAndDoesNotFabricateEmptySuccess() throws Exception {
+    @Test void oversizedDiscoveryUsesChargedExpansionThenAcknowledgesItsActualInputs() throws Exception {
         var f = new FullRegistrationFixture(true, new FullInitializedInputs.Limits(2, 1, 8, 8, 1024 * 1024));
         try {
             saved(f, ChunkPos.ZERO, false, tag(15.8, 8, 24000)); f.start(ChunkPos.ZERO, ChunkStatus.FULL); f.drain();
             var graph = f.runtime.graph(f.holder(ChunkPos.ZERO));
-            assertEquals(FullInitializedInputs.State.UNRESOLVED, graph.inputEvaluation().state()); assertNull(graph.inputReceipt());
-            assertEquals(0L, f.runtime.inputs.measurements().get("consumers")); assertFalse(graph.conversion().isDone());
+            assertBound(f, graph, Set.of(ChunkPos.ZERO, new ChunkPos(1, 0)));
+            assertEquals(1L, f.runtime.inputs.measurements().get("expandedOperations"));
+            assertEquals(2L, f.runtime.inputs.measurements().get("consumers")); assertFalse(graph.conversion().isDone());
+            graph.acknowledgeInputs(); f.drain();
+            assertEquals(0L, f.runtime.inputs.measurements().get("expandedOperations"));
         } finally { f.stop(); }
         assertCleanup(f);
     }

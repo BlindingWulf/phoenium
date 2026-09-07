@@ -51,7 +51,7 @@ public final class FullRegistrationServerProbe implements DedicatedServerModInit
                 published.oldOperationReceiptAcknowledgementCannotRevokeNewPlanAndCopiedPublicationCannotBeRetained();
                 published.originalUnloadWaitsForRetainedUseThenReclaimsTheActualHolder();
                 published.trueTargetRetirementKeepsOldEvidenceUntilItsOwnUseAcknowledges();
-                published.operationLargerThanConfiguredConsumerCapacityIsNotAnEventualReleasePromise();
+                published.operationConsumerExpansionAcknowledgesEveryPreparedAndPublishedUse();
                 System.out.println("PHOENIUM_FULL_PUBLISHED_INPUT_PROBE PASS cases=18 targetOriginalFull=true exactResultWrapper=true "
                         + "baselineOriginHonest=true proto=true inMemoryImposter=true diskReload=false targetProducerSettled=true "
                         + "sourceInput=SATISFIED sourceAggregate=NOT_READY sourceFinishingClaims=0 sourceSuffix=0 sourcePublicFull=0 "

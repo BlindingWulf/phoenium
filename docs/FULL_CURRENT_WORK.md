@@ -1,62 +1,80 @@
-# Current FULL implementation
+# Current FULL integration — 2026-09-07
 
-## Recovery in progress — 2026-09-07
+## Scope and recovered state
 
-Recovered HEAD `a7b40743ad53aaff88518da9b64dfedee96f2401` plus all dirty
-source/test/build changes below. Recovery snapshot is **UNVERIFIED**. No Java or
-Gradle processes were running. Historical 419 tests are not a current result.
-Latest discovered focused log `run/full-services-focused04.log` is green at
-01:51 on September 6; final source edits and installed probe remain unverified.
+Complete original authoritative FULL finishing and separately admitted publication,
+then installed controlled and actual fresh/saved-disk/client acceptance. Existing
+D1-F, D2-P, D3 and non-self contracts apply. Historical contributor-only stops are
+superseded. Stage 3/R-CHUNK-01 stay PARTIAL; Stage 4 NOT STARTED. One gameplay
+worker, parallel OFF, pinned 26.2/Java25/Fabric environment, disposable offline
+PhoeniumTest0 only. No production worlds, remote push, release or PASS tag.
 
-Lead: existing Astra/Max; local config has `service_tier = "default"`, unchanged.
-Worker routing: supported collaboration spawn fields explicitly request
-`gpt-5.6-sol`, `high`, `fork_turns=none` for `/root/sol_services`. Initial task is
-read-only service/adapter recovery inspection. Spawn accepted these fields;
-spawn/list metadata exposes task name/status but **not resolved runtime model**.
-No worker identity is inferred from its nickname or self-report. No config or
-credentials changed; no additional speed tier requested (spawn has no tier field).
-One active worker; no recursive delegation. Root owns builds/live runs for now.
+Recovery commit `39105d25f879795dcd178fba741f1b59b2d7c782` preserves all dirty
+implementation from interrupted `a7b40743` and is marked UNVERIFIED. No Java or
+Gradle processes were alive at recovery. Historical 419-test evidence is not a
+current result. Old logs/worlds retained; no source reset/stash/reconstruction.
 
-Usage at recovery: account Codex weekly 1% used; reserve weekly 7% used.
-Per-task token usage is not exposed. No resets or purchases authorized/used.
+## Owners and actual worker selection
 
-Next command: current focused compilation/tests for finishing services, D1,
-legacy owners and tick phases; then the installed controlled probe. Preserve
-its old failed logs. Before worker edits use an isolated checkout from the
-exact recovery snapshot; do not start from old HEAD or share output directories.
+Lead: existing Astra/Max, unchanged. Local config `service_tier="default"`.
+Supported collaboration fields explicitly selected these workers:
 
-## Interrupted note (historical, reconcile against current source)
+| Worker | Requested configuration | Current ownership |
+| --- | --- | --- |
+| `/root/sol_services` | `gpt-5.6-sol`, `high`, `fork_turns=none` | D1/D2/shared services, matching Mixins/test transforms, service lifecycle and scoreboard capacity |
+| `/root/luna_harness` | `gpt-5.6-luna`, `high`, `fork_turns=none` | Controlled fixtures, installed probe and existing real-client harness; sole live-run owner |
 
-Start: clean `a7b40743ad53aaff88518da9b64dfedee96f2401`, 2026-09-06.
-The current user assignment authorizes connected FULL finishing and separate
-publication, superseding old contributor-only stop instructions. Stage 3 remains
-PARTIAL; one worker, parallel gameplay OFF, server-only, no public release.
+Spawn accepted the explicit model/effort fields; initial useful bounded tasks
+completed. Spawn/list metadata exposes task/status, **not resolved runtime model**.
+No model identity is inferred from nickname or self-report. No recursive agents,
+Astra workers, config edits, tier override, account change, API key or purchases.
+Two workers only for independent isolated edits. Sol checkout:
+`../Phoenium-full-sol`, branch `recovery/full-services-sol`; Luna checkout:
+`../Phoenium-full-luna`, branch `recovery/full-harness-luna`. Both started at exact
+recovery source. Focused builds/output isolated; final broad/live owner is Luna.
+Root owns input/context/capacity, cross-cutting integration, tick review and ledger.
 
-1. Derive saved-villager inputs from pinned 26.2 readers; preserve BIOMES query
-   status, constructor origin and saved-position schedule observations.
-2. Connect original finishing and separate publication with actual service,
-   input, query, writer and regional enclosure claims; settle independent uses.
-3. Complete connected saved-reader/context, capacity and runtime prerequisites.
-4. Verify deterministic adverse cases, actual Fabric transformations, fresh and
-   disk-reload server/client behavior on one recorded artifact; review final diff.
+## Integrated and last tested source
 
-Current: deterministic original finishing + separate publication pass (proto and
-in-memory reload), including cyclic neighbors/nonair moving piston and actual
-two-owner convergence. Villager/generic reader/static text tests pass. Runtime
-selection is implemented behind the explicit disposable-session property;
-ordinary authoritative server/client acceptance is not yet run. D1/D2/shared
-service producer tests and dynamic text contexts are being completed. The vault
-repair splits the original level/cache tick at a checked owner-free readiness
-boundary; it is under verification. Test-only real generation/saved-disk/client
-fixtures are implemented and awaiting compile/runtime verification.
+Luna commits integrated: dimension fixture (`0b066db`), probe evidence/package
+isolation (`6361095`), saved world evidence (`6462316`), registry fixture (`1d9d76f`).
+Root input expansion now supports one finite operation beyond normal payload,
+footprint and consumer allowances, with acknowledged cleanup. Other source demand
+parks without copying another oversized payload. Provenance iteration uses constant
+transient scan space; one resident lineage still follows each actual FULL holder.
+This is logical/workload accounting, **not a measured fixed Java heap bound**.
 
-Latest root green: `test-connected-15.log`. Installed01 baseline passed;
-installed02 failed on scoreboard fastutil receiver selector (fixed, rerun due).
-All work remains uncommitted. Agents: services owns D1/D2/C/S/W and Gradle slot;
-queries owns private query/tick-phase adapters + live tick dispatch; villager owns
-static/dynamic saved context discovery. Root owns graph/publication/capacity,
-acceptance harness, review/integration. Root has removed the arbitrary resident
-publication observer cap: one charged record follows each actual FULL holder
-through acknowledged retirement. Active operation plans remain separately bounded.
-Evidence: ignored `run/full-authoritative/session-20260906/` and per-agent `run/`
-logs. Do not report integrated FULL or Stage 3 PASS before final live acceptance.
+Current focused result: 75 tests / 6 suites, zero failures/errors/skips, in
+`run/full-resume/session-20260907/capacity-context-05.log` (exit 0). Includes original
+600-entity finishing/separate publication above 64KiB, 4097 saved occurrences,
+shared expansion progress, prepared/published consumers, replacement and retirement,
+partial original failure/reentrant shutdown, saved text/storage and prior queries.
+Earlier recovery 26/5 green includes service/D1/legacy-cache/tick tests. No current
+full clean build or complete installed/client acceptance claim.
+
+Luna installed controlled PASS at its `transform-20260907-155221`: registration8,
+input19, published18, finishing15 (query13/publication2), actual Mixins/no javaagent.
+Main earlier installed failure `transform-20260907-154405` preserved (fixture had
+null dimension; child exit0 was correctly rejected as crash). Exact artifacts vary
+between these checkpoints; final same-JAR acceptance remains outstanding.
+
+## Next unresolved cases and commands
+
+1. Sol complete registered D1 writers/consumers, failure-safe/no-resurrection service
+   shutdown, stopped-executor acknowledgement, scoreboard expansion progress.
+2. Luna `runStage3FullAcceptance` diagnostic02 reached real authoritative startup
+   (2 preparation/finishing/publication), then client login stalled before player
+   insertion. No player join, barriers0; target fixture not yet demanded. Capture
+   configuration-finished/player-list entry boundaries and child thread dump before
+   another targeted diagnostic. Logs in Luna `run/full-authoritative/live-1788814466407/`.
+3. Saved text still has pending general entity-selector and block-NBT context
+   producers; storage/self/static paths are only partial coverage. Preserve original
+   observation/RNG/exception semantics and foreign-reference restrictions. BIOMES
+   inputs stay BIOMES. Finish these bindings, do not claim an allowlist as completion.
+4. Validate checked tick-phase/vault repair in actual original reproduction. Preserve
+   prefix once, owner-free readiness, suffix once; no private FULL grant to ticks.
+5. Stable integrated clean build, installed probes, existing fresh + actual persisted
+   reload + real client campaign on the same JAR, final diff review/ledger/commit.
+
+Current usage telemetry at integration: Codex weekly 4% used (start1%); reserve7%
+(start7%). Per-task/per-worker tokens unknown. No resets redeemed.

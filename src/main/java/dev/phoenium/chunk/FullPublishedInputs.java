@@ -31,6 +31,7 @@ public final class FullPublishedInputs {
         final ChunkStep step;
         final Object reservation = new Object();
         final Origin origin;
+        final long index;
         GeneratingChunkMap producerMap;
         StaticCache2D<GenerationChunkHolder> cache;
         CompletableFuture<ChunkAccess> returned;
@@ -42,7 +43,7 @@ public final class FullPublishedInputs {
         Entry(FullPublishedInputs owner, GenerationChunkHolder holder, ChunkCustodyModel.WorkId work,
                 ChunkStep step, GeneratingChunkMap map, Origin origin) {
             this.owner = owner; this.holder = holder; this.work = work; this.step = step;
-            producerMap = map; this.origin = origin;
+            producerMap = map; this.origin = origin; index = ++owner.nextEntry;
         }
     }
     private final ServerLevel level;
@@ -50,7 +51,8 @@ public final class FullPublishedInputs {
     private final ChunkBindingRuntime.WorldAuthority authority;
     private final ChunkPrerequisiteServices services;
     private final ChunkCustodyModel custody;
-    private final Set<Entry> entries = Collections.newSetFromMap(new IdentityHashMap<>());
+    private final NavigableMap<Long, Entry> entries = new TreeMap<>();
+    private long nextEntry;
     private final FullInputNotifications changes = new FullInputNotifications();
     private final Thread observationThread;
     private boolean open = true;
@@ -77,7 +79,7 @@ public final class FullPublishedInputs {
                     input instanceof ImposterProtoChunk ? Origin.ADMITTED_IMPOSTER : Origin.ADMITTED_PROTO);
             entry.cache = cache; entry.originalAsync = true;
             custody.retainLifecycle(work.lifecycle());
-            hooks.phoenium$publication(entry); entries.add(entry); reservations++;
+            hooks.phoenium$publication(entry); entries.put(entry.index, entry); reservations++;
             return entry;
         } finally { custody.gate().unlock(); }
     }
@@ -139,7 +141,7 @@ public final class FullPublishedInputs {
                                 ? Origin.ORIGINAL_BASELINE_IMPOSTER : Origin.ORIGINAL_BASELINE_PROTO);
                 owner.custody.retainLifecycle(lifecycle);
                 owner.services.trackHolder(lifecycle, holder);
-                hooks.phoenium$publication(entry); owner.entries.add(entry); owner.reservations++;
+                hooks.phoenium$publication(entry); owner.entries.put(entry.index, entry); owner.reservations++;
             }
         } finally { owner.custody.gate().unlock(); }
         // Refusing observation never cancels vanilla demand or selects a different execution path.
@@ -306,7 +308,7 @@ public final class FullPublishedInputs {
     }
     private void cleanup(Entry entry) {
         custody.gate().lock(); try {
-            if (!entry.retired || !entry.settled || entry.uses != 0 || !entries.remove(entry)) return;
+            if (!entry.retired || !entry.settled || entry.uses != 0 || !entries.remove(entry.index, entry)) return;
             if (((FullHolderEvidence) entry.holder).phoenium$publication() == entry)
                 ((FullHolderEvidence) entry.holder).phoenium$publication(null);
             entry.evidence = null;
@@ -317,21 +319,38 @@ public final class FullPublishedInputs {
     /** Called after original serial visible-map publication; scans only this finite derived index. */
     public void visiblePublished() {
         requireThread();
-        for (Entry entry : snapshot()) {
+        visitCurrentEntries(entry -> {
             var visible = ((FullInputView) level.getChunkSource().chunkMap).phoenium$visibleInput(entry.holder.getPos().pack());
             if (visible != null && visible != entry.holder) retire(entry);
-        }
+        });
         changes.published();
     }
-    private List<Entry> snapshot() { custody.gate().lock(); try { return List.copyOf(entries); } finally { custody.gate().unlock(); } }
+    /** Constant transient scan space, including across reentrant removal/replacement.
+     * A monotonically ordered index avoids copying every resident holder on publication.
+     * New entries beyond the initial boundary belong to their subsequent producer event. */
+    private void visitCurrentEntries(Consumer<Entry> visitor) {
+        long boundary;
+        custody.gate().lock(); try { boundary = nextEntry; } finally { custody.gate().unlock(); }
+        long cursor = 0;
+        for (;;) {
+            Entry entry;
+            custody.gate().lock();
+            try {
+                var next = entries.higherEntry(cursor);
+                if (next == null || next.getKey() > boundary) return;
+                cursor = next.getKey(); entry = next.getValue();
+            } finally { custody.gate().unlock(); }
+            visitor.accept(entry);
+        }
+    }
     public void shutdown() {
-        open = false; snapshot().forEach(this::retire);
+        open = false; visitCurrentEntries(this::retire);
         ((FullInputView) level.getChunkSource().chunkMap).phoenium$inputChanges().publicationObserver(null);
     }
     public Map<String, Long> measurements() {
         custody.gate().lock(); try {
-            return Map.of("records", (long) entries.size(), "transientExecutions", entries.stream().filter(e -> !e.settled).count(),
-                    "uses", entries.stream().mapToLong(e -> e.uses).sum(), "reservations", reservations, "publications", successes,
+            return Map.of("records", (long) entries.size(), "transientExecutions", entries.values().stream().filter(e -> !e.settled).count(),
+                    "uses", entries.values().stream().mapToLong(e -> e.uses).sum(), "reservations", reservations, "publications", successes,
                     "acquisitions", acquisitions, "acknowledgements", acknowledgements, "capacityRefusals", refusals,
                     "chargedRecordBytes", 256L * entries.size());
         } finally { custody.gate().unlock(); }

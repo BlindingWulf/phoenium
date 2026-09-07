@@ -118,10 +118,11 @@ final class FullSavedTextInputTest {
         assertFalse(FullSavedTextInputs.discover(fact, f.level.registryAccess()).needsContext());
     }
 
-    @Test void oversizedSavedTextCannotEvadeInputFactBudget() {
+    @Test void oversizedSavedTextRetainsItsMeasuredPayloadForExpandedAdmission() {
         var source = text(); source.put("text", StringTag.valueOf("x".repeat(FullSavedInput.MAX_FACT_BYTES)));
         var snapshot = new FullSavedInput().capture(List.of(source));
-        assertTrue(snapshot.entities().isEmpty()); assertTrue(snapshot.unmet().contains("component payload"));
+        assertEquals(1, snapshot.entities().size()); assertNull(snapshot.unmet());
+        assertTrue(snapshot.payloadBytes() > FullSavedInput.MAX_FACT_BYTES);
     }
 
     private static CompoundTag text() { var tag = tag(8, 8, 0); tag.putString("id", "minecraft:text_display"); return tag; }

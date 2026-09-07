@@ -41,7 +41,7 @@ public final class FullSavedContextInputs {
         private final List<AutoCloseable> consumers = new ArrayList<>();
         private final Runnable changed;
         private String unmet;
-        private int bytes, continuations;
+        private int bytes;
         private ChunkStageClaim claim;
         private String currentText;
         private boolean closed;
@@ -49,6 +49,7 @@ public final class FullSavedContextInputs {
             this.world = world; this.stage = stage; this.saved = saved; this.changed = changed;
         }
         public String unmet() { return unmet; }
+        int payloadBytes() { return bytes; }
         public boolean valid(FullSavedInput.Snapshot current) {
             return !closed && current == saved && storage.values().stream().allMatch(FullCommandStorageInputs.Capture::valid);
         }
@@ -58,9 +59,6 @@ public final class FullSavedContextInputs {
             add(fact, FullSavedTextInputs.discover(fact, world.registryAccess()), queue);
             while (!queue.isEmpty() && unmet == null) {
                 Pending next = queue.remove(); var read = next.read;
-                if (++continuations > FullSavedInput.MAX_ENTITIES) {
-                    unmet = fact.path() + ": interpreted text continuation count exceeds admission bound"; break;
-                }
                 if (read.source() != FullSavedTextInputs.Source.STORAGE) {
                     if (read.source() == FullSavedTextInputs.Source.ENTITY && read.target().equals("@s") && !read.interpreting()) continue;
                     unmet = fact.path() + ": protected display " + read.source() + " context producer pending"; break;
@@ -70,9 +68,6 @@ public final class FullSavedContextInputs {
                 if (capture == null) {
                     capture = FullCommandStorageInputs.observe(world.getServer(), id);
                     bytes += capture.bytes;
-                    if (bytes + saved.payloadBytes() > FullSavedInput.MAX_FACT_BYTES) {
-                        unmet = fact.path() + ": command storage text input exceeds admission bound"; break;
-                    }
                     storage.put(id, capture);
                     consumers.add(capture.retain(changed));
                 }
