@@ -8,7 +8,9 @@ import org.objectweb.asm.tree.*;
 public final class FullSavedContextTestTransform {
     private static final String HOOKS = "dev/phoenium/chunk/FullSavedContextTestHooks";
     private static final Set<String> TARGETS = Set.of("net/minecraft/world/entity/Display$TextDisplay",
-            "net/minecraft/world/level/storage/CommandStorage", "net/minecraft/network/chat/contents/data/BlockDataSource");
+            "net/minecraft/world/level/storage/CommandStorage", "net/minecraft/network/chat/contents/data/BlockDataSource",
+            "net/minecraft/network/chat/contents/SelectorContents", "net/minecraft/network/chat/contents/ScoreContents",
+            "net/minecraft/network/chat/contents/NbtContents");
     public static boolean supports(String name) { return TARGETS.contains(name); }
     public static void install(ClassNode node) {
         if (!supports(node.name)) return;
@@ -17,7 +19,7 @@ public final class FullSavedContextTestTransform {
         } else if (node.name.endsWith("/CommandStorage")) {
             wrap(node, "get", "(Lnet/minecraft/resources/Identifier;)Lnet/minecraft/nbt/CompoundTag;", "get");
             wrap(node, "set", "(Lnet/minecraft/resources/Identifier;Lnet/minecraft/nbt/CompoundTag;)V", "set");
-        } else {
+        } else if (node.name.endsWith("/BlockDataSource")) {
             var method = node.methods.stream().filter(body -> body.name.equals("getData")
                     && body.desc.equals("(Lnet/minecraft/commands/CommandSourceStack;)Ljava/util/stream/Stream;")).findFirst()
                     .orElseThrow(() -> new AssertionError("saved-context selector changed: " + node.name + ".getData"));
@@ -30,6 +32,10 @@ public final class FullSavedContextTestTransform {
                     method.instructions.set(call, new MethodInsnNode(Opcodes.INVOKESTATIC, HOOKS, "blockEntity",
                             "(Lnet/minecraft/server/level/ServerLevel;Lnet/minecraft/core/BlockPos;)Lnet/minecraft/world/level/block/entity/BlockEntity;", false));
             }
+        } else {
+            String hook = node.name.endsWith("/SelectorContents") ? "selectorResolve"
+                    : node.name.endsWith("/ScoreContents") ? "scoreResolve" : "nbtResolve";
+            wrap(node, "resolve", "(Lnet/minecraft/network/chat/ResolutionContext;I)Lnet/minecraft/network/chat/MutableComponent;", hook);
         }
     }
     private static void wrap(ClassNode node, String name, String descriptor, String hook) {

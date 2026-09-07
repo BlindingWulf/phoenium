@@ -6,7 +6,11 @@ import java.util.concurrent.atomic.AtomicInteger;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.world.entity.Display;
+import net.minecraft.world.entity.Entity;
+import net.minecraft.world.entity.EntitySpawnReason;
+import net.minecraft.world.entity.EntityTypes;
 import net.minecraft.world.level.ChunkPos;
+import net.minecraft.world.level.entity.EntityLookup;
 import net.minecraft.world.level.chunk.status.ChunkStatus;
 import net.minecraft.world.level.storage.CommandStorage;
 import net.minecraft.world.level.storage.SavedDataStorage;
@@ -99,6 +103,38 @@ class FullSavedContextInputTest {
             assertEquals("", FullSavedContextTestHooks.text(assertInstanceOf(Display.TextDisplay.class, f.world.inserted.getFirst())).getString());
             assertFalse(f.holders.containsKey(chunk.pack())); assertFalse(f.barrier.tripped());
         } finally { f.stop(); FullFinishingServices.stopped(f.world.level.getServer()); }
+        assertCleanup(f);
+    }
+
+    @ParameterizedTest @ValueSource(booleans = {false, true})
+    void sameWorldSelectorRunsOriginalPredicateOrderAndNameReadInsideTheConvergedRegion(boolean reload) throws Exception {
+        var f = new FullRegistrationFixture(true); var lookup = new EntityLookup<Entity>();
+        var first = EntityTypes.TEXT_DISPLAY.create(f.world.level, EntitySpawnReason.LOAD);
+        var second = EntityTypes.TEXT_DISPLAY.create(f.world.level, EntitySpawnReason.LOAD);
+        assertNotNull(first); assertNotNull(second);
+        first.setId(701); first.setPos(1608, 8, 8); first.setCustomName(Component.literal("first indexed candidate"));
+        second.setId(702); second.setPos(1609, 8, 8); second.setCustomName(Component.literal("second indexed candidate"));
+        lookup.add(first); lookup.add(second); f.world.selectorEntities.add(first); f.world.selectorEntities.add(second);
+        assertEquals(f.ownerId, f.directory.resolve(new dev.phoenium.topology.RoutingKey(f.worldId, 100, 0)).orElseThrow().region());
+        var selector = new CompoundTag();
+        selector.putString("selector", "@e[type=minecraft:text_display,distance=..2000,limit=1]");
+        try {
+            saved(f, ChunkPos.ZERO, reload, text(selector));
+            f.start(ChunkPos.ZERO, ChunkStatus.FULL); f.drain(); var graph = f.runtime.graph(f.holder(ChunkPos.ZERO));
+            assertEquals(FullInitializedInputs.State.SATISFIED, graph.inputEvaluation().state(), graph.inputEvaluation().obligation());
+            var routed = graph.inputReceipt().targets().stream().filter(target -> target.position().equals(new ChunkPos(100, 0))).findFirst().orElseThrow();
+            assertEquals(FullInitializedInputs.Availability.ROUTED, routed.availability());
+            assertEquals(java.util.Set.of(FullInitializedInputs.Purpose.ENTITY_CONTEXT), routed.purposes());
+            assertNull(routed.holder()); assertFalse(f.holders.containsKey(new ChunkPos(100, 0).pack()));
+
+            FullAuthoritativeFinishingTest.context(f); f.runtime.inputs.changed(); f.drain();
+            assertInstanceOf(ChunkStageOutcome.Applied.class, graph.finishing.outcome().join());
+            assertInstanceOf(ChunkStageOutcome.Applied.class, graph.publication.outcome().join());
+            assertEquals("first indexed candidate", FullSavedContextTestHooks.text(assertInstanceOf(Display.TextDisplay.class, f.world.inserted.getFirst())).getString());
+            assertFalse(f.barrier.tripped());
+        } finally {
+            lookup.remove(first); lookup.remove(second); f.stop(); FullFinishingServices.stopped(f.world.level.getServer());
+        }
         assertCleanup(f);
     }
 

@@ -2,6 +2,7 @@ package dev.phoenium.chunk;
 
 import java.lang.reflect.*;
 import java.util.*;
+import it.unimi.dsi.fastutil.ints.Int2ObjectMap;
 import net.minecraft.core.Holder;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.entity.*;
@@ -57,5 +58,15 @@ public final class FullFinishingServicesTestHooks {
     }
     public static Object lookupRemove(Map<Object, Object> map, Object key) {
         Object before = map.remove(key); if (before instanceof Entity entity) FullEntityFacts.removed(entity, (UUID) key); return before;
+    }
+    public static Object lookupIntPut(Int2ObjectMap<Object> map, int id, Object value) {
+        Object before = map.put(id, value);
+        if (value instanceof Entity entity) FullEntityFacts.indexed(entity, id, before instanceof Entity prior ? prior : null);
+        return before;
+    }
+    public static Object lookupIntRemove(Int2ObjectMap<Object> map, int id) {
+        Object before = map.remove(id);
+        if (before instanceof Entity entity) FullEntityFacts.unindexed(entity, id);
+        return before;
     }
 }

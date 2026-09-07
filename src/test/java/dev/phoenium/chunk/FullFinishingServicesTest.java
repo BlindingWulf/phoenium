@@ -151,7 +151,8 @@ final class FullFinishingServicesTest {
         for (String mixin : List.of("FullFinishingWorldContextMixin", "FullEntityFactMixin", "FullEntityFactPlayerMixin",
                 "FullEntityFactAbilitiesMixin", "FullEntityFactGameTypeMixin", "FullEntityFactGameModeMixin",
                 "FullEntityFactDataMixin", "FullEntityFactLookupMixin", "FullEntityFactLevelMixin",
-                "FullEntityFactConsumersMixin", "FullEntityFactEnemyMixin"))
+                "FullEntityFactConsumersMixin", "FullEntityFactEnemyMixin", "FullSavedSelectorContentsMixin",
+                "FullSavedScoreContentsMixin", "FullSavedNbtContentsMixin"))
             assertTrue(configuration.contains("\"" + mixin + "\""), "missing installed D1/service adapter " + mixin);
     }
     @Test void largeFiniteScoreboardFootprintIsLazyAndCanMakeProgress() throws Exception {

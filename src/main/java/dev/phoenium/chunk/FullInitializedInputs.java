@@ -17,8 +17,8 @@ import dev.phoenium.topology.RoutingKey;
  */
 public final class FullInitializedInputs {
     public enum State { SATISFIED, PENDING, STALE, TERMINAL, UNRESOLVED, CAPACITY }
-    public enum Purpose { SELF_INITIALIZED, DIFFICULTY, COLLISION, DYNAMIC_SHAPE_MUTATION, ENVIRONMENT, BLOCK_CONTEXT }
-    public enum Availability { PUBLISHED, PREPARED, BIOMES, PREPARATION_PENDING, ABSENT, STALE, TOPOLOGY_PENDING, TERMINAL, UNROUTABLE, CAPACITY }
+    public enum Purpose { SELF_INITIALIZED, DIFFICULTY, COLLISION, DYNAMIC_SHAPE_MUTATION, ENVIRONMENT, BLOCK_CONTEXT, ENTITY_CONTEXT }
+    public enum Availability { PUBLISHED, PREPARED, BIOMES, ROUTED, PREPARATION_PENDING, ABSENT, STALE, TOPOLOGY_PENDING, TERMINAL, UNROUTABLE, CAPACITY }
     public record Limits(int plans, int targetsPerPlan, int edges, int consumers, int factBytes) {
         public Limits { if (plans < 1 || targetsPerPlan < 1 || edges < 1 || consumers < 1 || factBytes < FullSavedInput.MAX_FACT_BYTES) throw new IllegalArgumentException("finite input limits and at least one fact allocation required"); }
         public static Limits production() { return new Limits(256, 256, 8192, 8192, 16 * 1024 * 1024); }
@@ -104,7 +104,8 @@ public final class FullInitializedInputs {
         add(required, plan.graph.holder.getPos(), Purpose.SELF_INITIALIZED);
         String unmet = plan.saved.unmet();
         if (unmet == null && plan.contexts == null) {
-            try { plan.contexts = FullSavedContextInputs.prepare(runtime.level(), plan.graph.finishing.stage(), plan.saved, this::changed); }
+            try { plan.contexts = FullSavedContextInputs.prepare(runtime.level(), runtime.authority.world(),
+                    runtime.authority.directory(), plan.graph.finishing.stage(), plan.saved, this::changed); }
             catch (ChunkProtocolException bound) { unmet = bound.getMessage(); }
         }
         if (unmet == null && plan.contexts != null) unmet = plan.contexts.unmet();
@@ -118,6 +119,8 @@ public final class FullInitializedInputs {
             bytes += charge - plan.factCharge; plan.factCharge = charge;
             for (BlockPos block : plan.contexts.blocks())
                 add(required, new ChunkPos(block.getX() >> 4, block.getZ() >> 4), Purpose.BLOCK_CONTEXT);
+            for (ChunkPos position : plan.contexts.selectorChunks())
+                add(required, position, Purpose.ENTITY_CONTEXT);
         }
         for (var fact : plan.saved.entities()) {
             if (!Double.isFinite(fact.x()) || !Double.isFinite(fact.y()) || !Double.isFinite(fact.z())) {
@@ -218,6 +221,12 @@ public final class FullInitializedInputs {
         var key = new RoutingKey(runtime.authority.world(), position.x(), position.z());
         RegionRoute route = runtime.authority.directory().resolve(key).orElse(null);
         int ticket = holder == null ? Integer.MAX_VALUE : holder.getTicketLevel();
+        if (purposes.equals(Set.of(Purpose.ENTITY_CONTEXT))) {
+            if (runtime.authority.directory().pendingChange(key).filter(change -> !change.completed()).isPresent())
+                return target(position, purposes, Availability.TOPOLOGY_PENDING, null, null, null, route, ticket);
+            return target(position, purposes, route == null ? Availability.UNROUTABLE : Availability.ROUTED,
+                    null, null, null, route, ticket);
+        }
         if (purposes.equals(Set.of(Purpose.ENVIRONMENT))) {
             if (holder == null || ticket > ChunkLevel.byStatus(ChunkStatus.BIOMES))
                 return target(position, purposes, Availability.ABSENT, holder, null, null, route, ticket);
@@ -297,6 +306,12 @@ public final class FullInitializedInputs {
         if (plan.graph.savedSnapshot() != plan.saved || runtime.authority.directory().snapshot() != plan.routes) return true;
         if (plan.contexts != null && !plan.contexts.valid(plan.saved)) return true;
         for (Target target : plan.targets) {
+            if (target.availability == Availability.ROUTED) {
+                var key = new RoutingKey(runtime.authority.world(), target.position.x(), target.position.z());
+                if (!Objects.equals(target.route, runtime.authority.directory().resolve(key).orElse(null))
+                        || runtime.authority.directory().pendingChange(key).filter(c -> !c.completed()).isPresent()) return true;
+                continue;
+            }
             var holder = runtime.visible(target.position);
             if (holder != target.holder || holder != null && holder.getTicketLevel() != target.ticketLevel) return true;
             if (holder == null) continue;

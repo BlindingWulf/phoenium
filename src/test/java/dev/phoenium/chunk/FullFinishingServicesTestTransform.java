@@ -46,6 +46,9 @@ public final class FullFinishingServicesTestTransform {
                             body.instructions.insertBefore(at, entityCall("constructed"));
                     }
                 }
+                if (body.name.equals("setPosRaw") && body.desc.equals("(DDD)V"))
+                    for (AbstractInsnNode at : body.instructions.toArray()) if (at.getOpcode() == Opcodes.RETURN)
+                        body.instructions.insertBefore(at, entityCall("routed"));
                 if (Set.of("getUUID", "getId", "isRemoved", "getScoreboardName", "typeHolder").contains(body.name)) wrap(node, body, body.name);
                 if (Set.of("setId", "setUUID", "setRemoved", "unsetRemoved", "setInvulnerable", "setLevel").contains(body.name)) wrap(node, body, body.name);
                 if (body.name.equals("phoenium$originalFacts$setRemoved")) for (AbstractInsnNode at : body.instructions.toArray())
@@ -58,6 +61,13 @@ public final class FullFinishingServicesTestTransform {
                         && call.name.equals(operation.equals("add") ? "put" : "remove")) {
                     body.instructions.set(call, new MethodInsnNode(Opcodes.INVOKESTATIC, HOOKS, operation.equals("add") ? "lookupPut" : "lookupRemove",
                             call.desc.replace("(", "(Ljava/util/Map;"), false));
+                }
+                for (AbstractInsnNode at : body.instructions.toArray()) if (at instanceof MethodInsnNode call
+                        && call.owner.equals("it/unimi/dsi/fastutil/ints/Int2ObjectMap")
+                        && call.name.equals(operation.equals("add") ? "put" : "remove")) {
+                    String hook = operation.equals("add") ? "lookupIntPut" : "lookupIntRemove";
+                    body.instructions.set(call, new MethodInsnNode(Opcodes.INVOKESTATIC, HOOKS, hook,
+                            call.desc.replace("(", "(Lit/unimi/dsi/fastutil/ints/Int2ObjectMap;"), false));
                 }
                 wrap(node, body, operation.equals("add") ? "lookupAdd" : "lookupRemoveBody");
             }

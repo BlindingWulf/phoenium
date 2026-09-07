@@ -8,6 +8,7 @@ import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.entity.*;
 import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.level.ChunkPos;
 
 /** D1-F owner-published scalars. An exact retained entity pointer remains only an alias. */
 public final class FullEntityFacts {
@@ -20,10 +21,18 @@ public final class FullEntityFacts {
     public record Fact(Entity alias, MinecraftServer server, ServerLevel world, long incarnation, long revision,
                        UUID uuid, int runtimeId, EntityType<?> type, Class<?> dispatch, String scoreboardName, boolean removed,
                        boolean enemy, boolean creative, boolean spectator) { }
+    public record Candidate(Entity alias, Fact fact, ChunkPos position, long routingRevision) { }
+    public record Cut(ServerLevel world, long revision, List<Candidate> candidates) { }
+    private record Route(ChunkPos position, long revision) { }
     private static final AtomicLong INCARNATIONS = new AtomicLong();
     private static final ThreadLocal<Boolean> PUBLISHING = ThreadLocal.withInitial(() -> false);
     private final FullFinishingServices service;
     private final IdentityHashMap<ServerLevel, Map<UUID, Entity>> directories = new IdentityHashMap<>();
+    private final IdentityHashMap<ServerLevel, LinkedHashMap<Integer, Entity>> candidates = new IdentityHashMap<>();
+    private final IdentityHashMap<ServerLevel, Long> candidateRevisions = new IdentityHashMap<>();
+    private final IdentityHashMap<Entity, Route> routes = new IdentityHashMap<>();
+    private final java.util.concurrent.locks.ReentrantLock candidateMetadata = new java.util.concurrent.locks.ReentrantLock();
+    private long routingSequence;
     private long published, insertions, removals;
     FullEntityFacts(FullFinishingServices service) { this.service = service; }
     public static long nextIncarnation() { return INCARNATIONS.incrementAndGet(); }
@@ -70,6 +79,22 @@ public final class FullEntityFacts {
             service.entityFacts.insertions++; service.changed(FullFinishingServices.Kind.ENTITY_REGISTRY);
         }
     }
+    /** Original by-id insertion order is the selector's no-AABB iteration order. */
+    public static void indexed(Entity entity, int id, Entity displaced) {
+        Fact fact = entity instanceof Access access ? access.phoenium$referenceFact() : null;
+        if (fact == null) return;
+        var facts = FullFinishingServices.forServer(fact.server).entityFacts;
+        facts.candidateMetadata.lock();
+        try {
+            long routeRevision = Math.incrementExact(facts.routingSequence);
+            long worldRevision = facts.nextCandidateRevision(fact.world);
+            facts.candidates.computeIfAbsent(fact.world, ignored -> new LinkedHashMap<>()).put(id, entity);
+            if (displaced != null && displaced != entity) facts.routes.remove(displaced);
+            facts.routes.put(entity, new Route(entity.chunkPosition(), routeRevision));
+            facts.routingSequence = routeRevision; facts.candidateRevisions.put(fact.world, worldRevision);
+        } finally { facts.candidateMetadata.unlock(); }
+        facts.service.changed(FullFinishingServices.Kind.ENTITY_REGISTRY);
+    }
     /** Original remove(key) is unconditional; retain that prefix even for a displaced same UUID. */
     public static void removed(Entity entity, UUID originalKey) {
         Fact fact = ((Access) entity).phoenium$referenceFact();
@@ -80,6 +105,73 @@ public final class FullEntityFacts {
             if (world != null) world.remove(originalKey);
             service.entityFacts.removals++; service.changed(FullFinishingServices.Kind.ENTITY_REGISTRY);
         }
+    }
+    /** Original by-id removal is distinct from the earlier UUID-directory removal. */
+    public static void unindexed(Entity entity, int id) {
+        Fact fact = entity instanceof Access access ? access.phoenium$referenceFact() : null;
+        if (fact == null) return;
+        var facts = FullFinishingServices.forServer(fact.server).entityFacts;
+        facts.candidateMetadata.lock();
+        try {
+            long worldRevision = facts.nextCandidateRevision(fact.world);
+            var ordered = facts.candidates.get(fact.world);
+            if (ordered != null) {
+                ordered.remove(id, entity);
+                if (ordered.isEmpty()) facts.candidates.remove(fact.world);
+            }
+            facts.routes.remove(entity); facts.candidateRevisions.put(fact.world, worldRevision);
+        } finally { facts.candidateMetadata.unlock(); }
+        facts.service.changed(FullFinishingServices.Kind.ENTITY_REGISTRY);
+    }
+    /** Owner-side movement publishes routing metadata without reading through a foreign alias. */
+    public static void routed(Entity entity) {
+        Fact fact = entity instanceof Access access ? access.phoenium$referenceFact() : null;
+        if (fact == null) return;
+        var facts = FullFinishingServices.forServer(fact.server).entityFacts;
+        boolean indexed;
+        facts.candidateMetadata.lock();
+        try {
+            indexed = facts.routes.containsKey(entity);
+            if (indexed) {
+                long routeRevision = Math.incrementExact(facts.routingSequence);
+                long worldRevision = facts.nextCandidateRevision(fact.world);
+                facts.routes.put(entity, new Route(entity.chunkPosition(), routeRevision));
+                facts.routingSequence = routeRevision; facts.candidateRevisions.put(fact.world, worldRevision);
+            }
+        } finally { facts.candidateMetadata.unlock(); }
+        if (indexed) facts.service.changed(FullFinishingServices.Kind.ENTITY_REGISTRY);
+    }
+    public Cut cut(ServerLevel world) {
+        FullFinishingServices.requireWorld(world, FullFinishingServices.Kind.ENTITY_REGISTRY);
+        candidateMetadata.lock();
+        try {
+            var result = new ArrayList<Candidate>();
+            for (Entity entity : candidates.getOrDefault(world, new LinkedHashMap<>()).values()) {
+                Fact fact = entity instanceof Access access ? access.phoenium$referenceFact() : null;
+                Route route = routes.get(entity);
+                if (fact == null || fact.alias != entity || fact.world != world || route == null)
+                    throw new ChunkProtocolException("selector candidate lacks current owner-published membership facts");
+                result.add(new Candidate(entity, fact, route.position, route.revision));
+            }
+            return new Cut(world, candidateRevisions.getOrDefault(world, 0L), List.copyOf(result));
+        } finally { candidateMetadata.unlock(); }
+    }
+    public Cut observe(ServerLevel world) {
+        try (var turn = service.referenceAccess()) { return cut(world); }
+    }
+    public boolean valid(Cut cut) {
+        candidateMetadata.lock();
+        try {
+            if (candidateRevisions.getOrDefault(cut.world, 0L) != cut.revision) return false;
+            for (Candidate candidate : cut.candidates) {
+                if (!(candidate.alias instanceof Access access) || access.phoenium$referenceFact() != candidate.fact
+                        || !Objects.equals(routes.get(candidate.alias), new Route(candidate.position, candidate.routingRevision))) return false;
+            }
+            return true;
+        } finally { candidateMetadata.unlock(); }
+    }
+    private long nextCandidateRevision(ServerLevel world) {
+        return Math.incrementExact(candidateRevisions.getOrDefault(world, 0L));
     }
     public Entity lookup(ServerLevel origin, UUID id) {
         FullFinishingServices.requireWorld(origin, FullFinishingServices.Kind.ENTITY_REGISTRY);
@@ -96,7 +188,7 @@ public final class FullEntityFacts {
     public static boolean foreign(Entity entity) {
         if (PUBLISHING.get()) return false;
         FullFinishingServices.Reservation full = FullFinishingServices.currentReservation();
-        return full != null && !full.owns(entity);
+        return full != null && !full.owns(entity) && !FullSavedContextInputs.ownsSelectorCandidate(entity);
     }
     public static Fact require(Entity alias) {
         FullFinishingServices.Reservation full = FullFinishingServices.currentReservation();
@@ -125,5 +217,10 @@ public final class FullEntityFacts {
     }
     public Map<String, Long> measurements() { return Map.of("factsPublished", published, "insertions", insertions, "removals", removals,
             "addressable", directories.values().stream().mapToLong(Map::size).sum()); }
-    void close() { directories.clear(); }
+    void close() {
+        directories.clear();
+        candidateMetadata.lock();
+        try { candidates.clear(); candidateRevisions.clear(); routes.clear(); }
+        finally { candidateMetadata.unlock(); }
+    }
 }

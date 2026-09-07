@@ -1,8 +1,15 @@
 package dev.phoenium.chunk;
 
 import java.lang.reflect.InvocationTargetException;
-import net.minecraft.network.chat.Component;
+import com.mojang.brigadier.exceptions.CommandSyntaxException;
 import net.minecraft.nbt.CompoundTag;
+import net.minecraft.network.chat.Component;
+import net.minecraft.network.chat.MutableComponent;
+import net.minecraft.network.chat.ResolutionContext;
+import net.minecraft.network.chat.contents.NbtContents;
+import net.minecraft.network.chat.contents.ScoreContents;
+import net.minecraft.network.chat.contents.SelectorContents;
+import net.minecraft.network.chat.contents.data.EntityDataSource;
 import net.minecraft.resources.Identifier;
 import net.minecraft.world.entity.Display;
 import net.minecraft.world.level.storage.CommandStorage;
@@ -52,5 +59,36 @@ public final class FullSavedContextTestHooks {
     }
     public static BlockEntity blockEntity(ServerLevel world, BlockPos position) {
         return FullSavedContextInputs.blockEntity(world, position, () -> world.getBlockEntity(position));
+    }
+    private static MutableComponent originalResolve(Class<?> owner, Object receiver, ResolutionContext context, int depth)
+            throws CommandSyntaxException {
+        try {
+            return (MutableComponent) owner.getMethod("phoenium$originalContext$resolve", ResolutionContext.class, int.class)
+                    .invoke(receiver, context, depth);
+        } catch (InvocationTargetException wrapped) {
+            if (wrapped.getCause() instanceof CommandSyntaxException syntax) throw syntax;
+            if (wrapped.getCause() instanceof RuntimeException runtime) throw runtime;
+            if (wrapped.getCause() instanceof Error error) throw error;
+            throw new AssertionError(wrapped.getCause());
+        } catch (ReflectiveOperationException failure) { throw new AssertionError(failure); }
+    }
+    public static MutableComponent selectorResolve(SelectorContents contents, ResolutionContext context, int depth)
+            throws CommandSyntaxException {
+        return FullSavedContextInputs.selectorName(contents.selector().source(),
+                () -> originalResolve(SelectorContents.class, contents, context, depth));
+    }
+    public static MutableComponent scoreResolve(ScoreContents contents, ResolutionContext context, int depth)
+            throws CommandSyntaxException {
+        var selected = contents.name().left();
+        return selected.isEmpty() ? originalResolve(ScoreContents.class, contents, context, depth)
+                : FullSavedContextInputs.selectorScore(selected.get().source(),
+                () -> originalResolve(ScoreContents.class, contents, context, depth));
+    }
+    public static MutableComponent nbtResolve(NbtContents contents, ResolutionContext context, int depth)
+            throws CommandSyntaxException {
+        return contents.dataSource() instanceof EntityDataSource entities
+                ? FullSavedContextInputs.selectorNbt(entities.selector().source(),
+                () -> originalResolve(NbtContents.class, contents, context, depth))
+                : originalResolve(NbtContents.class, contents, context, depth);
     }
 }

@@ -483,7 +483,8 @@ public final class FullRegistrationRuntime {
                 var route = authority.directory().resolve(lifecycle.chunkKey()).orElse(null);
                 if (route == null) return LightInputService.Readiness.NOT_REGISTERED;
                 for (var target : inputReceipt().targets()) {
-                    if (target.holder() != null && target.availability() != FullInitializedInputs.Availability.ABSENT
+                    if (((target.holder() != null && target.availability() != FullInitializedInputs.Availability.ABSENT)
+                            || target.purposes().contains(FullInitializedInputs.Purpose.ENTITY_CONTEXT))
                             && !route.equals(target.route())) return LightInputService.Readiness.NOT_REGISTERED;
                     var generation = generations.get(target.holder());
                     if (target.availability() != FullInitializedInputs.Availability.BIOMES
@@ -560,8 +561,10 @@ public final class FullRegistrationRuntime {
             if (legacyOwners == null || !legacyOwners.ready()) missing.add("prepared legacy-owner occurrences");
             if (serviceReservation == null) missing.add("finishing service reservation");
             var route = authority.directory().resolve(lifecycle.chunkKey()).orElse(null);
-            if (inputReceipt() != null && inputReceipt().targets().stream().anyMatch(target -> target.holder() != null
-                    && target.availability() != FullInitializedInputs.Availability.ABSENT && !Objects.equals(route, target.route())))
+            if (inputReceipt() != null && inputReceipt().targets().stream().anyMatch(target ->
+                    ((target.holder() != null && target.availability() != FullInitializedInputs.Availability.ABSENT)
+                            || target.purposes().contains(FullInitializedInputs.Purpose.ENTITY_CONTEXT))
+                            && !Objects.equals(route, target.route())))
                 missing.add("regional enclosure convergence");
             return List.copyOf(missing);
         }
@@ -600,8 +603,9 @@ public final class FullRegistrationRuntime {
             if (level.environmentAttributes() == null || level.getLevelData() == null) return;
             Set<RoutingKey> keys = new LinkedHashSet<>();
             keys.add(lifecycle.chunkKey());
-            for (var target : inputReceipt().targets()) if (target.holder() != null
+            for (var target : inputReceipt().targets()) if ((target.holder() != null
                     && target.availability() != FullInitializedInputs.Availability.ABSENT)
+                    || target.purposes().contains(FullInitializedInputs.Purpose.ENTITY_CONTEXT))
                 keys.add(new RoutingKey(authority.world(), target.position().x(), target.position().z()));
             if (enclosure != null && !enclosure.enclose(keys)) return;
             var shared = FullFinishingServices.forServer(server);

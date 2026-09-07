@@ -2,7 +2,10 @@ package dev.phoenium.chunk;
 
 import com.mojang.brigadier.StringReader;
 import com.mojang.brigadier.exceptions.CommandSyntaxException;
+import dev.phoenium.core.WorldId;
 import dev.phoenium.ownership.OwnershipContext;
+import dev.phoenium.topology.RegionDirectory;
+import dev.phoenium.topology.RoutingKey;
 import java.util.*;
 import net.minecraft.commands.arguments.NbtPathArgument;
 import net.minecraft.nbt.NbtOps;
@@ -12,6 +15,7 @@ import net.minecraft.resources.Identifier;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.entity.Display;
+import net.minecraft.world.entity.Entity;
 import net.minecraft.world.level.storage.CommandStorage;
 import net.minecraft.world.level.storage.ValueInput;
 
@@ -23,19 +27,23 @@ public final class FullSavedContextInputs {
     private static final ThreadLocal<Plan> ACTIVE = new ThreadLocal<>();
     private FullSavedContextInputs() { }
 
-    public static Plan prepare(ServerLevel world, ChunkCustodyModel.StageId stage, FullSavedInput.Snapshot saved, Runnable changed) {
+    public static Plan prepare(ServerLevel world, WorldId worldId, RegionDirectory directory,
+                               ChunkCustodyModel.StageId stage, FullSavedInput.Snapshot saved, Runnable changed) {
         if (OwnershipContext.current().isPresent() || FullFinishingServices.finishing())
             throw new ChunkProtocolException("saved context preparation requires owner-free discovery");
-        Plan plan = new Plan(world, stage, saved, changed);
+        Plan plan = new Plan(world, worldId, directory, stage, saved, changed);
         try {
             for (var fact : saved.entities()) if (fact.type().equals("minecraft:text_display")) plan.discover(fact);
             return plan;
         } catch (RuntimeException | Error failure) { plan.close(); throw failure; }
     }
     private record Pending(FullSavedInput.EntityFact fact, FullSavedTextInputs.NbtRead read) { }
+    @FunctionalInterface public interface SelectorCall<T> { T call() throws CommandSyntaxException; }
 
     public static final class Plan implements AutoCloseable {
         private final ServerLevel world;
+        private final WorldId worldId;
+        private final RegionDirectory directory;
         private final ChunkCustodyModel.StageId stage;
         private final FullSavedInput.Snapshot saved;
         private final net.minecraft.core.RegistryAccess registry;
@@ -43,25 +51,36 @@ public final class FullSavedContextInputs {
         private final Map<Identifier, FullCommandStorageInputs.Capture> storage = new LinkedHashMap<>();
         private final List<AutoCloseable> consumers = new ArrayList<>();
         private final Runnable changed;
+        private FullEntityFacts.Cut entityCut;
+        private IdentityHashMap<Entity, FullEntityFacts.Fact> selectorCandidates;
         private String unmet;
         private long bytes;
         private ChunkStageClaim claim;
         private String currentText;
         private boolean closed;
-        private Plan(ServerLevel world, ChunkCustodyModel.StageId stage, FullSavedInput.Snapshot saved, Runnable changed) {
-            this.world = world; this.stage = stage; this.saved = saved; this.changed = changed;
+        private Plan(ServerLevel world, WorldId worldId, RegionDirectory directory, ChunkCustodyModel.StageId stage,
+                     FullSavedInput.Snapshot saved, Runnable changed) {
+            this.world = world; this.worldId = worldId; this.directory = directory;
+            this.stage = stage; this.saved = saved; this.changed = changed;
             registry = world.registryAccess();
         }
         public String unmet() { return unmet; }
         long payloadBytes() { return bytes; }
         public boolean valid(FullSavedInput.Snapshot current) {
             return !closed && current == saved && world.registryAccess() == registry
-                    && storage.values().stream().allMatch(FullCommandStorageInputs.Capture::valid);
+                    && storage.values().stream().allMatch(FullCommandStorageInputs.Capture::valid)
+                    && (entityCut == null || FullFinishingServices.forServer(world.getServer()).entityFacts.valid(entityCut));
         }
         List<FullSavedTextInputs.Requirements> requirements(String path) { return List.copyOf(texts.getOrDefault(path, List.of())); }
         Set<BlockPos> blocks() {
             var result = new LinkedHashSet<BlockPos>();
             for (var requirements : texts.values()) result.addAll(requirements.stream().flatMap(r -> r.blocks().stream()).toList());
+            return Collections.unmodifiableSet(result);
+        }
+        Set<net.minecraft.world.level.ChunkPos> selectorChunks() {
+            if (entityCut == null) return Set.of();
+            var result = new LinkedHashSet<net.minecraft.world.level.ChunkPos>();
+            for (var candidate : entityCut.candidates()) result.add(candidate.position());
             return Collections.unmodifiableSet(result);
         }
         private void discover(FullSavedInput.EntityFact fact) {
@@ -100,8 +119,12 @@ public final class FullSavedContextInputs {
             for (var selector : requirements.selectors()) {
                 boolean ownedSelf = selector.source().equals("@s");
                 boolean identityScore = selector.use() == FullSavedTextInputs.Use.SCORE && !selector.source().startsWith("@");
-                if (!ownedSelf && !identityScore) {
+                if (!ownedSelf && !identityScore && !selector.worldLimited()) {
                     unmet = fact.path() + ": protected display selector context producer pending for " + selector.source(); return;
+                }
+                if (!ownedSelf && !identityScore && entityCut == null) {
+                    entityCut = FullFinishingServices.forServer(world.getServer()).entityFacts.observe(world);
+                    bytes = Math.addExact(bytes, Math.multiplyExact(64L, entityCut.candidates().size()));
                 }
             }
             for (var read : requirements.nbtReads()) queue.add(new Pending(fact, read));
@@ -137,7 +160,8 @@ public final class FullSavedContextInputs {
         private Scope(Plan plan) { this.plan = plan; }
         @Override public void close() {
             if (plan == null) return;
-            if (ACTIVE.get() != plan || plan.currentText != null) throw new ChunkProtocolException("saved text context scope escaped");
+            if (ACTIVE.get() != plan || plan.currentText != null || plan.selectorCandidates != null)
+                throw new ChunkProtocolException("saved text context scope escaped");
             ACTIVE.remove(); plan.claim = null; plan = null;
         }
     }
@@ -190,5 +214,48 @@ public final class FullSavedContextInputs {
         if (!FullFinishingServices.finishing()) return original.get();
         requireBlock(world, position);
         return FullFinishingQueries.blockEntity(world, position, original);
+    }
+    /** Executes one admitted same-world selector body at its original component/NBT/score resolution point. */
+    private static <T> T selector(String source, FullSavedTextInputs.Use use, SelectorCall<T> original) throws CommandSyntaxException {
+        if (!FullFinishingServices.finishing()) return original.call();
+        Plan plan = ACTIVE.get();
+        if (plan == null || plan.currentText == null || plan.selectorCandidates != null)
+            throw FullFinishingServices.failure(new ChunkProtocolException("selector read outside its exact saved text occurrence"));
+        plan.claim.require(plan.stage);
+        var declared = plan.texts.get(plan.currentText).stream().flatMap(requirements -> requirements.selectors().stream())
+                .filter(candidate -> candidate.source().equals(source) && candidate.use() == use).findFirst().orElse(null);
+        if (declared == null)
+            throw FullFinishingServices.failure(new ChunkProtocolException("unbound saved text selector input " + source));
+        if (declared.source().equals("@s")) return original.call();
+        if (!declared.worldLimited() || plan.entityCut == null)
+            throw FullFinishingServices.failure(new ChunkProtocolException("selector requires unapproved cross-world authority " + source));
+        var current = FullFinishingServices.forServer(plan.world.getServer()).entityFacts.cut(plan.world);
+        var permitted = new IdentityHashMap<Entity, FullEntityFacts.Fact>();
+        for (var candidate : current.candidates()) {
+            var route = plan.directory.resolve(new RoutingKey(plan.worldId, candidate.position().x(), candidate.position().z())).orElse(null);
+            if (route == null || !route.region().equals(plan.claim.frozenRoute().region())
+                    || !route.generation().equals(plan.claim.frozenRoute().generation()))
+                throw FullFinishingServices.failure(new ChunkProtocolException("same-world selector candidate is outside the claimed regional enclosure"));
+            permitted.put(candidate.alias(), candidate.fact());
+        }
+        plan.selectorCandidates = permitted;
+        try { return original.call(); }
+        finally { plan.selectorCandidates = null; }
+    }
+    public static <T> T selectorName(String source, SelectorCall<T> original) throws CommandSyntaxException {
+        return selector(source, FullSavedTextInputs.Use.NAME, original);
+    }
+    public static <T> T selectorScore(String source, SelectorCall<T> original) throws CommandSyntaxException {
+        return selector(source, FullSavedTextInputs.Use.SCORE, original);
+    }
+    public static <T> T selectorNbt(String source, SelectorCall<T> original) throws CommandSyntaxException {
+        return selector(source, FullSavedTextInputs.Use.NBT, original);
+    }
+    /** Named selector consumers may call original virtuals only on their exact converged candidates. */
+    static boolean ownsSelectorCandidate(Entity entity) {
+        Plan plan = ACTIVE.get();
+        if (plan == null || plan.selectorCandidates == null) return false;
+        FullEntityFacts.Fact expected = plan.selectorCandidates.get(entity);
+        return expected != null && entity instanceof FullEntityFacts.Access access && access.phoenium$referenceFact() == expected;
     }
 }

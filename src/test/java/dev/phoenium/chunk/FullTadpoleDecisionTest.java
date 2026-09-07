@@ -160,6 +160,7 @@ final class FullTadpoleDecisionTest {
     static final class Fixture {
         final ArrayDeque<Runnable> execution = new ArrayDeque<>();
         final List<Entity> inserted = new ArrayList<>(); final List<String> events = new ArrayList<>();
+        final List<Entity> selectorEntities = new ArrayList<>();
         final Object work = new Object(); final net.minecraft.server.ServerScoreboard scoreboard;
         final CompletableFuture<ChunkResult<ChunkAccess>> fullSlot = new CompletableFuture<>();
         final ServerLevel level; final ChunkHolder holder; final ServerChunkCache cache; final ProtoChunk proto;
@@ -227,6 +228,17 @@ final class FullTadpoleDecisionTest {
                     new Answer(ServerLevel.class.getMethod("getGameRules"), args -> new GameRules(FeatureFlags.DEFAULT_FLAGS)),
                     new Answer(ServerLevel.class.getMethod("getBiome", BlockPos.class), args -> registry.lookupOrThrow(Registries.BIOME).getOrThrow(Biomes.PLAINS)),
                     new Answer(ServerLevel.class.getMethod("getScoreboard"), args -> scoreboard),
+                    new Answer(ServerLevel.class.getMethod("getEntities", net.minecraft.world.level.entity.EntityTypeTest.class,
+                            java.util.function.Predicate.class, List.class, int.class), args -> {
+                        collectSelector((net.minecraft.world.level.entity.EntityTypeTest<?, ?>) args[0], null,
+                                (java.util.function.Predicate<Object>) args[1], (List<Object>) args[2], (int) args[3]); return null;
+                    }),
+                    new Answer(Level.class.getMethod("getEntities", net.minecraft.world.level.entity.EntityTypeTest.class,
+                            net.minecraft.world.phys.AABB.class, java.util.function.Predicate.class, List.class, int.class), args -> {
+                        collectSelector((net.minecraft.world.level.entity.EntityTypeTest<?, ?>) args[0],
+                                (net.minecraft.world.phys.AABB) args[1], (java.util.function.Predicate<Object>) args[2],
+                                (List<Object>) args[3], (int) args[4]); return null;
+                    }),
                     new Answer(ServerLevel.class.getMethod("getWorldBorder"), args -> null),
                     new Answer(ServerLevel.class.getMethod("getBlockTicks"), args -> blockTicks),
                     new Answer(ServerLevel.class.getMethod("getFluidTicks"), args -> fluidTicks),
@@ -276,6 +288,15 @@ final class FullTadpoleDecisionTest {
             var futures = new AtomicReferenceArray<CompletableFuture<ChunkResult<ChunkAccess>>>(ChunkStatus.getStatusList().size());
             for (ChunkStatus status : ChunkStatus.getStatusList()) futures.set(status.getIndex(), status == ChunkStatus.FULL ? fullSlot : CompletableFuture.completedFuture(ChunkResult.of(proto)));
             set(holder, GenerationChunkHolder.class, "futures", futures);
+        }
+        @SuppressWarnings({"rawtypes", "unchecked"})
+        private void collectSelector(net.minecraft.world.level.entity.EntityTypeTest type, net.minecraft.world.phys.AABB box,
+                                     java.util.function.Predicate<Object> predicate, List<Object> output, int limit) {
+            for (Entity entity : selectorEntities) {
+                Object selected = type.tryCast(entity);
+                if (selected == null || box != null && !box.intersects(entity.getBoundingBox()) || !predicate.test(selected)) continue;
+                output.add(selected); if (output.size() >= limit) return;
+            }
         }
 
         LevelChunk run() {
