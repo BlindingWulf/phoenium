@@ -90,6 +90,88 @@ class FullSavedContextInputTest {
         assertCleanup(f);
     }
 
+    @ParameterizedTest @ValueSource(booleans = {false, true})
+    void ownedSelfCustomNamePublishesNestedStorageDependenciesBeforeOriginalEntitySerialization(boolean reload) throws Exception {
+        var f = new FullRegistrationFixture(true);
+        var data = new SavedDataStorage(directory, net.minecraft.util.datafix.DataFixers.getDataFixer(), f.world.level.registryAccess());
+        var storage = new CommandStorage(data); set(f.world.level.getServer(), MinecraftServer.class, "commandStorage", storage);
+        var value = new CompoundTag(); value.putString("message", "resolved through saved custom name"); storage.set(SECOND, value);
+        var source = text(entityText("@s", "CustomName", true));
+        var customName = storageText(SECOND); source.put("CustomName", customName);
+        try {
+            saved(f, ChunkPos.ZERO, reload, source);
+            f.start(ChunkPos.ZERO, ChunkStatus.FULL); f.drain(); var graph = f.runtime.graph(f.holder(ChunkPos.ZERO));
+            assertEquals(FullInitializedInputs.State.SATISFIED, graph.inputEvaluation().state(), graph.inputEvaluation().obligation());
+            assertEquals(3, graph.inputReceipt().contexts().requirements("root[0]").size());
+            assertEquals(0, f.world.nextId); assertTrue(f.world.inserted.isEmpty());
+
+            FullAuthoritativeFinishingTest.context(f); f.runtime.inputs.changed(); f.drain();
+            assertInstanceOf(ChunkStageOutcome.Applied.class, graph.finishing.outcome().join());
+            var display = assertInstanceOf(Display.TextDisplay.class, f.world.inserted.getFirst());
+            assertEquals("resolved through saved custom name", FullSavedContextTestHooks.text(display).getString());
+            assertInstanceOf(net.minecraft.network.chat.contents.NbtContents.class, display.getCustomName().getContents(),
+                    "Entity.load retains the unresolved saved component; only the reached outer NBT resolution resolves it");
+            assertFalse(f.barrier.tripped());
+        } finally { f.stop(); FullFinishingServices.stopped(f.world.level.getServer()); data.close(); }
+        assertCleanup(f);
+    }
+
+    @Test void customNameAliasWriteInvalidatesItsDependencyPlanAndRediscoversTheNewStorageSource() throws Exception {
+        var f = new FullRegistrationFixture(true);
+        var data = new SavedDataStorage(directory, net.minecraft.util.datafix.DataFixers.getDataFixer(), f.world.level.registryAccess());
+        var storage = new CommandStorage(data); set(f.world.level.getServer(), MinecraftServer.class, "commandStorage", storage);
+        var first = new CompoundTag(); first.putString("message", "first"); storage.set(FIRST, first);
+        var second = new CompoundTag(); second.putString("message", "second"); storage.set(SECOND, second);
+        var source = text(entityText("@s", "CustomName", true));
+        var customName = storageText(FIRST); source.put("CustomName", customName);
+        try {
+            saved(f, ChunkPos.ZERO, false, source);
+            f.start(ChunkPos.ZERO, ChunkStatus.FULL); f.drain(); var graph = f.runtime.graph(f.holder(ChunkPos.ZERO));
+            var old = graph.inputReceipt(); assertNotNull(old);
+            var retainedName = f.input(ChunkPos.ZERO).getEntities().getFirst().getCompound("CustomName").orElseThrow();
+            retainedName.putString("storage", SECOND.toString());
+            assertEquals(FullInitializedInputs.State.STALE, graph.validateInputs(graph.finishing.stage(), old).state());
+            f.drain(); assertNotSame(old, graph.inputReceipt());
+            assertTrue(graph.inputReceipt().contexts().valid(graph.savedSnapshot()));
+            assertEquals(3, graph.inputReceipt().contexts().requirements("root[0]").size());
+
+            FullAuthoritativeFinishingTest.context(f); f.runtime.inputs.changed(); f.drain();
+            assertInstanceOf(ChunkStageOutcome.Applied.class, graph.finishing.outcome().join());
+            assertEquals("second", FullSavedContextTestHooks.text(
+                    assertInstanceOf(Display.TextDisplay.class, f.world.inserted.getFirst())).getString());
+            assertFalse(f.barrier.tripped());
+        } finally { f.stop(); FullFinishingServices.stopped(f.world.level.getServer()); data.close(); }
+        assertCleanup(f);
+    }
+
+    @Test void originalInvalidCustomNameDecodeDoesNotLeakIntoTheNextInterpretedEntityOccurrence() throws Exception {
+        var f = new FullRegistrationFixture(true);
+        var data = new SavedDataStorage(directory, net.minecraft.util.datafix.DataFixers.getDataFixer(), f.world.level.registryAccess());
+        var storage = new CommandStorage(data); set(f.world.level.getServer(), MinecraftServer.class, "commandStorage", storage);
+        var value = new CompoundTag(); value.putString("message", "valid second occurrence"); storage.set(SECOND, value);
+        var invalid = text(entityText("@s", "CustomName", true));
+        var invalidName = new CompoundTag(); invalidName.putString("type", "phoenium:missing_component_type");
+        invalid.put("CustomName", invalidName);
+        var valid = text(entityText("@s", "CustomName", true)); valid.put("CustomName", storageText(SECOND));
+        try {
+            saved(f, ChunkPos.ZERO, false, invalid); f.input(ChunkPos.ZERO).addEntity(valid);
+            f.start(ChunkPos.ZERO, ChunkStatus.FULL); f.drain(); var graph = f.runtime.graph(f.holder(ChunkPos.ZERO));
+            assertEquals(FullInitializedInputs.State.SATISFIED, graph.inputEvaluation().state(), graph.inputEvaluation().obligation());
+            assertEquals(1, graph.inputReceipt().contexts().requirements("root[0]").size());
+            assertEquals(3, graph.inputReceipt().contexts().requirements("root[1]").size());
+
+            FullAuthoritativeFinishingTest.context(f); f.runtime.inputs.changed(); f.drain();
+            assertInstanceOf(ChunkStageOutcome.Applied.class, graph.finishing.outcome().join());
+            assertEquals(2, f.world.inserted.size());
+            assertEquals("", FullSavedContextTestHooks.text(
+                    assertInstanceOf(Display.TextDisplay.class, f.world.inserted.getFirst())).getString());
+            assertEquals("valid second occurrence", FullSavedContextTestHooks.text(
+                    assertInstanceOf(Display.TextDisplay.class, f.world.inserted.get(1))).getString());
+            assertFalse(f.barrier.tripped());
+        } finally { f.stop(); FullFinishingServices.stopped(f.world.level.getServer()); data.close(); }
+        assertCleanup(f);
+    }
+
     @Test void retainedBlockNbtUsesTheOriginalImmediateLazyCreationAndSerializationSuffix() throws Exception {
         var f = new FullRegistrationFixture(true); var position = new BlockPos(8, 8, 8);
         f.input(ChunkPos.ZERO).getSection(0).setBlockState(8, 8, 8, Blocks.BEACON.defaultBlockState());

@@ -90,9 +90,15 @@ public final class FullSavedContextInputs {
                 Pending next = queue.remove(); var read = next.read;
                 if (read.source() != FullSavedTextInputs.Source.STORAGE) {
                     if (read.source() == FullSavedTextInputs.Source.BLOCK) continue;
-                    if (read.source() == FullSavedTextInputs.Source.ENTITY && !read.interpreting()) {
+                    if (read.source() == FullSavedTextInputs.Source.ENTITY) {
                         var selector = declaredSelector(fact.path(), read.target(), FullSavedTextInputs.Use.NBT);
-                        if (selector != null && (selector.self() || selector.worldLimited())) continue;
+                        if (selector != null && !read.interpreting() && (selector.self() || selector.worldLimited())) continue;
+                        if (selector != null && selector.self() && read.interpreting()
+                                && read.recursionDepth() <= 100 && read.path().equals("CustomName")) {
+                            FullSavedTextInputs.decode(fact.services().customName(), world.registryAccess()).ifPresent(component ->
+                                    add(fact, FullSavedTextInputs.discoverInterpreted(fact, component, read.recursionDepth()), queue));
+                            continue;
+                        }
                     }
                     unmet = fact.path() + ": protected display " + read.source() + " context producer pending"; break;
                 }

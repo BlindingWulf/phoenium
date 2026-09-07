@@ -97,6 +97,21 @@ final class FullSavedTextInputs {
         return new Saved(text.copy(), new Vec2(pitch, yaw), Math.addExact(budget[1], 16L));
     }
 
+    /** Dependency-only snapshot of a component-valued saved field. The original component
+     * codec and resolver still run later from Entity.load/save and NbtContents.resolve. */
+    static Saved captureComponent(CompoundTag entity, String key, FullSavedInput custodian) {
+        Tag component = entity.get(key);
+        if (component == null) return Saved.EMPTY;
+        long[] budget = {0, 0};
+        protect(component, custodian, 0, budget);
+        return new Saved(component.copy(), Vec2.ZERO, budget[1]);
+    }
+
+    static Optional<Component> decode(Saved saved, HolderLookup.Provider registries) {
+        if (saved.original == null) return Optional.empty();
+        return ComponentSerialization.CODEC.parse(registries.createSerializationContext(NbtOps.INSTANCE), saved.original).result();
+    }
+
     static void protect(Tag tag, FullSavedInput source, int depth, long[] budget) {
         if (depth > FullSavedInput.MAX_DEPTH)
             throw new ChunkProtocolException("saved display component exceeds the serialized NBT depth limit");
@@ -119,8 +134,7 @@ final class FullSavedTextInputs {
         var visitor = new Visitor(fact, saved);
         if (saved.original != null) {
             // Failed decode is the original Optional.empty branch; no resolver executes.
-            ComponentSerialization.CODEC.parse(registries.createSerializationContext(NbtOps.INSTANCE), saved.original)
-                    .result().ifPresent(component -> visitor.visit(component, 0));
+            decode(saved, registries).ifPresent(component -> visitor.visit(component, 0));
         }
         return visitor.result();
     }
