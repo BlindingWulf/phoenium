@@ -50,6 +50,7 @@ public final class FullRuntimeAcceptanceProbe implements DedicatedServerModIniti
     private static final ThreadLocal<VaultDirtyScope> VAULT_SCOPE = new ThreadLocal<>();
     private static int richVillagers, privateNeighbors;
     private static int scoreboardAdds, scoreboardRemoves;
+    private static boolean inventoryLogged;
     private static final Set<UUID> DISCARDED_TADPOLES = new HashSet<>();
     private static final Map<UUID, Integer> TEAM_TRANSFER_ADDS = new HashMap<>();
     private static final Map<UUID, Integer> TEAM_TRANSFER_REMOVES = new HashMap<>();
@@ -451,6 +452,15 @@ public final class FullRuntimeAcceptanceProbe implements DedicatedServerModIniti
                             + " team=" + (entity.getTeam() == null ? "<none>" : entity.getTeam().getName()));
             if (entity instanceof Frog) frogs++; else if (entity instanceof Villager) villagers++;
             else throw new IllegalStateException("unexpected surviving saved root " + entity);
+        }
+        if (!inventoryLogged) {
+            inventoryLogged = true;
+            for (Entity entity : level.getAllEntities()) if (entity.entityTags().contains(marker(phase())))
+                System.out.println("PHOENIUM_FULL_ENTITY_INVENTORY phase=" + phase() + " entity=" + entity.getUUID()
+                        + " type=" + entity.getType() + " chunk=" + entity.chunkPosition()
+                        + " removed=" + entity.isRemoved() + " reason=" + entity.getRemovalReason() + " team="
+                        + (entity.getTeam() == null ? "<none>" : entity.getTeam().getName())
+                        + " tags=" + entity.entityTags());
         }
         require(frogs == 4 && villagers == 4, "real entity inventory differs: frogs=" + frogs + " villagers=" + villagers);
         if (BED_CHECKS.size() < 4)
