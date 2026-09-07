@@ -107,13 +107,22 @@ between these checkpoints; final same-JAR acceptance remains outstanding.
    generation layer and its exact holder FULL slot is done, while
    PrepareSpawnTask.spawnPosition remains pending and chunkLoad=null through tick1100.
    The first fixed-position diagnostic traced a neighbor and is not target proof.
-   Luna now correlates the SPAWN_SEARCH range future, discarded whenCompleteAsync
-   dependent, and original server-executor callback. Root source suspect: same-thread
-   MinecraftServer.execute invokes its serial-service wrapper under the publication
-   region; that rejection can be captured by the discarded async dependent before
-   PlayerSpawnFinder callback entry. Confirm exact evidence before a production fix.
+   Luna `live-1788818902542` then proves the exact range future succeeds with the
+   same holder, but server.execute throws "serial finishing service entered after
+   regional admission" before PlayerSpawnFinder callback entry. Vanilla discards
+   that failed whenCompleteAsync dependent, leaving spawnPosition pending.
+   Root fix `0b0f2c0` enqueues the exact original TickTask on the existing server
+   queue when an owner is present; actual execution later acquires its serial turn
+   owner-free. No spawn body/future or public FULL result is replaced. Original
+   owner-free inline behavior and terminal producer acknowledgements remain.
+   Old-wrapper regression fails 3/4 (`server-task-16-before.*`); fixed 23 tests /
+   three suites pass in `server-task-18.log` and `server-task-18-xml/`, including
+   original BlockableEventLoop/CompletableFuture delivery and exact task identity.
+   Luna owns the next installed probe and actual client campaign on this fix.
    No forceload, timeout, spawn-rule or handshake workaround. Trace `f4ef244`
-   integrated as `98cb517`; client still has no FinishConfiguration/player insertion.
+   integrated as `98cb517`, with later dynamic/callback traces in `192dbab` and
+   `6ae1095`; `7fb4a91` updates strict installed counters. Before the new run,
+   FinishConfiguration/player insertion are still unverified.
 3. Sol owns same-world selector candidate-index producers/consumers, with a narrow
    route-only ENTITY_CONTEXT convergence hunk in FullRegistrationRuntime. Root
    retains all other changes to that runtime. Original predicates, NBT/name reads,
