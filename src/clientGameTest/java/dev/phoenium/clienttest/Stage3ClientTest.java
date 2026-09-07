@@ -1805,6 +1805,10 @@ public final class Stage3ClientTest implements FabricClientGameTest {
                 require(active.stopNormally(context), active.serverFailure("FULL normal stop timed out"));
                 String log = active.readLatestLog();
                 String processLog = active.readProcessLog();
+                Path worldRoot = directory.resolve(world);
+                long levelDatBytes = persistedLevelBytes(worldRoot);
+                require(levelDatBytes > 0, active.serverFailure(
+                        "FULL lifecycle did not leave a readable on-disk level.dat: " + worldRoot));
                 List<String> suffixLines = processLog.lines()
                         .filter(line -> line.contains("PHOENIUM_FULL_LIVE_SUFFIX phase=" + phase))
                         .toList();
@@ -1827,6 +1831,8 @@ public final class Stage3ClientTest implements FabricClientGameTest {
                 evidence.put(phase + "Exit", active.process.exitValue());
                 evidence.put(phase + "LatestLog", savedLatestLog.toString());
                 evidence.put(phase + "ProcessLog", savedProcessLog.toString());
+                evidence.put(phase + "WorldRoot", worldRoot.toString());
+                evidence.put(phase + "LevelDatBytes", levelDatBytes);
                 evidence.put(phase + "SuffixAdmissions", suffixLines.size());
                 active = null;
             }
@@ -1885,6 +1891,15 @@ public final class Stage3ClientTest implements FabricClientGameTest {
             && !log.contains("Exception stopping the server")
             && !log.contains("FULL_LIVE_FAIL")
             && !log.contains("FULL fixture failed");
+    }
+
+    private static long persistedLevelBytes(Path worldRoot) {
+        try {
+            Path levelData = worldRoot.resolve("level.dat");
+            return Files.isRegularFile(levelData) ? Files.size(levelData) : 0L;
+        } catch (IOException ignored) {
+            return 0L;
+        }
     }
 
     private static final class ExternalServer {
