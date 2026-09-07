@@ -40,8 +40,9 @@ final class FullSavedTextInputTest {
         f.run();
         assertEquals(1, f.inserted.size());
         var loaded = assertInstanceOf(Display.TextDisplay.class, f.inserted.getFirst());
-        assertEquals("saved display", loaded.getText().getString());
-        var hover = assertInstanceOf(HoverEvent.ShowText.class, loaded.getText().getStyle().getHoverEvent());
+        var loadedText = FullSavedContextTestHooks.text(loaded);
+        assertEquals("saved display", loadedText.getString());
+        var hover = assertInstanceOf(HoverEvent.ShowText.class, loadedText.getStyle().getHoverEvent());
         assertEquals("hover", hover.value().getString()); assertEquals(0, f.localReads);
     }
 

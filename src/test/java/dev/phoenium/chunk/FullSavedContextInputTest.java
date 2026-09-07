@@ -49,7 +49,7 @@ class FullSavedContextInputTest {
             assertInstanceOf(ChunkStageOutcome.Applied.class, graph.finishing.outcome().join());
             assertInstanceOf(ChunkStageOutcome.Applied.class, graph.publication.outcome().join());
             assertEquals(1, f.world.inserted.size());
-            assertEquals("resolved saved storage", assertInstanceOf(Display.TextDisplay.class, f.world.inserted.getFirst()).getText().getString());
+            assertEquals("resolved saved storage", FullSavedContextTestHooks.text(assertInstanceOf(Display.TextDisplay.class, f.world.inserted.getFirst())).getString());
             assertEquals(1L, f.runtime.measurements().get("finishingCalls"));
             assertEquals(1L, f.runtime.measurements().get("publicationCalls"));
             assertEquals(0, f.world.localReads); assertFalse(f.barrier.tripped());
@@ -76,7 +76,7 @@ class FullSavedContextInputTest {
             assertInstanceOf(ChunkStageOutcome.Applied.class, graph.finishing.outcome().join());
             assertInstanceOf(ChunkStageOutcome.Applied.class, graph.publication.outcome().join());
             var display = assertInstanceOf(Display.TextDisplay.class, f.world.inserted.getFirst());
-            assertEquals("retained block context", display.getText().getString());
+            assertEquals("retained block context", FullSavedContextTestHooks.text(display).getString());
             assertSame(beacon, graph.prepared().orElseThrow().actual().getBlockEntity(position));
             assertFalse(f.barrier.tripped());
         } finally { f.stop(); FullFinishingServices.stopped(f.world.level.getServer()); }
@@ -96,7 +96,7 @@ class FullSavedContextInputTest {
 
             FullAuthoritativeFinishingTest.context(f); f.runtime.inputs.changed(); f.drain();
             assertInstanceOf(ChunkStageOutcome.Applied.class, graph.finishing.outcome().join());
-            assertEquals("", assertInstanceOf(Display.TextDisplay.class, f.world.inserted.getFirst()).getText().getString());
+            assertEquals("", FullSavedContextTestHooks.text(assertInstanceOf(Display.TextDisplay.class, f.world.inserted.getFirst())).getString());
             assertFalse(f.holders.containsKey(chunk.pack())); assertFalse(f.barrier.tripped());
         } finally { f.stop(); FullFinishingServices.stopped(f.world.level.getServer()); }
         assertCleanup(f);

@@ -1,6 +1,7 @@
 package dev.phoenium.chunk;
 
 import java.lang.reflect.InvocationTargetException;
+import net.minecraft.network.chat.Component;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.resources.Identifier;
 import net.minecraft.world.entity.Display;
@@ -12,6 +13,19 @@ import net.minecraft.world.level.block.entity.BlockEntity;
 
 /** Test plumbing invokes the preserved original body exactly once through production guards. */
 public final class FullSavedContextTestHooks {
+    /** Reads the vanilla private display payload in both transformed and installed probes. */
+    public static Component text(Display.TextDisplay entity) {
+        try {
+            var method = Display.TextDisplay.class.getDeclaredMethod("getText");
+            method.setAccessible(true);
+            return (Component) method.invoke(entity);
+        } catch (InvocationTargetException wrapped) {
+            if (wrapped.getCause() instanceof RuntimeException runtime) throw runtime;
+            if (wrapped.getCause() instanceof Error error) throw error;
+            throw new AssertionError(wrapped.getCause());
+        } catch (ReflectiveOperationException failure) { throw new AssertionError(failure); }
+    }
+
     @SuppressWarnings("unchecked")
     private static <T> T original(Class<?> owner, Object receiver, String method, Class<?>[] parameters, Object... arguments) {
         try { return (T) owner.getMethod("phoenium$originalContext$" + method, parameters).invoke(receiver, arguments); }
