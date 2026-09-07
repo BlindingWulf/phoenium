@@ -27,7 +27,6 @@ public final class FullFinishingScoreboard {
     private final ThreadLocal<Membership> membership = new ThreadLocal<>();
     private final ThreadLocal<Broadcast> broadcast = new ThreadLocal<>();
     private long nextSession, sequence, accepted, uncertain, committed, completed, directoryRevision;
-    private static final int MAX_CATCHUP = 65536;
     private int catchup;
     FullFinishingScoreboard(FullFinishingServices service) { this.service = service; server = service.server(); }
 
@@ -98,40 +97,35 @@ public final class FullFinishingScoreboard {
         }
         return found;
     }
-    /** Immutable directory cut and all journal descriptors are allocated before regional entry. */
+    /** Immutable directory cut and the finite maximum footprint are fixed before regional entry. */
     public Operation reserve(int occurrences) {
         int slots = Math.max(4, Math.multiplyExact(occurrences, 4));
-        int initializing = (int) sessions.values().stream().filter(session -> session.state == State.INITIALIZING).count();
-        if ((long) catchup + (long) slots * initializing > MAX_CATCHUP) return null;
         var recipients = List.copyOf(order);
-        var initializingSessions = sessions.values().stream().filter(session -> session.state == State.INITIALIZING).toList();
-        return new Operation(directoryRevision, slots, recipients, initializingSessions);
+        return new Operation(directoryRevision, slots, recipients);
     }
     public final class Operation {
         private final long directoryCut;
-        private final Membership[] entries;
-        private final List<Session> recipients, initializing;
-        private int used;
+        private final int capacity;
+        private final List<Membership> entries = new ArrayList<>();
+        private final List<Session> recipients;
         private boolean closed;
-        private Operation(long cut, int slots, List<Session> recipients, List<Session> initializing) {
-            directoryCut = cut; this.recipients = recipients; this.initializing = initializing;
-            entries = new Membership[slots];
-            for (int i = 0; i < slots; i++) entries[i] = new Membership(new SendState[recipients.size()], null);
+        private Operation(long cut, int slots, List<Session> recipients) {
+            directoryCut = cut; capacity = slots; this.recipients = recipients;
         }
         public boolean valid() { return !closed && directoryRevision == directoryCut; }
         public void close() {
             if (closed) return;
-            for (int i = 0; i < used; i++) {
-                Membership entry = entries[i];
+            for (Membership entry : entries) {
                 if (!entry.terminal) throw FullFinishingServices.failure(new ChunkProtocolException("scoreboard effect left without a terminal synchronous outcome"));
                 entry.member = null; entry.team = null;
             }
-            closed = true;
+            entries.clear(); closed = true;
         }
         private Membership next() {
-            if (closed || used == entries.length)
+            if (closed || entries.size() == capacity)
                 throw FullFinishingServices.failure(new ChunkProtocolException("scoreboard callback exceeded its prepared occurrence footprint"));
-            return entries[used++];
+            Membership entry = new Membership(new SendState[recipients.size()], null);
+            entries.add(entry); return entry;
         }
     }
     public Membership begin(String member, String team) {
@@ -182,8 +176,8 @@ public final class FullFinishingScoreboard {
         Broadcast record = new Broadcast(broadcast.get(), entry, recipients);
         record.sequence = ++sequence; broadcast.set(record);
         for (Session session : sessions.values()) if (session.state == State.INITIALIZING && !recipients.contains(session)) {
-            if (catchup == MAX_CATCHUP) throw FullFinishingServices.failure(new ChunkProtocolException("initial scoreboard catch-up capacity was not reserved"));
-            session.catchup.addLast(new Delta(record.sequence, detached(team))); catchup++;
+            int nextCatchup = Math.incrementExact(catchup);
+            session.catchup.addLast(new Delta(record.sequence, detached(team))); catchup = nextCatchup;
         }
         return record;
     }

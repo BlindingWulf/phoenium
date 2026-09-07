@@ -89,10 +89,24 @@ public final class FullRegistrationServerProbe implements DedicatedServerModInit
             queries.wrongSelectedFutureIsCaughtByVanillaButStillFailsFinishingBarrier();
             queries.unrelatedGetterCannotBorrowPreparedNeighborFromAnActiveFinishingScope();
             queries.retainedReceiptWithoutItsClaimedOperationCannotEnter();
+            var services = new FullFinishingServicesTest();
+            services.shutdownRequestedInsideAnActiveTurnDefersCleanupUntilTheSynchronousBodyExits();
+            services.partialChildShutdownFailureStillClosesReservationsAndStopsTheProducer();
+            services.childShutdownReentryObservesTheSameTerminalServiceAndCannotResurrectIt();
+            services.productionMixinConfigurationInstallsTheD1AndWorldLifecycleAdapters();
+            services.largeFiniteScoreboardFootprintIsLazyAndCanMakeProgress();
+            services.scoreboardFootprintOverflowFailsBeforeInstallingAnyReservation();
+            var facts = new FullEntityFactsTest();
+            facts.firstNonnullWorldWinsBeforeOriginalClassFilteringAndUsesSuppliedOrder();
+            facts.liveCachedAliasSurvivesDirectoryReplacementUntilOriginalRemovalFallback();
+            facts.originalMobValidationUsesFactsAtEveryReuseWithoutForeignPredicateCalls();
+            facts.committedRemovalFactPrecedesOriginalCallbackFailureAndCannotBeRolledBack();
+            facts.foreignSetterCannotBorrowTheScalarReadTurnAndFailureSurvivesCatch();
+            facts.identityWriterInvalidatesUnenteredCutAndOldAliasRetainsItsOwnIdentity();
             var completion = new FullAuthoritativeFinishingTest();
             completion.originalFinishingAndSeparatePublicationCompleteExactlyOnce(false);
             completion.originalFinishingAndSeparatePublicationCompleteExactlyOnce(true);
-            System.out.println("PHOENIUM_FULL_FINISHING_PROBE PASS cases=15 queryCases=13 publicationCases=2 "
+            System.out.println("PHOENIUM_FULL_FINISHING_PROBE PASS cases=27 queryCases=13 serviceCases=6 d1Cases=6 publicationCases=2 "
                     + "originalFinishing=true separatePublication=true cyclicPreparedPair=true bothPairOrders=true "
                     + "proto=true inMemoryImposter=true diskReload=false originalDifficulty=true originalCollision=true "
                     + "originalShulkerImmediate=true originalLaterRegistration=true originalMovingPiston=true "

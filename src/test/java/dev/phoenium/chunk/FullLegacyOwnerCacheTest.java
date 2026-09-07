@@ -101,4 +101,14 @@ final class FullLegacyOwnerCacheTest {
             for (int i = 0; i < 12; i++) assertTrue(persisted.contains("owner" + i));
         }
     }
+    @Test void stoppedStorageRejectsTheAcceptedWriteWithoutRawThreadFallbackOrHangingReceipt() throws Exception {
+        try (Cache cache = new Cache(provider(name -> Optional.empty()), directory.resolve("usercache.json"))) {
+            cache.protocol.shutdown();
+            RejectedExecutionException failure = assertThrows(RejectedExecutionException.class, cache.protocol::save);
+            assertSame(failure, cache.protocol.lastSave().failure());
+            assertEquals(FullLegacyOwnerCache.Persistence.RUNTIME_FAILURE, cache.protocol.lastSave().outcome());
+            assertEquals(0, cache.protocol.pendingWrites());
+            assertFalse(Files.exists(directory.resolve("usercache.json")), "rejection must not run the write on a caller or fallback thread");
+        }
+    }
 }

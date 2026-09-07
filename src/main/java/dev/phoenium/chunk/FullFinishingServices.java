@@ -21,6 +21,8 @@ public final class FullFinishingServices {
     public enum Kind { CONNECTIONS, SCOREBOARD, CLOCK, ENVIRONMENT, ENTITY_REGISTRY, TRACKER, WAYPOINT, TICK_LIST, DEBUG, UNSAVED, RAID, TICKET, COMMAND_STORAGE }
     public enum Phase { SERVER_TICK, SERVER_TASK, SAVE, STOP, PLAYER_LIFECYCLE, SCOREBOARD_SYNC, ENTITY_LIFECYCLE }
     private static final Map<MinecraftServer, FullFinishingServices> SERVERS = new IdentityHashMap<>();
+    /** Weak terminal identities prevent late callbacks from recreating a service after stop. */
+    private static final Set<MinecraftServer> TERMINATED = Collections.newSetFromMap(new WeakHashMap<>());
     private static final Map<Object, WorldResource> ENVIRONMENTS = new IdentityHashMap<>();
     private static final ReentrantLock DIRECTORY = new ReentrantLock();
     private static final ThreadLocal<Scope> CURRENT = new ThreadLocal<>();
@@ -39,6 +41,7 @@ public final class FullFinishingServices {
     private volatile Scope active;
     private volatile Reservation reserved;
     private volatile boolean stopped;
+    private boolean shutdownStarted, cleanupStarted;
 
     private FullFinishingServices(MinecraftServer server) {
         this.server = Objects.requireNonNull(server);
@@ -48,16 +51,27 @@ public final class FullFinishingServices {
         for (Kind kind : Kind.values()) revisions.put(kind, 0L);
     }
     public static FullFinishingServices forServer(MinecraftServer server) {
-        DIRECTORY.lock(); try { return SERVERS.computeIfAbsent(Objects.requireNonNull(server), FullFinishingServices::new); }
+        Objects.requireNonNull(server);
+        DIRECTORY.lock();
+        try {
+            if (TERMINATED.contains(server)) throw new ChunkProtocolException("finishing services requested after server shutdown");
+            return SERVERS.computeIfAbsent(server, FullFinishingServices::new);
+        }
         finally { DIRECTORY.unlock(); }
     }
     public static void stopped(MinecraftServer server) {
-        FullCommandStorageInputs.stopped(server);
         FullFinishingServices service;
         DIRECTORY.lock();
-        try { service = SERVERS.remove(server); ENVIRONMENTS.entrySet().removeIf(entry -> entry.getValue().service == service); }
+        try {
+            service = SERVERS.get(server);
+            if (service == null) TERMINATED.add(server);
+        }
         finally { DIRECTORY.unlock(); }
-        if (service != null) service.shutdown();
+        if (service == null) {
+            FullCommandStorageInputs.stopped(server);
+            return;
+        }
+        service.shutdown();
     }
     public MinecraftServer server() { return server; }
     public Access scoreboardAccess() {
@@ -231,18 +245,50 @@ public final class FullFinishingServices {
                 "worlds", (long) worlds.size()); }
         finally { metadata.unlock(); }
     }
+    /** Mark terminal before touching a child service. A winning synchronous body drains first. */
     private void shutdown() {
-        legacyOwners.shutdown();
-        entityFacts.close();
-        scoreboard.close();
+        boolean cleanup;
         metadata.lock();
         try {
             stopped = true;
+            shutdownStarted = true;
             for (Reservation reservation : List.copyOf(reservations.values())) {
                 if (!reservation.entered) reservation.closeLocked();
             }
-            if (active == null) worlds.clear();
+            cleanup = active == null && !cleanupStarted;
+            if (cleanup) cleanupStarted = true;
         } finally { metadata.unlock(); }
+        if (cleanup) finishShutdown();
+    }
+    private void finishShutdown() {
+        Throwable failure = null;
+        // No service/directory/region lock spans a child callback or executor transition.
+        try { FullCommandStorageInputs.stopped(server); } catch (Throwable problem) { failure = accumulate(failure, problem); }
+        try { legacyOwners.shutdown(); } catch (Throwable problem) { failure = accumulate(failure, problem); }
+        try { entityFacts.close(); } catch (Throwable problem) { failure = accumulate(failure, problem); }
+        try { scoreboard.close(); } catch (Throwable problem) { failure = accumulate(failure, problem); }
+        metadata.lock();
+        try {
+            for (Reservation reservation : List.copyOf(reservations.values())) reservation.closeLocked();
+            worlds.clear(); environments.clear();
+        } catch (Throwable problem) { failure = accumulate(failure, problem); }
+        finally { metadata.unlock(); }
+        DIRECTORY.lock();
+        try {
+            ENVIRONMENTS.entrySet().removeIf(entry -> entry.getValue().service == this);
+            SERVERS.remove(server, this); TERMINATED.add(server);
+        } catch (Throwable problem) { failure = accumulate(failure, problem); }
+        finally { DIRECTORY.unlock(); }
+        if (failure != null) throw unchecked(failure);
+    }
+    private static Throwable accumulate(Throwable first, Throwable next) {
+        if (first == null) return next;
+        if (first != next) first.addSuppressed(next);
+        return first;
+    }
+    private static RuntimeException unchecked(Throwable failure) {
+        if (failure instanceof Error error) throw error;
+        return failure instanceof RuntimeException runtime ? runtime : new ChunkProtocolException("finishing service shutdown", failure);
     }
     private record WorldResource(FullFinishingServices service, ServerLevel world) { }
 
@@ -351,11 +397,17 @@ public final class FullFinishingServices {
         @Override public void close() {
             if (closed) return;
             requireCurrent();
+            boolean cleanup;
             service.metadata.lock();
-            try { service.active = parent != null && parent.service == service ? parent : null; closed = true; claim = null; }
+            try {
+                service.active = parent != null && parent.service == service ? parent : null; closed = true; claim = null;
+                cleanup = service.shutdownStarted && service.active == null && !service.cleanupStarted;
+                if (cleanup) service.cleanupStarted = true;
+            }
             finally { service.metadata.unlock(); }
             if (parent == null) CURRENT.remove(); else CURRENT.set(parent);
-            if (reservation != null) reservation.requireHealthy();
+            try { if (reservation != null) reservation.requireHealthy(); }
+            finally { if (cleanup) service.finishShutdown(); }
         }
     }
     public static final class Access implements AutoCloseable {

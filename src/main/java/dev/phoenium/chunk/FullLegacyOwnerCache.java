@@ -58,7 +58,7 @@ public final class FullLegacyOwnerCache {
     });
     private final ThreadLocal<SaveAttempt> lastSave = ThreadLocal.withInitial(() -> new SaveAttempt(0, Persistence.NO_ATTEMPT, null));
     private long policy, mutation, saveSequence, nextWrite = 1;
-    private boolean draining;
+    private boolean draining, stopped;
 
     public FullLegacyOwnerCache(UserNameToIdResolver owner, Map<String, Object> byName, Map<UUID, Object> byId,
                                GameProfileRepository provider, Gson gson, File file, AtomicLong operations,
@@ -153,11 +153,18 @@ public final class FullLegacyOwnerCache {
             write = new Write(++saveSequence, frozen, new CompletableFuture<>());
         } finally { state.unlock(); }
         boolean submit = false;
+        RejectedExecutionException stoppedFailure = null;
         writesGate.lock(); try {
-            writes.put(write.sequence, write);
-            if (!draining) { draining = true; submit = true; }
+            if (stopped) stoppedFailure = new RejectedExecutionException("profile storage is stopped");
+            else {
+                writes.put(write.sequence, write);
+                if (!draining) { draining = true; submit = true; }
+            }
         } finally { writesGate.unlock(); }
-        if (submit) storage.execute(this::drainWrites);
+        if (stoppedFailure != null)
+            write.completion.complete(new SaveAttempt(write.sequence, Persistence.RUNTIME_FAILURE, stoppedFailure));
+        else if (submit) try { storage.execute(this::drainWrites); }
+        catch (RejectedExecutionException rejected) { rejectQueuedWrites(rejected); }
         SaveAttempt result = FullFinishingServices.ownerFreeIo(write.completion::join);
         lastSave.set(result);
         if (result.failure != null) throw unchecked(result.failure);
@@ -186,7 +193,20 @@ public final class FullLegacyOwnerCache {
             write.completion.complete(attempt);
         }
     }
-    public void shutdown() { storage.shutdown(); }
+    private void rejectQueuedWrites(RejectedExecutionException failure) {
+        List<Write> rejected;
+        writesGate.lock();
+        try {
+            rejected = List.copyOf(writes.values()); writes.clear(); draining = false;
+            if (!rejected.isEmpty()) nextWrite = Math.max(nextWrite, rejected.getLast().sequence + 1);
+        } finally { writesGate.unlock(); }
+        for (Write write : rejected)
+            write.completion.complete(new SaveAttempt(write.sequence, Persistence.RUNTIME_FAILURE, failure));
+    }
+    public void shutdown() {
+        writesGate.lock(); try { stopped = true; } finally { writesGate.unlock(); }
+        storage.shutdown();
+    }
     public int pendingWrites() { writesGate.lock(); try { return writes.size() + (draining ? 1 : 0); } finally { writesGate.unlock(); } }
     private static NameAndId identity(Object entry) { try { return (NameAndId) NAME.invoke(entry); } catch (Throwable failure) { throw unchecked(failure); } }
     private static long expires(Object entry) { try { return ((Date) EXPIRATION.invoke(entry)).getTime(); } catch (Throwable failure) { throw unchecked(failure); } }

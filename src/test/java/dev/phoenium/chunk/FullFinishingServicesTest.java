@@ -4,8 +4,10 @@ import dev.phoenium.core.*;
 import dev.phoenium.ownership.*;
 import dev.phoenium.region.RegionId;
 import dev.phoenium.topology.*;
+import java.nio.charset.StandardCharsets;
 import java.util.*;
 import java.util.concurrent.*;
+import java.util.concurrent.atomic.*;
 import net.minecraft.server.MinecraftServer;
 import org.junit.jupiter.api.Test;
 import static dev.phoenium.chunk.FullDecisionWitnessSupport.*;
@@ -84,6 +86,73 @@ final class FullFinishingServicesTest {
         try (var serial = service.serial(FullFinishingServices.Phase.SERVER_TASK)) {
             assertNull(CompletableFuture.supplyAsync(() -> service.tryReserve(stage(), new Object(), List.of(), 1)).get(5, TimeUnit.SECONDS));
         }
+        FullFinishingServices.stopped(server);
+    }
+    @Test void shutdownRequestedInsideAnActiveTurnDefersCleanupUntilTheSynchronousBodyExits() throws Exception {
+        MinecraftServer server = stub(MinecraftServer.class, List.of());
+        var service = FullFinishingServices.forServer(server);
+        try (var serial = service.serial(FullFinishingServices.Phase.SERVER_TASK)) {
+            FullFinishingServices.stopped(server);
+            assertSame(service, FullFinishingServices.forServer(server), "a stopping server cannot acquire a second service incarnation");
+            FullFinishingServices.requireServer(server, FullFinishingServices.Kind.SCOREBOARD);
+            assertNull(service.tryReserve(stage(), new Object(), List.of(), 1));
+        }
+        service.legacyOwners.termination().toCompletableFuture().get(5, TimeUnit.SECONDS);
+        assertThrows(ChunkProtocolException.class, () -> FullFinishingServices.forServer(server));
+    }
+    @Test void partialChildShutdownFailureStillClosesReservationsAndStopsTheProducer() throws Exception {
+        var exact = new IllegalStateException("controlled services lookup failure");
+        MinecraftServer server = stub(MinecraftServer.class, List.of(new Answer(
+                MinecraftServer.class.getMethod("services"), ignored -> { throw exact; })));
+        var service = FullFinishingServices.forServer(server); Object holder = new Object(); var stage = stage();
+        var reservation = service.tryReserve(stage, holder, List.of(), 1); assertNotNull(reservation);
+        assertSame(exact, assertThrows(IllegalStateException.class, () -> FullFinishingServices.stopped(server)));
+        assertFalse(reservation.valid(stage, holder));
+        service.legacyOwners.termination().toCompletableFuture().get(5, TimeUnit.SECONDS);
+        assertEquals(0L, service.measurements().get("reservations"));
+        assertThrows(ChunkProtocolException.class, () -> FullFinishingServices.forServer(server));
+    }
+    @Test void childShutdownReentryObservesTheSameTerminalServiceAndCannotResurrectIt() throws Exception {
+        AtomicReference<MinecraftServer> exactServer = new AtomicReference<>();
+        AtomicReference<FullFinishingServices> observed = new AtomicReference<>();
+        AtomicInteger reentries = new AtomicInteger();
+        MinecraftServer server = stub(MinecraftServer.class, List.of(new Answer(
+                MinecraftServer.class.getMethod("services"), ignored -> {
+                    reentries.incrementAndGet();
+                    observed.set(FullFinishingServices.forServer(exactServer.get()));
+                    FullFinishingServices.stopped(exactServer.get());
+                    return null;
+                })));
+        exactServer.set(server); var service = FullFinishingServices.forServer(server);
+        FullFinishingServices.stopped(server);
+        service.legacyOwners.termination().toCompletableFuture().get(5, TimeUnit.SECONDS);
+        assertSame(service, observed.get()); assertEquals(1, reentries.get());
+        assertThrows(ChunkProtocolException.class, () -> FullFinishingServices.forServer(server));
+    }
+    @Test void productionMixinConfigurationInstallsTheD1AndWorldLifecycleAdapters() throws Exception {
+        String configuration;
+        try (var input = Objects.requireNonNull(getClass().getResourceAsStream("/phoenium.mixins.json"))) {
+            configuration = new String(input.readAllBytes(), StandardCharsets.UTF_8);
+        }
+        for (String mixin : List.of("FullFinishingWorldContextMixin", "FullEntityFactMixin", "FullEntityFactPlayerMixin",
+                "FullEntityFactAbilitiesMixin", "FullEntityFactGameTypeMixin", "FullEntityFactGameModeMixin",
+                "FullEntityFactDataMixin", "FullEntityFactLookupMixin", "FullEntityFactLevelMixin",
+                "FullEntityFactConsumersMixin", "FullEntityFactEnemyMixin"))
+            assertTrue(configuration.contains("\"" + mixin + "\""), "missing installed D1/service adapter " + mixin);
+    }
+    @Test void largeFiniteScoreboardFootprintIsLazyAndCanMakeProgress() throws Exception {
+        MinecraftServer server = stub(MinecraftServer.class, List.of());
+        var service = FullFinishingServices.forServer(server); Object holder = new Object(); var stage = stage();
+        var reservation = service.tryReserve(stage, holder, List.of(), Integer.MAX_VALUE / 4);
+        assertNotNull(reservation, "a finite operation must not be refused by hypothetical eager journal or catch-up capacity");
+        assertTrue(reservation.valid(stage, holder)); reservation.close();
+        FullFinishingServices.stopped(server);
+    }
+    @Test void scoreboardFootprintOverflowFailsBeforeInstallingAnyReservation() throws Exception {
+        MinecraftServer server = stub(MinecraftServer.class, List.of());
+        var service = FullFinishingServices.forServer(server);
+        assertThrows(ArithmeticException.class, () -> service.tryReserve(stage(), new Object(), List.of(), Integer.MAX_VALUE));
+        assertEquals(0L, service.measurements().get("reservations"));
         FullFinishingServices.stopped(server);
     }
 }

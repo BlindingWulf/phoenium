@@ -196,21 +196,45 @@ public final class FullLegacyOwners {
     }
     public void shutdown() {
         List<Plan> pending;
-        plansGate.lock(); try { stopped = true; pending = List.copyOf(plans); } finally { plansGate.unlock(); }
-        var actualServices = server.services();
-        if (actualServices != null && actualServices.nameToIdCache() instanceof FullLegacyOwnerCache.Access access) {
-            FullLegacyOwnerCache cache = access.phoenium$ownerCache();
-            plansGate.lock(); try { caches.add(cache); } finally { plansGate.unlock(); }
+        plansGate.lock();
+        try {
+            if (stopped) return;
+            stopped = true; pending = List.copyOf(plans);
+        } finally { plansGate.unlock(); }
+        Throwable failure = null;
+        try {
+            var actualServices = server.services();
+            if (actualServices != null && actualServices.nameToIdCache() instanceof FullLegacyOwnerCache.Access access) {
+                FullLegacyOwnerCache cache = access.phoenium$ownerCache();
+                plansGate.lock(); try { caches.add(cache); } finally { plansGate.unlock(); }
+            }
+        } catch (Throwable problem) { failure = problem; }
+        for (Plan plan : pending) try { plan.close(); }
+        catch (Throwable problem) {
+            if (failure == null) failure = problem;
+            else if (failure != problem) failure.addSuppressed(problem);
         }
-        pending.forEach(Plan::close);
-        producer.shutdown();
+        try { producer.shutdown(); }
+        catch (Throwable problem) {
+            if (failure == null) failure = problem;
+            else if (failure != problem) failure.addSuppressed(problem);
+        }
+        if (failure instanceof Error error) throw error;
+        if (failure instanceof RuntimeException runtime) throw runtime;
+        if (failure != null) throw new ChunkProtocolException("legacy owner shutdown", failure);
     }
     /** The last real producer acknowledgement retires its ordered writer, even after
      * subscribers and the server directory have gone away. No owner waits for it. */
     private void closeStorageAfterAcknowledgement() {
         List<FullLegacyOwnerCache> retired;
         plansGate.lock(); try { retired = List.copyOf(caches); caches.clear(); } finally { plansGate.unlock(); }
-        retired.forEach(FullLegacyOwnerCache::shutdown); termination.complete(null);
+        Throwable failure = null;
+        for (FullLegacyOwnerCache cache : retired) try { cache.shutdown(); }
+        catch (Throwable problem) {
+            if (failure == null) failure = problem;
+            else if (failure != problem) failure.addSuppressed(problem);
+        }
+        if (failure == null) termination.complete(null); else termination.completeExceptionally(failure);
     }
     public CompletionStage<Void> termination() { return termination.minimalCompletionStage(); }
     public Map<String, Long> measurements() {
