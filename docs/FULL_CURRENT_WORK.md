@@ -95,9 +95,12 @@ between these checkpoints; final same-JAR acceptance remains outstanding.
 
 ## Next unresolved cases and commands
 
-1. Root scoreboard allowance widening is under focused test in
-   `scoreboard-capacity-13.log`; inspect `.exit` and XML before commit. Luna next
-   integrates current main and updates its strict probe parser to the counters above.
+1. Main `069957a` widens the lazy scoreboard allowance to long without an eager
+   allocation. A maximum-int finite occurrence allowance enters the actual claimed
+   journal, commits a reached effect and acknowledges cleanly; negative counts are
+   still rejected. Seventeen tests / two suites (services and original scoreboard
+   contracts) pass in `scoreboard-capacity-14.log` and `scoreboard-capacity-14-xml/`.
+   Luna next integrates main and updates its strict parser to the counters above.
 2. Exact real-client wait: Luna `run/full-authoritative/live-1788817757089/` stays
    in PrepareSpawnTask.spawnPosition=pending, chunkLoad=null through tick1100.
    Candidate0 at block(2,-3), chunk[0,-1] waits the SPAWN_SEARCH FULL result. Its
@@ -121,5 +124,5 @@ between these checkpoints; final same-JAR acceptance remains outstanding.
 5. Stable integrated clean build, installed probes, existing fresh + actual persisted
    reload + real client campaign on the same JAR, final diff review/ledger/commit.
 
-Current usage telemetry at integration: Codex weekly 8% used (start1%); reserve7%
+Current usage telemetry at integration: Codex weekly 14% used (start1%); reserve7%
 (start7%). Per-task/per-worker tokens unknown. No resets redeemed.
