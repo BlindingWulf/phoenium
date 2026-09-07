@@ -153,6 +153,7 @@ public final class FullRuntimeAcceptanceProbe implements DedicatedServerModIniti
                 + " entity=" + entity.getUUID() + " type=" + entity.getType() + " team="
                 + (team == null ? "<none>" : team.getName()) + " teamIdentity="
                 + (team == null ? 0 : System.identityHashCode(team)) + " tags=" + entity.entityTags()
+                + " removed=" + entity.isRemoved() + " removalReason=" + entity.getRemovalReason()
                 + " sourceReader=" + (SAVED_READER.get() == null ? "<none>" : SAVED_READER.get().getUUID()));
         if (entity instanceof Villager villager) {
             require(SAVED_BED.equals(villager.getSleepingPos().orElse(null)),
