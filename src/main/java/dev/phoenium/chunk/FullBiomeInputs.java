@@ -34,8 +34,6 @@ public final class FullBiomeInputs {
                 new RoutingKey(runtime.authority.world(), target.position().x(), target.position().z()), holder);
         services.trackHolder(lifecycle, holder);
         runtime.custody.retainLifecycle(lifecycle);
-        try { holder.increaseGenerationRefCount(); }
-        catch (Throwable failure) { runtime.custody.acknowledgeLifecycle(lifecycle); throw failure; }
         var use = new AutoCloseable() {
             boolean closed;
             @Override public void close() {
@@ -48,6 +46,13 @@ public final class FullBiomeInputs {
                 }
             }
         };
+        // The original increment commits before addSaveDependency can call out or fail.
+        // Establish its acknowledgement first, just as for a published FULL consumer.
+        try { holder.increaseGenerationRefCount(); }
+        catch (Throwable failure) {
+            try { use.close(); } catch (Throwable cleanup) { if (cleanup != failure) failure.addSuppressed(cleanup); }
+            throw failure;
+        }
         if (!validates(holder, target.biomes()) || runtime.visible(target.position()) != holder) {
             try { use.close(); } catch (Exception failure) { throw new ChunkProtocolException("biome input release", failure); }
             return null;

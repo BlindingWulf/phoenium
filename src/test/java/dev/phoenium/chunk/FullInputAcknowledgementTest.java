@@ -1,0 +1,70 @@
+package dev.phoenium.chunk;
+
+import java.util.List;
+import java.util.Set;
+import java.util.concurrent.atomic.AtomicInteger;
+import net.minecraft.world.level.ChunkPos;
+import net.minecraft.world.level.chunk.status.ChunkStatus;
+import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.Test;
+import static dev.phoenium.chunk.FullInitializedInputBindingTest.*;
+import static org.junit.jupiter.api.Assertions.*;
+
+/** Actual original generation references and independently retained publication consumers. */
+final class FullInputAcknowledgementTest {
+    @BeforeAll static void bootstrap() { FullProductionRegistrationTest.bootstrap(); }
+
+    @Test void failedPublicationNotificationCannotAbandonLaterOperationConsumers() throws Exception {
+        var f = new FullRegistrationFixture(true);
+        var neighbors = List.of(new ChunkPos(1, 0), new ChunkPos(0, 1), new ChunkPos(1, 1));
+        AutoCloseable listener = null;
+        try {
+            for (var position : neighbors) { f.startBaseline(position); f.runGenerationTasks(); }
+            saved(f, ChunkPos.ZERO, false, tag(15.8, 15.8, 24000));
+            f.start(ChunkPos.ZERO, ChunkStatus.FULL); f.drain();
+            var graph = f.runtime.graph(f.holder(ChunkPos.ZERO));
+            assertEquals(FullInitializedInputs.State.SATISFIED, graph.inputEvaluation().state());
+            assertEquals(3L, f.runtime.published.measurements().get("uses"));
+            var borrowed = neighbors.stream().map(position -> ((FullHolderEvidence) (Object) f.holder(position)).phoenium$generationRefs().get()).toList();
+            var notices = new AtomicInteger(); var exact = new IllegalStateException("first publication acknowledgement notification failed");
+            listener = f.runtime.published.changes().subscribe(() -> {
+                if (notices.incrementAndGet() == 1) throw exact;
+            });
+            Throwable failure = assertThrows(RuntimeException.class, graph::acknowledgeInputs);
+            assertEquals(0L, f.runtime.published.measurements().get("uses"), "later actual pins must still release after the first notification fails");
+            assertSame(exact, failure);
+            assertEquals(3, notices.get());
+            assertEquals(0L, f.runtime.inputs.measurements().get("consumers"));
+            assertEquals(0L, f.runtime.inputs.measurements().get("factBytes"));
+            assertEquals(1L, f.runtime.inputs.measurements().get("pendingNotifications"));
+            for (int i = 0; i < neighbors.size(); i++)
+                assertEquals(borrowed.get(i) - 1, ((FullHolderEvidence) (Object) f.holder(neighbors.get(i))).phoenium$generationRefs().get(),
+                        "each input releases its own borrow while the original generation cache keeps its independent references");
+            graph.acknowledgeInputs(); assertEquals(3, notices.get());
+        } finally { if (listener != null) listener.close(); f.stop(); }
+        assertCleanup(f);
+    }
+
+    @Test void biomeBorrowAcknowledgesTheOriginalReferenceWhenItsCommittedSaveCallbackFails() throws Exception {
+        var f = new FullRegistrationFixture(true);
+        var position = new ChunkPos(1, 0);
+        try {
+            f.startBaseline(position); f.runGenerationTasks();
+            var holder = f.holder(position); var hooks = (FullHolderEvidence) (Object) holder;
+            var evidence = FullBiomeInputs.capture(holder); assertNotNull(evidence);
+            var target = new FullInitializedInputs.Target(position, Set.of(FullInitializedInputs.Purpose.ENVIRONMENT),
+                    FullInitializedInputs.Availability.BIOMES, holder, null, null, null, null, evidence.slot(), null,
+                    null, ChunkStatus.BIOMES, null, holder.getTicketLevel(), null, evidence);
+            var exact = new IllegalStateException("original save dependency failed after reference increment");
+            holder.afterSave = () -> { throw exact; };
+            assertSame(exact, assertThrows(IllegalStateException.class, () -> FullBiomeInputs.retain(f.runtime, target)));
+            assertEquals(0, hooks.phoenium$generationRefs().get(), "the original committed borrow must be acknowledged");
+            assertTrue(hooks.phoenium$generationSaveSync().isDone());
+            holder.afterSave = () -> { };
+            var use = FullBiomeInputs.retain(f.runtime, target); assertNotNull(use);
+            assertEquals(1, hooks.phoenium$generationRefs().get());
+            use.close(); use.close(); assertEquals(0, hooks.phoenium$generationRefs().get());
+        } finally { f.holder(position).afterSave = () -> { }; f.stop(); }
+        assertCleanup(f);
+    }
+}

@@ -354,10 +354,21 @@ public final class FullInitializedInputs {
         graph.discardSavedSnapshot();
         var pins = List.copyOf(plan.pins); consumers -= pins.size();
         plan.pins.clear(); plan.targets = List.of(); plan.receipt = null;
-        if (plan.contexts != null) { plan.contexts.close(); plan.contexts = null; }
-        for (var pin : pins) try { pin.close(); } catch (Exception failure) { throw new ChunkProtocolException("input acknowledgement failed", failure); }
-        requested.removeIf(holder -> runtime.findGraph(holder).isPresent() || !runtime.graphSnapshot().stream().anyMatch(g -> g.inputActive()));
-        changed();
+        var contexts = plan.contexts; plan.contexts = null;
+        Throwable failure = null;
+        try {
+            if (contexts != null) try { contexts.close(); } catch (Throwable problem) { failure = problem; }
+            for (var pin : pins) try { pin.close(); }
+            catch (Throwable problem) {
+                if (failure == null) failure = problem;
+                else if (failure != problem) failure.addSuppressed(problem);
+            }
+            boolean active = runtime.graphSnapshot().stream().anyMatch(g -> g.inputActive());
+            requested.removeIf(holder -> runtime.findGraph(holder).isPresent() || !active);
+        } finally { changed(); }
+        if (failure instanceof RuntimeException runtimeFailure) throw runtimeFailure;
+        if (failure instanceof Error error) throw error;
+        if (failure != null) throw new ChunkProtocolException("input acknowledgement failed", failure);
     }
     public Map<String, Long> measurements() {
         return Map.of("plans", (long) plans.size(), "edges", (long) edges, "consumers", (long) consumers,
