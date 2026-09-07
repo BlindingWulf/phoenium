@@ -117,17 +117,19 @@ public final class FullRuntimeAcceptanceProbe implements DedicatedServerModIniti
         System.out.println("PHOENIUM_FULL_LIVE_GENERATED chunk=" + access.getPos() + " roots=2");
     }
 
-    public static SerializableChunkData persisted(SerializableChunkData data, ServerLevel level) {
-        if (!Boolean.getBoolean("phoenium.test.fullFixtureSeedDisk") || level.dimension() != Level.OVERWORLD
-                || !target(data.chunkPos()) || data.chunkStatus() != ChunkStatus.FULL) return data;
-        var entities = new ArrayList<>(data.entities());
-        entities.addAll(roots(data.chunkPos(), "reload"));
-        System.out.println("PHOENIUM_FULL_LIVE_PERSISTED chunk=" + data.chunkPos()
-                + " originalEntities=" + data.entities().size() + " fixtureRoots=2");
-        return new SerializableChunkData(data.containerFactory(), data.chunkPos(), data.minSectionY(), data.lastUpdateTime(),
-                data.inhabitedTime(), data.chunkStatus(), data.blendingData(), data.belowZeroRetrogen(), data.upgradeData(),
-                data.carvingMask(), data.heightmaps(), data.packedTicks(), data.postProcessingSections(), data.lightCorrect(),
-                data.sectionData(), List.copyOf(entities), data.blockEntities(), data.structureData());
+    /** Test-only legacy entity list written by the original FULL serializer and consumed by its
+     * original parse/read/post-load path after restart. The normal writer omits the record's
+     * entities field for FULL chunks, so this adds only the four exact fixture roots to the
+     * serializer's output NBT; it does not replace the writer or patch the saved world. */
+    public static CompoundTag persistedWrite(ChunkPos pos, ChunkStatus status, CompoundTag output) {
+        if (!Boolean.getBoolean("phoenium.test.fullFixtureSeedDisk") || !target(pos)
+                || status != ChunkStatus.FULL) return output;
+        ListTag entities = output.getListOrEmpty("entities");
+        entities.addAll(roots(pos, "reload"));
+        output.put("entities", entities);
+        System.out.println("PHOENIUM_FULL_LIVE_PERSISTED chunk=" + pos
+                + " status=" + status + " legacyEntities=" + entities.size() + " fixtureRoots=2");
+        return output;
     }
 
     private static List<CompoundTag> roots(ChunkPos pos, String phase) {
