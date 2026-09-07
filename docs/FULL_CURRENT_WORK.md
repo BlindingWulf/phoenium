@@ -10,8 +10,9 @@ parallel OFF, disposable PhoeniumTest0 only. No push/release/PASS tag.
 
 Recovery `39105d25f879795dcd178fba741f1b59b2d7c782` preserves all interrupted dirty source
 as UNVERIFIED. Historical `a7b40743` / 419 tests are not current proof. Source and failed
-worlds/logs retained; no reset/stash. Main checkpoint `664ab21` includes PARTIAL same-world
-selectors. No final clean build or same-artifact complete acceptance yet.
+worlds/logs retained; no reset/stash. Main checkpoint `52776dc` includes PARTIAL same-world
+selectors, lazy/nested fixes and reviewed bed setup. No final clean build or same-artifact
+complete acceptance yet.
 
 Lead retains selected Astra/Max and existing service_tier="default". Supported spawn
 fields selected Sol as gpt-5.6-sol/high and Luna as gpt-5.6-luna/high, fork_turns=none.
@@ -42,9 +43,12 @@ Astra workers, tier override, API keys, account changes or purchases.
   in input-ack-09-before.*. BIOMES stays BIOMES.
 * Saved text/storage `d1f2278`: actual admitted recursive resolution and independent
   proto/in-memory Imposter publication. Block NBT `4d7df64` retains ready/absent branches;
-  IMMEDIATE-creation mismatch is under repair. `664ab21` same-world route-only selector
+  IMMEDIATE-creation mismatch is repaired in `13e1b63`. `664ab21` same-world route-only selector
   candidates demand no chunks; Sol 42 tests / 5 suites and harness build green, not
-  final root/installed proof. Recursive block/entity and broader selectors remain open.
+  final root/installed proof. Follow-up `13e1b63` / Sol `5ed89ed`: original IMMEDIATE
+  creation, nested selector scope restoration, filtered self (real nbt predicate), and
+  no virtual position getter under metadata lock. Verified current XML: 58 tests / 5
+  suites green. Recursive block/entity and broader selectors remain open.
 * Worldgen `eba8d6f`: only original moon getter uses existing chunk event loop and named
   environment turn, worker waits owner-free. Original spawn body/RNG stays in place.
   worldgen-environment-12: 17 tests / 2 suites green.
@@ -81,7 +85,8 @@ Production SHA256 9EA68C2D04D8867B71F96625BD83E3E9ABC01994D06608FED51AFCAAD5E9D3
 probe SHA256 479575FC30FDCDE13138264393896E4145A1AC620A1101B2D8A33E8CE8B5E957.
 Production JAR contains zero acceptance/diagnostic classes.
 
-Luna test-only bed setup `7835bc0`/`8a6711d`/`bcf1f5d` awaits integration/review:
+Luna test-only bed setup `7835bc0`/`8a6711d`/`bcf1f5d`/`2ea1868` is integrated through
+`fc33f40` and reviewed against exact pinned command translation strings:
 preserve exact saved sleeping position, finite forced-ticket FULL halo + generation
 support routes, pin only one exact bed chunk, verify query/actual readiness across
 reload and require original bed callback on four villagers. Focused harness/client
@@ -116,5 +121,5 @@ positive original vault tick/dirty-neighbor witness; never mutate preserved fail
 4. Final clean build, installed probes and client campaign must share recorded production
    JAR; final diff review, acceptance ledger and verified commit. No optimistic PASS.
 
-Latest supported account-wide weekly usage:14% used (start1%); reserve7% (start7%).
+Latest supported account-wide weekly usage:22% used (start1%); reserve7% (start7%).
 Per-worker/task tokens unknown. No usage reset or additional spending.
