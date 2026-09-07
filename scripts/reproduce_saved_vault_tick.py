@@ -21,6 +21,7 @@ PROBE = ROOT / "build/test-harness/full-live-probe.jar"
 PRESERVED_SERVER = ROOT.parent / "Phoenium" / "run/nonself-input-decision/ticking-20260905-122520/server"
 PRESERVED_WORLD_NAME = "STAGE3-CLIENT-1-1788629132903"
 PRESERVED_WORLD = PRESERVED_SERVER / PRESERVED_WORLD_NAME
+SAVED_VAULT_INVENTORY = ROOT.parent / "Phoenium" / "run/full-resume/session-20260907/vault-saved-inventory.json"
 OUTPUT = ROOT / "run/nonself-input-decision" / time.strftime("saved-vault-%Y%m%d-%H%M%S")
 SERVER = OUTPUT / "server"
 WORLD_NAME = "STAGE3-SAVED-VAULT-" + str(int(time.time() * 1000))
@@ -28,6 +29,11 @@ WORLD_NAME = "STAGE3-SAVED-VAULT-" + str(int(time.time() * 1000))
 assert (PREPARED / "fabric-server-launch.jar").exists(), "prepared server is missing its launcher"
 assert PROBE.exists(), "build fullAcceptanceHarness before running this diagnostic"
 assert (PRESERVED_WORLD / "level.dat").exists(), "preserved failed world is unavailable"
+assert SAVED_VAULT_INVENTORY.exists(), "saved vault inventory evidence is unavailable"
+source_inventory = json.loads(SAVED_VAULT_INVENTORY.read_text())
+selected_vault = next((vault for vault in source_inventory["vaults"]
+                       if vault["position"] == [143, -31, 28]), None)
+assert selected_vault is not None, "selected saved boundary vault is absent from source inventory"
 OUTPUT.mkdir(parents=True, exist_ok=False)
 SERVER.mkdir()
 for name in ("fabric-server-launch.jar", ".fabric", "libraries", "versions", "mods"):
@@ -68,7 +74,10 @@ manifest = {
     "sourceWorld": str(PRESERVED_WORLD), "world": WORLD_NAME,
     "seed": -663839099974294500, "artifactSha256": digest(artifact),
     "originalFailedArtifactSha256": "1E368F022797143C6948C7A0DEBEC429C0D233D870DCFABB5CAF846C880F9F22",
-    "vaultChunk": [142, -31], "vaultPosition": [2272, 7, -496],
+    "vaultChunk": [8, 1], "vaultPosition": [143, -31, 28],
+    "sourceInventory": str(SAVED_VAULT_INVENTORY),
+    "sourceInventorySha256": digest(SAVED_VAULT_INVENTORY),
+    "selectedOriginalVault": selected_vault,
     "sourceWorldUntouched": True, "command": command,
 }
 print(str(OUTPUT), flush=True)
@@ -110,7 +119,7 @@ try:
                 raise AssertionError("server startup timeout")
             time.sleep(0.25)
         if process.poll() is None:
-            issue("forceload add 2272 -496 2287 -481")
+            issue("forceload add 128 16 143 31")
             time.sleep(30)
             issue("phoenium vaultprobe")
             time.sleep(2)
@@ -149,7 +158,7 @@ zero_cleanup = bool(cleanup_lines) and all(
 manifest.update({
     "exitCode": None if process is None else process.returncode,
     "failure": failure,
-    "forceLoadSuccess": "Marked chunk [142, -31] in minecraft:overworld to be force loaded" in text,
+    "forceLoadSuccess": "Marked chunk [8, 1] in minecraft:overworld to be force loaded" in text,
     "vaultTickObserved": "PHOENIUM_VAULT_TICK" in text,
     "vaultNeighborObserved": "PHOENIUM_VAULT_NEIGHBOR" in text,
     "diagnosticSummary": summary_lines,

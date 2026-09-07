@@ -41,7 +41,7 @@ public final class FullRuntimeAcceptanceProbe implements DedicatedServerModIniti
     private static int collisionQueries, immediateShulkerReads;
     private static final ThreadLocal<Entity> SAVED_READER = new ThreadLocal<>();
     private static final ThreadLocal<CollisionScope> COLLISION_SCOPE = new ThreadLocal<>();
-    private static final BlockPos SAVED_VAULT = new BlockPos(2272, 7, -496);
+    private static final BlockPos SAVED_VAULT = new BlockPos(143, -31, 28);
     private static int vaultTicks, vaultDirtyAttempts, vaultDirtyCompleted;
     private static int vaultNeighborReads, vaultCrossChunkReads, vaultOwnerScopes, vaultOrdinaryScopes;
     private static final ThreadLocal<VaultDirtyScope> VAULT_SCOPE = new ThreadLocal<>();
@@ -342,6 +342,13 @@ public final class FullRuntimeAcceptanceProbe implements DedicatedServerModIniti
             require(publication.origin() == (phase().equals("fresh") ? FullPublishedInputs.Origin.ADMITTED_PROTO
                     : FullPublishedInputs.Origin.ADMITTED_IMPOSTER), "wrong real generation/reload origin");
         }
+        for (long packed : CHUNKS) {
+            ChunkPos position = new ChunkPos(ChunkPos.getX(packed), ChunkPos.getZ(packed));
+            if (!level.areEntitiesActuallyLoadedAndTicking(position))
+                return "FULL_LIVE_PENDING phase=" + phase() + " entityReadiness=" + position;
+        }
+        if (BED_CHECKS.size() < 4)
+            return "FULL_LIVE_PENDING phase=" + phase() + " bedChecks=" + BED_CHECKS.size();
         int frogs = 0, villagers = 0;
         for (Entity entity : level.getAllEntities()) if (entity.entityTags().contains(marker(phase()))) {
             require(entity.getTeam() != null && entity.getTeam().getName().equals("full_probe"), "original saved team lost");
