@@ -7,6 +7,8 @@ import dev.phoenium.topology.RegionRoute;
 import dev.phoenium.topology.RoutingKey;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import net.minecraft.server.level.ChunkLevel;
+import net.minecraft.server.level.ChunkMap;
 import net.minecraft.world.level.chunk.status.ChunkPyramid;
 import net.minecraft.world.level.chunk.status.ChunkStatus;
 import org.spongepowered.asm.mixin.Mixin;
@@ -18,7 +20,7 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
  * FULL acceptance-only topology declaration for the saved villager's bed lookup.
  *
  * The production explicit fixture deliberately has no world-default route.  This mixin adds
- * only the finite vanilla FULL dependency square needed by the preserved sleeping position.
+ * only the finite vanilla dependency square needed by the preserved sleeping position.
  * It is packaged in full-live-probe.jar and never enters the production Phoenium JAR.
  */
 @Mixin(ExplicitLiveTopologyFixture.class)
@@ -46,8 +48,10 @@ abstract class FullRuntimeAcceptanceBedSupportMixin {
                 .filter(route -> route.region().equals(plan.a()))
                 .findFirst()
                 .orElseThrow(() -> new IllegalStateException("FULL bed support has no owner route"));
-        int radius = ChunkPyramid.GENERATION_PYRAMID.getStepTo(ChunkStatus.FULL)
+        int forcedFullHalo = ChunkLevel.byStatus(ChunkStatus.FULL) - ChunkMap.FORCED_TICKET_LEVEL;
+        int generationRadius = ChunkPyramid.GENERATION_PYRAMID.getStepTo(ChunkStatus.FULL)
                 .getAccumulatedRadiusOf(ChunkStatus.EMPTY);
+        int radius = forcedFullHalo + generationRadius;
         Map<RoutingKey, RegionRoute> routes = new LinkedHashMap<>(plan.routes());
         for (int x = BED_CHUNK_X - radius; x <= BED_CHUNK_X + radius; x++) {
             for (int z = BED_CHUNK_Z - radius; z <= BED_CHUNK_Z + radius; z++) {

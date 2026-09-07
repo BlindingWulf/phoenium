@@ -60,6 +60,14 @@ public final class FullRuntimeAcceptanceProbe implements DedicatedServerModIniti
                     String result = verify(context.getSource().getLevel());
                     context.getSource().sendSuccess(() -> Component.literal(result), false); return 1;
                 })));
+        CommandRegistrationCallback.EVENT.register((dispatcher, access, selection) -> dispatcher.register(
+                Commands.literal("fullbedready").executes(context -> {
+                    var chunk = context.getSource().getLevel().getChunkSource().getChunkNow(127, -69);
+                    String result = chunk == null
+                            ? "FULL_BED_PENDING chunk=[127, -69]"
+                            : "FULL_BED_READY chunk=[127, -69]";
+                    context.getSource().sendSuccess(() -> Component.literal(result), false); return chunk == null ? 0 : 1;
+                })));
     }
 
     public static void generated(ServerLevel level, ChunkAccess access) {
@@ -112,6 +120,8 @@ public final class FullRuntimeAcceptanceProbe implements DedicatedServerModIniti
         String id = entity.entityTags().stream().filter(s -> s.startsWith(marker(phase()) + "_")).findFirst().orElseThrow();
         require(READERS.merge(id, 1, Integer::sum) == 1, "saved reader replayed: " + id);
         if (entity instanceof Villager villager) {
+            require(SAVED_BED.equals(villager.getSleepingPos().orElse(null)),
+                    "saved villager sleeping position lost: " + villager.getSleepingPos());
             require(villager.getVillagerXp() == 81 && villager.getVillagerData().level() == 3,
                     "saved villager experience/profession state lost");
             require(villager.getAttributeValue(Attributes.SCALE) == 3.0 && villager.getOffers().size() == 1

@@ -1764,9 +1764,22 @@ public final class Stage3ClientTest implements FabricClientGameTest {
                 active.waitUntilReady(context);
                 evidence.put(phase + "Seed", active.worldSeed());
                 String bedSupport = active.execute(fullBedSupportCommand());
-                require(fullBedSupportSucceeded(bedSupport), active.serverFailure(
-                        "FULL saved-bed support was not force-loaded: " + bedSupport));
+                String bedSupportQuery = active.execute(fullBedSupportQueryCommand());
+                require(fullBedSupportSucceeded(phase, bedSupport, bedSupportQuery), active.serverFailure(
+                        "FULL saved-bed support was not force-loaded: add=" + bedSupport
+                                + " query=" + bedSupportQuery));
                 evidence.put(phase + "SavedBedSupport", bedSupport);
+                evidence.put(phase + "SavedBedSupportQuery", bedSupportQuery);
+                String bedReady = "";
+                for (int tick = 0; tick < 1200; tick++) {
+                    require(active.isAlive(), active.serverFailure("FULL saved-bed support stopped during " + phase));
+                    bedReady = active.execute("fullbedready");
+                    if (bedReady.contains("FULL_BED_READY chunk=[127, -69]")) break;
+                    context.waitTick();
+                }
+                require(bedReady.contains("FULL_BED_READY chunk=[127, -69]"), active.serverFailure(
+                        "FULL saved-bed support did not reach FULL before fixture demand: " + bedReady));
+                evidence.put(phase + "SavedBedReady", bedReady);
                 connectClient(context); connected = true;
                 require(clientName(context).equals(TEST_USERNAME), "FULL client identity mismatch");
                 if (lifecycle == 1) {
@@ -1894,9 +1907,15 @@ public final class Stage3ClientTest implements FabricClientGameTest {
         return "forceload add 2032 -1104 2047 -1089";
     }
 
-    private static boolean fullBedSupportSucceeded(String response) {
-        return response.contains("Marked 1 chunk")
-            && response.contains("[127, -69] to [127, -69]");
+    private static String fullBedSupportQueryCommand() {
+        return "forceload query 2032 -1104";
+    }
+
+    private static boolean fullBedSupportSucceeded(String phase, String addResponse, String queryResponse) {
+        String add = addResponse.toLowerCase(java.util.Locale.ROOT);
+        boolean addAccepted = add.contains("marked 1 chunk")
+                || (phase.equals("reload") && add.contains("already") && add.contains("[127, -69]"));
+        return addAccepted && queryResponse.contains("[127, -69]");
     }
 
     private static boolean healthyFullAcceptanceLog(String log) {
