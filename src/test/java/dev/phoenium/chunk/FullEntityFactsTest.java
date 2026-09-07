@@ -14,12 +14,46 @@ import static org.junit.jupiter.api.Assertions.*;
 
 /** Original reference and caller bodies consume owner-published facts through installed call sites. */
 final class FullEntityFactsTest {
+    private static final ThreadLocal<AtomicBoolean> CONSTRUCTOR_ROUTING = new ThreadLocal<>();
     @BeforeAll static void bootstrap() { SharedConstants.tryDetectVersion(); Bootstrap.bootStrap(); }
+    @Test void constructorOwnsItsAliasBeforeTheFirstSetPosRoutingCallbackWithoutPublishingFacts() throws Exception {
+        try (var f = new FullServiceOperationFixture()) {
+            ServerLevel world = f.world(); AtomicBoolean routed = new AtomicBoolean();
+            var chunks = stub(net.minecraft.server.level.ServerChunkCache.class, List.of(new Answer(
+                    net.minecraft.server.level.ServerChunkCache.class.getMethod("hasEntityWithId", int.class), args -> false)));
+            set(world, ServerLevel.class, "chunkSource", chunks);
+            f.full(claim -> {
+                CONSTRUCTOR_ROUTING.set(routed);
+                try {
+                    Entity entity = new ConstructorRoutingProbe(world);
+                    assertTrue(routed.get());
+                    assertNull(((FullEntityFacts.Access) entity).phoenium$referenceFact(),
+                            "construction identity must not manufacture initialized owner-published facts");
+                } finally { CONSTRUCTOR_ROUTING.remove(); }
+            });
+        }
+    }
     private static LivingEntity target(ServerLevel level, UUID id, int number, AtomicInteger predicates) throws Exception {
         LivingEntity entity = stub(LivingEntity.class, List.of(new Answer(LivingEntity.class.getMethod("getHealth"), args -> {
             predicates.incrementAndGet(); return 20F;
         }), new Answer(Entity.class.getMethod("onRemoval", Entity.RemovalReason.class), args -> null)));
         initialize(entity, level, id, number, EntityTypes.PIG); return entity;
+    }
+    private static final class ConstructorRoutingProbe extends Entity {
+        ConstructorRoutingProbe(ServerLevel level) { super(EntityTypes.ARROW, level); }
+        @Override public void setPos(double x, double y, double z) {
+            AtomicBoolean routed = CONSTRUCTOR_ROUTING.get();
+            if (routed != null) {
+                assertFalse(FullEntityFacts.foreign(this));
+                assertFalse(isRemoved());
+                routed.set(true);
+            }
+            super.setPos(x, y, z);
+        }
+        @Override protected void defineSynchedData(net.minecraft.network.syncher.SynchedEntityData.Builder builder) { }
+        @Override public boolean hurtServer(ServerLevel level, net.minecraft.world.damagesource.DamageSource source, float amount) { return false; }
+        @Override protected void readAdditionalSaveData(net.minecraft.world.level.storage.ValueInput input) { }
+        @Override protected void addAdditionalSaveData(net.minecraft.world.level.storage.ValueOutput output) { }
     }
     private static void initialize(Entity entity, ServerLevel level, UUID id, int number, EntityType<?> type) throws Exception {
         set(entity, Entity.class, "level", level); set(entity, Entity.class, "type", type);

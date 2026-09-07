@@ -33,11 +33,18 @@ public final class FullFinishingServicesTestTransform {
             set.instructions.add(new VarInsnNode(Opcodes.ALOAD, 0)); set.instructions.add(new VarInsnNode(Opcodes.ALOAD, 1));
             set.instructions.add(new FieldInsnNode(Opcodes.PUTFIELD, node.name, "phoenium$fact", "L" + FACTS + "$Fact;")); set.instructions.add(new InsnNode(Opcodes.RETURN)); node.methods.add(set);
             for (MethodNode body : node.methods.toArray(MethodNode[]::new)) {
-                if (body.name.equals("<init>")) for (AbstractInsnNode at : body.instructions.toArray()) if (at.getOpcode() == Opcodes.RETURN) {
-                    InsnList init = new InsnList(); init.add(new VarInsnNode(Opcodes.ALOAD, 0));
-                    init.add(new MethodInsnNode(Opcodes.INVOKESTATIC, FACTS, "nextIncarnation", "()J", false));
-                    init.add(new FieldInsnNode(Opcodes.PUTFIELD, node.name, "phoenium$incarnation", "J"));
-                    init.add(entityCall("constructed")); body.instructions.insertBefore(at, init);
+                if (body.name.equals("<init>")) {
+                    for (AbstractInsnNode at : body.instructions.toArray()) if (at instanceof MethodInsnNode call) {
+                        if (call.getOpcode() == Opcodes.INVOKESPECIAL && call.owner.equals("java/lang/Object") && call.name.equals("<init>")) {
+                            InsnList identity = new InsnList(); identity.add(new VarInsnNode(Opcodes.ALOAD, 0));
+                            identity.add(new MethodInsnNode(Opcodes.INVOKESTATIC, FACTS, "nextIncarnation", "()J", false));
+                            identity.add(new FieldInsnNode(Opcodes.PUTFIELD, node.name, "phoenium$incarnation", "J"));
+                            body.instructions.insert(at, identity);
+                        }
+                        if (call.getOpcode() == Opcodes.INVOKEVIRTUAL && call.owner.equals(node.name)
+                                && call.name.equals("setPos") && call.desc.equals("(DDD)V"))
+                            body.instructions.insertBefore(at, entityCall("constructed"));
+                    }
                 }
                 if (Set.of("getUUID", "getId", "isRemoved", "getScoreboardName", "typeHolder").contains(body.name)) wrap(node, body, body.name);
                 if (Set.of("setId", "setUUID", "setRemoved", "unsetRemoved", "setInvulnerable", "setLevel").contains(body.name)) wrap(node, body, body.name);

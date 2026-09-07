@@ -100,6 +100,20 @@ final class FullFinishingServicesTest {
         service.legacyOwners.termination().toCompletableFuture().get(5, TimeUnit.SECONDS);
         assertThrows(ChunkProtocolException.class, () -> FullFinishingServices.forServer(server));
     }
+    @Test void reentrantStopInsideFullDefersEveryChildUntilRegionalClaimExit() throws Exception {
+        try (var fixture = new FullServiceOperationFixture()) {
+            fixture.full(claim -> {
+                assertTrue(OwnershipContext.current().isPresent());
+                FullFinishingServices.stopped(fixture.server);
+                assertEquals(0L, fixture.service.legacyOwners.measurements().get("producerTerminated"),
+                        "FULL scope cleanup must not stop child executors while regional ownership is active");
+                FullFinishingServices.requireServer(fixture.server, FullFinishingServices.Kind.SCOREBOARD);
+            });
+            assertTrue(OwnershipContext.current().isEmpty());
+            fixture.service.legacyOwners.termination().toCompletableFuture().get(5, TimeUnit.SECONDS);
+            assertThrows(ChunkProtocolException.class, () -> FullFinishingServices.forServer(fixture.server));
+        }
+    }
     @Test void partialChildShutdownFailureStillClosesReservationsAndStopsTheProducer() throws Exception {
         var exact = new IllegalStateException("controlled services lookup failure");
         MinecraftServer server = stub(MinecraftServer.class, List.of(new Answer(

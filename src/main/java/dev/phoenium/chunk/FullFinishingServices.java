@@ -52,12 +52,15 @@ public final class FullFinishingServices {
     }
     public static FullFinishingServices forServer(MinecraftServer server) {
         Objects.requireNonNull(server);
+        FullFinishingServices service;
         DIRECTORY.lock();
         try {
             if (TERMINATED.contains(server)) throw new ChunkProtocolException("finishing services requested after server shutdown");
-            return SERVERS.computeIfAbsent(server, FullFinishingServices::new);
+            service = SERVERS.computeIfAbsent(server, FullFinishingServices::new);
         }
         finally { DIRECTORY.unlock(); }
+        service.tryFinishShutdown();
+        return service;
     }
     public static void stopped(MinecraftServer server) {
         FullFinishingServices service;
@@ -247,7 +250,6 @@ public final class FullFinishingServices {
     }
     /** Mark terminal before touching a child service. A winning synchronous body drains first. */
     private void shutdown() {
-        boolean cleanup;
         metadata.lock();
         try {
             stopped = true;
@@ -255,7 +257,14 @@ public final class FullFinishingServices {
             for (Reservation reservation : List.copyOf(reservations.values())) {
                 if (!reservation.entered) reservation.closeLocked();
             }
-            cleanup = active == null && !cleanupStarted;
+        } finally { metadata.unlock(); }
+        tryFinishShutdown();
+    }
+    private void tryFinishShutdown() {
+        boolean cleanup;
+        metadata.lock();
+        try {
+            cleanup = shutdownStarted && active == null && OwnershipContext.current().isEmpty() && !cleanupStarted;
             if (cleanup) cleanupStarted = true;
         } finally { metadata.unlock(); }
         if (cleanup) finishShutdown();
@@ -350,12 +359,15 @@ public final class FullFinishingServices {
             } finally { metadata.unlock(); }
         }
         @Override public void close() {
+            boolean cleanup = false;
             metadata.lock();
             try {
                 if (closed) return;
                 if (entered && active != parent) throw new ChunkProtocolException("finishing reservation released before synchronous exit");
                 closeLocked();
+                cleanup = shutdownStarted;
             } finally { metadata.unlock(); }
+            if (cleanup) tryFinishShutdown();
         }
         private void closeLocked() {
             closed = true; reservations.remove(this); if (reserved == this) reserved = null; releases++;
@@ -397,17 +409,14 @@ public final class FullFinishingServices {
         @Override public void close() {
             if (closed) return;
             requireCurrent();
-            boolean cleanup;
             service.metadata.lock();
             try {
                 service.active = parent != null && parent.service == service ? parent : null; closed = true; claim = null;
-                cleanup = service.shutdownStarted && service.active == null && !service.cleanupStarted;
-                if (cleanup) service.cleanupStarted = true;
             }
             finally { service.metadata.unlock(); }
             if (parent == null) CURRENT.remove(); else CURRENT.set(parent);
             try { if (reservation != null) reservation.requireHealthy(); }
-            finally { if (cleanup) service.finishShutdown(); }
+            finally { service.tryFinishShutdown(); }
         }
     }
     public static final class Access implements AutoCloseable {

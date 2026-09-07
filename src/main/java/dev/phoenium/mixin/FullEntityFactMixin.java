@@ -10,7 +10,6 @@ import net.minecraft.world.level.Level;
 import net.minecraft.world.level.storage.ValueInput;
 import org.spongepowered.asm.mixin.*;
 import org.spongepowered.asm.mixin.injection.*;
-import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import org.objectweb.asm.Opcodes;
 
 /** Entity-attached identity/fact sidecar follows cached aliases without global tombstones. */
@@ -23,8 +22,11 @@ abstract class FullEntityFactMixin implements FullEntityFacts.Access {
     @Override public void phoenium$referenceFact(FullEntityFacts.Fact fact) { phoenium$fact = fact; }
     @Override public long phoenium$entityIncarnation() { return phoenium$incarnation; }
     @Override public int phoenium$rawEntityId() { return id; }
-    @Inject(method = "<init>", at = @At("RETURN"), require = 1)
-    private void phoenium$construction(EntityType<?> type, Level level, CallbackInfo ci) { FullEntityFacts.constructed((Entity) (Object) this); }
+    @WrapOperation(method = "<init>", at = @At(value = "INVOKE", target = "Lnet/minecraft/world/entity/Entity;setPos(DDD)V"), require = 1)
+    private void phoenium$construction(Entity entity, double x, double y, double z, Operation<Void> original) {
+        FullEntityFacts.constructed(entity);
+        original.call(entity, x, y, z);
+    }
     @WrapMethod(method = "getUUID()Ljava/util/UUID;")
     private UUID phoenium$uuid(Operation<UUID> original) { return FullEntityFacts.uuid((Entity) (Object) this, original::call); }
     @WrapMethod(method = "getScoreboardName()Ljava/lang/String;")
