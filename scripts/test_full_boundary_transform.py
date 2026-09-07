@@ -112,9 +112,10 @@ with log.open("w") as output:
             input_probe = [line for line in text.splitlines() if "PHOENIUM_FULL_INPUT_BINDING_PROBE PASS" in line]
             assert len(input_probe) == 1, "selected production discovery/input consumer did not pass exactly once"
             required_input_fields = (
-                "cases=19", "productionDiscovery=true", "exactInputConsumer=true", "proto=true",
+                "cases=21", "productionDiscovery=true", "exactInputConsumer=true", "proto=true",
                 "inMemoryImposter=true", "bothPairOrders=true", "largerWindow=true", "savedWriter=true",
-                "actualDemand=true", "capacityToProgress=true", "inputSatisfied=true", "aggregate=NOT_READY",
+                "actualDemand=true", "capacityToProgress=true", "completeAcknowledgement=true",
+                "biomeRollback=true", "inputSatisfied=true", "aggregate=NOT_READY",
                 "postLoad=0", "publicFull=0", "terminalInputPlans=0", "terminalInputConsumers=0",
                 "javaagent=false",
             )
@@ -140,7 +141,7 @@ with log.open("w") as output:
             finishing_probe = [line for line in text.splitlines() if "PHOENIUM_FULL_FINISHING_PROBE PASS" in line]
             assert len(finishing_probe) == 1, "installed FULL finishing fixture did not pass exactly once"
             required_finishing_fields = (
-                "cases=29", "queryCases=13", "serviceCases=7", "d1Cases=7", "publicationCases=2",
+                "cases=34", "queryCases=13", "serviceCases=7", "d1Cases=7", "contextCases=5", "publicationCases=2",
                 "originalFinishing=true", "separatePublication=true",
                 "cyclicPreparedPair=true", "bothPairOrders=true",
                 "proto=true", "inMemoryImposter=true", "diskReload=false",
@@ -148,6 +149,7 @@ with log.open("w") as output:
                 "originalShulkerImmediate=true", "originalLaterRegistration=true",
                 "originalMovingPiston=true", "savedVillagerOriginalBiomeCacheAlias=true",
                 "originalCachedAbsentBiomeFallback=true", "originalReadyAbsent=true",
+                "recursiveStorageContext=true", "retainedBlockNbt=true", "originalAbsentBlockBranch=true",
                 "caughtQueryBarrier=true", "noPrivateCacheEntries=true",
                 "claimedOperationRequired=true", "controlledWorldEndpoints=true",
                 "controlledLowerGenerationOutputs=true", "javaagent=false",
