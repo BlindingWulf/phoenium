@@ -17,6 +17,7 @@ import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.ai.attributes.Attributes;
 import net.minecraft.world.entity.npc.villager.Villager;
 import net.minecraft.world.entity.animal.frog.Frog;
+import net.minecraft.world.entity.animal.frog.Tadpole;
 import net.minecraft.world.scores.PlayerTeam;
 import net.minecraft.world.scores.Scoreboard;
 import net.minecraft.world.level.ChunkPos;
@@ -49,6 +50,9 @@ public final class FullRuntimeAcceptanceProbe implements DedicatedServerModIniti
     private static final ThreadLocal<VaultDirtyScope> VAULT_SCOPE = new ThreadLocal<>();
     private static int richVillagers, privateNeighbors;
     private static int scoreboardAdds, scoreboardRemoves;
+    private static final Set<UUID> DISCARDED_TADPOLES = new HashSet<>();
+    private static final Map<UUID, Integer> TEAM_TRANSFER_ADDS = new HashMap<>();
+    private static final Map<UUID, Integer> TEAM_TRANSFER_REMOVES = new HashMap<>();
     public static String phase() { return System.getProperty("phoenium.test.fullFixturePhase", ""); }
     private static boolean target(ChunkPos pos) { return CHUNKS.contains(pos.pack()); }
     private static String marker(String phase) { return "phoenium_full_" + phase; }
@@ -155,6 +159,13 @@ public final class FullRuntimeAcceptanceProbe implements DedicatedServerModIniti
                 + (team == null ? 0 : System.identityHashCode(team)) + " tags=" + entity.entityTags()
                 + " removed=" + entity.isRemoved() + " removalReason=" + entity.getRemovalReason()
                 + " sourceReader=" + (SAVED_READER.get() == null ? "<none>" : SAVED_READER.get().getUUID()));
+        if (entity instanceof Tadpole tadpole) {
+            require(tadpole.isRemoved() && tadpole.getRemovalReason() == Entity.RemovalReason.DISCARDED
+                    && team == null, "converted tagged tadpole alias was not discarded cleanly: " + tadpole.getUUID()
+                            + " removed=" + tadpole.isRemoved() + " reason=" + tadpole.getRemovalReason()
+                            + " team=" + (team == null ? "<none>" : team.getName()));
+            require(DISCARDED_TADPOLES.add(tadpole.getUUID()), "discarded tadpole reader replayed: " + tadpole.getUUID());
+        }
         if (entity instanceof Villager villager) {
             require(SAVED_BED.equals(villager.getSleepingPos().orElse(null)),
                     "saved villager sleeping position lost: " + villager.getSleepingPos());
@@ -177,6 +188,9 @@ public final class FullRuntimeAcceptanceProbe implements DedicatedServerModIniti
 
     public static void scoreboardAddReturn(Scoreboard scoreboard, String member, PlayerTeam team, boolean result) {
         if (!Boolean.getBoolean("phoenium.full.authoritative") || phase().isEmpty()) return;
+        Entity source = SAVED_READER.get();
+        if (result && source instanceof Tadpole tadpole && !member.equals(tadpole.getStringUUID()))
+            TEAM_TRANSFER_ADDS.merge(tadpole.getUUID(), 1, Integer::sum);
         System.out.println("PHOENIUM_FULL_SCOREBOARD_ADD_RETURN phase=" + phase() + " member=" + member
                 + " team=" + team.getName() + " teamIdentity=" + System.identityHashCode(team)
                 + " result=" + result + " finishing=" + FullFinishingServices.finishing() + " sourceReader="
@@ -194,6 +208,9 @@ public final class FullRuntimeAcceptanceProbe implements DedicatedServerModIniti
 
     public static void scoreboardRemoveReturn(Scoreboard scoreboard, String member, PlayerTeam team) {
         if (!Boolean.getBoolean("phoenium.full.authoritative") || phase().isEmpty()) return;
+        Entity source = SAVED_READER.get();
+        if (source instanceof Tadpole tadpole && member.equals(tadpole.getStringUUID()))
+            TEAM_TRANSFER_REMOVES.merge(tadpole.getUUID(), 1, Integer::sum);
         System.out.println("PHOENIUM_FULL_SCOREBOARD_REMOVE_RETURN phase=" + phase() + " member=" + member
                 + " team=" + team.getName() + " teamIdentity=" + System.identityHashCode(team)
                 + " result=completed finishing=" + FullFinishingServices.finishing() + " sourceReader="
@@ -383,6 +400,11 @@ public final class FullRuntimeAcceptanceProbe implements DedicatedServerModIniti
     private static String verify(ServerLevel level) {
         if (SUFFIXES.size() != CHUNKS.size()) return "FULL_LIVE_PENDING phase=" + phase() + " suffixes=" + SUFFIXES.size();
         require(READERS.size() == 8 && richVillagers == 4, "saved reader completion/state missing: " + READERS);
+        Set<UUID> expectedDiscarded = expectedDiscardedTadpoles();
+        require(DISCARDED_TADPOLES.equals(expectedDiscarded), "discarded tadpole witnesses differ: "
+                + DISCARDED_TADPOLES + " expected=" + expectedDiscarded);
+        requireExactTransfer(TEAM_TRANSFER_ADDS, expectedDiscarded, "add");
+        requireExactTransfer(TEAM_TRANSFER_REMOVES, expectedDiscarded, "remove");
         var runtime = dev.phoenium.Phoenium.liveRuntime().fullRegistration(level);
         for (long packed : CHUNKS) {
             var holder = ((FullInputView) level.getChunkSource().chunkMap).phoenium$visibleInput(packed);
@@ -400,6 +422,14 @@ public final class FullRuntimeAcceptanceProbe implements DedicatedServerModIniti
         }
         int frogs = 0, villagers = 0;
         for (Entity entity : level.getAllEntities()) if (entity.entityTags().contains(marker(phase()))) {
+            if (entity.isRemoved()) {
+                require(entity instanceof Tadpole && expectedDiscarded.contains(entity.getUUID())
+                        && DISCARDED_TADPOLES.contains(entity.getUUID())
+                        && entity.getRemovalReason() == Entity.RemovalReason.DISCARDED
+                        && entity.getTeam() == null, "unexpected removed saved entity alias: " + entity.getUUID()
+                                + " type=" + entity.getType() + " reason=" + entity.getRemovalReason());
+                continue;
+            }
             require(entity.getTeam() != null && entity.getTeam().getName().equals("full_probe"),
                     "original saved team lost entity=" + entity.getUUID() + " type=" + entity.getType()
                             + " position=" + entity.blockPosition() + " tags=" + entity.entityTags()
@@ -418,6 +448,19 @@ public final class FullRuntimeAcceptanceProbe implements DedicatedServerModIniti
                 + " separatePublication=true bedChecks=" + BED_CHECKS.size() + " collisionQueries=" + collisionQueries
                 + " immediateShulkerReads=" + immediateShulkerReads + " privateNeighbors=" + privateNeighbors + " origin="
                 + (phase().equals("fresh") ? "ADMITTED_PROTO" : "ADMITTED_IMPOSTER");
+    }
+    private static Set<UUID> expectedDiscardedTadpoles() {
+        Set<UUID> expected = new HashSet<>();
+        for (long packed : CHUNKS) {
+            ChunkPos position = new ChunkPos(ChunkPos.getX(packed), ChunkPos.getZ(packed));
+            expected.add(UUID.nameUUIDFromBytes((phase() + ":" + position + ":0").getBytes(StandardCharsets.UTF_8)));
+        }
+        return expected;
+    }
+    private static void requireExactTransfer(Map<UUID, Integer> observed, Set<UUID> expected, String operation) {
+        require(observed.size() == expected.size() && observed.keySet().equals(expected)
+                && observed.values().stream().allMatch(count -> count == 1),
+                "saved team transfer " + operation + " witnesses differ: " + observed + " expected=" + expected);
     }
     private static void require(boolean condition, String reason) { if (!condition) throw new IllegalStateException(reason); }
     private record VaultDirtyScope(ServerLevel level, BlockPos position, long tick, BlockState state) { }
