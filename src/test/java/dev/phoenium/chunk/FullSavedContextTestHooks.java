@@ -20,6 +20,7 @@ import net.minecraft.world.level.block.entity.BlockEntity;
 
 /** Test plumbing invokes the preserved original body exactly once through production guards. */
 public final class FullSavedContextTestHooks {
+    private static final ThreadLocal<Runnable> SELECTOR_PREFIX = new ThreadLocal<>();
     /** Reads the vanilla private display payload in both transformed and installed probes. */
     public static Component text(Display.TextDisplay entity) {
         try {
@@ -75,7 +76,16 @@ public final class FullSavedContextTestHooks {
     public static MutableComponent selectorResolve(SelectorContents contents, ResolutionContext context, int depth)
             throws CommandSyntaxException {
         return FullSavedContextInputs.selectorName(contents.selector().source(),
-                () -> originalResolve(SelectorContents.class, contents, context, depth));
+                () -> {
+                    Runnable prefix = SELECTOR_PREFIX.get();
+                    if (prefix != null) prefix.run();
+                    return originalResolve(SelectorContents.class, contents, context, depth);
+                });
+    }
+    static AutoCloseable selectorPrefix(Runnable prefix) {
+        if (SELECTOR_PREFIX.get() != null) throw new AssertionError("nested selector test prefix");
+        SELECTOR_PREFIX.set(prefix);
+        return () -> SELECTOR_PREFIX.remove();
     }
     public static MutableComponent scoreResolve(ScoreContents contents, ResolutionContext context, int depth)
             throws CommandSyntaxException {

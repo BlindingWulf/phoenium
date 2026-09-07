@@ -90,7 +90,8 @@ public final class FullSavedContextInputs {
                 Pending next = queue.remove(); var read = next.read;
                 if (read.source() != FullSavedTextInputs.Source.STORAGE) {
                     if (read.source() == FullSavedTextInputs.Source.BLOCK) continue;
-                    if (read.source() == FullSavedTextInputs.Source.ENTITY && read.target().equals("@s") && !read.interpreting()) continue;
+                    if (read.source() == FullSavedTextInputs.Source.ENTITY && ownedSelf(fact.path(), read.target(), FullSavedTextInputs.Use.NBT)
+                            && !read.interpreting()) continue;
                     unmet = fact.path() + ": protected display " + read.source() + " context producer pending"; break;
                 }
                 Identifier id = Identifier.parse(read.target());
@@ -117,7 +118,7 @@ public final class FullSavedContextInputs {
             texts.computeIfAbsent(fact.path(), ignored -> new ArrayList<>()).add(requirements);
             if (requirements.unmet() != null) { unmet = requirements.unmet(); return; }
             for (var selector : requirements.selectors()) {
-                boolean ownedSelf = selector.source().equals("@s");
+                boolean ownedSelf = selector.self();
                 boolean identityScore = selector.use() == FullSavedTextInputs.Use.SCORE && !selector.source().startsWith("@");
                 if (!ownedSelf && !identityScore && !selector.worldLimited()) {
                     unmet = fact.path() + ": protected display selector context producer pending for " + selector.source(); return;
@@ -128,6 +129,10 @@ public final class FullSavedContextInputs {
                 }
             }
             for (var read : requirements.nbtReads()) queue.add(new Pending(fact, read));
+        }
+        private boolean ownedSelf(String path, String source, FullSavedTextInputs.Use use) {
+            return texts.getOrDefault(path, List.of()).stream().flatMap(requirements -> requirements.selectors().stream())
+                    .anyMatch(selector -> selector.source().equals(source) && selector.use() == use && selector.self());
         }
         public Scope enter(ChunkStageClaim claim) {
             claim.require(stage);
@@ -219,14 +224,14 @@ public final class FullSavedContextInputs {
     private static <T> T selector(String source, FullSavedTextInputs.Use use, SelectorCall<T> original) throws CommandSyntaxException {
         if (!FullFinishingServices.finishing()) return original.call();
         Plan plan = ACTIVE.get();
-        if (plan == null || plan.currentText == null || plan.selectorCandidates != null)
+        if (plan == null || plan.currentText == null)
             throw FullFinishingServices.failure(new ChunkProtocolException("selector read outside its exact saved text occurrence"));
         plan.claim.require(plan.stage);
         var declared = plan.texts.get(plan.currentText).stream().flatMap(requirements -> requirements.selectors().stream())
                 .filter(candidate -> candidate.source().equals(source) && candidate.use() == use).findFirst().orElse(null);
         if (declared == null)
             throw FullFinishingServices.failure(new ChunkProtocolException("unbound saved text selector input " + source));
-        if (declared.source().equals("@s")) return original.call();
+        if (declared.self()) return original.call();
         if (!declared.worldLimited() || plan.entityCut == null)
             throw FullFinishingServices.failure(new ChunkProtocolException("selector requires unapproved cross-world authority " + source));
         var current = FullFinishingServices.forServer(plan.world.getServer()).entityFacts.cut(plan.world);
@@ -238,9 +243,10 @@ public final class FullSavedContextInputs {
                 throw FullFinishingServices.failure(new ChunkProtocolException("same-world selector candidate is outside the claimed regional enclosure"));
             permitted.put(candidate.alias(), candidate.fact());
         }
+        var parentCandidates = plan.selectorCandidates;
         plan.selectorCandidates = permitted;
         try { return original.call(); }
-        finally { plan.selectorCandidates = null; }
+        finally { plan.selectorCandidates = parentCandidates; }
     }
     public static <T> T selectorName(String source, SelectorCall<T> original) throws CommandSyntaxException {
         return selector(source, FullSavedTextInputs.Use.NAME, original);

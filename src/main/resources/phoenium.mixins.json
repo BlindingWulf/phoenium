@@ -37,6 +37,7 @@
     "FullCommandStorageMixin",
     "FullSavedTextReaderMixin",
     "FullSavedBlockDataSourceMixin",
+    "FullLevelThreadAccessMixin",
     "FullSavedSelectorContentsMixin",
     "FullSavedScoreContentsMixin",
     "FullSavedNbtContentsMixin",

@@ -10,11 +10,15 @@ public final class FullFinishingServicesTestTransform {
     private static final String FACTS = "dev/phoenium/chunk/FullEntityFacts", HOOKS = "dev/phoenium/chunk/FullFinishingServicesTestHooks";
     private static final Set<String> TARGETS = Set.of("net/minecraft/world/entity/Entity", "net/minecraft/world/entity/EntityReference",
             "net/minecraft/world/level/entity/EntityLookup", "net/minecraft/world/level/storage/TagValueInput",
-            "net/minecraft/world/entity/LivingEntity", "net/minecraft/world/entity/Mob", "net/minecraft/server/level/ServerLevel");
+            "net/minecraft/world/entity/LivingEntity", "net/minecraft/world/entity/Mob", "net/minecraft/server/level/ServerLevel",
+            "net/minecraft/world/level/Level");
     public static boolean supports(String name) { return TARGETS.contains(name); }
     public static void install(ClassNode node) {
         if (!supports(node.name)) return;
-        if (node.name.equals("net/minecraft/world/level/storage/TagValueInput")) {
+        if (node.name.equals("net/minecraft/world/level/Level")) {
+            node.interfaces.add("dev/phoenium/mixin/FullLevelThreadAccessMixin");
+            getter(node, "phoenium$levelThread", "thread", "Ljava/lang/Thread;");
+        } else if (node.name.equals("net/minecraft/world/level/storage/TagValueInput")) {
             node.interfaces.add("dev/phoenium/chunk/FullSavedValueInput");
             getter(node, "phoenium$originalSavedTag", "input", "Lnet/minecraft/nbt/CompoundTag;");
         } else if (node.name.equals("net/minecraft/world/entity/EntityReference")) {

@@ -84,13 +84,14 @@ public final class FullEntityFacts {
         Fact fact = entity instanceof Access access ? access.phoenium$referenceFact() : null;
         if (fact == null) return;
         var facts = FullFinishingServices.forServer(fact.server).entityFacts;
+        ChunkPos position = entity.chunkPosition();
         facts.candidateMetadata.lock();
         try {
             long routeRevision = Math.incrementExact(facts.routingSequence);
             long worldRevision = facts.nextCandidateRevision(fact.world);
             facts.candidates.computeIfAbsent(fact.world, ignored -> new LinkedHashMap<>()).put(id, entity);
             if (displaced != null && displaced != entity) facts.routes.remove(displaced);
-            facts.routes.put(entity, new Route(entity.chunkPosition(), routeRevision));
+            facts.routes.put(entity, new Route(position, routeRevision));
             facts.routingSequence = routeRevision; facts.candidateRevisions.put(fact.world, worldRevision);
         } finally { facts.candidateMetadata.unlock(); }
         facts.service.changed(FullFinishingServices.Kind.ENTITY_REGISTRY);
@@ -128,6 +129,7 @@ public final class FullEntityFacts {
         Fact fact = entity instanceof Access access ? access.phoenium$referenceFact() : null;
         if (fact == null) return;
         var facts = FullFinishingServices.forServer(fact.server).entityFacts;
+        ChunkPos position = entity.chunkPosition();
         boolean indexed;
         facts.candidateMetadata.lock();
         try {
@@ -135,7 +137,7 @@ public final class FullEntityFacts {
             if (indexed) {
                 long routeRevision = Math.incrementExact(facts.routingSequence);
                 long worldRevision = facts.nextCandidateRevision(fact.world);
-                facts.routes.put(entity, new Route(entity.chunkPosition(), routeRevision));
+                facts.routes.put(entity, new Route(position, routeRevision));
                 facts.routingSequence = routeRevision; facts.candidateRevisions.put(fact.world, worldRevision);
             }
         } finally { facts.candidateMetadata.unlock(); }

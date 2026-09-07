@@ -152,7 +152,7 @@ final class FullFinishingServicesTest {
                 "FullEntityFactAbilitiesMixin", "FullEntityFactGameTypeMixin", "FullEntityFactGameModeMixin",
                 "FullEntityFactDataMixin", "FullEntityFactLookupMixin", "FullEntityFactLevelMixin",
                 "FullEntityFactConsumersMixin", "FullEntityFactEnemyMixin", "FullSavedSelectorContentsMixin",
-                "FullSavedScoreContentsMixin", "FullSavedNbtContentsMixin"))
+                "FullSavedScoreContentsMixin", "FullSavedNbtContentsMixin", "FullLevelThreadAccessMixin"))
             assertTrue(configuration.contains("\"" + mixin + "\""), "missing installed D1/service adapter " + mixin);
     }
     @Test void largeFiniteScoreboardFootprintIsLazyAndCanMakeProgress() throws Exception {

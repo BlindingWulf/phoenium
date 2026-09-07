@@ -4,6 +4,7 @@ import java.nio.file.Path;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
 import net.minecraft.nbt.CompoundTag;
+import net.minecraft.world.level.storage.ValueOutput;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.world.entity.Display;
 import net.minecraft.world.entity.Entity;
@@ -17,6 +18,8 @@ import net.minecraft.world.level.storage.SavedDataStorage;
 import net.minecraft.core.BlockPos;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.entity.BeaconBlockEntity;
+import net.minecraft.world.level.block.entity.BlockEntity;
+import net.minecraft.world.level.block.entity.BlockEntityTypes;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.Identifier;
 import org.junit.jupiter.api.BeforeAll;
@@ -87,6 +90,53 @@ class FullSavedContextInputTest {
         assertCleanup(f);
     }
 
+    @Test void retainedBlockNbtUsesTheOriginalImmediateLazyCreationAndSerializationSuffix() throws Exception {
+        var f = new FullRegistrationFixture(true); var position = new BlockPos(8, 8, 8);
+        f.input(ChunkPos.ZERO).getSection(0).setBlockState(8, 8, 8, Blocks.BEACON.defaultBlockState());
+        assertFalse(f.input(ChunkPos.ZERO).getBlockEntities().containsKey(position));
+        try {
+            saved(f, ChunkPos.ZERO, false, text(blockText(position, "id", false)));
+            f.start(ChunkPos.ZERO, ChunkStatus.FULL); f.drain(); var graph = f.runtime.graph(f.holder(ChunkPos.ZERO));
+            assertEquals(FullInitializedInputs.State.SATISFIED, graph.inputEvaluation().state(), graph.inputEvaluation().obligation());
+            var prepared = graph.prepared().orElseThrow().actual();
+            assertFalse(prepared.getBlockEntities().containsKey(position), "preparation must retain the original lazy state");
+
+            FullAuthoritativeFinishingTest.context(f); f.runtime.inputs.changed(); f.drain();
+            assertInstanceOf(ChunkStageOutcome.Applied.class, graph.finishing.outcome().join());
+            assertInstanceOf(BeaconBlockEntity.class, prepared.getBlockEntities().get(position));
+            assertEquals("\"minecraft:beacon\"", FullSavedContextTestHooks.text(
+                    assertInstanceOf(Display.TextDisplay.class, f.world.inserted.getFirst())).getString());
+            assertFalse(f.barrier.tripped());
+        } finally { f.stop(); FullFinishingServices.stopped(f.world.level.getServer()); }
+        assertCleanup(f);
+    }
+
+    @Test void originalCaughtBlockSerializerFailureReleasesTheScopeForTheNextSavedEntity() throws Exception {
+        var f = new FullRegistrationFixture(true); var position = new BlockPos(8, 8, 8);
+        var state = Blocks.BEACON.defaultBlockState(); var exact = new IllegalStateException("original block serializer failure");
+        f.input(ChunkPos.ZERO).getSection(0).setBlockState(8, 8, 8, state);
+        var failing = new FailingBlockEntity(position, state, exact);
+        f.input(ChunkPos.ZERO).setBlockEntity(failing);
+        try {
+            saved(f, ChunkPos.ZERO, false, text(blockText(position, "id", false)));
+            f.input(ChunkPos.ZERO).addEntity(text(blockText(position, "id", false)));
+            f.start(ChunkPos.ZERO, ChunkStatus.FULL); f.drain(); var graph = f.runtime.graph(f.holder(ChunkPos.ZERO));
+            assertSame(failing, graph.prepared().orElseThrow().actual().getBlockEntities().get(position));
+            assertEquals(FullInitializedInputs.State.SATISFIED, graph.inputEvaluation().state(), graph.inputEvaluation().obligation());
+            FullAuthoritativeFinishingTest.context(f); f.runtime.inputs.changed(); f.drain();
+            assertEquals(2, failing.saves);
+            assertInstanceOf(ChunkStageOutcome.Applied.class, graph.finishing.outcome().join());
+            assertInstanceOf(ChunkStageOutcome.Applied.class, graph.publication.outcome().join());
+            assertEquals(2, f.world.inserted.size(), "the original loader catches the first entity failure and continues");
+            assertEquals("", FullSavedContextTestHooks.text(
+                    assertInstanceOf(Display.TextDisplay.class, f.world.inserted.getFirst())).getString());
+            assertEquals("\"minecraft:beacon\"", FullSavedContextTestHooks.text(
+                    assertInstanceOf(Display.TextDisplay.class, f.world.inserted.get(1))).getString());
+            assertFalse(f.barrier.tripped());
+        } finally { f.stop(); FullFinishingServices.stopped(f.world.level.getServer()); }
+        assertCleanup(f);
+    }
+
     @Test void absentBlockNbtKeepsTheOriginalIsLoadedEmptyBranchWithoutDemandingAChunk() throws Exception {
         var f = new FullRegistrationFixture(true); var absent = new BlockPos(1600, 8, 8);
         var chunk = new ChunkPos(absent.getX() >> 4, absent.getZ() >> 4);
@@ -135,6 +185,71 @@ class FullSavedContextInputTest {
         } finally {
             lookup.remove(first); lookup.remove(second); f.stop(); FullFinishingServices.stopped(f.world.level.getServer());
         }
+        assertCleanup(f);
+    }
+
+    @Test void filteredSelfSelectorRunsItsOriginalNbtPredicateWithoutAWorldCandidateGrant() throws Exception {
+        var f = new FullRegistrationFixture(true); var selector = new CompoundTag();
+        selector.putString("selector", "@s[nbt={}]");
+        try {
+            saved(f, ChunkPos.ZERO, false, text(selector));
+            f.start(ChunkPos.ZERO, ChunkStatus.FULL); f.drain(); var graph = f.runtime.graph(f.holder(ChunkPos.ZERO));
+            assertEquals(FullInitializedInputs.State.SATISFIED, graph.inputEvaluation().state(), graph.inputEvaluation().obligation());
+            assertTrue(graph.inputReceipt().targets().stream().noneMatch(target ->
+                    target.purposes().contains(FullInitializedInputs.Purpose.ENTITY_CONTEXT)));
+
+            FullAuthoritativeFinishingTest.context(f); f.runtime.inputs.changed(); f.drain();
+            assertInstanceOf(ChunkStageOutcome.Applied.class, graph.finishing.outcome().join());
+            assertEquals("Text Display", FullSavedContextTestHooks.text(
+                    assertInstanceOf(Display.TextDisplay.class, f.world.inserted.getFirst())).getString());
+            assertFalse(f.barrier.tripped());
+        } finally { f.stop(); FullFinishingServices.stopped(f.world.level.getServer()); }
+        assertCleanup(f);
+    }
+
+    @Test void selectorValuedSeparatorRestoresTheOuterSameWorldCandidateGrant() throws Exception {
+        var f = new FullRegistrationFixture(true); var lookup = new EntityLookup<Entity>();
+        var first = EntityTypes.TEXT_DISPLAY.create(f.world.level, EntitySpawnReason.LOAD);
+        var second = EntityTypes.TEXT_DISPLAY.create(f.world.level, EntitySpawnReason.LOAD);
+        assertNotNull(first); assertNotNull(second);
+        first.setId(711); first.setPos(1608, 8, 8); first.setCustomName(Component.literal("first"));
+        second.setId(712); second.setPos(1609, 8, 8); second.setCustomName(Component.literal("second"));
+        lookup.add(first); lookup.add(second); f.world.selectorEntities.add(first); f.world.selectorEntities.add(second);
+        var nested = new CompoundTag(); nested.putString("selector", "@e[type=minecraft:text_display,distance=..2000,limit=1]");
+        var outer = new CompoundTag(); outer.putString("selector", "@e[type=minecraft:text_display,distance=..2000]"); outer.put("separator", nested);
+        try {
+            saved(f, ChunkPos.ZERO, false, text(outer));
+            f.start(ChunkPos.ZERO, ChunkStatus.FULL); f.drain(); var graph = f.runtime.graph(f.holder(ChunkPos.ZERO));
+            assertEquals(FullInitializedInputs.State.SATISFIED, graph.inputEvaluation().state(), graph.inputEvaluation().obligation());
+            FullAuthoritativeFinishingTest.context(f); f.runtime.inputs.changed(); f.drain();
+            assertInstanceOf(ChunkStageOutcome.Applied.class, graph.finishing.outcome().join());
+            assertEquals("firstfirstsecond", FullSavedContextTestHooks.text(
+                    assertInstanceOf(Display.TextDisplay.class, f.world.inserted.getFirst())).getString());
+            assertFalse(f.barrier.tripped());
+        } finally {
+            lookup.remove(first); lookup.remove(second); f.stop(); FullFinishingServices.stopped(f.world.level.getServer());
+        }
+        assertCleanup(f);
+    }
+
+    @Test void undeclaredNestedSelectorFailsBeforeItsOriginalBody() throws Exception {
+        var f = new FullRegistrationFixture(true); var selector = new CompoundTag(); selector.putString("selector", "@s");
+        var nestedOriginals = new AtomicInteger();
+        try (var ignored = FullSavedContextTestHooks.selectorPrefix(() -> {
+            try {
+                FullSavedContextInputs.selectorName("@e[type=minecraft:pig]", () -> {
+                    nestedOriginals.incrementAndGet(); return Component.empty();
+                });
+            } catch (com.mojang.brigadier.exceptions.CommandSyntaxException impossible) { throw new AssertionError(impossible); }
+        })) {
+            saved(f, ChunkPos.ZERO, false, text(selector));
+            f.start(ChunkPos.ZERO, ChunkStatus.FULL); f.drain(); var graph = f.runtime.graph(f.holder(ChunkPos.ZERO));
+            FullAuthoritativeFinishingTest.context(f); f.runtime.inputs.changed(); f.drain();
+            assertEquals(0, nestedOriginals.get());
+            var failure = assertInstanceOf(ChunkStageOutcome.BarrierFailure.class, graph.finishing.outcome().join()).failure();
+            assertTrue(failure.getMessage().contains("unbound saved text selector input"));
+            assertTrue(f.barrier.tripped());
+        } finally { f.stop(); FullFinishingServices.stopped(f.world.level.getServer()); }
         assertCleanup(f);
     }
 
@@ -242,8 +357,19 @@ class FullSavedContextInputTest {
         var text = new CompoundTag(); text.putString("nbt", "message"); text.putString("storage", id.toString()); text.putBoolean("interpret", true); return text;
     }
     private static CompoundTag blockText(BlockPos position) {
-        var text = new CompoundTag(); text.putString("nbt", "CustomName");
+        return blockText(position, "CustomName", true);
+    }
+    private static CompoundTag blockText(BlockPos position, String path, boolean interpret) {
+        var text = new CompoundTag(); text.putString("nbt", path);
         text.putString("block", position.getX() + " " + position.getY() + " " + position.getZ());
-        text.putBoolean("interpret", true); return text;
+        text.putBoolean("interpret", interpret); return text;
+    }
+    private static final class FailingBlockEntity extends BlockEntity {
+        private final RuntimeException failure;
+        private int saves;
+        private FailingBlockEntity(BlockPos position, net.minecraft.world.level.block.state.BlockState state, RuntimeException failure) {
+            super(BlockEntityTypes.BEACON, position, state); this.failure = failure;
+        }
+        @Override protected void saveAdditional(ValueOutput output) { if (++saves == 1) throw failure; }
     }
 }

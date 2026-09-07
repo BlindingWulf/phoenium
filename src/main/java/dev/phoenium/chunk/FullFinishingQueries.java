@@ -1,5 +1,6 @@
 package dev.phoenium.chunk;
 
+import dev.phoenium.mixin.FullLevelThreadAccessMixin;
 import java.util.*;
 import java.util.concurrent.CompletableFuture;
 import java.util.function.Supplier;
@@ -297,11 +298,21 @@ public final class FullFinishingQueries {
         if (read == null || read.target != target || !read.position.equals(position))
             throw breach("saved block context entity read lacks its exact readiness prefix");
         try {
-            BlockEntity retained = target.actual() == null ? null : target.actual().getBlockEntity(position);
-            if (read.privateInput) return retained;
+            if (read.privateInput) {
+                // Reproduce Level.getBlockEntity's prefix while selecting the retained preparation
+                // at its private getChunkAt suffix. IMMEDIATE retains lazy creation, pending-tag
+                // promotion, registration and their original exception point.
+                if (!world.isInValidBounds(position)
+                        || !world.isClientSide() && Thread.currentThread() != ((FullLevelThreadAccessMixin) world).phoenium$levelThread())
+                    return null;
+                return target.actual().getBlockEntity(position, LevelChunk.EntityCreationType.IMMEDIATE);
+            }
             BlockEntity reached = original.get();
             invocation.requireCurrent();
-            if (reached != retained) throw breach("saved block context selected another block entity");
+            // Inspect only after the original published getter has performed any lazy promotion.
+            // A null original result (bounds/thread/removed branch) stays null without a private read.
+            if (reached != null && target.actual().getBlockEntities().get(position) != reached)
+                throw breach("saved block context selected another block entity");
             return reached;
         } finally { invocation.blockRead = null; }
     }
