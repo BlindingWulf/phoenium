@@ -75,7 +75,15 @@ public final class FullRuntimeAcceptanceProbe implements DedicatedServerModIniti
         });
         CommandRegistrationCallback.EVENT.register((dispatcher, access, selection) -> dispatcher.register(
                 Commands.literal("fullprobe").executes(context -> {
-                    String result = verify(context.getSource().getLevel());
+                    String result;
+                    try {
+                        result = verify(context.getSource().getLevel());
+                    } catch (Throwable failure) {
+                        System.out.println("PHOENIUM_FULL_LIVE_VERIFY_FAILURE type="
+                                + failure.getClass().getName() + " message=" + failure.getMessage());
+                        failure.printStackTrace(System.out);
+                        throw failure;
+                    }
                     context.getSource().sendSuccess(() -> Component.literal(result), false); return 1;
                 })));
         CommandRegistrationCallback.EVENT.register((dispatcher, access, selection) -> dispatcher.register(
