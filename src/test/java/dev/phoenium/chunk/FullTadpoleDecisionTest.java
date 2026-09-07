@@ -206,7 +206,8 @@ final class FullTadpoleDecisionTest {
             var server = stub(net.minecraft.server.MinecraftServer.class, List.of(
                     new Answer(net.minecraft.server.MinecraftServer.class.getMethod("getPlayerList"), args -> players), new Answer(
                     net.minecraft.server.MinecraftServer.class.getMethod("debugSubscribers"),
-                    args -> new net.minecraft.util.debug.ServerDebugSubscribers(null))));
+                    args -> new net.minecraft.util.debug.ServerDebugSubscribers(null)), new Answer(
+                    net.minecraft.server.MinecraftServer.class.getMethod("registryAccess"), args -> registry)));
             set(players, net.minecraft.server.players.PlayerList.class, "server", server);
             scoreboard = new net.minecraft.server.ServerScoreboard(server); scoreboard.addPlayerTeam("amber");
             var waypoints = new net.minecraft.server.waypoints.ServerWaypointManager();
