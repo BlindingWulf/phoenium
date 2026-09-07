@@ -19,7 +19,13 @@ TARGET.mkdir(parents=True, exist_ok=False)
 for name in ("fabric-server-launch.jar", ".fabric", "libraries", "versions", "mods"):
     source = PREPARED / name
     if source.is_dir():
-        shutil.copytree(source, TARGET / name)
+        # The prepared Stage 3 directory also contains the separate authoritative FULL
+        # fixture.  This transformation probe deliberately runs baseline/controlled mode,
+        # so its server entrypoint must not be installed here.
+        if name == "mods":
+            shutil.copytree(source, TARGET / name, ignore=shutil.ignore_patterns("full-live-probe.jar"))
+        else:
+            shutil.copytree(source, TARGET / name)
     else:
         shutil.copy2(source, TARGET / name)
 artifact = next((TARGET / "mods").glob("phoenium-*.jar"))
@@ -141,7 +147,7 @@ with log.open("w") as output:
             finishing_probe = [line for line in text.splitlines() if "PHOENIUM_FULL_FINISHING_PROBE PASS" in line]
             assert len(finishing_probe) == 1, "installed FULL finishing fixture did not pass exactly once"
             required_finishing_fields = (
-                "cases=36", "queryCases=13", "serviceCases=7", "d1Cases=7", "contextCases=7", "publicationCases=2",
+                "cases=42", "queryCases=13", "serviceCases=7", "d1Cases=7", "contextCases=13", "publicationCases=2",
                 "originalFinishing=true", "separatePublication=true",
                 "cyclicPreparedPair=true", "bothPairOrders=true",
                 "proto=true", "inMemoryImposter=true", "diskReload=false",
@@ -150,7 +156,7 @@ with log.open("w") as output:
                 "originalMovingPiston=true", "savedVillagerOriginalBiomeCacheAlias=true",
                 "originalCachedAbsentBiomeFallback=true", "originalReadyAbsent=true",
                 "recursiveStorageContext=true", "retainedBlockNbt=true", "originalAbsentBlockBranch=true",
-                "sameWorldSelector=true",
+                "sameWorldSelector=true", "sameWorldEntityNbt=true",
                 "caughtQueryBarrier=true", "noPrivateCacheEntries=true",
                 "claimedOperationRequired=true", "controlledWorldEndpoints=true",
                 "controlledLowerGenerationOutputs=true", "javaagent=false",

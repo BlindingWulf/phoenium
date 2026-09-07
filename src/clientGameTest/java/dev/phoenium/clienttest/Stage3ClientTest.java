@@ -1901,6 +1901,12 @@ public final class Stage3ClientTest implements FabricClientGameTest {
         Matcher neighbors = Pattern.compile("(?:^|\\s)privateNeighbors=(\\d+)(?:\\s|$)").matcher(state);
         require(neighbors.find() && Integer.parseInt(neighbors.group(1)) > 0,
             "FULL " + phase + " did not report a positive private-neighbor count: " + state);
+        Matcher collision = Pattern.compile("(?:^|\\s)collisionQueries=(\\d+)(?:\\s|$)").matcher(state);
+        require(collision.find() && Integer.parseInt(collision.group(1)) > 0,
+            "FULL " + phase + " did not report an original collision query: " + state);
+        Matcher immediate = Pattern.compile("(?:^|\\s)immediateShulkerReads=(\\d+)(?:\\s|$)").matcher(state);
+        require(immediate.find() && Integer.parseInt(immediate.group(1)) > 0,
+            "FULL " + phase + " did not report an original ShulkerBox IMMEDIATE read: " + state);
     }
 
     private static String fullBedSupportCommand() {

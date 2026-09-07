@@ -20,10 +20,13 @@ import net.minecraft.world.entity.animal.frog.Frog;
 import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.chunk.*;
 import net.minecraft.world.level.chunk.status.ChunkStatus;
 import net.minecraft.world.level.chunk.storage.SerializableChunkData;
+import net.minecraft.world.level.BlockGetter;
+import net.minecraft.world.phys.shapes.VoxelShape;
 
 /** Disposable real-world fixture. Only the saved inputs are injected; every execution endpoint is vanilla. */
 public final class FullRuntimeAcceptanceProbe implements DedicatedServerModInitializer {
@@ -33,6 +36,11 @@ public final class FullRuntimeAcceptanceProbe implements DedicatedServerModIniti
     private static final Map<String, Integer> READERS = new LinkedHashMap<>();
     private static final BlockPos SAVED_BED = new BlockPos(2032, 75, -1104);
     private static final Set<UUID> BED_CHECKS = new HashSet<>();
+    private static final Set<BlockPos> SHULKER_POSITIONS = Set.of(new BlockPos(527, 200, 72), new BlockPos(528, 200, 72),
+            new BlockPos(559, 200, 72), new BlockPos(560, 200, 72));
+    private static int collisionQueries, immediateShulkerReads;
+    private static final ThreadLocal<Entity> SAVED_READER = new ThreadLocal<>();
+    private static final ThreadLocal<CollisionScope> COLLISION_SCOPE = new ThreadLocal<>();
     private static final BlockPos SAVED_VAULT = new BlockPos(2272, 7, -496);
     private static int vaultTicks, vaultDirtyAttempts, vaultDirtyCompleted;
     private static int vaultNeighborReads, vaultCrossChunkReads, vaultOwnerScopes, vaultOrdinaryScopes;
@@ -86,11 +94,11 @@ public final class FullRuntimeAcceptanceProbe implements DedicatedServerModIniti
         var proto = (ProtoChunk) access;
         for (var tag : roots(access.getPos(), "fresh")) proto.addEntity(tag);
         // This is a generation fixture write, before the real SPAWN writer releases.
-        // Odd chunks present a genuine nonair immediate block-entity shape to the even source.
-        if ((access.getPos().x() & 1) != 0) {
-            var pos = new BlockPos(access.getPos().getMinBlockX(), 200, access.getPos().getMinBlockZ() + 8);
-            proto.setBlockState(pos, Blocks.SHULKER_BOX.defaultBlockState(), 0);
-        }
+        // Both sides present a nonair shape to their peer, whichever original supplier finishes
+        // first. No test hook dictates finishing/publication order. These real blocks persist.
+        int borderX = access.getPos().getMinBlockX() + ((access.getPos().x() & 1) == 0 ? 15 : 0);
+        var pos = new BlockPos(borderX, 200, access.getPos().getMinBlockZ() + 8);
+        proto.setBlockState(pos, Blocks.SHULKER_BOX.defaultBlockState(), 0);
         System.out.println("PHOENIUM_FULL_LIVE_GENERATED chunk=" + access.getPos() + " roots=2");
     }
 
@@ -157,6 +165,110 @@ public final class FullRuntimeAcceptanceProbe implements DedicatedServerModIniti
                     + " position=" + position + " tick=" + level.getGameTime() + " ticks=" + vaultTicks);
     }
 
+    public static void savedReader(Entity entity, Runnable original) {
+        if (!Boolean.getBoolean("phoenium.full.authoritative") || phase().isEmpty()
+                || !FullFinishingServices.finishing()) { original.run(); return; }
+        Entity parent = SAVED_READER.get();
+        SAVED_READER.set(entity);
+        try { original.run(); }
+        finally { if (parent == null) SAVED_READER.remove(); else SAVED_READER.set(parent); }
+    }
+
+    /**
+     * Test-only wrapper around the original BlockCollisions shape call.  A collision query is
+     * counted only after the original shape call consumed the retained private result and the
+     * original IMMEDIATE block-entity lookup observed the saved Shulker.  Ordinary server ticks
+     * at the same coordinates are deliberately ignored.
+     */
+    public static VoxelShape collisionShape(BlockState state, BlockGetter world, BlockPos position,
+                                             java.util.function.Supplier<VoxelShape> original) {
+        CollisionScope scope = beginCollisionScope(state, world, position);
+        if (scope == null) return original.get();
+        CollisionScope parent = COLLISION_SCOPE.get();
+        COLLISION_SCOPE.set(scope);
+        try {
+            VoxelShape result = original.get();
+            if (scope.privateReturned && scope.immediateSeen) {
+                collisionQueries++;
+                System.out.println("PHOENIUM_FULL_COLLISION_QUERY phase=" + phase() + " entity=" + scope.entity
+                        + " source=" + scope.source + " target=" + scope.target
+                        + " status=FULL access=IMMEDIATE owner=true finishing=true privateResult=true"
+                        + " publicPending=true completed=true count=" + collisionQueries);
+            }
+            return result;
+        } finally {
+            if (parent == null) COLLISION_SCOPE.remove(); else COLLISION_SCOPE.set(parent);
+        }
+    }
+
+    private static CollisionScope beginCollisionScope(BlockState state, BlockGetter world, BlockPos position) {
+        if (!Boolean.getBoolean("phoenium.full.authoritative") || phase().isEmpty()
+                || !(world instanceof ServerLevel level) || !(state.getBlock() instanceof net.minecraft.world.level.block.ShulkerBoxBlock)
+                || !SHULKER_POSITIONS.contains(position) || !FullFinishingServices.finishing()
+                || level.dimension() != Level.OVERWORLD) return null;
+        Entity reader = SAVED_READER.get();
+        if (!(reader instanceof net.minecraft.world.entity.animal.frog.Tadpole)
+                || reader.level() != level || !reader.entityTags().contains(marker(phase()))) return null;
+        var reservation = FullFinishingServices.currentReservation(level.getServer());
+        if (reservation == null || reservation.stage().kind() != ChunkStageKind.FULL_FINISH
+                || OwnershipContext.current().isEmpty() || !reservation.owns(reader))
+            throw new IllegalStateException("saved Shulker collision has no active FULL_FINISH reservation");
+        ChunkPos source = new ChunkPos(reservation.stage().work().lifecycle().chunkKey().x(),
+                reservation.stage().work().lifecycle().chunkKey().z());
+        ChunkPos target = new ChunkPos(position.getX() >> 4, position.getZ() >> 4);
+        if (!CHUNKS.contains(source.pack()) || !CHUNKS.contains(target.pack()) || source.equals(target))
+            return null;
+        var view = (FullInputView) level.getChunkSource().chunkMap;
+        var sourceHolder = view.phoenium$visibleInput(source.pack());
+        var targetHolder = view.phoenium$visibleInput(target.pack());
+        var runtime = dev.phoenium.Phoenium.liveRuntime().fullRegistration(level);
+        var sourceGraph = runtime.findGraph(sourceHolder).orElseThrow(
+                () -> new IllegalStateException("saved Shulker collision source graph missing: " + source));
+        require(sourceGraph.prepared().isPresent(), "saved Shulker source graph lost PREPARED state");
+        require(sourceGraph.finishing.stage().equals(reservation.stage()), "saved Shulker source stage changed");
+        require(sourceGraph.inputReceipt() != null, "saved Shulker source receipt missing");
+        var retained = sourceGraph.inputReceipt().targets().stream().filter(input -> input.position().equals(target))
+                .findFirst().orElseThrow(() -> new IllegalStateException("saved Shulker target receipt missing"));
+        // A later source may legitimately consume a now-published peer. It is not private proof.
+        if (retained.availability() != FullInitializedInputs.Availability.PREPARED
+                || retained.publicSlot() == null || retained.publicSlot().isDone()) return null;
+        require(retained.purposes().contains(FullInitializedInputs.Purpose.COLLISION)
+                && retained.purposes().contains(FullInitializedInputs.Purpose.DYNAMIC_SHAPE_MUTATION),
+                "saved Shulker target lacks exact collision/IMMEDIATE purposes");
+        require(retained.holder() == targetHolder && retained.actual() != null
+                && retained.actual().getBlockState(position) == state,
+                "saved Shulker collision target identity changed");
+        require(((FullHolderEvidence) targetHolder).phoenium$futures().get(ChunkStatus.FULL.getIndex()) == retained.publicSlot(),
+                "saved Shulker target public slot changed");
+        return new CollisionScope(source, target, position, reader.getUUID(), retained);
+    }
+
+    /** Observe the private result while its exact query is still active, before getChunkAt returns. */
+    public static void privateQueryReturned(java.util.concurrent.CompletableFuture<?> selected,
+                                             net.minecraft.server.level.ChunkResult<ChunkAccess> result) {
+        CollisionScope scope = COLLISION_SCOPE.get();
+        if (scope == null || result == null) return;
+        require(FullFinishingQueries.usesPrivateResult() && selected == scope.retained.publicSlot()
+                && result.orElse(null) == scope.retained.actual() && !selected.isDone(),
+                "saved Shulker private query did not consume its exact pending input");
+        scope.privateReturned = true;
+    }
+
+    public static void recordImmediateShulker(LevelChunk chunk, BlockPos position,
+                                               LevelChunk.EntityCreationType creation, BlockEntity result) {
+        if (!Boolean.getBoolean("phoenium.full.authoritative") || phase().isEmpty()
+                || creation != LevelChunk.EntityCreationType.IMMEDIATE || !SHULKER_POSITIONS.contains(position)
+                || !(result instanceof net.minecraft.world.level.block.entity.ShulkerBoxBlockEntity)) return;
+        CollisionScope scope = COLLISION_SCOPE.get();
+        if (scope == null || !scope.target.equals(chunk.getPos()) || !scope.position.equals(position)
+                || !scope.privateReturned || chunk != scope.retained.actual() || OwnershipContext.current().isEmpty()
+                || !FullFinishingServices.finishing()) return;
+        scope.immediateSeen = true;
+        immediateShulkerReads++;
+        System.out.println("PHOENIUM_FULL_SHULKER_IMMEDIATE phase=" + phase() + " chunk=" + chunk.getPos()
+                + " position=" + position + " owner=true finishing=true privateResult=true count=" + immediateShulkerReads);
+    }
+
     public static void beginVaultDirtyOutput(ServerLevel level, BlockPos position, BlockState state) {
         if (!Boolean.getBoolean("phoenium.test.vaultDiagnostic") || !SAVED_VAULT.equals(position)) return;
         if (VAULT_SCOPE.get() != null) throw new IllegalStateException("nested saved vault dirty-output scope");
@@ -203,7 +315,8 @@ public final class FullRuntimeAcceptanceProbe implements DedicatedServerModIniti
                     String result = "PHOENIUM_VAULT_DIAGNOSTICS ticks=" + vaultTicks
                             + " dirtyAttempts=" + vaultDirtyAttempts + " dirtyCompleted=" + vaultDirtyCompleted
                             + " neighborReads=" + vaultNeighborReads + " crossChunkReads=" + vaultCrossChunkReads
-                            + " ownerScopes=" + vaultOwnerScopes + " ordinaryScopes=" + vaultOrdinaryScopes;
+                            + " ownerScopes=" + vaultOwnerScopes + " ordinaryScopes=" + vaultOrdinaryScopes
+                            + " scopeCleared=" + (VAULT_SCOPE.get() == null);
                     context.getSource().sendSuccess(() -> Component.literal(result), false); return 1;
                 }))));
     }
@@ -229,11 +342,25 @@ public final class FullRuntimeAcceptanceProbe implements DedicatedServerModIniti
         }
         require(frogs == 4 && villagers == 4, "real entity inventory differs: frogs=" + frogs + " villagers=" + villagers);
         require(BED_CHECKS.size() == 4, "saved bed check witness missing: " + BED_CHECKS.size());
+        require(collisionQueries > 0, "original FULL collision query witness missing");
+        require(immediateShulkerReads > 0, "original ShulkerBox IMMEDIATE witness missing");
         require(!dev.phoenium.Phoenium.liveRuntime().diagnostics().toLogLine().contains("barriers=1"), "live scheduler barrier");
         return "FULL_LIVE_OK phase=" + phase() + " sources=4 savedReaders=8 richVillagers=4 frogs=4 teams=true"
-                + " separatePublication=true bedChecks=" + BED_CHECKS.size() + " privateNeighbors=" + privateNeighbors + " origin="
+                + " separatePublication=true bedChecks=" + BED_CHECKS.size() + " collisionQueries=" + collisionQueries
+                + " immediateShulkerReads=" + immediateShulkerReads + " privateNeighbors=" + privateNeighbors + " origin="
                 + (phase().equals("fresh") ? "ADMITTED_PROTO" : "ADMITTED_IMPOSTER");
     }
     private static void require(boolean condition, String reason) { if (!condition) throw new IllegalStateException(reason); }
     private record VaultDirtyScope(ServerLevel level, BlockPos position, long tick, BlockState state) { }
+    private static final class CollisionScope {
+        final ChunkPos source, target;
+        final BlockPos position;
+        final UUID entity;
+        final FullInitializedInputs.Target retained;
+        boolean privateReturned, immediateSeen;
+        CollisionScope(ChunkPos source, ChunkPos target, BlockPos position, UUID entity, FullInitializedInputs.Target retained) {
+            this.source = source; this.target = target; this.position = position.immutable();
+            this.entity = entity; this.retained = retained;
+        }
+    }
 }

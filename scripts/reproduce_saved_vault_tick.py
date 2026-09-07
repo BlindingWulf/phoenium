@@ -107,6 +107,13 @@ try:
             process.wait()
 except BaseException as exception:
     failure = repr(exception)
+    if process is not None and process.poll() is None:
+        try:
+            process.stdin.write("stop\n")
+            process.stdin.flush()
+            process.wait(timeout=30)
+        except (BrokenPipeError, subprocess.TimeoutExpired, OSError):
+            pass
 finally:
     if process is not None and process.poll() is None:
         process.kill()
@@ -117,7 +124,11 @@ summary_lines = [line for line in text.splitlines() if "PHOENIUM_VAULT_DIAGNOSTI
 summary = summary_lines[-1] if summary_lines else ""
 counter_values = {key: int(value) for key, value in re.findall(r"\b(\w+)=(\d+)\b", summary)}
 cleanup_lines = [line for line in text.splitlines() if "PHOENIUM_CHUNK_BINDING STOPPED" in line]
-zero_barriers = any(re.search(r"\bbarriers=0\b", line) for line in cleanup_lines)
+stage2_stopped_lines = [line for line in text.splitlines() if "PHOENIUM_STAGE2 stopped" in line]
+stage2_healthy = bool(stage2_stopped_lines) and all(
+    re.search(r"\b%s=0\b" % key, line) for line in stage2_stopped_lines for key in
+    ("barriers", "ownershipViolations", "fallback"))
+zero_barriers = stage2_healthy and any(re.search(r"\bbarriers=0\b", line) for line in cleanup_lines)
 zero_cleanup = bool(cleanup_lines) and all(
     re.search(r"\b%s=0\b" % key, line) for line in cleanup_lines for key in
     ("retainedGraphs", "returnedIndex", "poiIndex", "custodyEntries", "workEntries", "lifecycleEntries"))
@@ -129,17 +140,24 @@ manifest.update({
     "vaultNeighborObserved": "PHOENIUM_VAULT_NEIGHBOR" in text,
     "diagnosticSummary": summary_lines,
     "vaultCounters": counter_values,
-    "positiveChosenVault": counter_values.get("dirtyCompleted", 0) > 0
+    "exactDirtyLifecycle": counter_values.get("dirtyAttempts", 0) > 0
+        and counter_values.get("dirtyAttempts") == counter_values.get("dirtyCompleted"),
+    "scopeCleared": "scopeCleared=true" in summary,
+    "positiveChosenVault": counter_values.get("dirtyAttempts", 0) > 0
+        and counter_values.get("dirtyAttempts") == counter_values.get("dirtyCompleted")
+        and counter_values.get("dirtyCompleted", 0) > 0
         and counter_values.get("crossChunkReads", 0) > 0
         and counter_values.get("ownerScopes", 0) > 0
         and counter_values.get("ordinaryScopes", 0) > 0,
     "tickingFailureObserved": "Ticking block entity" in text,
     "cleanupLines": cleanup_lines,
+    "stage2StoppedLines": stage2_stopped_lines,
+    "stage2Healthy": stage2_healthy,
     "zeroBarriers": zero_barriers,
     "zeroCleanupResidue": zero_cleanup,
     "cleanShutdown": process is not None and process.returncode == 0 and "Stopping the server" in text
         and "Encountered an unexpected exception" not in text and "Exception stopping the server" not in text
-        and zero_barriers and zero_cleanup,
+        and zero_barriers and zero_cleanup and stage2_healthy,
     "serverLog": str(log),
 })
 (OUTPUT / "manifest.json").write_text(json.dumps(manifest, indent=2))
