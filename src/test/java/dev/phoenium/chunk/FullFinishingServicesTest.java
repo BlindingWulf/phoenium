@@ -157,15 +157,31 @@ final class FullFinishingServicesTest {
     @Test void largeFiniteScoreboardFootprintIsLazyAndCanMakeProgress() throws Exception {
         MinecraftServer server = stub(MinecraftServer.class, List.of());
         var service = FullFinishingServices.forServer(server); Object holder = new Object(); var stage = stage();
-        var reservation = service.tryReserve(stage, holder, List.of(), Integer.MAX_VALUE / 4);
+        var reservation = service.tryReserve(stage, holder, List.of(), Integer.MAX_VALUE);
         assertNotNull(reservation, "a finite operation must not be refused by hypothetical eager journal or catch-up capacity");
-        assertTrue(reservation.valid(stage, holder)); reservation.close();
+        assertTrue(reservation.valid(stage, holder));
+        RegionId region = new RegionId(stage.work().lifecycle().world(), "large-footprint-owner");
+        var manager = new RegionLeaseManager(region);
+        try (reservation) {
+            try (var lease = manager.acquire();
+                 var owner = OwnershipContext.enter(region, lease.epoch(), OperationCategory.OWNER_TASK);
+                 var claim = new ChunkStageClaim(new ChunkCustodyModel(), stage, new RegionRoute(region, new TopologyGeneration(1), new OwnerEpoch(0)), lease, null);
+                 var full = reservation.enter(claim);
+                 var reached = service.scoreboard.begin("finite-member", "finite-team")) {
+                service.scoreboard.primitive(); reached.result(true);
+            }
+        }
+        assertEquals(1L, service.scoreboard.measurements().get("committed"));
+        assertEquals(1L, service.scoreboard.measurements().get("completed"));
+        assertEquals(0L, service.measurements().get("reservations"));
+        assertFalse(manager.hasActiveLease());
         FullFinishingServices.stopped(server);
     }
-    @Test void scoreboardFootprintOverflowFailsBeforeInstallingAnyReservation() throws Exception {
+    @Test void negativeScoreboardFootprintFailsBeforeInstallingAnyReservation() throws Exception {
         MinecraftServer server = stub(MinecraftServer.class, List.of());
         var service = FullFinishingServices.forServer(server);
-        assertThrows(ArithmeticException.class, () -> service.tryReserve(stage(), new Object(), List.of(), Integer.MAX_VALUE));
+        assertThrows(IllegalArgumentException.class, () -> service.tryReserve(stage(), new Object(), List.of(), -1));
+        assertThrows(IllegalArgumentException.class, () -> service.scoreboard.reserve(-1));
         assertEquals(0L, service.measurements().get("reservations"));
         FullFinishingServices.stopped(server);
     }

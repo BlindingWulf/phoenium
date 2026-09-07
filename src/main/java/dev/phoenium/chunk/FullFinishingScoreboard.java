@@ -99,17 +99,18 @@ public final class FullFinishingScoreboard {
     }
     /** Immutable directory cut and the finite maximum footprint are fixed before regional entry. */
     public Operation reserve(int occurrences) {
-        int slots = Math.max(4, Math.multiplyExact(occurrences, 4));
+        if (occurrences < 0) throw new IllegalArgumentException("negative scoreboard occurrence capacity");
+        long slots = Math.max(4L, Math.multiplyExact((long) occurrences, 4L));
         var recipients = List.copyOf(order);
         return new Operation(directoryRevision, slots, recipients);
     }
     public final class Operation {
         private final long directoryCut;
-        private final int capacity;
+        private final long capacity;
         private final List<Membership> entries = new ArrayList<>();
         private final List<Session> recipients;
         private boolean closed;
-        private Operation(long cut, int slots, List<Session> recipients) {
+        private Operation(long cut, long slots, List<Session> recipients) {
             directoryCut = cut; capacity = slots; this.recipients = recipients;
         }
         public boolean valid() { return !closed && directoryRevision == directoryCut; }

@@ -99,7 +99,7 @@ public final class FullRegistrationServerProbe implements DedicatedServerModInit
             services.childShutdownReentryObservesTheSameTerminalServiceAndCannotResurrectIt();
             services.productionMixinConfigurationInstallsTheD1AndWorldLifecycleAdapters();
             services.largeFiniteScoreboardFootprintIsLazyAndCanMakeProgress();
-            services.scoreboardFootprintOverflowFailsBeforeInstallingAnyReservation();
+            services.negativeScoreboardFootprintFailsBeforeInstallingAnyReservation();
             var facts = new FullEntityFactsTest();
             facts.constructorOwnsItsAliasBeforeTheFirstSetPosRoutingCallbackWithoutPublishingFacts();
             facts.firstNonnullWorldWinsBeforeOriginalClassFilteringAndUsesSuppliedOrder();
