@@ -10,10 +10,11 @@ parallel OFF, disposable PhoeniumTest0 only. No push/release/PASS tag.
 
 Recovery `39105d25f879795dcd178fba741f1b59b2d7c782` preserves all interrupted dirty source
 as UNVERIFIED. Historical `a7b40743` / 419 tests are not current proof. Source and failed
-worlds/logs retained; no reset/stash. Main code checkpoint `267f5a8` includes PARTIAL
-same-world selectors/entity NBT, lazy/nested fixes, reviewed bed setup and saved vault
-diagnostics. `b423f63` updates the chunk handoff. No final clean build or same-artifact
-complete acceptance yet.
+worlds/logs retained; no reset/stash. Main production checkpoint `9bcb6e2` includes PARTIAL
+same-world selectors/entity NBT and interpreted saved-self CustomName discovery.
+Test witness `481d5c5` proves private collision access at its actual call point; reviewed
+Luna script cleanup/startup/assertion fixes are integrated through `b33600f`. No final
+clean build or same-artifact complete acceptance yet.
 
 Lead retains selected Astra/Max and existing service_tier="default". Supported spawn
 fields selected Sol as gpt-5.6-sol/high and Luna as gpt-5.6-luna/high, fork_turns=none.
@@ -53,7 +54,10 @@ Astra workers, tier override, API keys, account changes or purchases.
   original predicate/data-source serializers, exact result, caught failure and next-source
   scope recovery; 62 tests / 5 suites green. Registered predicate= is explicitly unresolved
   because it can read registry-derived block/biome/structure/light/environment context.
-  Recursive interpreted block/entity dependency producers and broader selectors remain open.
+  `9bcb6e2` / Sol `4d2b558` adds interpreted saved-self CustomName dependency discovery,
+  nested storage and alias revision invalidation, preserving the original serializer.
+  61 tests / 3 suites plus registration harness green; not yet installed at this source.
+  Pending block-entity tags, live interpreted field producers and broader selectors remain open.
 * Worldgen `eba8d6f`: only original moon getter uses existing chunk event loop and named
   environment turn, worker waits owner-free. Original spawn body/RNG stays in place.
   worldgen-environment-12: 17 tests / 2 suites green.
@@ -90,11 +94,13 @@ Production SHA256 9EA68C2D04D8867B71F96625BD83E3E9ABC01994D06608FED51AFCAAD5E9D3
 probe SHA256 479575FC30FDCDE13138264393896E4145A1AC620A1101B2D8A33E8CE8B5E957.
 Production JAR contains zero acceptance/diagnostic classes.
 
-Later Luna installed PASS at transform-20260907-174445 validates `664ab21`: finishing36 /
-context7, sameWorldSelector=true; registration8/input21/published18 unchanged, child0 and
-zero barriers/retained records. Production SHA256
-532E89071FF9C6CA4868D6FC78F6BEF93A27D248B7990E1F40F3EC08AB605B2D. Current production
-probe after `47e263b` expects finishing42/context13; Luna must update its strict parser.
+Latest Luna installed PASS at transform-20260907-181012 validates `47e263b`: finishing42 /
+context13, sameWorldEntityNbt/lazyBlockEntity/filteredSelfSelector/nestedSelector=true;
+registration8/input21/published18, child0, 529 EMPTY registrations/captures/publications,
+zero barriers and all retained records0. Production SHA256
+F3CE553C1DAAB0EEDF8BF25F801A0BB0F32DAEA20619E29C0B311D4C4C543A5B.
+Current main after `9bcb6e2` expects finishing45/context16 and interpretedSavedCustomName.
+Luna deliberately holds the earlier F3CE artifact through its live diagnosis campaign.
 
 Luna test-only bed setup `7835bc0`/`8a6711d`/`bcf1f5d`/`2ea1868` is integrated through
 `fc33f40` and reviewed against exact pinned command translation strings:
@@ -103,6 +109,18 @@ support routes, pin only one exact bed chunk, verify query/actual readiness acro
 reload and require original bed callback on four villagers. Focused harness/client
 compile green. No production default route, broad forceload or private FULL tick grant.
 General new distant requests during owned ticks remain an explicit coverage limit.
+
+`481d5c5` correlates the exact saved-reader UUID, collision scope, privateJoin return,
+retained target identity and original IMMEDIATE shulker getter before counting a completed
+shape call. Both border ends have original nonair fixture blocks. Actual Luna runs
+live-1788823152361 and live-1788823230045 each show eight completed private collision/
+IMMEDIATE witnesses across both pairs, public FULL still pending. Main harness/client
+compile passed (witness-compile-24). Fresh inventory assertion then failed frogs0/villagers0;
+no reload. Diagnostic run3230045 identifies the exact failure before four later bed checks.
+Minecraft queues ChunkHolder's full-status promotion after public FULL, while getAllEntities
+enumerates only visibleEntityStorage. Luna is adding a test-only pending check using original
+areEntitiesActuallyLoadedAndTicking for all four forced chunks, retaining exact inventory
+assertions once ready and waiting for the original first bed callback. No manual tick/pump.
 
 ## Vault evidence and next work
 
@@ -120,6 +138,19 @@ Its log fails at VaultBlockEntity.Server.tick → setChanged → updateNeighbour
 run/full-resume/session-20260907/vault-saved-inventory.json. Use a disposable copy or exact
 positive original vault tick/dirty-neighbor witness; never mutate preserved failed save.
 
+Positive saved-vault run: Luna run/nonself-input-decision/saved-vault-20260907-182904,
+artifact F3CE553C... above, copied world STAGE3-SAVED-VAULT-1788823744188, seed
+-663839099974294500. Actual original boundary vault [143,-31,28], chunk[8,1], retained NBT
+recorded in manifest; source inventory SHA256
+ED127C3D7D38255DE2BBC1D148958CDAF18886650A23A3CB5375BC9702C99353.
+598 original ticks, dirtyAttempts=dirtyCompleted=30, neighborReads120/crossChunkReads30,
+ownerScopes=ordinaryScopes=30, scopeCleared=true. Child0, Stage2 STOPPED/STOPPING healthy,
+fallback/ownershipViolations/barriers0; 112 chunk registrations/captures/publications and
+all retained records0. Source failed save untouched. Earlier failed/no-positive attempts
+preserved: 181221 omitted fixture support and timed out; 182128 had healthy startup but
+wrong target [2272,7,-496] (lead confused block coordinates with chunk coordinates).
+Luna's corrected target commit is pending integration, then final same-artifact rerun.
+
 1. Sol: block-NBT IMMEDIATE creation, filtered self, nested selector scopes, recursive
    interpreted block/entity contexts. First three are now integrated; active work is typed
    versioned dependency-only facts for audited interpreted sources, including every
@@ -130,13 +161,10 @@ positive original vault tick/dirty-neighbor witness; never mutate preserved fail
    STAGE3_FULL_SELECTOR_CONTEXT_DECISION.md; async user question unanswered. D1-F forbids
    arbitrary foreign calls/cross-dimension same-world convergence. Do not enable the
    proposed all-or-release bundle without an actual answer.
-3. Luna: integrate stable root/Sol source and current probe counters; installed and existing
-   FULL fresh/reload/client campaign, positive vault proof. Vault `de89988`/`248ee11`/
-   `137fa69` is integrated: disposable preserved-save copy, exact original dirty-output
-   scope and successful cross-chunk reads. Pending review correction adds shared Stage2
-   health, not only chunk counters. Live FULL witness `010e5f9`/`6e3eaf8` is NOT integrated:
-   its finishing=false assertion was wrong for saved conversion and must be inverted,
-   scoped to exact root/source/retained private target with public FULL still pending.
+3. Luna: finish the existing FULL fresh/reload/client campaign on F3CE with actual entity
+   visibility readiness. Positive vault proof now exists; integrate corrected target and
+   readiness checkpoint, then update to stable root/Sol source and exact probe counters.
+   One live owner only. Test-only obsolete CollisionMixin was never added to main.
 4. Final clean build, installed probes and client campaign must share recorded production
    JAR; final diff review, acceptance ledger and verified commit. No optimistic PASS.
 
