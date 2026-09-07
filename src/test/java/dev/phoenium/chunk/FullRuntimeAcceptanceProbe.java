@@ -17,6 +17,8 @@ import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.ai.attributes.Attributes;
 import net.minecraft.world.entity.npc.villager.Villager;
 import net.minecraft.world.entity.animal.frog.Frog;
+import net.minecraft.world.scores.PlayerTeam;
+import net.minecraft.world.scores.Scoreboard;
 import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.Blocks;
@@ -46,6 +48,7 @@ public final class FullRuntimeAcceptanceProbe implements DedicatedServerModIniti
     private static int vaultNeighborReads, vaultCrossChunkReads, vaultOwnerScopes, vaultOrdinaryScopes;
     private static final ThreadLocal<VaultDirtyScope> VAULT_SCOPE = new ThreadLocal<>();
     private static int richVillagers, privateNeighbors;
+    private static int scoreboardAdds, scoreboardRemoves;
     public static String phase() { return System.getProperty("phoenium.test.fullFixturePhase", ""); }
     private static boolean target(ChunkPos pos) { return CHUNKS.contains(pos.pack()); }
     private static String marker(String phase) { return "phoenium_full_" + phase; }
@@ -145,6 +148,12 @@ public final class FullRuntimeAcceptanceProbe implements DedicatedServerModIniti
         require(FullFinishingServices.finishing(), "fixture saved reader did not execute inside authoritative FULL");
         String id = entity.entityTags().stream().filter(s -> s.startsWith(marker(phase()) + "_")).findFirst().orElseThrow();
         require(READERS.merge(id, 1, Integer::sum) == 1, "saved reader replayed: " + id);
+        PlayerTeam team = entity.getTeam();
+        System.out.println("PHOENIUM_FULL_ENTITY_LOAD_RETURN phase=" + phase() + " id=" + id
+                + " entity=" + entity.getUUID() + " type=" + entity.getType() + " team="
+                + (team == null ? "<none>" : team.getName()) + " teamIdentity="
+                + (team == null ? 0 : System.identityHashCode(team)) + " tags=" + entity.entityTags()
+                + " sourceReader=" + (SAVED_READER.get() == null ? "<none>" : SAVED_READER.get().getUUID()));
         if (entity instanceof Villager villager) {
             require(SAVED_BED.equals(villager.getSleepingPos().orElse(null)),
                     "saved villager sleeping position lost: " + villager.getSleepingPos());
@@ -154,6 +163,47 @@ public final class FullRuntimeAcceptanceProbe implements DedicatedServerModIniti
                     && villager.getInventory().getItem(0).getCount() == 7, "rich saved villager fields lost");
             richVillagers++;
         }
+    }
+
+    public static void scoreboardAddBefore(Scoreboard scoreboard, String member, PlayerTeam team) {
+        if (!Boolean.getBoolean("phoenium.full.authoritative") || phase().isEmpty()) return;
+        scoreboardAdds++;
+        System.out.println("PHOENIUM_FULL_SCOREBOARD_ADD phase=" + phase() + " member=" + member
+                + " team=" + team.getName() + " teamIdentity=" + System.identityHashCode(team)
+                + " result=before finishing=" + FullFinishingServices.finishing() + " sourceReader="
+                + (SAVED_READER.get() == null ? "<none>" : SAVED_READER.get().getUUID()));
+    }
+
+    public static void scoreboardAddReturn(Scoreboard scoreboard, String member, PlayerTeam team, boolean result) {
+        if (!Boolean.getBoolean("phoenium.full.authoritative") || phase().isEmpty()) return;
+        System.out.println("PHOENIUM_FULL_SCOREBOARD_ADD_RETURN phase=" + phase() + " member=" + member
+                + " team=" + team.getName() + " teamIdentity=" + System.identityHashCode(team)
+                + " result=" + result + " finishing=" + FullFinishingServices.finishing() + " sourceReader="
+                + (SAVED_READER.get() == null ? "<none>" : SAVED_READER.get().getUUID()));
+    }
+
+    public static void scoreboardRemoveBefore(Scoreboard scoreboard, String member, PlayerTeam team) {
+        if (!Boolean.getBoolean("phoenium.full.authoritative") || phase().isEmpty()) return;
+        scoreboardRemoves++;
+        System.out.println("PHOENIUM_FULL_SCOREBOARD_REMOVE phase=" + phase() + " member=" + member
+                + " team=" + team.getName() + " teamIdentity=" + System.identityHashCode(team)
+                + " result=before finishing=" + FullFinishingServices.finishing() + " sourceReader="
+                + (SAVED_READER.get() == null ? "<none>" : SAVED_READER.get().getUUID()));
+    }
+
+    public static void scoreboardRemoveReturn(Scoreboard scoreboard, String member, PlayerTeam team) {
+        if (!Boolean.getBoolean("phoenium.full.authoritative") || phase().isEmpty()) return;
+        System.out.println("PHOENIUM_FULL_SCOREBOARD_REMOVE_RETURN phase=" + phase() + " member=" + member
+                + " team=" + team.getName() + " teamIdentity=" + System.identityHashCode(team)
+                + " result=completed finishing=" + FullFinishingServices.finishing() + " sourceReader="
+                + (SAVED_READER.get() == null ? "<none>" : SAVED_READER.get().getUUID()));
+    }
+
+    public static void scoreboardRemoveSingleReturn(Scoreboard scoreboard, String member, boolean result) {
+        if (!Boolean.getBoolean("phoenium.full.authoritative") || phase().isEmpty()) return;
+        System.out.println("PHOENIUM_FULL_SCOREBOARD_REMOVE_SINGLE_RETURN phase=" + phase() + " member=" + member
+                + " result=" + result + " finishing=" + FullFinishingServices.finishing() + " sourceReader="
+                + (SAVED_READER.get() == null ? "<none>" : SAVED_READER.get().getUUID()));
     }
 
     /** Test-only witness that the original LivingEntity bed lookup consumed the saved position. */
