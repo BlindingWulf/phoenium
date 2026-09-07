@@ -2,6 +2,7 @@ package dev.phoenium.acceptance;
 
 import java.util.concurrent.CompletableFuture;
 import dev.phoenium.diagnostics.FullChunkLoadCounterDiagnostics;
+import dev.phoenium.diagnostics.FullSpawnDiagnosticState;
 import net.minecraft.server.level.ChunkLoadCounter;
 import net.minecraft.server.network.config.PrepareSpawnTask;
 import org.spongepowered.asm.mixin.Mixin;
@@ -37,7 +38,8 @@ abstract class FullRuntimeAcceptancePrepareSpawnMixin {
                 + " spawnPosition=" + futureState(spawnPosition)
                 + " chunkLoad=" + futureState(chunkLoadFuture)
                 + " counter=" + (chunkLoadCounter instanceof FullChunkLoadCounterDiagnostics diagnostics
-                        ? diagnostics.phoenium$diagnosticSummary() : "unavailable");
+                        ? diagnostics.phoenium$diagnosticSummary() : "unavailable")
+                + " targetHolder=" + FullSpawnDiagnosticState.summary();
         if (current.equals(phoenium$lastDiagnostic)) return;
         phoenium$lastDiagnostic = current;
         System.out.println(current);

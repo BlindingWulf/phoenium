@@ -1,6 +1,7 @@
 package dev.phoenium.acceptance;
 
 import java.util.concurrent.CompletableFuture;
+import dev.phoenium.diagnostics.FullSpawnDiagnosticState;
 import net.minecraft.server.level.ChunkHolder;
 import net.minecraft.server.level.ChunkMap;
 import net.minecraft.server.level.ServerChunkCache;
@@ -25,6 +26,7 @@ abstract class FullRuntimeAcceptanceSpawnSearchMixin {
     @Inject(method = "addTicketAndLoadWithRadius", at = @At("HEAD"))
     private void phoenium$spawnSearchHead(TicketType type, ChunkPos pos, int radius,
                                            CallbackInfoReturnable<CompletableFuture<?>> callback) {
+        if (type == TicketType.SPAWN_SEARCH) FullSpawnDiagnosticState.record(pos, null);
         int sequence = ++phoenium$spawnSearches;
         if (sequence > 24 && sequence % 100 != 0) return;
         System.out.println("PHOENIUM_FULL_SPAWN_SEARCH_HEAD sequence=" + sequence + " type=" + type
@@ -43,6 +45,7 @@ abstract class FullRuntimeAcceptanceSpawnSearchMixin {
                 + ",full=" + holder.getFullStatus() + ",ticket=" + holder.getTicketLevel()
                 + ",futures=" + futureStates(holder);
         CompletableFuture<?> future = callback.getReturnValue();
+        FullSpawnDiagnosticState.record(pos, holder);
         System.out.println("PHOENIUM_FULL_SPAWN_SEARCH sequence=" + sequence + " pos=" + pos
                 + " radius=" + radius + " future=" + futureState(future) + " holder=" + holderState);
     }
