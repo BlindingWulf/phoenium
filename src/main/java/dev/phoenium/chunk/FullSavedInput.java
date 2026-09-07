@@ -19,7 +19,7 @@ public final class FullSavedInput {
             this(path, type, x, y, z, age, contextualDimensions, FullSavedServicesFacts.EMPTY);
         }
     }
-    public record Snapshot(long revision, List<EntityFact> entities, int payloadBytes, String unmet) { }
+    public record Snapshot(long revision, List<EntityFact> entities, long payloadBytes, String unmet) { }
     /** Normal scheduling allowance, not a limit on valid saved data. Oversized operations
      * use the input scheduler's single separately charged expansion slot. */
     public static final int MAX_ENTITIES = 4096, MAX_DEPTH = 512, MAX_FACT_BYTES = 64 * 1024;
@@ -45,23 +45,22 @@ public final class FullSavedInput {
         paths.clear();
         var facts = new ArrayList<EntityFact>();
         String unmet = null;
-        int[] bytesUsed = {0};
         try {
-            for (int i = 0; i < roots.size(); i++) visit(roots.get(i), "root[" + i + "]", 0, facts, bytesUsed);
+            for (int i = 0; i < roots.size(); i++) visit(roots.get(i), "root[" + i + "]", 0, facts);
         } catch (Limit | ChunkProtocolException limit) { unmet = limit.getMessage(); facts.clear(); }
-        int bytes = facts.stream().mapToInt(f -> 80 + 2 * (f.path.length() + f.type.length()) + f.services.payloadBytes()).sum();
+        long bytes = 0;
+        for (var fact : facts) bytes = Math.addExact(bytes, factBytes(fact));
         Snapshot next = new Snapshot(revision, List.copyOf(facts), bytes, unmet);
         snapshot = next;
         return next;
     }
-    private void visit(CompoundTag tag, String path, int depth, List<EntityFact> facts, int[] bytesUsed) {
+    private void visit(CompoundTag tag, String path, int depth, List<EntityFact> facts) {
         if (depth > MAX_DEPTH) throw new Limit("saved root/passenger structure exceeds the serialized NBT depth limit");
         FullSavedCollections.watch(tag, this);
         paths.put(tag, path);
         tag.getList("Pos").ifPresent(pos -> FullSavedCollections.watch(pos, this));
         String type = tag.getStringOr("id", "");
         FullSavedServicesFacts serviceFacts = FullSavedServicesFacts.capture(tag, type, this);
-        bytesUsed[0] += 80 + 2 * (path.length() + type.length()) + serviceFacts.payloadBytes();
         Vec3 pos = tag.read("Pos", Vec3.CODEC).orElse(Vec3.ZERO);
         facts.add(new EntityFact(path, type, clamp(pos.x, 3.0000512E7), clamp(pos.y, 2.0E7),
                 clamp(pos.z, 3.0000512E7), tag.getIntOr("Age", 0),
@@ -70,8 +69,12 @@ public final class FullSavedInput {
         tag.getList("Passengers").ifPresent(list -> FullSavedCollections.watch(list, this));
         for (int i = 0; i < passengers.size(); i++) {
             var child = passengers.getCompound(i);
-            if (child.isPresent()) visit(child.get(), path + "/passenger[" + i + "]", depth + 1, facts, bytesUsed);
+            if (child.isPresent()) visit(child.get(), path + "/passenger[" + i + "]", depth + 1, facts);
         }
+    }
+    private static long factBytes(EntityFact fact) {
+        long names = Math.addExact(fact.path.length(), fact.type.length());
+        return Math.addExact(Math.addExact(80L, Math.multiplyExact(2L, names)), fact.services.payloadBytes());
     }
     private static double clamp(double value, double limit) { return Math.max(-limit, Math.min(limit, value)); }
     private static final class Limit extends IllegalArgumentException { Limit(String reason) { super(reason); } }

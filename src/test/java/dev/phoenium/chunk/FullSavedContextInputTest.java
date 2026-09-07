@@ -10,6 +10,10 @@ import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.level.chunk.status.ChunkStatus;
 import net.minecraft.world.level.storage.CommandStorage;
 import net.minecraft.world.level.storage.SavedDataStorage;
+import net.minecraft.core.BlockPos;
+import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.level.block.entity.BeaconBlockEntity;
+import net.minecraft.network.chat.Component;
 import net.minecraft.resources.Identifier;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
@@ -50,6 +54,51 @@ class FullSavedContextInputTest {
             assertEquals(1L, f.runtime.measurements().get("publicationCalls"));
             assertEquals(0, f.world.localReads); assertFalse(f.barrier.tripped());
         } finally { f.stop(); FullFinishingServices.stopped(f.world.level.getServer()); data.close(); }
+        assertCleanup(f);
+    }
+
+    @ParameterizedTest @ValueSource(booleans = {false, true})
+    void productionBlockNbtRunsOriginalCoordinatesPathAndSerializerAgainstTheRetainedPreparedChunk(boolean reload) throws Exception {
+        var f = new FullRegistrationFixture(true); var position = new BlockPos(8, 8, 8);
+        var state = Blocks.BEACON.defaultBlockState();
+        f.input(ChunkPos.ZERO).getSection(0).setBlockState(8, 8, 8, state);
+        var beacon = new BeaconBlockEntity(position, state); beacon.setCustomName(Component.literal("retained block context"));
+        f.input(ChunkPos.ZERO).setBlockEntity(beacon);
+        try {
+            saved(f, ChunkPos.ZERO, reload, text(blockText(position)));
+            f.start(ChunkPos.ZERO, ChunkStatus.FULL); f.drain(); var graph = f.runtime.graph(f.holder(ChunkPos.ZERO));
+            assertEquals(FullInitializedInputs.State.SATISFIED, graph.inputEvaluation().state(), graph.inputEvaluation().obligation());
+            assertTrue(graph.inputReceipt().targets().stream().anyMatch(target -> target.position().equals(ChunkPos.ZERO)
+                    && target.purposes().contains(FullInitializedInputs.Purpose.BLOCK_CONTEXT)));
+            assertEquals(0, f.world.nextId);
+
+            FullAuthoritativeFinishingTest.context(f); f.runtime.inputs.changed(); f.drain();
+            assertInstanceOf(ChunkStageOutcome.Applied.class, graph.finishing.outcome().join());
+            assertInstanceOf(ChunkStageOutcome.Applied.class, graph.publication.outcome().join());
+            var display = assertInstanceOf(Display.TextDisplay.class, f.world.inserted.getFirst());
+            assertEquals("retained block context", display.getText().getString());
+            assertSame(beacon, graph.prepared().orElseThrow().actual().getBlockEntity(position));
+            assertFalse(f.barrier.tripped());
+        } finally { f.stop(); FullFinishingServices.stopped(f.world.level.getServer()); }
+        assertCleanup(f);
+    }
+
+    @Test void absentBlockNbtKeepsTheOriginalIsLoadedEmptyBranchWithoutDemandingAChunk() throws Exception {
+        var f = new FullRegistrationFixture(true); var absent = new BlockPos(1600, 8, 8);
+        var chunk = new ChunkPos(absent.getX() >> 4, absent.getZ() >> 4);
+        try {
+            saved(f, ChunkPos.ZERO, false, text(blockText(absent)));
+            f.start(ChunkPos.ZERO, ChunkStatus.FULL); f.drain(); var graph = f.runtime.graph(f.holder(ChunkPos.ZERO));
+            assertEquals(FullInitializedInputs.State.SATISFIED, graph.inputEvaluation().state(), graph.inputEvaluation().obligation());
+            var target = graph.inputReceipt().targets().stream().filter(input -> input.position().equals(chunk)).findFirst().orElseThrow();
+            assertEquals(FullInitializedInputs.Availability.ABSENT, target.availability());
+            assertFalse(f.holders.containsKey(chunk.pack()), "context observation must not demand an originally absent block chunk");
+
+            FullAuthoritativeFinishingTest.context(f); f.runtime.inputs.changed(); f.drain();
+            assertInstanceOf(ChunkStageOutcome.Applied.class, graph.finishing.outcome().join());
+            assertEquals("", assertInstanceOf(Display.TextDisplay.class, f.world.inserted.getFirst()).getText().getString());
+            assertFalse(f.holders.containsKey(chunk.pack())); assertFalse(f.barrier.tripped());
+        } finally { f.stop(); FullFinishingServices.stopped(f.world.level.getServer()); }
         assertCleanup(f);
     }
 
@@ -155,5 +204,10 @@ class FullSavedContextInputTest {
     private static CompoundTag text(CompoundTag contents) { var tag = tag(8, 8, 0); tag.putString("id", "minecraft:text_display"); tag.put("text", contents); return tag; }
     private static CompoundTag storageText(Identifier id) {
         var text = new CompoundTag(); text.putString("nbt", "message"); text.putString("storage", id.toString()); text.putBoolean("interpret", true); return text;
+    }
+    private static CompoundTag blockText(BlockPos position) {
+        var text = new CompoundTag(); text.putString("nbt", "CustomName");
+        text.putString("block", position.getX() + " " + position.getY() + " " + position.getZ());
+        text.putBoolean("interpret", true); return text;
     }
 }

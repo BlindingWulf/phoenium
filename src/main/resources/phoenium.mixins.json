@@ -36,6 +36,7 @@
     "FullSavedValueInputMixin",
     "FullCommandStorageMixin",
     "FullSavedTextReaderMixin",
+    "FullSavedBlockDataSourceMixin",
     "FullFinishingConnectionMixin",
     "FullFinishingScoreboardMixin",
     "FullFinishingScoreboardStateMixin",

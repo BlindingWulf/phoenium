@@ -34,7 +34,7 @@ final class FullSavedTextInputs {
         }
     }
     record Score(String name, String objective) { }
-    record NbtRead(Source source, String target, String path, boolean interpreting, int recursionDepth) { }
+    record NbtRead(Source source, String target, BlockPos block, String path, boolean interpreting, int recursionDepth) { }
     record Requirements(List<BlockPos> blocks, List<Selector> selectors, List<Score> scores, List<NbtRead> nbtReads,
                         String unmet) {
         Requirements {
@@ -49,11 +49,11 @@ final class FullSavedTextInputs {
         static final Saved EMPTY = new Saved(null, Vec2.ZERO, 0);
         private final Tag original;
         private final Vec2 rotation;
-        private final int payloadBytes;
-        Saved(Tag original, Vec2 rotation, int payloadBytes) {
+        private final long payloadBytes;
+        Saved(Tag original, Vec2 rotation, long payloadBytes) {
             this.original = original; this.rotation = rotation; this.payloadBytes = payloadBytes;
         }
-        int payloadBytes() { return payloadBytes; }
+        long payloadBytes() { return payloadBytes; }
     }
 
     private FullSavedTextInputs() { }
@@ -61,7 +61,7 @@ final class FullSavedTextInputs {
     static Saved capture(CompoundTag entity, FullSavedInput custodian) {
         Tag text = entity.get("text");
         if (text == null) return Saved.EMPTY;
-        int[] budget = {0, 0};
+        long[] budget = {0, 0};
         protect(text, custodian, 0, budget);
         entity.getList("Rotation").ifPresent(rotation -> {
             if (custodian != null) FullSavedCollections.watch(rotation, custodian);
@@ -70,24 +70,24 @@ final class FullSavedTextInputs {
         // Original Entity.setYRot ignores nonfinite values; setXRot additionally wraps/clamps.
         float yaw = Float.isFinite(saved.x) ? saved.x % 360.0F : 0.0F;
         float pitch = Float.isFinite(saved.y) ? Math.clamp(saved.y % 360.0F, -90.0F, 90.0F) : 0.0F;
-        return new Saved(text.copy(), new Vec2(pitch, yaw), budget[1] + 16);
+        return new Saved(text.copy(), new Vec2(pitch, yaw), Math.addExact(budget[1], 16L));
     }
 
-    static void protect(Tag tag, FullSavedInput source, int depth, int[] budget) {
+    static void protect(Tag tag, FullSavedInput source, int depth, long[] budget) {
         if (depth > FullSavedInput.MAX_DEPTH)
             throw new ChunkProtocolException("saved display component exceeds the serialized NBT depth limit");
-        ++budget[0];
-        budget[1] += 16;
+        budget[0] = Math.incrementExact(budget[0]);
+        budget[1] = Math.addExact(budget[1], 16L);
         if (tag instanceof CompoundTag compound) {
             if (source != null) FullSavedCollections.watch(compound, source);
             for (var entry : compound.entrySet()) {
-                budget[1] += 2 * entry.getKey().length();
+                budget[1] = Math.addExact(budget[1], Math.multiplyExact(2L, entry.getKey().length()));
                 protect(entry.getValue(), source, depth + 1, budget);
             }
         } else if (tag instanceof ListTag list) {
             if (source != null) FullSavedCollections.watch(list, source);
             for (Tag child : list) protect(child, source, depth + 1, budget);
-        } else budget[1] += tag.sizeInBytes();
+        } else budget[1] = Math.addExact(budget[1], tag.sizeInBytes());
     }
 
     static Requirements discover(FullSavedInput.EntityFact fact, HolderLookup.Provider registries) {
@@ -133,7 +133,7 @@ final class FullSavedTextInputs {
                 scores.add(new Score(score.name().map(CompilableString::source, name -> name), score.objective()));
             } else if (contents instanceof NbtContents read) {
                 read.separator().ifPresent(separator -> visit(separator, depth + 1));
-                Source source; String target;
+                Source source; String target; BlockPos blockPosition = null;
                 if (read.dataSource() instanceof BlockDataSource block) {
                     source = Source.BLOCK; target = block.coordinates().source();
                     var coordinates = block.coordinates().compiled();
@@ -147,13 +147,14 @@ final class FullSavedTextInputs {
                     if (!Double.isFinite(position.x) || !Double.isFinite(position.y) || !Double.isFinite(position.z)) {
                         unmet = fact.path() + ": display block coordinate is nonfinite"; return;
                     }
-                    blocks.add(BlockPos.containing(position));
+                    blockPosition = BlockPos.containing(position);
+                    blocks.add(blockPosition);
                 } else if (read.dataSource() instanceof EntityDataSource entity) {
                     source = Source.ENTITY; target = entity.selector().source(); selector(entity.selector(), Use.NBT);
                 } else if (read.dataSource() instanceof StorageDataSource storage) {
                     source = Source.STORAGE; target = storage.id().toString();
                 } else { unmet = fact.path() + ": display NBT source contributor unbound"; return; }
-                nbt.add(new NbtRead(source, target, read.nbtPath().source(), read.interpreting(), depth + 1));
+                nbt.add(new NbtRead(source, target, blockPosition, read.nbtPath().source(), read.interpreting(), depth + 1));
             } else if (contents instanceof ObjectContents object) {
                 object.fallback().ifPresent(fallback -> visit(fallback, depth + 1));
             } else if (!(contents instanceof PlainTextContents || contents instanceof KeybindContents)) {

@@ -6,6 +6,9 @@ import net.minecraft.resources.Identifier;
 import net.minecraft.world.entity.Display;
 import net.minecraft.world.level.storage.CommandStorage;
 import net.minecraft.world.level.storage.ValueInput;
+import net.minecraft.core.BlockPos;
+import net.minecraft.server.level.ServerLevel;
+import net.minecraft.world.level.block.entity.BlockEntity;
 
 /** Test plumbing invokes the preserved original body exactly once through production guards. */
 public final class FullSavedContextTestHooks {
@@ -29,5 +32,11 @@ public final class FullSavedContextTestHooks {
     public static void set(CommandStorage storage, Identifier id, CompoundTag contents) {
         FullCommandStorageInputs.set(storage, id, contents,
                 () -> original(CommandStorage.class, storage, "set", new Class<?>[]{Identifier.class, CompoundTag.class}, id, contents));
+    }
+    public static boolean blockLoaded(ServerLevel world, BlockPos position) {
+        return FullSavedContextInputs.blockLoaded(world, position, () -> world.isLoaded(position));
+    }
+    public static BlockEntity blockEntity(ServerLevel world, BlockPos position) {
+        return FullSavedContextInputs.blockEntity(world, position, () -> world.getBlockEntity(position));
     }
 }

@@ -76,9 +76,18 @@ final class FullSavedTextInputTest {
         assertEquals(List.of(new FullSavedTextInputs.Selector("@e[type=minecraft:sheep,distance=..4]", false, false, true),
                 new FullSavedTextInputs.Selector("Alice", false, true, false, FullSavedTextInputs.Use.SCORE)), result.selectors());
         assertEquals(List.of(new FullSavedTextInputs.Score("Alice", "visits")), result.scores());
-        assertEquals(List.of(new FullSavedTextInputs.NbtRead(FullSavedTextInputs.Source.BLOCK, "~16 ~ ~-32", "Items", false, 2),
-                new FullSavedTextInputs.NbtRead(FullSavedTextInputs.Source.STORAGE, "phoenium:display", "message", true, 2)), result.nbtReads());
+        assertEquals(List.of(new FullSavedTextInputs.NbtRead(FullSavedTextInputs.Source.BLOCK, "~16 ~ ~-32", new BlockPos(24, 8, -24), "Items", false, 2),
+                new FullSavedTextInputs.NbtRead(FullSavedTextInputs.Source.STORAGE, "phoenium:display", null, "message", true, 2)), result.nbtReads());
         assertEquals(0, f.nextId); assertTrue(f.inserted.isEmpty());
+    }
+
+    @Test void savedTextPayloadAccountingUsesLongAndRejectsExactOverflow() {
+        var large = new FullSavedTextInputs.Saved(null, Vec2.ZERO, (long) Integer.MAX_VALUE + 19);
+        var services = new FullSavedServicesFacts(null, null, null, null, null, large);
+        assertEquals((long) Integer.MAX_VALUE + 91, services.payloadBytes());
+        var overflow = new FullSavedTextInputs.Saved(null, Vec2.ZERO, Long.MAX_VALUE);
+        assertThrows(ArithmeticException.class,
+                () -> new FullSavedServicesFacts(null, null, null, null, null, overflow).payloadBytes());
     }
 
     @Test void localBlockCoordinatesMatchOriginalParsedCoordinatesAtNormalizedSavedRotation() throws Exception {

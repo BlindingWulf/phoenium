@@ -105,14 +105,23 @@ public final class FullRegistrationServerProbe implements DedicatedServerModInit
             facts.committedRemovalFactPrecedesOriginalCallbackFailureAndCannotBeRolledBack();
             facts.foreignSetterCannotBorrowTheScalarReadTurnAndFailureSurvivesCatch();
             facts.identityWriterInvalidatesUnenteredCutAndOldAliasRetainsItsOwnIdentity();
+            var contexts = new FullSavedContextInputTest();
+            contexts.directory = java.nio.file.Files.createTempDirectory("phoenium-full-storage-probe");
+            contexts.productionInterpretedStorageDiscoversRecursiveSourcesAndOriginalReaderKeepsTheirText(false);
+            contexts.directory = java.nio.file.Files.createTempDirectory("phoenium-full-storage-reload-probe");
+            contexts.productionInterpretedStorageDiscoversRecursiveSourcesAndOriginalReaderKeepsTheirText(true);
+            contexts.productionBlockNbtRunsOriginalCoordinatesPathAndSerializerAgainstTheRetainedPreparedChunk(false);
+            contexts.productionBlockNbtRunsOriginalCoordinatesPathAndSerializerAgainstTheRetainedPreparedChunk(true);
+            contexts.absentBlockNbtKeepsTheOriginalIsLoadedEmptyBranchWithoutDemandingAChunk();
             var completion = new FullAuthoritativeFinishingTest();
             completion.originalFinishingAndSeparatePublicationCompleteExactlyOnce(false);
             completion.originalFinishingAndSeparatePublicationCompleteExactlyOnce(true);
-            System.out.println("PHOENIUM_FULL_FINISHING_PROBE PASS cases=29 queryCases=13 serviceCases=7 d1Cases=7 publicationCases=2 "
+            System.out.println("PHOENIUM_FULL_FINISHING_PROBE PASS cases=34 queryCases=13 serviceCases=7 d1Cases=7 contextCases=5 publicationCases=2 "
                     + "originalFinishing=true separatePublication=true cyclicPreparedPair=true bothPairOrders=true "
                     + "proto=true inMemoryImposter=true diskReload=false originalDifficulty=true originalCollision=true "
                     + "originalShulkerImmediate=true originalLaterRegistration=true originalMovingPiston=true "
                     + "savedVillagerOriginalBiomeCacheAlias=true originalCachedAbsentBiomeFallback=true originalReadyAbsent=true caughtQueryBarrier=true "
+                    + "recursiveStorageContext=true retainedBlockNbt=true originalAbsentBlockBranch=true "
                     + "noPrivateCacheEntries=true claimedOperationRequired=true controlledWorldEndpoints=true "
                     + "controlledLowerGenerationOutputs=true javaagent=false");
         } catch (Throwable failure) {

@@ -6,9 +6,11 @@ import dev.phoenium.ownership.OwnershipContext;
 import java.util.*;
 import net.minecraft.commands.arguments.NbtPathArgument;
 import net.minecraft.nbt.NbtOps;
+import net.minecraft.core.BlockPos;
 import net.minecraft.network.chat.ComponentSerialization;
 import net.minecraft.resources.Identifier;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.entity.Display;
 import net.minecraft.world.level.storage.CommandStorage;
 import net.minecraft.world.level.storage.ValueInput;
@@ -42,7 +44,7 @@ public final class FullSavedContextInputs {
         private final List<AutoCloseable> consumers = new ArrayList<>();
         private final Runnable changed;
         private String unmet;
-        private int bytes;
+        private long bytes;
         private ChunkStageClaim claim;
         private String currentText;
         private boolean closed;
@@ -51,18 +53,24 @@ public final class FullSavedContextInputs {
             registry = world.registryAccess();
         }
         public String unmet() { return unmet; }
-        int payloadBytes() { return bytes; }
+        long payloadBytes() { return bytes; }
         public boolean valid(FullSavedInput.Snapshot current) {
             return !closed && current == saved && world.registryAccess() == registry
                     && storage.values().stream().allMatch(FullCommandStorageInputs.Capture::valid);
         }
         List<FullSavedTextInputs.Requirements> requirements(String path) { return List.copyOf(texts.getOrDefault(path, List.of())); }
+        Set<BlockPos> blocks() {
+            var result = new LinkedHashSet<BlockPos>();
+            for (var requirements : texts.values()) result.addAll(requirements.stream().flatMap(r -> r.blocks().stream()).toList());
+            return Collections.unmodifiableSet(result);
+        }
         private void discover(FullSavedInput.EntityFact fact) {
             var queue = new ArrayDeque<Pending>();
             add(fact, FullSavedTextInputs.discover(fact, world.registryAccess()), queue);
             while (!queue.isEmpty() && unmet == null) {
                 Pending next = queue.remove(); var read = next.read;
                 if (read.source() != FullSavedTextInputs.Source.STORAGE) {
+                    if (read.source() == FullSavedTextInputs.Source.BLOCK) continue;
                     if (read.source() == FullSavedTextInputs.Source.ENTITY && read.target().equals("@s") && !read.interpreting()) continue;
                     unmet = fact.path() + ": protected display " + read.source() + " context producer pending"; break;
                 }
@@ -70,7 +78,7 @@ public final class FullSavedContextInputs {
                 var capture = storage.get(id);
                 if (capture == null) {
                     capture = FullCommandStorageInputs.observe(world.getServer(), id);
-                    bytes += capture.bytes;
+                    bytes = Math.addExact(bytes, capture.bytes);
                     storage.put(id, capture);
                     consumers.add(capture.retain(changed));
                 }
@@ -161,5 +169,26 @@ public final class FullSavedContextInputs {
         var capture = declared ? plan.storage.get(id) : null;
         if (capture == null || !capture.valid()) throw FullFinishingServices.failure(new ChunkProtocolException("unbound or stale saved text storage input"));
         return capture;
+    }
+    private static Plan requireBlock(ServerLevel world, BlockPos position) {
+        Plan plan = ACTIVE.get();
+        if (plan == null || plan.currentText == null || plan.world != world)
+            throw FullFinishingServices.failure(new ChunkProtocolException("block NBT read outside its exact saved text occurrence"));
+        plan.claim.require(plan.stage);
+        boolean declared = plan.texts.get(plan.currentText).stream().flatMap(requirements -> requirements.nbtReads().stream())
+                .anyMatch(read -> read.source() == FullSavedTextInputs.Source.BLOCK && position.equals(read.block()));
+        if (!declared) throw FullFinishingServices.failure(new ChunkProtocolException("unbound saved text block input"));
+        return plan;
+    }
+    /** Exact BlockDataSource calls keep coordinates, readiness, serialization and exceptions in the original body. */
+    public static boolean blockLoaded(ServerLevel world, BlockPos position, java.util.function.BooleanSupplier original) {
+        if (!FullFinishingServices.finishing()) return original.getAsBoolean();
+        requireBlock(world, position);
+        return FullFinishingQueries.blockLoaded(world, position, original);
+    }
+    public static BlockEntity blockEntity(ServerLevel world, BlockPos position, java.util.function.Supplier<BlockEntity> original) {
+        if (!FullFinishingServices.finishing()) return original.get();
+        requireBlock(world, position);
+        return FullFinishingQueries.blockEntity(world, position, original);
     }
 }

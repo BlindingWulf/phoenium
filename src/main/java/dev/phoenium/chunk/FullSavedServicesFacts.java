@@ -25,5 +25,8 @@ public record FullSavedServicesFacts(UUID entityId, String team, String legacyOw
                 legacy, owner, tag.read("angry_at", UUIDUtil.CODEC).orElse(null),
                 type.equals("minecraft:text_display") ? FullSavedTextInputs.capture(tag, custodian) : FullSavedTextInputs.Saved.EMPTY);
     }
-    public int payloadBytes() { return 72 + 2 * ((team == null ? 0 : team.length()) + (legacyOwner == null ? 0 : legacyOwner.length())) + text.payloadBytes(); }
+    public long payloadBytes() {
+        long names = Math.addExact(team == null ? 0L : team.length(), legacyOwner == null ? 0L : legacyOwner.length());
+        return Math.addExact(Math.addExact(72L, Math.multiplyExact(2L, names)), text.payloadBytes());
+    }
 }

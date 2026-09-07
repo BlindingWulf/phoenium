@@ -24,8 +24,8 @@ public final class FullCommandStorageInputs {
         final long revision;
         final Identifier id;
         final CompoundTag actual, detached;
-        final int bytes;
-        Capture(State state, Identifier id, CompoundTag actual, int bytes) {
+        final long bytes;
+        Capture(State state, Identifier id, CompoundTag actual, long bytes) {
             this.state = state; this.revision = state.revision; this.id = id; this.actual = actual;
             detached = actual.copy(); this.bytes = bytes;
         }
@@ -80,7 +80,7 @@ public final class FullCommandStorageInputs {
                 if (state.server != server || state.closed) throw new ChunkProtocolException("foreign command storage incarnation");
             }
             CompoundTag original = storage.get(id);
-            int[] size = {0, 0};
+            long[] size = {0, 0};
             FullSavedTextInputs.protect(original, state.custodian, 0, size);
             return new Capture(state, id, original, size[1]);
         }

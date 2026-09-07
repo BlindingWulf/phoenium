@@ -2,6 +2,7 @@ package dev.phoenium.chunk;
 
 import java.util.*;
 import java.util.concurrent.CompletableFuture;
+import net.minecraft.core.BlockPos;
 import net.minecraft.server.level.*;
 import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.level.chunk.*;
@@ -16,7 +17,7 @@ import dev.phoenium.topology.RoutingKey;
  */
 public final class FullInitializedInputs {
     public enum State { SATISFIED, PENDING, STALE, TERMINAL, UNRESOLVED, CAPACITY }
-    public enum Purpose { SELF_INITIALIZED, DIFFICULTY, COLLISION, DYNAMIC_SHAPE_MUTATION, ENVIRONMENT }
+    public enum Purpose { SELF_INITIALIZED, DIFFICULTY, COLLISION, DYNAMIC_SHAPE_MUTATION, ENVIRONMENT, BLOCK_CONTEXT }
     public enum Availability { PUBLISHED, PREPARED, BIOMES, PREPARATION_PENDING, ABSENT, STALE, TOPOLOGY_PENDING, TERMINAL, UNROUTABLE, CAPACITY }
     public record Limits(int plans, int targetsPerPlan, int edges, int consumers, int factBytes) {
         public Limits { if (plans < 1 || targetsPerPlan < 1 || edges < 1 || consumers < 1 || factBytes < FullSavedInput.MAX_FACT_BYTES) throw new IllegalArgumentException("finite input limits and at least one fact allocation required"); }
@@ -109,12 +110,14 @@ public final class FullInitializedInputs {
         if (unmet == null && plan.contexts != null) unmet = plan.contexts.unmet();
         if (plan.contexts != null) {
             long charge = Math.max(FullSavedInput.MAX_FACT_BYTES,
-                    (long) plan.saved.payloadBytes() + plan.contexts.payloadBytes());
+                    Math.addExact(plan.saved.payloadBytes(), plan.contexts.payloadBytes()));
             if (charge > plan.factCharge && !expand(plan)) {
                 plan.contexts.close(); plan.contexts = null;
                 plan.evaluation = new Evaluation(State.CAPACITY, "expanded operation acknowledgement", null); return;
             }
             bytes += charge - plan.factCharge; plan.factCharge = charge;
+            for (BlockPos block : plan.contexts.blocks())
+                add(required, new ChunkPos(block.getX() >> 4, block.getZ() >> 4), Purpose.BLOCK_CONTEXT);
         }
         for (var fact : plan.saved.entities()) {
             if (!Double.isFinite(fact.x()) || !Double.isFinite(fact.y()) || !Double.isFinite(fact.z())) {

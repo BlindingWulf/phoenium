@@ -43,6 +43,7 @@ public final class FullFinishingQueries {
         private final Map<ChunkPos, FullInitializedInputs.Target> targets = new HashMap<>();
         private Query query;
         private Shape shape;
+        private BlockRead blockRead;
         private Invocation(FullRegistrationRuntime runtime, FullRegistrationRuntime.Graph source,
                            ChunkStageClaim claim, FullInitializedInputs.Receipt receipt) {
             this.runtime = runtime; this.source = source; this.claim = claim; this.receipt = receipt;
@@ -109,7 +110,7 @@ public final class FullFinishingQueries {
         }
         @Override public void close() {
             if (claim == null) return;
-            if (CURRENT.get() != this || query != null || shape != null)
+            if (CURRENT.get() != this || query != null || shape != null || blockRead != null)
                 throw breach("initialized FULL query scope escaped its synchronous operation");
             CURRENT.remove(); targets.clear(); runtime = null; source = null; claim = null; receipt = null;
         }
@@ -129,6 +130,7 @@ public final class FullFinishingQueries {
         }
     }
     private record Shape(Invocation invocation, BlockGetter world, BlockPos position, BlockState state) { }
+    private record BlockRead(FullInitializedInputs.Target target, BlockPos position, boolean privateInput) { }
 
     /** Called at the exact difficulty, collision, or positional biome getChunk invocation. */
     public static ChunkAccess query(LevelReader world, FullInitializedInputs.Purpose purpose,
@@ -269,6 +271,39 @@ public final class FullFinishingQueries {
         if (target.actual() != chunk || creation != LevelChunk.EntityCreationType.IMMEDIATE)
             throw breach("dynamic shape mutation has no exact initialized object/creation authority");
         return original.get();
+    }
+
+    /** Original BlockDataSource readiness is retained; only an exact frozen private preparation can satisfy its unpublished branch. */
+    static boolean blockLoaded(ServerLevel world, BlockPos position, java.util.function.BooleanSupplier original) {
+        Invocation invocation = CURRENT.get();
+        if (invocation == null) return original.getAsBoolean();
+        var target = invocation.target(world, position(position), FullInitializedInputs.Purpose.BLOCK_CONTEXT);
+        if (invocation.blockRead != null) throw breach("nested saved block context readiness call");
+        boolean loaded = original.getAsBoolean();
+        invocation.requireCurrent();
+        if (!loaded) return false;
+        if (target.actual() == null) throw breach("saved block context became present outside its retained input");
+        invocation.blockRead = new BlockRead(target, position.immutable(),
+                target.availability() == FullInitializedInputs.Availability.PREPARED);
+        return true;
+    }
+
+    /** The original serializer still runs at its original call and observes the retained exact block entity. */
+    static BlockEntity blockEntity(ServerLevel world, BlockPos position, Supplier<BlockEntity> original) {
+        Invocation invocation = CURRENT.get();
+        if (invocation == null) return original.get();
+        var target = invocation.target(world, position(position), FullInitializedInputs.Purpose.BLOCK_CONTEXT);
+        BlockRead read = invocation.blockRead;
+        if (read == null || read.target != target || !read.position.equals(position))
+            throw breach("saved block context entity read lacks its exact readiness prefix");
+        try {
+            BlockEntity retained = target.actual() == null ? null : target.actual().getBlockEntity(position);
+            if (read.privateInput) return retained;
+            BlockEntity reached = original.get();
+            invocation.requireCurrent();
+            if (reached != retained) throw breach("saved block context selected another block entity");
+            return reached;
+        } finally { invocation.blockRead = null; }
     }
 
     private static ChunkProtocolException breach(String message) {
