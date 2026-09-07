@@ -98,12 +98,44 @@ with log.open("w") as output:
         if controlled:
             probe = [line for line in text.splitlines() if "PHOENIUM_FULL_REGISTRATION_PROBE PASS" in line]
             assert len(probe) == 1, "selected installed registration fixture did not pass exactly once"
+            required_registration_fields = (
+                "cases=8", "selectedPreparation=true", "originalGenerationTask=true", "originalHolder=true",
+                "productionRegistrar=true", "proto=true", "inMemoryImposter=true", "clockWriter=true",
+                "postLoad=0", "publicFull=0", "terminalGraphs=0", "terminalIndexes=0",
+                "terminalGenerationHolders=0", "terminalCustody=0", "controlledWorldEndpoints=true",
+                "controlledLowerGenerationOutputs=true", "javaagent=false",
+            )
+            assert all(field in probe[0] for field in required_registration_fields), (
+                "installed registration probe omitted an expected branch/counter: " + probe[0]
+            )
             manifest["controlledProbe"] = probe
             input_probe = [line for line in text.splitlines() if "PHOENIUM_FULL_INPUT_BINDING_PROBE PASS" in line]
             assert len(input_probe) == 1, "selected production discovery/input consumer did not pass exactly once"
+            required_input_fields = (
+                "cases=19", "productionDiscovery=true", "exactInputConsumer=true", "proto=true",
+                "inMemoryImposter=true", "bothPairOrders=true", "largerWindow=true", "savedWriter=true",
+                "actualDemand=true", "capacityToProgress=true", "inputSatisfied=true", "aggregate=NOT_READY",
+                "postLoad=0", "publicFull=0", "terminalInputPlans=0", "terminalInputConsumers=0",
+                "javaagent=false",
+            )
+            assert all(field in input_probe[0] for field in required_input_fields), (
+                "installed input probe omitted an expected branch/counter: " + input_probe[0]
+            )
             manifest["initializedInputProbe"] = input_probe
             published_probe = [line for line in text.splitlines() if "PHOENIUM_FULL_PUBLISHED_INPUT_PROBE PASS" in line]
             assert len(published_probe) == 1, "original published target/source consumer did not pass exactly once"
+            required_published_fields = (
+                "cases=18", "targetOriginalFull=true", "exactResultWrapper=true", "baselineOriginHonest=true",
+                "proto=true", "inMemoryImposter=true", "diskReload=false", "targetProducerSettled=true",
+                "sourceInput=SATISFIED", "sourceAggregate=NOT_READY", "sourceFinishingClaims=0", "sourceSuffix=0",
+                "sourcePublicFull=0", "independentConsumers=true", "originalSavePins=true", "originalUnload=true",
+                "repeatedCycles=34", "originalPublishedResidentRecordsAfterAck=1",
+                "pendingSelectedRecordsAfterAck=2", "totalRecordsAfterAck=3", "usesAfterAck=0",
+                "pendingSelectedExecutionsAfterAck=2", "trueTeardownRecords=0", "javaagent=false",
+            )
+            assert all(field in published_probe[0] for field in required_published_fields), (
+                "installed published-input probe omitted an expected branch/counter: " + published_probe[0]
+            )
             manifest["publishedInputProbe"] = published_probe
             finishing_probe = [line for line in text.splitlines() if "PHOENIUM_FULL_FINISHING_PROBE PASS" in line]
             assert len(finishing_probe) == 1, "installed FULL finishing fixture did not pass exactly once"
