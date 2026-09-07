@@ -19,13 +19,7 @@ abstract class FullFinishingSerialMixin {
     @WrapMethod(method = "doRunTask(Lnet/minecraft/server/TickTask;)V")
     private void phoenium$taskServices(TickTask task, Operation<Void> original) {
         MinecraftServer server = (MinecraftServer) (Object) this;
-        // Pinned scheduleExecutables deliberately runs terminal executor acknowledgements
-        // inline on their producer thread after stopped=true. They inherit no service turn;
-        // each actual shared mutation still requires its installed writer entry.
-        if (server.isStopped() && !server.isSameThread()) { original.call(task); return; }
-        try (var turn = FullFinishingServices.forServer(server).serial(FullFinishingServices.Phase.SERVER_TASK)) {
-            original.call(task);
-        }
+        FullFinishingServices.runServerTask(server, () -> server.schedule(task), () -> original.call(task));
     }
     @WrapMethod(method = "saveAllChunks(ZZZ)Z")
     private boolean phoenium$saveServices(boolean silent, boolean flush, boolean force, Operation<Boolean> original) {

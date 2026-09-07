@@ -190,6 +190,21 @@ public final class FullFinishingServices {
         if (scope != null && scope.full()) scope.fullReservation().conflict(failure);
         return failure;
     }
+    /** Entry of the original MinecraftServer task executor. The queue continuation
+     * retains the exact original TickTask; it never creates a replacement outcome. */
+    public static void runServerTask(MinecraftServer server, Runnable enqueue, Runnable original) {
+        if (OwnershipContext.current().isPresent()) {
+            if (server.isStopped()) throw new java.util.concurrent.RejectedExecutionException("server task submitted under a retired gameplay claim");
+            // Vanilla's same-thread execute optimization must not lend the publishing
+            // stage's claim to an independent asynchronous continuation. The existing
+            // server queue runs this same task after the claim has been released.
+            enqueue.run();
+            return;
+        }
+        // Pinned terminal executor acknowledgements can run inline on their producer.
+        if (server.isStopped() && !server.isSameThread()) { original.run(); return; }
+        try (var turn = forServer(server).serial(Phase.SERVER_TASK)) { original.run(); }
+    }
     /** Storage does not retain even the conservative ordinary serial service turn. */
     public static <T> T ownerFreeIo(java.util.function.Supplier<T> body) {
         Scope serial = CURRENT.get();
