@@ -59,6 +59,7 @@ java = str(Path(os.environ.get("JAVA_HOME", "")) / "bin" / "java.exe") if os.nam
 if os.name == "nt" and not Path(java).exists():
     java = shutil.which("java")
 command = [java, "-Xmx2G", "-Dphoenium.stage3.explicitTopology=true",
+           "-Dphoenium.test.chunkFixtureSupport=true", "-Dphoenium.test.chunkBindingTrace=true",
            "-Dphoenium.test.vaultDiagnostic=true", "-Dphoenium.test.diagnostics=true",
            "-jar", "fabric-server-launch.jar", "nogui"]
 log = SERVER / "server-process.log"
