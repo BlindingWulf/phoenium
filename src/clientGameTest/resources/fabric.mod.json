@@ -10,6 +10,7 @@
       "dev.phoenium.clienttest.HarnessSmokeTest"
     ]
   },
+  "mixins": ["phoenium-client-tests.mixins.json"],
   "depends": {
     "fabricloader": ">=0.19.5",
     "fabric-client-gametest-api-v1": "*",
