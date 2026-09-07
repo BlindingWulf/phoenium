@@ -347,15 +347,18 @@ public final class FullRuntimeAcceptanceProbe implements DedicatedServerModIniti
             if (!level.areEntitiesActuallyLoadedAndTicking(position))
                 return "FULL_LIVE_PENDING phase=" + phase() + " entityReadiness=" + position;
         }
-        if (BED_CHECKS.size() < 4)
-            return "FULL_LIVE_PENDING phase=" + phase() + " bedChecks=" + BED_CHECKS.size();
         int frogs = 0, villagers = 0;
         for (Entity entity : level.getAllEntities()) if (entity.entityTags().contains(marker(phase()))) {
-            require(entity.getTeam() != null && entity.getTeam().getName().equals("full_probe"), "original saved team lost");
+            require(entity.getTeam() != null && entity.getTeam().getName().equals("full_probe"),
+                    "original saved team lost entity=" + entity.getUUID() + " type=" + entity.getType()
+                            + " position=" + entity.blockPosition() + " tags=" + entity.entityTags()
+                            + " team=" + (entity.getTeam() == null ? "<none>" : entity.getTeam().getName()));
             if (entity instanceof Frog) frogs++; else if (entity instanceof Villager) villagers++;
             else throw new IllegalStateException("unexpected surviving saved root " + entity);
         }
         require(frogs == 4 && villagers == 4, "real entity inventory differs: frogs=" + frogs + " villagers=" + villagers);
+        if (BED_CHECKS.size() < 4)
+            return "FULL_LIVE_PENDING phase=" + phase() + " bedChecks=" + BED_CHECKS.size();
         require(BED_CHECKS.size() == 4, "saved bed check witness missing: " + BED_CHECKS.size());
         require(collisionQueries > 0, "original FULL collision query witness missing");
         require(immediateShulkerReads > 0, "original ShulkerBox IMMEDIATE witness missing");

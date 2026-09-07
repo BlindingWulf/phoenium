@@ -19,8 +19,8 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 /** Test-only finite route declaration for the preserved vault chunk. */
 @Mixin(ExplicitLiveTopologyFixture.class)
 abstract class FullRuntimeAcceptanceVaultSupportMixin {
-    private static final int VAULT_CHUNK_X = 142;
-    private static final int VAULT_CHUNK_Z = -31;
+    private static final int VAULT_CHUNK_X = 8;
+    private static final int VAULT_CHUNK_Z = 1;
 
     @Inject(method = "plan(Ldev/phoenium/core/WorldId;Ldev/phoenium/topology/RoutingKey;"
             + "Ldev/phoenium/core/TopologyGeneration;Ldev/phoenium/core/OwnerEpoch;"
@@ -43,7 +43,7 @@ abstract class FullRuntimeAcceptanceVaultSupportMixin {
         Map<RoutingKey, RegionRoute> routes = new LinkedHashMap<>(plan.routes());
         for (int x = VAULT_CHUNK_X - radius; x <= VAULT_CHUNK_X + radius; x++)
             for (int z = VAULT_CHUNK_Z - radius; z <= VAULT_CHUNK_Z + radius; z++)
-                routes.put(new RoutingKey(world, x, z), ownerRoute);
+                routes.putIfAbsent(new RoutingKey(world, x, z), ownerRoute);
         callback.setReturnValue(new ExplicitLiveTopologyFixture.Plan(plan.a(), plan.b(), plan.anchor(), routes));
     }
 }
