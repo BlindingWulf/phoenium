@@ -16,9 +16,14 @@ public final class FullRegistrationTestAgent {
                         && !name.equals("net/minecraft/world/level/chunk/storage/SerializableChunkData")
                         && !name.equals("net/minecraft/server/level/ChunkMap")
                         && !name.equals("net/minecraft/server/level/ServerChunkCache")
+                        && !name.equals("net/minecraft/server/level/ServerLevel")
+                        && !name.equals("net/minecraft/world/level/Level")
+                        && !name.equals("net/minecraft/world/level/LevelReader")
+                        && !name.equals("net/minecraft/world/level/BlockCollisions")
                         && !name.equals("net/minecraft/nbt/CompoundTag")
                         && !name.equals("net/minecraft/nbt/ListTag")
-                        && !name.equals("net/minecraft/world/level/storage/PrimaryLevelData")) return null;
+                        && !name.equals("net/minecraft/world/level/storage/PrimaryLevelData")
+                        && !FullFinishingServicesTestTransform.supports(name)) return null;
                 try {
                     return (byte[]) Class.forName("dev.phoenium.chunk.FullRegistrationTestTransform", true, loader)
                             .getMethod("transform", String.class, byte[].class).invoke(null, name, bytes);

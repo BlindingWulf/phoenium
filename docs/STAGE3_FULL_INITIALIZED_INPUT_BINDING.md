@@ -1,5 +1,110 @@
 # Production initialized-input discovery and operation receipts
 
+## Saved villager contributor — 2026-09-06
+
+The expanded integrated-FULL assignment supersedes the historical contributor-only
+stop instruction below. `FullSavedVillagerInputs` now contributes to the production
+`FullInitializedInputs.bind` path using the existing protected, revisioned saved
+scalar facts. Its `ENVIRONMENT` purpose records the constructor origin and the
+saved, clamped position's section; saved passengers contribute their own positions.
+Discovery performs no constructor, saved reader, brain construction/tick, schedule
+sample, live-reference lookup or random operation. The normal receipt and retained
+target-use machinery still owns admission evidence and invalidation.
+
+The source authority is the pinned official-named Minecraft **26.2** artifact,
+Loom mapping identity `043a8b3edf`. Merged binary SHA-256:
+`B85B40FF77A813A46A4078F04B1CA4FA291942F01AF146F9F5F391D4D9F5FFAB`;
+matching Loom-generated sources SHA-256:
+`DDD82534C200D6610309A1EB35C126BED5FBD4D0118CADDC828610914F3988CD`.
+Inspected source extracts remain ignored in `run/villager-input-20260906/sources/`;
+no upstream source is copied into production. This contributor adopts no Paper,
+Folia or Moonrise implementation or cross-version assumption.
+
+The audited original chain is `LivingEntity.<init>` → `Villager.makeBrain` at
+`Vec3.ZERO`; then `Entity.load` sets clamped saved `Pos` before the inherited saved
+`Brain` reader, `AgeableMob.setAge` and the final `Villager.refreshBrain`.
+Negative age crosses the initial adult boundary and adds a baby-brain refresh;
+the concrete villager reader always refreshes again. Each new brain's
+`registerBrainGoals` calls `Brain.updateActivityFromSchedule`, which may read the
+adult/baby schedule through `EnvironmentAttributeSystem`. The actual default biome
+layer uses `BiomeManager.getNoiseBiomeAtPosition(double,double,double)`, with
+floor/block → quart → section conversion and no spatial interpolation. The
+constructor origin must therefore remain in the footprint even for a distant
+saved villager and even when saved `NoAI` is true.
+
+These are **BIOMES,false** reads through `LevelReader.getNoiseBiome`, whose null
+branch retains original `ServerLevel.getUncachedNoiseBiome` generator behavior.
+They are not FULL demand or a permission to replace a present lower-status biome
+object with generated biomes. Query status, actual lower-object provenance,
+clock/environment-cache writer exclusion and regional enclosure are separate
+finishing obligations. A data pack that only changes the sampled values does not
+change this base footprint; arbitrary installed callback implementations are not
+proved by the base source audit.
+
+Villager attributes, active effects and sleeping-position fields no longer cause
+the blanket contextual-dimensions rejection. During this original fresh-entity
+reader chain `Entity.firstTick` stays true: dimension refresh skips positional
+collision repair, and sleeping restoration skips `setPosToBed`. The sleeping
+coordinate and serialized HOME/JOB_SITE/etc. positions are retained entity data,
+not inputs queried during initialization. `Brain.stopAll` has no running
+behaviors on these newly constructed brains; schedules choose activities without
+starting behaviors. Inventory, offers and gossips decode into the new object;
+restocking/trade generation, POI lookup and brain ticking occur at later gameplay
+edges. Inherited Team writes remain an independent shared-service obligation.
+
+`FullSavedVillagerInputTest` independently executes the original supplier,
+constructor, saved reader and original biome-layer installer, verifying adult and
+baby refresh counts, saved Brain/no-Brain cases, actual observed positions, and
+restored age, sleeping pose, scale, effect, profession, level, XP, inventory,
+offers, gossips and cross-dimension HOME memory. Separate production discovery
+cases cover prepared proto/reload inputs, saved passengers, stale position aliases,
+default/clamped coordinates and invalid positions while asserting zero entity
+construction and no gameplay-random consumption. These original-method and
+controlled input cases are contributor evidence; final integrated finishing,
+disk reload, publication and installed-artifact acceptance are recorded with the
+connected implementation rather than inferred from discovery alone.
+
+The connected reader census adds `FullSavedEntityInputs`, an explicit pinned
+built-in ID dispatch for the other constructor/reader families. The 120 concrete
+and inherited reader source files were checked along their invoked setters,
+initial brain/goal construction and first-tick dimension paths. This is an input
+classification, not a shared-service or foreign-entity permission. Raid saved
+membership, Wither boss naming, ZombieVillager conversion effects, neutral anger,
+legacy tame owners and ender-pearl owner registration remain named service/D1/D2
+edges. A new or modded concrete reader does not silently inherit this census.
+
+Contextual tadpoles now use a conservative previous width of zero in the existing
+original two-attempt collision envelope. The new frog's scale is unchanged by
+`ConversionType.SINGLE`: source attributes are not copied; stored sleeping position
+is copied without copying sleeping pose; built-in copied effects have no SCALE
+modifier. This includes undersized, enlarged and sleeping saved sources without
+running their reader during discovery. `Frog.finalizeSpawn` also creates a
+`SpawnContext` before positional repair. Its original `BiomeManager.getBiome`
+chooses one of eight quart corners, so discovery retains both horizontal quart
+candidates on each axis. These BIOMES inputs can extend beyond the collision
+window (for example saved x=z=17.8). Vanilla frog variant conditions use biome
+membership; registry-installed structure and other predicate contexts require
+their own lower-status/context contributor.
+
+`FullSavedTextInputs` captures a bounded detached text tree and normalized saved
+rotation while watching the original nested compound/list and rotation aliases.
+Discovery uses the original component codec, then walks decoded sibling,
+translation argument, object fallback, separator and hover-text children without
+calling the resolver. It records static block coordinates, selector scope facts,
+score keys and NBT source/path/interpret continuations. Literal and other
+context-free display components now bind through production. Dynamic text requires
+the connected protected context producer; in particular block `isLoaded` must
+keep original public availability and interpreted NBT can introduce another
+bounded discovery pass. This helper never evaluates a selector, serializes a live
+entity/block entity, reads command storage, or grants the resulting contexts.
+
+The independent `FullSavedEntityInputTest` and `FullSavedTextInputTest` exercise
+the original reader families, contextual conversion, exact original fuzzy biome
+selection, scalar/relative/local coordinates, nested component aliases and the
+production proto/reload binder. Final test outcomes and remaining context-provider
+work belong to the integrated verification record; this census alone is not
+whole-registry or whole-FULL acceptance.
+
 ## Current checkpoint — published provenance and independent acknowledgement, 2026-09-05
 
 **PUBLISHED INPUT PROVENANCE + INDEPENDENT ACKNOWLEDGEMENT: PASS** within the

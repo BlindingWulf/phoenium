@@ -40,13 +40,14 @@ public final class PendingVanillaStage<I, O> {
         full = Objects.requireNonNull(graph);
     }
     LightInputService.Readiness fullReadinessLocked() {
-        if (kind != ChunkStageKind.FULL_PREPARE && kind != ChunkStageKind.FULL_FINISH)
+        if (full == null && kind != ChunkStageKind.FULL_PREPARE && kind != ChunkStageKind.FULL_FINISH)
             return LightInputService.Readiness.REGISTERED;
         return full == null ? LightInputService.Readiness.NOT_REGISTERED : full.readinessLocked(kind);
     }
-    boolean reserveFullLocked() { return full == null || kind != ChunkStageKind.FULL_PREPARE || full.reserveLocked(); }
-    void unreserveFullLocked() { if (full != null && kind == ChunkStageKind.FULL_PREPARE) full.unreserveLocked(); }
-    void awaitFullEvidence() { if (full != null && kind == ChunkStageKind.FULL_PREPARE) full.awaitEvidence(); }
+    void prepareFullServices() { if (full != null) full.prepareServices(kind); }
+    boolean reserveFullLocked() { return full == null || full.reserveLocked(kind); }
+    void unreserveFullLocked() { if (full != null) full.unreserveLocked(kind); }
+    void awaitFullEvidence() { if (full != null) full.awaitEvidence(kind); }
 
     public PendingVanillaStage(ChunkCustodyModel custody, ChunkCustodyModel.LifecycleId lifecycle,
                                ChunkCustodyModel.WorkId work, ChunkCustodyModel.StageId stage,
@@ -183,7 +184,7 @@ public final class PendingVanillaStage<I, O> {
             throw failure;
         } finally { releaseInput(); }
     }
-    void stageExited() { if (light != null) light.stageExited(lightBatch); }
+    void stageExited() { if (light != null) light.stageExited(lightBatch); if (full != null) full.stageExited(kind); }
     private void releaseInput() {
         custody.gate().lock();
         try {

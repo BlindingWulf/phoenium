@@ -134,6 +134,30 @@ loom {
                     layout.buildDirectory.file('client-gametest/evidence/STAGE3-CLIENT.json').get().asFile.absolutePath
         }
 
+        stage3FullAcceptance {
+            client()
+            name 'Phoenium authoritative FULL real-client acceptance'
+            source sourceSets.clientGameTest
+            runDir 'run/full-client-gametest'
+            vmArg '-Dfabric.client.gametest'
+            vmArg '-Dfabric.client.gametest.modid=phoenium-client-tests'
+            vmArg '-Dphoenium.test.mode=fullacceptance'
+            programArg '--username'
+            programArg 'PhoeniumTest0'
+            property 'phoenium.test.username', 'PhoeniumTest0'
+            property 'phoenium.test.minecraftVersion', minecraft_version
+            property 'phoenium.test.javaVersion', '25'
+            property 'phoenium.test.fabricLoaderVersion', loader_version
+            property 'phoenium.test.fabricApiVersion', fabric_version
+            property 'phoenium.test.loomVersion', loom_version
+            property 'phoenium.test.gradleVersion', '9.5.1'
+            property 'phoenium.test.gradleTask', 'runStage3FullAcceptance'
+            property 'phoenium.test.serverDirectory', layout.buildDirectory.dir('stage3-client-server').get().asFile.absolutePath
+            property 'phoenium.test.serverAddress', '127.0.0.1:25565'
+            property 'phoenium.test.rconPort', '25575'
+            property 'phoenium.test.rconPassword', 'phoenium-stage3-client'
+        }
+
         stage3ChunkTrace {
             client()
             name 'Phoenium Stage 3 Chunk Runtime Trace'
@@ -253,6 +277,25 @@ tasks.register('fullRegistrationHarness', Jar) {
         it.name.startsWith('junit-') || it.name.startsWith('opentest4j-') || it.name.startsWith('apiguardian-')
     }.collect { zipTree(it) } }) { exclude 'META-INF/**', 'module-info.class' }
 }
+
+tasks.register('fullAcceptanceHarness', Jar) {
+    description = 'Build disposable saved-input fixtures for real generation and on-disk reload acceptance.'
+    dependsOn tasks.named('compileTestJava')
+    archiveFileName = 'full-live-probe.jar'
+    destinationDirectory = layout.buildDirectory.dir('test-harness')
+    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+    from(sourceSets.test.output.classesDirs) { exclude '**/FullRegistrationTestAgent*.class', '**/*TestTransform*.class' }
+    from('src/fullAcceptanceHarness/resources')
+    from({ configurations.testRuntimeClasspath.findAll {
+        it.name.startsWith('junit-') || it.name.startsWith('opentest4j-') || it.name.startsWith('apiguardian-')
+    }.collect { zipTree(it) } }) { exclude 'META-INF/**', 'module-info.class' }
+}
+tasks.register('prepareFullAcceptanceServer', Copy) {
+    dependsOn tasks.named('prepareStage3ClientServer'), tasks.named('fullAcceptanceHarness')
+    from(tasks.named('fullAcceptanceHarness'))
+    into layout.buildDirectory.dir('stage3-client-server/mods')
+}
+tasks.named('runStage3FullAcceptance') { dependsOn tasks.named('prepareFullAcceptanceServer') }
 
 processResources {
     inputs.property 'version', project.version

@@ -11,11 +11,15 @@ public final class ChunkSynchronousAccessGuard {
     private ChunkSynchronousAccessGuard() { }
     public static void beforeWait(BooleanSupplier ready) {
         if (OwnershipContext.current().isPresent() && !ready.getAsBoolean()) {
-            var failure = new ChunkProtocolException("unfinished synchronous chunk dependency inside an owner transaction");
-            Invocation invocation = INVOCATION.get();
-            if (invocation != null) invocation.record(failure);
-            throw failure;
+            throw breach(new ChunkProtocolException("unfinished synchronous chunk dependency inside an owner transaction"));
         }
+    }
+
+    /** Typed private-query faults use the same caught-failure barrier as unfinished waits. */
+    public static ChunkProtocolException breach(ChunkProtocolException failure) {
+        Invocation invocation = INVOCATION.get();
+        if (invocation != null) invocation.record(Objects.requireNonNull(failure));
+        return failure;
     }
 
     /** Admission installs this only after its exact claim/lease, and closes it before completion. */

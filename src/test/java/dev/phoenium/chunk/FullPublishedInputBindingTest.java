@@ -203,8 +203,8 @@ final class FullPublishedInputBindingTest {
                 assertEquals(2L, f.runtime.inputs.measurements().get("consumers"));
             }
             b.acknowledgeInputs(); f.drain();
-            assertEquals(1L, f.runtime.published.measurements().get("records"));
-            assertEquals(0L, f.runtime.published.measurements().get("transientExecutions"));
+            assertEquals(3L, f.runtime.published.measurements().get("records"), "one published origin plus two active admitted reservations");
+            assertEquals(2L, f.runtime.published.measurements().get("transientExecutions"));
             assertEquals(0L, f.runtime.published.measurements().get("uses"));
             assertEquals(0L, f.runtime.inputs.measurements().get("plans"));
         } finally { f.stop(); }
@@ -274,7 +274,7 @@ final class FullPublishedInputBindingTest {
             assertNull(f.runtime.published.observe(oldHolder)); assertSame(current, f.runtime.published.observe(replacement));
             var graph = source(f, ChunkPos.ZERO, 15.8); assertSame(current, target(graph, y).publication());
             graph.acknowledgeInputs(); assertSame(current, f.runtime.published.observe(replacement));
-            assertEquals(1L, f.runtime.published.measurements().get("records"));
+            assertEquals(2L, f.runtime.published.measurements().get("records"), "current publication and the active source reservation");
         } finally { f.stop(); }
         assertCleanup(f);
     }

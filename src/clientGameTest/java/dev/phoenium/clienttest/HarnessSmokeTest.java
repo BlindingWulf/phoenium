@@ -25,7 +25,8 @@ public final class HarnessSmokeTest implements FabricClientGameTest {
 
     @Override
     public void runTest(ClientGameTestContext context) {
-        if ("stage3".equals(System.getProperty("phoenium.test.mode"))
+        if ("fullacceptance".equals(System.getProperty("phoenium.test.mode"))
+                || "stage3".equals(System.getProperty("phoenium.test.mode"))
                 || "chunktrace".equals(System.getProperty("phoenium.test.mode"))
                 || "chunkreadiness".equals(System.getProperty("phoenium.test.mode"))) {
             new Stage3ClientTest().runTest(context);

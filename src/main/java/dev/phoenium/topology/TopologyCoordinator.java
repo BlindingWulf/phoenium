@@ -74,8 +74,14 @@ public final class TopologyCoordinator {
             if (transition.participants().stream().map(this::runtime).anyMatch(runtime -> runtime.leases().hasActiveLease())) return false;
             TopologyGeneration next = directory.snapshot().generation().next();
             Map<RoutingKey, RegionRoute> routes = transition.owners().entrySet().stream().collect(java.util.stream.Collectors.toUnmodifiableMap(
-                Map.Entry::getKey, entry -> new RegionRoute(entry.getValue(), next, runtime(entry.getValue()).ownerEpoch().next())));
-            directory.publish(next, routes);
+                Map.Entry::getKey, entry -> new RegionRoute(entry.getValue(), next,
+                        transition.participants().contains(entry.getValue()) ? runtime(entry.getValue()).ownerEpoch().next()
+                                : runtime(entry.getValue()).ownerEpoch())));
+            Map<dev.phoenium.core.WorldId, RegionRoute> defaults = new java.util.LinkedHashMap<>();
+            directory.snapshot().worldDefaults().forEach((world, route) -> defaults.put(world,
+                    new RegionRoute(route.region(), next, transition.participants().contains(route.region())
+                            ? runtime(route.region()).ownerEpoch().next() : route.ownerEpoch())));
+            directory.publish(next, routes, defaults);
             // Publication window: the directory already commits the new generation while the
             // derived object ledger still names the old owner. ReconcileTopology runs only after
             // this seam, so inside it no object has any owner (stale A = 0, premature B = 0).

@@ -36,6 +36,7 @@ import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -77,6 +78,10 @@ public final class Stage3ClientTest implements FabricClientGameTest {
 
     @Override
     public void runTest(ClientGameTestContext context) {
+        if ("fullacceptance".equals(System.getProperty("phoenium.test.mode"))) {
+            runFullAcceptance(context);
+            return;
+        }
         if ("chunkreadiness".equals(System.getProperty("phoenium.test.mode"))) {
             runChunkReadinessTrace(context);
             return;
@@ -1721,6 +1726,104 @@ public final class Stage3ClientTest implements FabricClientGameTest {
         return seed == null ? "" : Long.toString(Long.parseLong(seed));
     }
 
+    private void runFullAcceptance(ClientGameTestContext context) {
+        ExternalServer active = null;
+        boolean connected = false;
+        Map<String, Object> evidence = new LinkedHashMap<>();
+        Path output = null;
+        try {
+            Path prepared = Path.of(System.getProperty("phoenium.test.serverDirectory"));
+            Path directory = prepared.getParent().getParent().resolve("run/full-authoritative/live-" + System.currentTimeMillis());
+            Files.createDirectories(directory);
+            try (var files = Files.walk(prepared)) {
+                for (Path source : files.toList()) {
+                    Path relative = prepared.relativize(source);
+                    if (relative.getNameCount() > 0 && !Set.of("mods", "libraries", "versions", ".fabric", "fabric-server-launch.jar")
+                            .contains(relative.getName(0).toString())) continue;
+                    Path target = directory.resolve(relative);
+                    if (Files.isDirectory(source)) Files.createDirectories(target);
+                    else Files.copy(source, target);
+                }
+            }
+            output = directory.resolve("full-acceptance.json");
+            evidence.put("directory", directory.toString());
+            evidence.put("minecraft", "26.2"); evidence.put("workers", 1); evidence.put("parallelGameplay", false);
+            evidence.put("testUsername", TEST_USERNAME); evidence.put("personalAccount", false);
+            evidence.put("viewDistance", 5); evidence.put("simulationDistance", 5);
+            var modules = new LinkedHashMap<String, String>();
+            try (var jars = Files.list(directory.resolve("mods"))) {
+                for (Path jar : jars.toList()) modules.put(jar.getFileName().toString(), java.util.HexFormat.of().withUpperCase()
+                        .formatHex(java.security.MessageDigest.getInstance("SHA-256").digest(Files.readAllBytes(jar))));
+            }
+            evidence.put("modules", modules);
+            String world = "FULL-LIVE-" + System.currentTimeMillis();
+            evidence.put("world", world);
+            for (int lifecycle = 1; lifecycle <= 2; lifecycle++) {
+                String phase = lifecycle == 1 ? "fresh" : "reload";
+                active = ExternalServer.start(new ExternalServer(directory, lifecycle, world, null), false, false);
+                active.waitUntilReady(context);
+                evidence.put(phase + "Seed", active.worldSeed());
+                connectClient(context); connected = true;
+                require(clientName(context).equals(TEST_USERNAME), "FULL client identity mismatch");
+                if (lifecycle == 1) {
+                    active.execute("team add full_probe");
+                    active.execute("team join full_probe " + TEST_USERNAME);
+                    active.execute("forceload add 512 64 575 79");
+                }
+                String state = "";
+                for (int tick = 0; tick < 7200; tick++) {
+                    require(active.isAlive(), active.serverFailure("FULL server stopped during " + phase));
+                    if (tick % 10 == 0) {
+                        state = active.execute("fullprobe");
+                        if (state.contains("FULL_LIVE_OK phase=" + phase)) break;
+                        require(state.contains("FULL_LIVE_PENDING"), active.serverFailure("FULL fixture failed: " + state));
+                    }
+                    context.waitTick();
+                }
+                require(state.contains("FULL_LIVE_OK phase=" + phase), active.serverFailure("FULL demand timed out: " + state));
+                evidence.put(phase + "ServerAssertions", state);
+                active.execute("tp " + TEST_USERNAME + " 536 207 72");
+                boolean received = false;
+                for (int tick = 0; tick < 2400; tick++) {
+                    received = context.computeOnClient(client -> {
+                        if (client.level == null) return false;
+                        for (int x = 32; x <= 35; x++) {
+                            LevelChunk chunk = client.level.getChunkSource().getChunk(x, 4, ChunkStatus.FULL, false);
+                            if (chunk == null || !chunk.getPos().equals(new ChunkPos(x, 4))) return false;
+                        }
+                        return client.level.getBlockState(new BlockPos(528, 200, 72)).is(net.minecraft.world.level.block.Blocks.SHULKER_BOX);
+                    });
+                    if (received) break;
+                    context.waitTick();
+                }
+                require(received, "client never received exact target chunks/nonair fixture during " + phase);
+                evidence.put(phase + "RealTcpChunkReceipt", true);
+                evidence.put(phase + "Diagnostics", active.execute("phoenium diagnostics"));
+                active.execute("save-all flush");
+                disconnectClient(context); connected = false;
+                require(active.stopNormally(context), active.serverFailure("FULL normal stop timed out"));
+                String log = active.readLatestLog();
+                require(active.process.exitValue() == 0 && !log.contains("Encountered an unexpected exception")
+                        && !log.contains("Exception stopping the server") && !log.contains("FULL_" + "LIVE_FAIL"),
+                        active.serverFailure("FULL server health check failed"));
+                require(log.contains("PHOENIUM_FULL STOPPED"), "authoritative FULL teardown evidence missing");
+                Files.copy(active.latestLog, directory.resolve(phase + "-latest.log"));
+                evidence.put(phase + "Exit", active.process.exitValue());
+                active = null;
+            }
+            require(Objects.equals(evidence.get("freshSeed"), evidence.get("reloadSeed")), "reload did not use the actual saved world");
+            evidence.put("passed", true);
+        } catch (Throwable failure) {
+            evidence.put("passed", false); evidence.put("failure", failure.toString());
+            throw new AssertionError("authoritative FULL real-world/client acceptance failed", failure);
+        } finally {
+            if (connected) try { disconnectClient(context); } catch (Throwable ignored) { }
+            if (active != null) active.stopQuietly(context);
+            if (output != null) try { Files.writeString(output, new com.google.gson.GsonBuilder().setPrettyPrinting().create().toJson(evidence)); }
+            catch (IOException failure) { throw new IllegalStateException("could not preserve FULL acceptance evidence", failure); }
+        }
+    }
+
     private static final class ExternalServer {
         private final Path directory;
         private final Path latestLog;
@@ -1788,6 +1891,11 @@ public final class Stage3ClientTest implements FabricClientGameTest {
                 "-Dphoenium.test.chunkFixtureSupport=true",
                 "-Dphoenium.test.chunkBindingTrace=true",
                 "-Dphoenium.test.diagnostics=true"));
+            if ("fullacceptance".equals(System.getProperty("phoenium.test.mode"))) {
+                command.add("-Dphoenium.full.authoritative=true");
+                command.add("-Dphoenium.test.fullFixturePhase=" + (server.lifecycle == 1 ? "fresh" : "reload"));
+                command.add("-Dphoenium.test.fullFixtureSeedDisk=" + (server.lifecycle == 1));
+            }
             if (chunkTrace) {
                 command.add("-Dphoenium.stage3.chunkTrace=true");
                 command.add("-Dphoenium.stage3.chunkTrace.world=minecraft:overworld");

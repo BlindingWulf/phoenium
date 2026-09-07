@@ -37,7 +37,8 @@ public final class Phoenium implements DedicatedServerModInitializer {
         dispatcher.register(Commands.literal("phoenium")
             .then(Commands.literal("diagnostics")
                 .executes(context -> {
-                    String line = LIVE.diagnostics().toLogLine() + " packets=" + LIVE.packetDiagnostics().toLogLine();
+                    String line = LIVE.diagnostics().toLogLine() + " packets=" + LIVE.packetDiagnostics().toLogLine()
+                            + " full=" + LIVE.fullDiagnostics();
                     if (!LIVE.failureDescription().isEmpty()) line += " failure=" + LIVE.failureDescription();
                     final String response = line;
                     context.getSource().sendSuccess(() -> Component.literal(response), false);

@@ -173,14 +173,19 @@ final class FullTadpoleDecisionTest {
         boolean admitted, detectCycle, failSound, failRootInsertion, nullQuery, duplicateDelivery;
         int difficultyQueries, localReads, sounds, executions, cycleDetections, moonReads, nextId;
 
-        Fixture(int age) throws Exception {
+        Fixture(int age) throws Exception { this(age, null); }
+
+        Fixture(int age, RegistryAccess.Frozen registryOverride) throws Exception {
             var base = new MinecraftLightReadFixture(false, true);
             var frogs = new MappedRegistry<FrogVariant>(Registries.FROG_VARIANT, Lifecycle.stable());
             frogs.register(FrogVariants.TEMPERATE, new FrogVariant(new ClientAsset.ResourceTexture(
                     Identifier.withDefaultNamespace("entity/frog/frog_temperate")), SpawnPrioritySelectors.fallback(0)), RegistrationInfo.BUILT_IN);
             List<Registry<?>> registries = new ArrayList<>();
             base.registries.registries().forEach(entry -> registries.add(entry.value())); registries.add(frogs);
-            RegistryAccess.Frozen registry = new RegistryAccess.ImmutableRegistryAccess(registries).freeze();
+            // Original moving-piston preparation validates the moved state's block in this lookup.
+            registries.add(net.minecraft.core.registries.BuiltInRegistries.BLOCK);
+            RegistryAccess.Frozen registry = registryOverride == null
+                    ? new RegistryAccess.ImmutableRegistryAccess(registries).freeze() : registryOverride;
             holder = stub(ChunkHolder.class, List.of(
                     new Answer(ChunkHolder.class.getMethod("getTicketLevel"), args -> 33),
                     new Answer(ChunkHolder.class.getMethod("getFullStatus"), args -> FullChunkStatus.FULL)));
@@ -202,6 +207,7 @@ final class FullTadpoleDecisionTest {
                     new Answer(net.minecraft.server.MinecraftServer.class.getMethod("getPlayerList"), args -> players), new Answer(
                     net.minecraft.server.MinecraftServer.class.getMethod("debugSubscribers"),
                     args -> new net.minecraft.util.debug.ServerDebugSubscribers(null))));
+            set(players, net.minecraft.server.players.PlayerList.class, "server", server);
             scoreboard = new net.minecraft.server.ServerScoreboard(server); scoreboard.addPlayerTeam("amber");
             var waypoints = new net.minecraft.server.waypoints.ServerWaypointManager();
             level = stub(ServerLevel.class, List.of(
@@ -245,6 +251,7 @@ final class FullTadpoleDecisionTest {
                             Holder.class, SoundSource.class, float.class, float.class, long.class), args -> {
                         sounds++; events.add("sound"); if (failSound) throw new IllegalStateException("controlled sound failure"); return null;
                     })));
+            set(server, net.minecraft.server.MinecraftServer.class, "levels", java.util.Map.of(Level.OVERWORLD, level));
             set(level, Level.class, "random", random);
             set(level, Level.class, "thread", Thread.currentThread());
             set(level, Level.class, "blockEntityTickers", new ArrayList<>());

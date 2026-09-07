@@ -56,7 +56,8 @@ public final class FullRegistrationServerProbe implements DedicatedServerModInit
                         + "baselineOriginHonest=true proto=true inMemoryImposter=true diskReload=false targetProducerSettled=true "
                         + "sourceInput=SATISFIED sourceAggregate=NOT_READY sourceFinishingClaims=0 sourceSuffix=0 sourcePublicFull=0 "
                         + "independentConsumers=true originalSavePins=true originalUnload=true repeatedCycles=34 "
-                        + "residentRecordsAfterAck=1 usesAfterAck=0 transientExecutionsAfterAck=0 trueTeardownRecords=0 javaagent=false");
+                        + "originalPublishedResidentRecordsAfterAck=1 pendingSelectedRecordsAfterAck=2 totalRecordsAfterAck=3 "
+                        + "usesAfterAck=0 pendingSelectedExecutionsAfterAck=2 trueTeardownRecords=0 javaagent=false");
                 System.out.println("PHOENIUM_FULL_INPUT_BINDING_PROBE PASS cases=19 productionDiscovery=true exactInputConsumer=true "
                         + "proto=true inMemoryImposter=true bothPairOrders=true largerWindow=true savedWriter=true "
                         + "actualDemand=true capacityToProgress=true inputSatisfied=true aggregate=NOT_READY "
@@ -66,10 +67,41 @@ public final class FullRegistrationServerProbe implements DedicatedServerModInit
                         + "proto=true inMemoryImposter=true clockWriter=true postLoad=0 publicFull=0 "
                         + "terminalGraphs=0 terminalIndexes=0 terminalGenerationHolders=0 terminalCustody=0 "
                         + "controlledWorldEndpoints=true controlledLowerGenerationOutputs=true javaagent=false");
+                finishingProbe();
             } catch (Throwable failure) {
                 System.err.println("PHOENIUM_FULL_REGISTRATION_PROBE FAIL " + failure);
                 throw new IllegalStateException("installed FULL registration fixture failed", failure);
             }
         });
+    }
+
+    private static void finishingProbe() throws Exception {
+        try {
+            var queries = new FullFinishingQueriesTest();
+            for (boolean reload : new boolean[] {false, true}) for (boolean reverse : new boolean[] {false, true})
+                queries.originalBoundaryPairFinishesWithoutPublishingOrCachingEitherPrivateInput(reload, reverse);
+            queries.originalNonAirNeighborCreatesImmediateEntityAndRetainsUnknownTicketPrefix();
+            queries.originalMovingPistonShapeReadsExactRetainedProgressWithoutAdvancingItsTicker();
+            queries.originalPublishedNeighborResultRemainsReadyAndCanUseOrdinaryCache();
+            queries.originalAbsentNeighborResultStaysNullWithoutUnknownTicket();
+            queries.originalVillagerBiomeCacheKeepsItsProtoAliasAcrossHolderPreparation();
+            queries.originalVillagerCachedAbsentBiomeKeepsItsOriginalGeneratorFallback();
+            queries.wrongSelectedFutureIsCaughtByVanillaButStillFailsFinishingBarrier();
+            queries.unrelatedGetterCannotBorrowPreparedNeighborFromAnActiveFinishingScope();
+            queries.retainedReceiptWithoutItsClaimedOperationCannotEnter();
+            var completion = new FullAuthoritativeFinishingTest();
+            completion.originalFinishingAndSeparatePublicationCompleteExactlyOnce(false);
+            completion.originalFinishingAndSeparatePublicationCompleteExactlyOnce(true);
+            System.out.println("PHOENIUM_FULL_FINISHING_PROBE PASS cases=15 queryCases=13 publicationCases=2 "
+                    + "originalFinishing=true separatePublication=true cyclicPreparedPair=true bothPairOrders=true "
+                    + "proto=true inMemoryImposter=true diskReload=false originalDifficulty=true originalCollision=true "
+                    + "originalShulkerImmediate=true originalLaterRegistration=true originalMovingPiston=true "
+                    + "savedVillagerOriginalBiomeCacheAlias=true originalCachedAbsentBiomeFallback=true originalReadyAbsent=true caughtQueryBarrier=true "
+                    + "noPrivateCacheEntries=true claimedOperationRequired=true controlledWorldEndpoints=true "
+                    + "controlledLowerGenerationOutputs=true javaagent=false");
+        } catch (Throwable failure) {
+            System.err.println("PHOENIUM_FULL_FINISHING_PROBE FAIL " + failure);
+            throw failure;
+        }
     }
 }

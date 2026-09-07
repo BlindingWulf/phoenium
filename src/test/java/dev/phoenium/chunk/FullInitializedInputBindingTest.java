@@ -125,7 +125,7 @@ final class FullInitializedInputBindingTest {
             assertEquals(FullInitializedInputs.State.STALE, a.validateInputs(a.finishing.stage(), wrong).state());
             var t = r.targets().getFirst();
             var forgedTarget = new FullInitializedInputs.Target(t.position(), Set.of(FullInitializedInputs.Purpose.COLLISION), t.availability(), b.holder,
-                    b.lifecycle, b.work, b.preparation.stage(), b.prepared().orElseThrow().actual(), t.lowerSlot(), t.publicSlot(), t.generationRetention(), t.reservation(), t.route(), t.ticketLevel(), t.publication());
+                    b.lifecycle, b.work, b.preparation.stage(), b.prepared().orElseThrow().actual(), t.lowerSlot(), t.publicSlot(), t.generationRetention(), t.reservation(), t.route(), t.ticketLevel(), t.publication(), t.biomes());
             var forged = new FullInitializedInputs.Receipt(r.server(), r.world(), r.source(), r.operation(), r.plan(), r.savedRevision(), r.routes(), List.of(forgedTarget));
             assertEquals(FullInitializedInputs.State.STALE, a.validateInputs(a.finishing.stage(), forged).state());
             assertEquals(FullInitializedInputs.State.SATISFIED, a.validateInputs(a.finishing.stage(), r).state());
@@ -200,13 +200,13 @@ final class FullInitializedInputBindingTest {
         assertCleanup(f);
     }
 
-    @Test void unboundConcreteReaderAndDimensionContextRemainExplicitWithoutRunningReaders() throws Exception {
+    @Test void unboundConcreteModReaderRemainsExplicitWithoutRunningReaders() throws Exception {
         var f = new FullRegistrationFixture(true);
         try {
-            var tag = tag(15.8, 8, 24000); tag.putString("id", "minecraft:villager"); saved(f, ChunkPos.ZERO, false, tag);
+            var tag = tag(15.8, 8, 24000); tag.putString("id", "unbound:custom_reader"); saved(f, ChunkPos.ZERO, false, tag);
             f.start(ChunkPos.ZERO, ChunkStatus.FULL); f.drain(); var graph = f.runtime.graph(f.holder(ChunkPos.ZERO));
             assertEquals(FullInitializedInputs.State.UNRESOLVED, graph.inputEvaluation().state());
-            assertTrue(graph.inputEvaluation().obligation().contains("minecraft:villager")); assertEquals(0, f.world.nextId); assertTrue(f.world.inserted.isEmpty());
+            assertTrue(graph.inputEvaluation().obligation().contains("unbound:custom_reader")); assertEquals(0, f.world.nextId); assertTrue(f.world.inserted.isEmpty());
         } finally { f.stop(); }
         assertCleanup(f);
     }
@@ -294,8 +294,8 @@ final class FullInitializedInputBindingTest {
             assertBound(f, graph, Set.of(ChunkPos.ZERO, new ChunkPos(1, 0)));
             assertTrue(target(graph, ChunkPos.ZERO).purposes().contains(FullInitializedInputs.Purpose.DYNAMIC_SHAPE_MUTATION));
             assertTrue(graph.prepared().orElseThrow().actual().getBlockEntities().isEmpty());
-            assertTrue(graph.missingFinishingBindings().contains("W named world turns"));
-            assertTrue(graph.missingFinishingBindings().contains("private query operation bindings and regional enclosure"));
+            assertTrue(graph.missingFinishingBindings().contains("world environment/clock context"));
+            assertTrue(graph.missingFinishingBindings().contains("finishing service reservation"));
         } finally { f.stop(); }
         assertCleanup(f);
     }
@@ -309,13 +309,16 @@ final class FullInitializedInputBindingTest {
         } finally { f.stop(); }
         assertCleanup(f);
     }
-    @Test void contextDependentDimensionsHaveAnExactUnmetRequirement() throws Exception {
+    @Test void contextualTadpoleDimensionsBindConservativeOriginalConversionEnvelope() throws Exception {
         var f = new FullRegistrationFixture(true);
         try {
             var tag = tag(15.8, 8, 24000); tag.put("attributes", new ListTag()); saved(f, ChunkPos.ZERO, false, tag);
             f.start(ChunkPos.ZERO, ChunkStatus.FULL); f.drain(); var graph = f.runtime.graph(f.holder(ChunkPos.ZERO));
-            assertEquals(FullInitializedInputs.State.UNRESOLVED, graph.inputEvaluation().state());
-            assertTrue(graph.inputEvaluation().obligation().contains("dimension context")); assertNull(graph.inputReceipt());
+            assertEquals(FullInitializedInputs.State.SATISFIED, graph.inputEvaluation().state());
+            assertEquals(FullSavedInput.collisionPositions(graph.savedSnapshot().entities().getFirst(), 256),
+                    graph.inputReceipt().targets().stream().filter(t -> t.purposes().contains(FullInitializedInputs.Purpose.COLLISION))
+                            .map(FullInitializedInputs.Target::position).collect(java.util.stream.Collectors.toSet()));
+            assertEquals(0, f.world.nextId); assertTrue(f.world.inserted.isEmpty());
         } finally { f.stop(); }
         assertCleanup(f);
     }

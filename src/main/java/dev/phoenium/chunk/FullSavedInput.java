@@ -14,7 +14,11 @@ import net.minecraft.world.phys.Vec3;
 public final class FullSavedInput {
     public interface Access { FullSavedInput phoenium$savedInput(); }
     public record EntityFact(String path, String type, double x, double y, double z, int age,
-                             boolean contextualDimensions) { }
+                             boolean contextualDimensions, FullSavedServicesFacts services) {
+        public EntityFact(String path, String type, double x, double y, double z, int age, boolean contextualDimensions) {
+            this(path, type, x, y, z, age, contextualDimensions, FullSavedServicesFacts.EMPTY);
+        }
+    }
     public record Snapshot(long revision, List<EntityFact> entities, int payloadBytes, String unmet) { }
     public static final int MAX_ENTITIES = 4096, MAX_DEPTH = 32, MAX_FACT_BYTES = 64 * 1024;
     private long revision;
@@ -22,7 +26,12 @@ public final class FullSavedInput {
     private Thread writer;
     private volatile boolean tracking;
     private volatile Snapshot snapshot;
+    private final Runnable mutationBoundary;
+    private final Map<CompoundTag, String> paths = new IdentityHashMap<>();
     private final java.util.concurrent.atomic.AtomicReference<Runnable> changed = new java.util.concurrent.atomic.AtomicReference<>();
+
+    public FullSavedInput() { this(() -> { }); }
+    FullSavedInput(Runnable mutationBoundary) { this.mutationBoundary = Objects.requireNonNull(mutationBoundary); }
 
     /** Original input custody protects aliases; the nonblocking observation turn excludes addEntity. */
     public Snapshot capture(List<CompoundTag> roots) {
@@ -31,13 +40,14 @@ public final class FullSavedInput {
         try { return captureExclusive(roots); } finally { endWrite(); }
     }
     private Snapshot captureExclusive(List<CompoundTag> roots) {
+        paths.clear();
         var facts = new ArrayList<EntityFact>();
         String unmet = null;
         int[] bytesUsed = {0};
         try {
             for (int i = 0; i < roots.size(); i++) visit(roots.get(i), "root[" + i + "]", 0, facts, bytesUsed);
         } catch (Limit | ChunkProtocolException limit) { unmet = limit.getMessage(); facts.clear(); }
-        int bytes = facts.stream().mapToInt(f -> 80 + 2 * (f.path.length() + f.type.length())).sum();
+        int bytes = facts.stream().mapToInt(f -> 80 + 2 * (f.path.length() + f.type.length()) + f.services.payloadBytes()).sum();
         if (bytes > MAX_FACT_BYTES) { facts.clear(); bytes = 0; unmet = "saved fact payload exceeds admission bound"; }
         Snapshot next = new Snapshot(revision, List.copyOf(facts), bytes, unmet);
         snapshot = next;
@@ -46,15 +56,17 @@ public final class FullSavedInput {
     private void visit(CompoundTag tag, String path, int depth, List<EntityFact> facts, int[] bytesUsed) {
         if (depth > MAX_DEPTH || facts.size() == MAX_ENTITIES) throw new Limit("saved root/passenger structure exceeds admission bound");
         FullSavedCollections.watch(tag, this);
+        paths.put(tag, path);
         tag.getList("Pos").ifPresent(pos -> FullSavedCollections.watch(pos, this));
         String type = tag.getStringOr("id", "");
         if (type.length() > 256) throw new Limit("saved concrete type exceeds admission bound");
-        bytesUsed[0] += 80 + 2 * (path.length() + type.length());
+        FullSavedServicesFacts serviceFacts = FullSavedServicesFacts.capture(tag, type, this);
+        bytesUsed[0] += 80 + 2 * (path.length() + type.length()) + serviceFacts.payloadBytes();
         if (bytesUsed[0] > MAX_FACT_BYTES) throw new Limit("saved fact payload exceeds admission bound");
         Vec3 pos = tag.read("Pos", Vec3.CODEC).orElse(Vec3.ZERO);
         facts.add(new EntityFact(path, type, clamp(pos.x, 3.0000512E7), clamp(pos.y, 2.0E7),
                 clamp(pos.z, 3.0000512E7), tag.getIntOr("Age", 0),
-                tag.contains("attributes") || tag.contains("sleeping_pos") || tag.contains("active_effects")));
+                tag.contains("attributes") || tag.contains("sleeping_pos") || tag.contains("active_effects"), serviceFacts));
         var passengers = tag.getListOrEmpty("Passengers");
         tag.getList("Passengers").ifPresent(list -> FullSavedCollections.watch(list, this));
         for (int i = 0; i < passengers.size(); i++) {
@@ -66,10 +78,11 @@ public final class FullSavedInput {
     private static final class Limit extends IllegalArgumentException { Limit(String reason) { super(reason); } }
 
     public Snapshot snapshot() { return snapshot; }
+    public String pathOf(CompoundTag exactTag) { return snapshot == null ? null : paths.get(exactTag); }
     public void activate() { tracking = true; }
     public boolean tracking() { return tracking; }
     public boolean available() { return !observing.get(); }
-    public void discardSnapshot() { snapshot = null; }
+    public void discardSnapshot() { snapshot = null; paths.clear(); }
     public void subscribe(Runnable listener) {
         if (!changed.compareAndSet(null, listener) && changed.get() != listener)
             throw new ChunkProtocolException("saved input already has a retained producer consumer");
@@ -77,6 +90,7 @@ public final class FullSavedInput {
     public void unsubscribe(Runnable listener) { changed.compareAndSet(listener, null); }
     public void beforeWrite() {
         if (!tracking) return;
+        mutationBoundary.run();
         if (!observing.compareAndSet(false, true)) throw new ChunkProtocolException("saved input producer overlaps its exclusive observation turn");
         writer = Thread.currentThread();
     }
@@ -117,7 +131,7 @@ public final class FullSavedInput {
 
     /** The pinned Entity/CollisionGetter/BlockCollisions horizontal envelope, including both attempts. */
     static Set<ChunkPos> collisionPositions(EntityFact fact, int limit) {
-        double previous = EntityTypes.TADPOLE.getDimensions().width();
+        double previous = fact.contextualDimensions() ? 0.0 : EntityTypes.TADPOLE.getDimensions().width();
         double next = EntityTypes.FROG.getDimensions().width();
         double half = (Math.max(0.0F, (float) next - (float) previous) + 1.0E-6) / 2 + next;
         int x0 = ((int) Math.floor(fact.x - half - 1.0E-7) - 1) >> 4;

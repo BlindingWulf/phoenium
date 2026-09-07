@@ -1,0 +1,8 @@
+{
+  "required": true,
+  "package": "dev.phoenium.mixin",
+  "plugin": "dev.phoenium.mixin.LiveTickPhasePlugin",
+  "compatibilityLevel": "JAVA_25",
+  "mixins": ["LiveLevelTickPhaseMixin", "LiveChunkTickPhaseMixin", "LiveTickReadinessMapMixin"],
+  "injectors": { "defaultRequire": 1 }
+}

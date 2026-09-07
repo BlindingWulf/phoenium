@@ -181,6 +181,23 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
         pendingTick = new PendingTick(level, shouldKeepTicking, envelope);
         try {
             while (executions < dispatches && scheduler.lifecycle().acceptsSimulationWork()) {
+                if (pendingTick.levelState != null && !pendingTick.continuationQueued) {
+                    // The original clock/scheduled-tick/raid prefix has committed under its
+                    // owner. Original distance updates now run once in their original order,
+                    // while no region is held; ordinary ticking futures can then finish.
+                    if (pendingTick.cacheState == null)
+                        pendingTick.cacheState = ((LiveTickPhases.CacheAccess) pendingTick.levelState.cache())
+                                .phoenium$prepareChunkTick(shouldKeepTicking, true);
+                    pendingTick.readiness = LiveTickReadiness.await(level);
+                    RegionRoute next = directory.resolve(live.key()).orElseThrow();
+                    RegionTaskEnvelope continuation = new RegionTaskEnvelope("live-level-tick-suffix",
+                            new TaskPayload.LiveLevelTick(world.value()), live.key(), next.generation(), next.ownerEpoch(),
+                            "minecraft-server", new TaskCorrelationId(++sequence), new TaskSequence(sequence), AdmissionPolicy.REJECT);
+                    if (gateway.submit(continuation) != OwnerGateway.Delivery.QUEUED)
+                        throw new IllegalStateException("live tick suffix admission rejected for " + world.value());
+                    pendingTick.envelope = continuation;
+                    pendingTick.continuationQueued = true;
+                }
                 long before = scheduler.advances();
                 scheduler.advanceOne();
                 if (scheduler.advances() == before) {
@@ -188,6 +205,11 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
                     throw new IllegalStateException("admitted live tick was not reachable through the owner scheduler");
                 }
             }
+        } catch (RuntimeException | Error failure) {
+            // Preserve a failed original control-plane prefix; never replay the owned prefix.
+            failClosed(failure, pendingTick.envelope());
+            scheduler.quiesce();
+            throw failure;
         } finally {
             pendingTick = null;
         }
@@ -205,10 +227,21 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
             unleasedExecutions++;
             throw new IllegalStateException("live tick execution was not bound to its admitted envelope");
         }
-        if (injectedFailureAt > 0 && dispatches == injectedFailureAt) {
+        if (pending.levelState == null && injectedFailureAt > 0 && dispatches == injectedFailureAt) {
             throw new IllegalStateException("Stage 2 requested live tick failure at dispatch " + dispatches);
         }
-        pending.level().tick(pending.shouldKeepTicking());
+        var phases = (LiveTickPhases.LevelAccess) pending.level();
+        if (pending.levelState == null) {
+            pending.levelState = phases.phoenium$beforeChunkTick(pending.shouldKeepTicking());
+            return;
+        }
+        if (!pending.continuationQueued || pending.readiness == null)
+            throw new IllegalStateException("live tick suffix has no prepared original readiness");
+        if (!pending.readiness.current()) {
+            pending.continuationQueued = false;
+            return; // No suffix effect occurred; release this owner before re-observation.
+        }
+        phases.phoenium$afterChunkTick(pending.levelState, pending.cacheState);
         refreshEntityBindings(pending.level());
         executions++;
         runtime.tick();
@@ -216,10 +249,13 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
 
     public void stop() {
         if (state == State.STOPPED) return;
+        fullRegistrations.values().forEach(dev.phoenium.chunk.FullRegistrationRuntime::shutdown);
+        logger.info("PHOENIUM_FULL STOPPED {}", fullDiagnostics());
         chunkBinding.shutdown();
         if (scheduler != null) { scheduler.quiesce(); scheduler.stop(); }
         chunkPrerequisiteServices.values().forEach(ChunkPrerequisiteServices::shutdown);
         chunkPrerequisiteServices.clear();
+        fullRegistrations.clear();
         state = State.STOPPED;
         lifecycleStops++;
         logStatus("stopped");
@@ -248,6 +284,35 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
     }
 
     public ChunkBindingRuntime chunkBinding() { return chunkBinding; }
+    private final boolean authoritativeFull = Boolean.getBoolean("phoenium.full.authoritative");
+    private final java.util.Map<ServerLevel, dev.phoenium.chunk.FullRegistrationRuntime> fullRegistrations = new java.util.concurrent.ConcurrentHashMap<>();
+    private dev.phoenium.chunk.FullRegionalEnclosure fullEnclosure;
+    public dev.phoenium.chunk.FullRegistrationRuntime fullRegistration(ServerLevel level) {
+        if (!authoritativeFull) return null;
+        return fullRegistrations.computeIfAbsent(level, world -> {
+            var authority = requireChunkWorld(world);
+            if (fullEnclosure == null) {
+                // The coordinator shares the existing runtime/lease/object ledgers. Bootstrap
+                // has no queued owner work; this gateway is only its mailbox revalidator.
+                var topologyScheduler = new RegionScheduler(runtimes, directory, barrier, this, this);
+                var topologyGateway = new OwnerGateway(directory, runtimes, topologyScheduler);
+                fullEnclosure = new dev.phoenium.chunk.FullRegionalEnclosure(directory, runtimes, topologyGateway, objects);
+            }
+            return new dev.phoenium.chunk.FullRegistrationRuntime(world, authority,
+                    dev.phoenium.chunk.FullInitializedInputs.Limits.production(), fullEnclosure);
+        });
+    }
+    public boolean pumpFullOne() {
+        if (dev.phoenium.ownership.OwnershipContext.current().isPresent()) return false;
+        for (var full : fullRegistrations.values()) if (full.pumpOne()) return true;
+        return false;
+    }
+    public String fullDiagnostics() {
+        return "authoritative=" + authoritativeFull + " " + fullRegistrations.entrySet().stream()
+                .map(entry -> entry.getKey().dimension().identifier() + "=" + entry.getValue().measurements()
+                        + " inputs=" + entry.getValue().inputs.measurements() + " published=" + entry.getValue().published.measurements())
+                .collect(java.util.stream.Collectors.joining(" "));
+    }
 
     @Override
     public ChunkBindingRuntime.WorldAuthority requireChunkWorld(ServerLevel level) {
@@ -649,6 +714,20 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
     private record ReplayIdentity(TaskCorrelationId correlation, ReplayKind kind, ServerGamePacketListenerImpl connection, Object packet) { }
     private record LiveRegion(ServerLevel level, RegionId id, RoutingKey key, RegionRuntime runtime,
                               long worldInstanceSequence) { }
-    private record PendingTick(ServerLevel level, BooleanSupplier shouldKeepTicking, RegionTaskEnvelope envelope) { }
+    private static final class PendingTick {
+        final ServerLevel level;
+        final BooleanSupplier shouldKeepTicking;
+        RegionTaskEnvelope envelope;
+        LiveTickPhases.LevelState levelState;
+        LiveTickPhases.CacheState cacheState;
+        LiveTickReadiness.Receipt readiness;
+        boolean continuationQueued;
+        PendingTick(ServerLevel level, BooleanSupplier shouldKeepTicking, RegionTaskEnvelope envelope) {
+            this.level = level; this.shouldKeepTicking = shouldKeepTicking; this.envelope = envelope;
+        }
+        ServerLevel level() { return level; }
+        BooleanSupplier shouldKeepTicking() { return shouldKeepTicking; }
+        RegionTaskEnvelope envelope() { return envelope; }
+    }
     public enum State { NEW, RUNNING, STOPPED }
 }

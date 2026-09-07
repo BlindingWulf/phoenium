@@ -1,0 +1,103 @@
+package dev.phoenium.chunk;
+
+import com.google.common.collect.ImmutableList;
+import java.util.*;
+import java.util.concurrent.atomic.*;
+import net.minecraft.SharedConstants;
+import net.minecraft.server.Bootstrap;
+import net.minecraft.server.level.ServerLevel;
+import net.minecraft.world.entity.*;
+import net.minecraft.world.level.entity.*;
+import org.junit.jupiter.api.*;
+import static dev.phoenium.chunk.FullDecisionWitnessSupport.*;
+import static org.junit.jupiter.api.Assertions.*;
+
+/** Original reference and caller bodies consume owner-published facts through installed call sites. */
+final class FullEntityFactsTest {
+    @BeforeAll static void bootstrap() { SharedConstants.tryDetectVersion(); Bootstrap.bootStrap(); }
+    private static LivingEntity target(ServerLevel level, UUID id, int number, AtomicInteger predicates) throws Exception {
+        LivingEntity entity = stub(LivingEntity.class, List.of(new Answer(LivingEntity.class.getMethod("getHealth"), args -> {
+            predicates.incrementAndGet(); return 20F;
+        }), new Answer(Entity.class.getMethod("onRemoval", Entity.RemovalReason.class), args -> null)));
+        initialize(entity, level, id, number, EntityTypes.PIG); return entity;
+    }
+    private static void initialize(Entity entity, ServerLevel level, UUID id, int number, EntityType<?> type) throws Exception {
+        set(entity, Entity.class, "level", level); set(entity, Entity.class, "type", type);
+        set(entity, Entity.class, "passengers", ImmutableList.of()); set(entity, Entity.class, "levelCallback", EntityInLevelCallback.NULL);
+        entity.setUUID(id); entity.setId(number);
+    }
+    @Test void firstNonnullWorldWinsBeforeOriginalClassFilteringAndUsesSuppliedOrder() throws Exception {
+        try (var f = new FullServiceOperationFixture()) {
+            ServerLevel origin = f.world(), second = f.world(), third = f.world(); UUID id = UUID.randomUUID();
+            var local = new EntityLookup<Entity>(); var two = new EntityLookup<Entity>(); var three = new EntityLookup<Entity>();
+            Entity wrong = stub(Entity.class, List.of()); initialize(wrong, origin, id, 51, EntityTypes.ARROW); local.add(wrong);
+            LivingEntity expected = target(second, id, 52, new AtomicInteger()); two.add(expected); three.add(target(third, id, 53, new AtomicInteger()));
+            f.full(claim -> assertNull(EntityReference.getLivingEntity(EntityReference.of(id), origin)));
+            local.remove(wrong);
+            f.full(claim -> assertSame(expected, EntityReference.getLivingEntity(EntityReference.of(id), origin)));
+            Collections.swap(f.worlds, 1, 2);
+            f.full(claim -> assertSame(three.getEntity(id), EntityReference.getLivingEntity(EntityReference.of(id), origin)));
+        }
+    }
+    @Test void liveCachedAliasSurvivesDirectoryReplacementUntilOriginalRemovalFallback() throws Exception {
+        try (var f = new FullServiceOperationFixture()) {
+            ServerLevel origin = f.world(); UUID id = UUID.randomUUID(); var lookup = new EntityLookup<Entity>();
+            LivingEntity old = target(origin, id, 61, new AtomicInteger()); lookup.add(old);
+            var reference = EntityReference.<LivingEntity>of(id);
+            f.full(claim -> assertSame(old, reference.getEntity(origin, LivingEntity.class)));
+            lookup.remove(old); LivingEntity replacement = target(origin, id, 62, new AtomicInteger()); lookup.add(replacement);
+            f.full(claim -> assertSame(old, reference.getEntity(origin, LivingEntity.class), "live cached alias wins over a same-UUID directory replacement"));
+            old.setRemoved(Entity.RemovalReason.UNLOADED_TO_CHUNK);
+            f.full(claim -> assertSame(replacement, reference.getEntity(origin, LivingEntity.class)));
+            assertEquals(1L, f.service.entityFacts.measurements().get("addressable"));
+        }
+    }
+    @Test void originalMobValidationUsesFactsAtEveryReuseWithoutForeignPredicateCalls() throws Exception {
+        try (var f = new FullServiceOperationFixture()) {
+            ServerLevel origin = f.world(), foreign = f.world(); var calls = new AtomicInteger();
+            LivingEntity target = target(foreign, UUID.randomUUID(), 71, calls); new EntityLookup<Entity>().add(target);
+            int publications = calls.get(); Mob caller = stub(Mob.class, List.of()); set(caller, Entity.class, "level", origin);
+            f.full(claim -> {
+                FullEntityFacts.constructed(caller); caller.setTarget(target);
+                assertSame(target, caller.getTargetUnchecked()); assertSame(target, caller.getTarget());
+                assertEquals(publications, calls.get(), "original target virtual predicate is invoked only by its publisher");
+            });
+            target.setInvulnerable(true); int afterWriter = calls.get();
+            f.full(claim -> { FullEntityFacts.constructed(caller); assertNull(caller.getTarget()); assertEquals(afterWriter, calls.get()); });
+        }
+    }
+    @Test void committedRemovalFactPrecedesOriginalCallbackFailureAndCannotBeRolledBack() throws Exception {
+        try (var f = new FullServiceOperationFixture()) {
+            ServerLevel world = f.world(); var failure = new IllegalStateException("original callback after removal");
+            AtomicReference<Entity> exact = new AtomicReference<>();
+            Entity entity = stub(Entity.class, List.of(new Answer(Entity.class.getMethod("onRemoval", Entity.RemovalReason.class), args -> {
+                assertTrue(((FullEntityFacts.Access) exact.get()).phoenium$referenceFact().removed()); throw failure;
+            })));
+            exact.set(entity); initialize(entity, world, UUID.randomUUID(), 81, EntityTypes.ARROW); new EntityLookup<Entity>().add(entity);
+            assertSame(failure, assertThrows(IllegalStateException.class, () -> entity.setRemoved(Entity.RemovalReason.UNLOADED_TO_CHUNK)));
+            f.full(claim -> assertTrue(entity.isRemoved()));
+        }
+    }
+    @Test void foreignSetterCannotBorrowTheScalarReadTurnAndFailureSurvivesCatch() throws Exception {
+        try (var f = new FullServiceOperationFixture()) {
+            ServerLevel world = f.world(); LivingEntity entity = target(world, UUID.randomUUID(), 91, new AtomicInteger());
+            new EntityLookup<Entity>().add(entity);
+            assertThrows(ChunkProtocolException.class, () -> f.full(claim -> {
+                assertThrows(ChunkProtocolException.class, () -> entity.setInvulnerable(true));
+                assertFalse(entity.isInvulnerable());
+            }));
+            assertEquals(0L, f.service.measurements().get("reservations"));
+        }
+    }
+    @Test void identityWriterInvalidatesUnenteredCutAndOldAliasRetainsItsOwnIdentity() throws Exception {
+        try (var f = new FullServiceOperationFixture()) {
+            ServerLevel world = f.world(); LivingEntity entity = target(world, UUID.randomUUID(), 101, new AtomicInteger());
+            new EntityLookup<Entity>().add(entity); UUID next = UUID.randomUUID();
+            try (var serial = f.service.serial(FullFinishingServices.Phase.SERVER_TASK)) {
+                var reservation = f.service.tryReserve(f.stage, f.holder, f.worlds, 1);
+                entity.setUUID(next); assertFalse(reservation.valid(f.stage, f.holder)); reservation.close();
+            }
+            f.full(claim -> { assertEquals(next, entity.getUUID()); assertEquals(next.toString(), entity.getScoreboardName()); assertEquals(101, entity.getId()); });
+        }
+    }
+}

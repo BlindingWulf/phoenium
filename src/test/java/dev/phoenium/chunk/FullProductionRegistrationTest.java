@@ -191,7 +191,7 @@ class FullProductionRegistrationTest {
                 Map.of(f.ownerId, f.owner.leases()), f.barrier));
         assertEquals(ChunkStageAdmission.Result.NOT_READY, executor.execute(graph.finishing, f.ownerId, new TopologyGeneration(1)));
         assertEquals(ChunkCustodyModel.StageState.QUEUED, graph.finishing.state().orElseThrow());
-        assertTrue(graph.missingFinishingBindings().contains("D2/P owner occurrences"));
+        assertTrue(graph.missingFinishingBindings().contains("finishing service reservation"));
         assertTrue(f.world.inserted.isEmpty()); assertFalse(graph.conversion().isDone());
         assertFalse(f.owner.leases().hasActiveLease());
         f.stop(); assertReleased(f);

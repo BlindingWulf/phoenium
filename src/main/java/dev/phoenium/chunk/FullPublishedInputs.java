@@ -11,13 +11,14 @@ import net.minecraft.util.StaticCache2D;
 import net.minecraft.world.level.chunk.*;
 import net.minecraft.world.level.chunk.status.*;
 
-/** Baseline FULL provenance, not STATUS_PUBLISH admission. The holder owns its exact lineage.
- * The finite derived index supports lifecycle teardown; it grants neither ownership nor tickets.
+/** Original and separately admitted FULL provenance. The holder owns its exact lineage.
+ * The index has one record per real winning FULL holder, retained through acknowledged retirement;
+ * it cannot refuse provenance for legitimate resident demand and grants neither ownership nor tickets.
  * Original completion and save-pin callbacks always run outside the custody metadata fence.
  */
 public final class FullPublishedInputs {
     private static final ThreadLocal<Entry> ORIGINAL_INVOCATION = new ThreadLocal<>();
-    public enum Origin { ORIGINAL_BASELINE_PROTO, ORIGINAL_BASELINE_IMPOSTER }
+    public enum Origin { ORIGINAL_BASELINE_PROTO, ORIGINAL_BASELINE_IMPOSTER, ADMITTED_PROTO, ADMITTED_IMPOSTER }
     public record Evidence(GenerationChunkHolder holder, ChunkCustodyModel.LifecycleId lifecycle,
             ChunkCustodyModel.WorkId work, ChunkStep step, Object reservation, Origin origin,
             CompletableFuture<ChunkResult<ChunkAccess>> slot, ChunkResult<ChunkAccess> result,
@@ -54,14 +55,55 @@ public final class FullPublishedInputs {
     private final Thread observationThread;
     private boolean open = true;
     private long reservations, successes, acquisitions, acknowledgements, refusals;
-    // Charged resident records, separately from the initialized-input fact allocation.
-    private static final int MAX_RECORDS = 8192;
+    // Resident provenance is charged per existing holder, separately from bounded operation plans.
+    // A fixed observer cap would permanently lose real publication identity once a world exceeded it.
     FullPublishedInputs(ServerLevel level, ChunkBindingRuntime.WorldAuthority authority) {
         this.level = level; server = level.getServer(); this.authority = authority;
         services = authority.services(); custody = services.custody();
         observationThread = Objects.requireNonNull(((FullInputObservationThread) level.getChunkSource()).phoenium$inputThread());
     }
     public FullInputNotifications changes() { return changes; }
+    /** The already-winning selected work supplies lineage; this does not create another reservation. */
+    Entry admitted(GeneratingChunkMap map, GenerationChunkHolder holder, ChunkStep step,
+                   StaticCache2D<GenerationChunkHolder> cache, ChunkCustodyModel.WorkId work, ChunkAccess input) {
+        custody.gate().lock();
+        try {
+            var hooks = (FullHolderEvidence) holder;
+            if (!open || hooks.phoenium$publication() != null || !custody.metadataEntitledLocked(work)
+                    || hooks.phoenium$startedWork().get() != ChunkStatus.FULL
+                    || cache.get(holder.getPos().x(), holder.getPos().z()) != holder)
+                throw new ChunkProtocolException("admitted publication lost its winning work/holder");
+            Entry entry = new Entry(this, holder, work, step, map,
+                    input instanceof ImposterProtoChunk ? Origin.ADMITTED_IMPOSTER : Origin.ADMITTED_PROTO);
+            entry.cache = cache; entry.originalAsync = true;
+            custody.retainLifecycle(work.lifecycle());
+            hooks.phoenium$publication(entry); entries.add(entry); reservations++;
+            return entry;
+        } finally { custody.gate().unlock(); }
+    }
+    void admittedReturned(Entry entry, CompletableFuture<ChunkAccess> returned) {
+        custody.gate().lock(); try {
+            if (entry.returned != null) throw new ChunkProtocolException("repeated admitted R");
+            entry.returned = returned;
+        } finally { custody.gate().unlock(); }
+    }
+    void admittedPublishing(Entry entry, ChunkAccess value, ChunkStageClaim claim) {
+        claim.require(new ChunkCustodyModel.StageId(entry.work, ChunkStageKind.STATUS_PUBLISH, "FULL", 0));
+        custody.gate().lock(); try {
+            if (entry.owner != this || entry.settled || entry.retired || entry.invalid)
+                throw new ChunkProtocolException("obsolete admitted publication");
+            entry.attached = true; entry.value = value;
+        } finally { custody.gate().unlock(); }
+    }
+    /** Graph execution settlement is separate and waits for its own claims and prepared consumers. */
+    void admittedSettled(Entry entry) {
+        custody.gate().lock(); try {
+            if (entry.settled) return;
+            entry.settled = true; entry.returned = null; entry.producerMap = null;
+            entry.value = null; entry.cache = null;
+        } finally { custody.gate().unlock(); }
+        changes.published(); cleanup(entry);
+    }
     private static FullPublishedInputs source(GeneratingChunkMap map) {
         if (map instanceof FullPublicationSource source) return source.phoenium$publishedInputs();
         if (map instanceof ChunkMap real) {
@@ -84,7 +126,7 @@ public final class FullPublishedInputs {
         Entry entry;
         owner.custody.gate().lock();
         try {
-            if (!owner.open || owner.entries.size() >= MAX_RECORDS) {
+            if (!owner.open) {
                 owner.refusals++; entry = null;
             } else {
                 if (hooks.phoenium$publication() != null) throw new ChunkProtocolException("duplicate winning FULL publication lineage");

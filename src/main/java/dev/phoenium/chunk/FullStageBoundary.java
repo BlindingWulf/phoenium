@@ -181,13 +181,19 @@ public final class FullStageBoundary {
         Object[] preparationBootstrap = supplier.bsmArgs.clone();
         preparationBootstrap[1] = new org.objectweb.asm.Handle(Opcodes.H_INVOKESTATIC, TARGET, PREPARE, DESCRIPTOR, false);
         arguments.add(new InvokeDynamicInsnNode(supplier.name, supplier.desc, supplier.bsm, preparationBootstrap));
+        for (int local : new int[]{3, 0, 5}) arguments.add(new VarInsnNode(Opcodes.ALOAD, local));
+        arguments.add(new InvokeDynamicInsnNode("apply", supplier.desc.replace("Ljava/util/function/Supplier;", "Ljava/util/function/Function;"),
+                supplier.bsm,
+                org.objectweb.asm.Type.getMethodType("(Ljava/lang/Object;)Ljava/lang/Object;"),
+                new org.objectweb.asm.Handle(Opcodes.H_INVOKESTATIC, TARGET, FINISH, FINISH_DESCRIPTOR, false),
+                org.objectweb.asm.Type.getMethodType("(Lnet/minecraft/world/level/chunk/LevelChunk;)Lnet/minecraft/world/level/chunk/ChunkAccess;")));
         wrapper.instructions.insertBefore(edge, arguments);
         wrapper.instructions.set(edge, new MethodInsnNode(Opcodes.INVOKESTATIC,
                 "dev/phoenium/chunk/FullRegistrationRuntime", "registerAsync",
                 "(Ljava/util/function/Supplier;Ljava/util/concurrent/Executor;L" + CONTEXT + ";"
                         + "Lnet/minecraft/world/level/chunk/status/ChunkStep;Lnet/minecraft/util/StaticCache2D;"
-                        + "Lnet/minecraft/world/level/chunk/ChunkAccess;L" + HOLDER + ";Ljava/util/function/Supplier;)Ljava/util/concurrent/CompletableFuture;", false));
-        wrapper.maxStack += 10;
+                        + "Lnet/minecraft/world/level/chunk/ChunkAccess;L" + HOLDER + ";Ljava/util/function/Supplier;Ljava/util/function/Function;)Ljava/util/concurrent/CompletableFuture;", false));
+        wrapper.maxStack += 14;
     }
 
     public static void requireInstalledRegistrationCallbacks(ClassNode target) {

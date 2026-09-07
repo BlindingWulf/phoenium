@@ -27,6 +27,9 @@ public final class FullSavedCollections {
         return new InputList<>(list, source, true);
     }
     static FullSavedInput source(List<?> list) { return list instanceof InputList<?> input ? input.source.get() : null; }
+    static FullSavedInput source(CompoundTag tag) {
+        return ((CompoundAccess) (Object) tag).phoenium$savedMap() instanceof InputMap input ? input.source.get() : null;
+    }
     static void watch(CompoundTag tag, FullSavedInput source) {
         var access = (CompoundAccess) (Object) tag;
         var map = access.phoenium$savedMap();

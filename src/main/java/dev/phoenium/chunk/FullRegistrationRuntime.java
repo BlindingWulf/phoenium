@@ -14,8 +14,8 @@ import net.minecraft.world.level.chunk.*;
 import net.minecraft.world.level.chunk.status.*;
 
 /**
- * Finite FULL registration/preparation graph. The explicit generation-map source is deliberately
- * absent from ordinary ChunkMap: no property or global switch enables incomplete server demand.
+ * FULL registration, preparation, finishing and separately admitted publication. The production
+ * source selects this graph for an explicitly enabled disposable integration session.
  * The one custody gate protects metadata, never callbacks, submissions or future completion.
  */
 public final class FullRegistrationRuntime {
@@ -36,20 +36,27 @@ public final class FullRegistrationRuntime {
     private final ChunkStageExecutor executor;
     final ChunkStageDeliveryPump pump;
     private boolean open = true;
-    private long registrations, captures, releases, preparationCalls;
-    private final Thread observationThread = Thread.currentThread();
+    private long registrations, captures, releases, preparationCalls, finishingCalls, publicationCalls;
+    private final Thread observationThread;
     public final FullInitializedInputs inputs;
     public final FullPublishedInputs published;
     private final AutoCloseable publishedSubscription;
     private final AutoCloseable inputRouteSubscription;
     private AutoCloseable inputViewSubscription;
+    private final FullRegionalEnclosure enclosure;
 
     public FullRegistrationRuntime(ServerLevel level, ChunkBindingRuntime.WorldAuthority authority) {
         this(level, authority, FullInitializedInputs.Limits.production());
     }
     public FullRegistrationRuntime(ServerLevel level, ChunkBindingRuntime.WorldAuthority authority, FullInitializedInputs.Limits limits) {
+        this(level, authority, limits, null);
+    }
+    public FullRegistrationRuntime(ServerLevel level, ChunkBindingRuntime.WorldAuthority authority,
+                                   FullInitializedInputs.Limits limits, FullRegionalEnclosure enclosure) {
         this.level = Objects.requireNonNull(level); this.authority = Objects.requireNonNull(authority);
+        this.enclosure = enclosure;
         server = Objects.requireNonNull(level.getServer());
+        observationThread = Objects.requireNonNull(((FullInputObservationThread) level.getChunkSource()).phoenium$inputThread());
         services = authority.services(); custody = services.custody();
         inputs = new FullInitializedInputs(this, limits);
         published = services.publishedInputs(level, authority);
@@ -76,12 +83,20 @@ public final class FullRegistrationRuntime {
     Optional<Graph> findGraph(GenerationChunkHolder holder) {
         return graphSnapshot().stream().filter(graph -> graph.holder == holder).findFirst();
     }
+    boolean biomesReleased(GenerationChunkHolder holder) {
+        custody.gate().lock(); try {
+            var generation = generations.get(holder);
+            var producer = generation == null ? null : generation.steps.get(ChunkStatus.BIOMES);
+            return producer == null || producer.finished && producer.failure == null;
+        } finally { custody.gate().unlock(); }
+    }
 
     /** Called only at the map invocation dominated by the holder's winning acquireStatusBump. */
     public static CompletableFuture<ChunkAccess> applyWinning(GeneratingChunkMap map, GenerationChunkHolder holder,
             ChunkStep step, StaticCache2D<GenerationChunkHolder> cache, Supplier<CompletableFuture<ChunkAccess>> original) {
-        if (!(map instanceof FullGenerationSource source)) return FullPublishedInputs.winning(map, holder, step, cache, original);
-        return source.phoenium$fullRegistration().winning(map, holder, step, cache, original);
+        var runtime = map instanceof FullGenerationSource source ? source.phoenium$fullRegistration() : null;
+        if (runtime == null) return FullPublishedInputs.winning(map, holder, step, cache, original);
+        return runtime.winning(map, holder, step, cache, original);
     }
 
     private CompletableFuture<ChunkAccess> winning(GeneratingChunkMap map, GenerationChunkHolder holder,
@@ -125,6 +140,7 @@ public final class FullRegistrationRuntime {
             producer.returned = returned;
             if (producer.graph != null) {
                 producer.graph.returned = returned;
+                published.admittedReturned(producer.graph.publicationEntry, returned);
                 returnedIndex.put(returned, producer.graph);
             }
         } finally { custody.gate().unlock(); }
@@ -136,7 +152,8 @@ public final class FullRegistrationRuntime {
     /** Replaces the exact supplyAsync call inside the original wrapper, before any future escapes. */
     public static CompletableFuture<ChunkAccess> registerAsync(Supplier<ChunkAccess> original, Executor originalExecutor,
             WorldGenContext context, ChunkStep step, StaticCache2D<GenerationChunkHolder> cache,
-            ChunkAccess input, GenerationChunkHolder holder, Supplier<ChunkAccess> preparation) {
+            ChunkAccess input, GenerationChunkHolder holder, Supplier<ChunkAccess> preparation,
+            Function<LevelChunk, ChunkAccess> finishing) {
         Invocation invocation = SYNCHRONOUS.get();
         if (invocation == null) return FullPublishedInputs.originalAsync(original, originalExecutor, context, step, cache, input, holder);
         if (invocation.holder != holder || invocation.step != step || invocation.cache != cache
@@ -145,18 +162,19 @@ public final class FullRegistrationRuntime {
         if (step != ChunkPyramid.GENERATION_PYRAMID.getStepTo(ChunkStatus.FULL)
                 && step != ChunkPyramid.LOADING_PYRAMID.getStepTo(ChunkStatus.FULL))
             throw new ChunkProtocolException("unaudited FULL generation step");
-        return invocation.runtime.register(invocation, context, input, preparation, originalExecutor);
+        return invocation.runtime.register(invocation, context, input, preparation, finishing, originalExecutor);
     }
 
     private CompletableFuture<ChunkAccess> register(Invocation invocation, WorldGenContext context, ChunkAccess input,
-                                                     Supplier<ChunkAccess> preparation, Executor originalExecutor) {
+                                                     Supplier<ChunkAccess> preparation, Function<LevelChunk, ChunkAccess> finishing,
+                                                     Executor originalExecutor) {
         var holder = invocation.holder;
         var key = new RoutingKey(authority.world(), holder.getPos().x(), holder.getPos().z());
         var lifecycle = services.lifecycles().activateHolder(authority.worldInstanceSequence(), key, holder);
         var work = services.works().beginOrResolveSharedWork(lifecycle,
                 new ChunkWorkRegistry.WorkReservation("generation-status", "FULL", 0));
         services.trackHolder(lifecycle, holder);
-        Graph graph = new Graph(invocation, context, input, preparation, lifecycle, work);
+        Graph graph = new Graph(invocation, context, input, preparation, finishing, lifecycle, work);
         custody.gate().lock();
         try {
             if (invocation.producer.graph != null) throw new ChunkProtocolException("duplicate async FULL registration");
@@ -176,8 +194,8 @@ public final class FullRegistrationRuntime {
     public static CompletableFuture<ChunkResult<ChunkAccess>> attach(GeneratingChunkMap map,
             CompletableFuture<ChunkAccess> returned, GenerationChunkHolder holder, ChunkStep step,
             BiFunction<ChunkAccess, Throwable, ChunkResult<ChunkAccess>> original) {
-        if (!(map instanceof FullGenerationSource source)) return FullPublishedInputs.attach(map, returned, holder, step, original);
-        FullRegistrationRuntime runtime = source.phoenium$fullRegistration();
+        FullRegistrationRuntime runtime = map instanceof FullGenerationSource source ? source.phoenium$fullRegistration() : null;
+        if (runtime == null) return FullPublishedInputs.attach(map, returned, holder, step, original);
         Graph graph;
         runtime.custody.gate().lock();
         try {
@@ -206,9 +224,11 @@ public final class FullRegistrationRuntime {
 
     public boolean pumpOne() {
         if (OwnershipContext.current().isPresent()) return false;
+        if (enclosure != null && enclosure.advance()) return true;
         pump.retryTopology();
         Delivery delivery = deliveries.pollFirst();
         if (delivery == null) return inputs.pump();
+        delivery.stage.prepareFullServices();
         var result = executor.execute(delivery.stage, delivery.owner, delivery.generation);
         if (result == ChunkStageAdmission.Result.STALE_ROUTE)
             pump.deliverPublished(delivery.stage);
@@ -224,6 +244,7 @@ public final class FullRegistrationRuntime {
         custody.gate().lock(); try { open = false; snapshot = List.copyOf(graphs); } finally { custody.gate().unlock(); }
         snapshot.forEach(graph -> graph.stop(ChunkStageAdmission.Result.SHUTDOWN, null));
         published.shutdown();
+        services.stopResidentHolders();
         try { publishedSubscription.close(); } catch (Exception failure) { throw new ChunkProtocolException("publication subscription acknowledgement", failure); }
         try { inputRouteSubscription.close(); } catch (Exception failure) { throw new ChunkProtocolException("input route acknowledgement", failure); }
         if (inputViewSubscription != null) try { inputViewSubscription.close(); inputViewSubscription = null; }
@@ -251,7 +272,8 @@ public final class FullRegistrationRuntime {
         custody.gate().lock(); try {
             return Map.of("registrations", registrations, "captures", captures, "producerReleases", releases,
                     "preparationCalls", preparationCalls, "graphs", (long) graphs.size(), "returnedIndex", (long) returnedIndex.size(),
-                    "generationHolders", (long) generations.size(), "deliveries", (long) deliveries.size());
+                    "generationHolders", (long) generations.size(), "deliveries", (long) deliveries.size(),
+                    "finishingCalls", finishingCalls, "publicationCalls", publicationCalls);
         } finally { custody.gate().unlock(); }
     }
     private void cleanupGenerations() {
@@ -319,6 +341,15 @@ public final class FullRegistrationRuntime {
         private boolean clockReserved;
         public final PendingVanillaStage<ChunkAccess, Prepared> preparation;
         public final PendingVanillaStage<Prepared, ChunkAccess> finishing;
+        public final PendingVanillaStage<FullResult, ChunkResult<ChunkAccess>> publication;
+        private final FullPublishedInputs.Entry publicationEntry;
+        private final CompletableFuture<ChunkResult<ChunkAccess>> publicationResult = new CompletableFuture<>();
+        private BiFunction<ChunkAccess, Throwable, ChunkResult<ChunkAccess>> originalPublication;
+        private FullResult fullResult;
+        private FullInitializedInputs.Receipt claimedInputs;
+        private FullFinishingServices.Reservation serviceReservation;
+        private FullLegacyOwners.Plan legacyOwners;
+        private boolean finished, finishingParked;
         private final CompletableFuture<ChunkAccess> conversion = new CompletableFuture<>();
         private CompletableFuture<ChunkAccess> returned;
         private CompletableFuture<ChunkResult<ChunkAccess>> adjacent;
@@ -336,9 +367,11 @@ public final class FullRegistrationRuntime {
         private FullInitializedInputs.Evaluation lastInputEvaluation;
 
         Graph(Invocation invocation, WorldGenContext context, ChunkAccess input, Supplier<ChunkAccess> operation,
+              Function<LevelChunk, ChunkAccess> finishingOperation,
               ChunkCustodyModel.LifecycleId lifecycle, ChunkCustodyModel.WorkId work) {
             this.invocation = invocation; this.holder = invocation.holder; this.lifecycle = lifecycle; this.work = work;
             this.context = context; this.input = input; evidence = (FullHolderEvidence) holder;
+            publicationEntry = published.admitted(invocation.map, holder, invocation.step, invocation.cache, work, input);
             retention = evidence.phoenium$generationSaveSync();
             containerFactory = context.level().palettedContainerFactory();
             dimensionType = context.level().dimensionType();
@@ -382,10 +415,32 @@ public final class FullRegistrationRuntime {
             finishing = new PendingVanillaStage<>(custody, lifecycle, work,
                     new ChunkCustodyModel.StageId(work, ChunkStageKind.FULL_FINISH, "FULL", 0),
                     new TaskCorrelationId(work.workSequence()), (value, claim) -> {
-                        throw new ChunkProtocolException("FULL finishing reached without installed production services");
+                        claim.require(new ChunkCustodyModel.StageId(work, ChunkStageKind.FULL_FINISH, "FULL", 0));
+                        finishingCalls++;
+                        try (var shared = serviceReservation.enter(claim);
+                             var owners = legacyOwners.enter(claim);
+                             var contexts = claimedInputs.contexts() == null ? null : claimedInputs.contexts().enter(claim);
+                             var queries = FullFinishingQueries.enter(FullRegistrationRuntime.this, this, claim, claimedInputs)) {
+                            ChunkAccess result = finishingOperation.apply(value.actual());
+                            if (result != value.actual()) throw new ChunkProtocolException("original FULL suffix changed prepared object identity");
+                            return result;
+                        } finally { claimedInputs = null; }
                     });
             finishing.requireFull(this);
+            publication = new PendingVanillaStage<>(custody, lifecycle, work,
+                    new ChunkCustodyModel.StageId(work, ChunkStageKind.STATUS_PUBLISH, "FULL", 0),
+                    new TaskCorrelationId(work.workSequence()), (value, claim) -> {
+                        claim.require(new ChunkCustodyModel.StageId(work, ChunkStageKind.STATUS_PUBLISH, "FULL", 0));
+                        if (value != fullResult || value.returned != returned || originalPublication == null)
+                            throw new ChunkProtocolException("FULL publication lost original adjacent R result");
+                        publicationCalls++;
+                        published.admittedPublishing(publicationEntry, value.failure == null ? value.value : null, claim);
+                        return originalPublication.apply(value.value, value.failure);
+                    });
+            publication.requireFull(this);
             preparation.outcome().thenAccept(this::preparedOutcome);
+            finishing.outcome().thenAccept(this::finishedOutcome);
+            publication.outcome().thenAccept(this::publishedOutcome);
         }
 
         void arm() {
@@ -399,13 +454,15 @@ public final class FullRegistrationRuntime {
 
         CompletableFuture<ChunkResult<ChunkAccess>> attach(BiFunction<ChunkAccess, Throwable, ChunkResult<ChunkAccess>> original) {
             // R is already correlated. Do not arm admission until handle's result reference is retained.
+            originalPublication = Objects.requireNonNull(original);
             var result = returned.handle((value, failure) -> {
                 Throwable cause = failure instanceof CompletionException ? failure.getCause() : failure;
                 if (cause instanceof Stopped control && control == stopped && control.terminalIdentity == terminalIdentity)
-                    return GenerationChunkHolder.UNLOADED_CHUNK;
-                if (failure == null) throw new ChunkProtocolException("FULL publication binding is absent");
-                return original.apply(value, failure);
-            });
+                    return CompletableFuture.completedFuture(GenerationChunkHolder.UNLOADED_CHUNK);
+                fullResult = new FullResult(returned, value, failure);
+                if (publication.bindInput(fullResult)) pump.publishAndDeliver(publication);
+                return publicationResult;
+            }).thenCompose(Function.identity());
             custody.gate().lock(); try { adjacent = result; attached = true; } finally { custody.gate().unlock(); }
             result.whenComplete((ignored, failure) -> cleanup());
             retention.whenComplete((ignored, failure) -> cleanup());
@@ -417,9 +474,32 @@ public final class FullRegistrationRuntime {
         LightInputService.Readiness readinessLocked(ChunkStageKind kind) {
             if (kind == ChunkStageKind.FULL_FINISH) {
                 lastInputEvaluation = inputs.inspect(this);
-                // A positive data component is consumed here. Independent query/D1/D2/C/P/S/W
-                // and enclosure validators have not been installed; there is still no claim.
-                return LightInputService.Readiness.NOT_REGISTERED;
+                if (lastInputEvaluation.state() != FullInitializedInputs.State.SATISFIED
+                        || serviceReservation == null || !serviceReservation.valid(finishing.stage(), holder)
+                        || legacyOwners == null || !legacyOwners.valid(finishing.stage(), savedSnapshot()))
+                    return LightInputService.Readiness.NOT_REGISTERED;
+                if (prepared == null || stopped != null || !services.lifecycles().isCurrent(lifecycle))
+                    return LightInputService.Readiness.STALE;
+                var route = authority.directory().resolve(lifecycle.chunkKey()).orElse(null);
+                if (route == null) return LightInputService.Readiness.NOT_REGISTERED;
+                for (var target : inputReceipt().targets()) {
+                    if (target.holder() != null && target.availability() != FullInitializedInputs.Availability.ABSENT
+                            && !route.equals(target.route())) return LightInputService.Readiness.NOT_REGISTERED;
+                    var generation = generations.get(target.holder());
+                    if (target.availability() != FullInitializedInputs.Availability.BIOMES
+                            && generation != null && !generation.writers.isEmpty()) return LightInputService.Readiness.NOT_REGISTERED;
+                }
+                return LightInputService.Readiness.REGISTERED;
+            }
+            if (kind == ChunkStageKind.STATUS_PUBLISH) {
+                if (stopped != null || !custody.metadataEntitledLocked(work)
+                        || !services.lifecycles().isCurrent(lifecycle)) return LightInputService.Readiness.STALE;
+                if (fullResult == null || fullResult.returned != returned || !returned.isDone())
+                    return LightInputService.Readiness.NOT_REGISTERED;
+                if (fullResult.failure == null && (!finished || prepared == null || fullResult.value != prepared.actual()
+                        || custody.stageState(finishing.stage()).orElse(null) != ChunkCustodyModel.StageState.APPLIED))
+                    return LightInputService.Readiness.FAILED;
+                return LightInputService.Readiness.REGISTERED;
             }
             if (kind != ChunkStageKind.FULL_PREPARE) return LightInputService.Readiness.FAILED;
             if (!attached || !armed) return LightInputService.Readiness.NOT_REGISTERED;
@@ -457,18 +537,32 @@ public final class FullRegistrationRuntime {
             return !(input instanceof ImposterProtoChunk) && ((ProtoChunk) input).getBlockEntities().values().stream()
                     .anyMatch(entity -> entity instanceof net.minecraft.world.level.block.entity.PotentSulfurBlockEntity);
         }
-        boolean reserveLocked() {
+        boolean reserveLocked(ChunkStageKind kind) {
+            if (kind == ChunkStageKind.FULL_FINISH) {
+                if (readinessLocked(kind) != LightInputService.Readiness.REGISTERED) return false;
+                claimedInputs = inputReceipt(); return true;
+            }
+            if (kind != ChunkStageKind.FULL_PREPARE) return true;
             if (needsClock() && !(clockReserved = clock != null && clock.reserve(this))) return false;
             invocation.producer.generation.preparing = true; return true;
         }
-        void unreserveLocked() {
+        void unreserveLocked(ChunkStageKind kind) {
+            if (kind == ChunkStageKind.FULL_FINISH) { claimedInputs = null; return; }
+            if (kind != ChunkStageKind.FULL_PREPARE) return;
             if (clockReserved) { clock.release(this); clockReserved = false; }
             invocation.producer.generation.preparing = false;
         }
         public List<String> missingFinishingBindings() {
-            var missing = new ArrayList<>(List.of("private query operation bindings and regional enclosure", "D1 identity facts", "D2/P owner occurrences",
-                    "C connection sessions", "S scoreboard ordering", "W named world turns", "STATUS_PUBLISH(FULL)"));
+            if (finished) return List.of();
+            var missing = new ArrayList<String>();
             if (inputEvaluation().state() != FullInitializedInputs.State.SATISFIED) missing.add("initialized-input component");
+            if (level.environmentAttributes() == null || level.getLevelData() == null) missing.add("world environment/clock context");
+            if (legacyOwners == null || !legacyOwners.ready()) missing.add("prepared legacy-owner occurrences");
+            if (serviceReservation == null) missing.add("finishing service reservation");
+            var route = authority.directory().resolve(lifecycle.chunkKey()).orElse(null);
+            if (inputReceipt() != null && inputReceipt().targets().stream().anyMatch(target -> target.holder() != null
+                    && target.availability() != FullInitializedInputs.Availability.ABSENT && !Objects.equals(route, target.route())))
+                missing.add("regional enclosure convergence");
             return List.copyOf(missing);
         }
         public Optional<Prepared> prepared() {
@@ -485,6 +579,50 @@ public final class FullRegistrationRuntime {
                 // Fact allocation is admitted separately by the input component after preparation.
             }
             if (savedInput != null) savedInput.activate();
+        }
+        public void requireFinishingAuthority(ChunkStageClaim claim, FullInitializedInputs.Receipt receipt) {
+            claim.require(finishing.stage());
+            if (serviceReservation == null) throw new ChunkProtocolException("FULL suffix has no service reservation");
+            serviceReservation.requireActive(claim);
+            if (receipt == null || receipt != claimedInputs || receipt != inputReceipt()
+                    || validateInputs(finishing.stage(), receipt).state() != FullInitializedInputs.State.SATISFIED)
+                throw new ChunkProtocolException("FULL suffix lacks its exact claimed input receipt");
+            for (var target : receipt.targets()) if (target.route() != null
+                    && (!target.route().region().equals(claim.frozenRoute().region())
+                    || !target.route().generation().equals(claim.frozenRoute().generation())))
+                throw new ChunkProtocolException("FULL input outside the claimed regional enclosure");
+        }
+        void prepareServices(ChunkStageKind kind) {
+            if (kind != ChunkStageKind.FULL_FINISH || serviceReservation != null || !inputActive()
+                    || inputEvaluation().state() != FullInitializedInputs.State.SATISFIED) return;
+            // Actual context producer is mandatory. In-memory endpoints without a world context
+            // continue to exercise the real missing-prerequisite branch.
+            if (level.environmentAttributes() == null || level.getLevelData() == null) return;
+            Set<RoutingKey> keys = new LinkedHashSet<>();
+            keys.add(lifecycle.chunkKey());
+            for (var target : inputReceipt().targets()) if (target.holder() != null
+                    && target.availability() != FullInitializedInputs.Availability.ABSENT)
+                keys.add(new RoutingKey(authority.world(), target.position().x(), target.position().z()));
+            if (enclosure != null && !enclosure.enclose(keys)) return;
+            var shared = FullFinishingServices.forServer(server);
+            if (legacyOwners != null && legacyOwners.ready() && !legacyOwners.valid(finishing.stage(), savedSnapshot())) {
+                legacyOwners.close(); legacyOwners = null;
+            }
+            if (legacyOwners == null) {
+                legacyOwners = shared.legacyOwners.prepare(finishing.stage(), savedSnapshot());
+                if (legacyOwners != null) legacyOwners.onReady(inputs::changed);
+            }
+            if (legacyOwners == null || !legacyOwners.ready()) return;
+            var worlds = new ArrayList<ServerLevel>();
+            worlds.add(level);
+            for (var other : server.getAllLevels()) if (other != level) worlds.add(other);
+            serviceReservation = shared.tryReserve(finishing.stage(), holder,
+                    worlds, savedSnapshot().entities().size());
+        }
+        void stageExited(ChunkStageKind kind) {
+            if (kind == ChunkStageKind.FULL_FINISH && serviceReservation != null) {
+                serviceReservation.close(); serviceReservation = null; claimedInputs = null;
+            }
         }
         boolean hasSavedInput() { return savedInput != null; }
         boolean savedAvailable() { return savedInput == null || savedInput.available(); }
@@ -567,13 +705,24 @@ public final class FullRegistrationRuntime {
             if (redeliver) pump.deliverPublished(preparation);
             settle();
         }
-        void awaitEvidence() {
+        void awaitEvidence(ChunkStageKind kind) {
+            if (kind == ChunkStageKind.FULL_FINISH) { finishingParked = true; return; }
+            if (kind != ChunkStageKind.FULL_PREPARE) return;
             custody.gate().lock(); try { evidenceParked = true; } finally { custody.gate().unlock(); }
             wake();
         }
+        boolean retryFinishing() {
+            if (finishingParked && inputActive() && !finishing.outcome().isDone()
+                    && (legacyOwners == null || legacyOwners.ready())) {
+                finishingParked = false;
+                pump.deliverPublished(finishing);
+                return true;
+            }
+            return false;
+        }
         private void preparedOutcome(ChunkStageOutcome<Prepared> outcome) {
             if (outcome instanceof ChunkStageOutcome.Applied<Prepared> applied) {
-                finishing.bindInput(applied.value()); // Private input retention; finishing's actual services are absent.
+                finishing.bindInput(applied.value()); // Retained preparation; execution still requires all actual claims.
                 finishingInputBound = true;
                 inputs.changed();
             } else if (outcome instanceof ChunkStageOutcome.VanillaFailure<Prepared> failure) {
@@ -581,6 +730,31 @@ public final class FullRegistrationRuntime {
             } else if (outcome instanceof ChunkStageOutcome.BarrierFailure<Prepared> failure) {
                 stop(ChunkStageAdmission.Result.FAILED_BARRIER, failure.failure());
             } else if (outcome instanceof ChunkStageOutcome.Control<Prepared> control) stop(control.result(), null);
+            settle();
+        }
+        private void finishedOutcome(ChunkStageOutcome<ChunkAccess> outcome) {
+            if (legacyOwners != null) { legacyOwners.close(); legacyOwners = null; }
+            acknowledgeInputs();
+            if (outcome instanceof ChunkStageOutcome.Applied<ChunkAccess> applied) {
+                finished = true;
+                if (stopped == null) conversion.complete(applied.value());
+            } else if (outcome instanceof ChunkStageOutcome.VanillaFailure<ChunkAccess> failure)
+                conversion.completeExceptionally(failure.failure());
+            else if (outcome instanceof ChunkStageOutcome.BarrierFailure<ChunkAccess> failure)
+                stop(ChunkStageAdmission.Result.FAILED_BARRIER, failure.failure());
+            else if (outcome instanceof ChunkStageOutcome.Control<ChunkAccess> control) stop(control.result(), null);
+            settle();
+        }
+        private void publishedOutcome(ChunkStageOutcome<ChunkResult<ChunkAccess>> outcome) {
+            if (outcome instanceof ChunkStageOutcome.Applied<ChunkResult<ChunkAccess>> applied)
+                publicationResult.complete(applied.value());
+            else if (outcome instanceof ChunkStageOutcome.VanillaFailure<ChunkResult<ChunkAccess>> failure)
+                publicationResult.completeExceptionally(failure.failure());
+            else if (outcome instanceof ChunkStageOutcome.BarrierFailure<ChunkResult<ChunkAccess>> failure)
+                stop(ChunkStageAdmission.Result.FAILED_BARRIER, failure.failure());
+            else if (outcome instanceof ChunkStageOutcome.Control<ChunkResult<ChunkAccess>> control)
+                stop(control.result(), null);
+            published.admittedSettled(publicationEntry);
             settle();
         }
         void retainApplied(Object receipt) {
@@ -606,10 +780,10 @@ public final class FullRegistrationRuntime {
                 authority.barrier().trip(cause == null ? stopped : cause, authority.directory().snapshot().generation(),
                         new dev.phoenium.core.OwnerEpoch(0), null);
             }
-            inputs.release(this);
-            lastInputEvaluation = null;
-            if (savedInput != null) savedInput.unsubscribe(savedChanged);
-            preparation.control(reason); finishing.control(reason); settle();
+            // An already claimed suffix still owns its saved/context/query inputs. Reentrant
+            // shutdown must wait for that exact invocation's exit before acknowledging them.
+            if (!custody.hasActiveClaim(work)) acknowledgeInputs();
+            preparation.control(reason); finishing.control(reason); publication.control(reason); settle();
         }
         private void settle() {
             Stopped terminal;
@@ -618,18 +792,21 @@ public final class FullRegistrationRuntime {
                 terminal = stopped;
             } finally { custody.gate().unlock(); }
             if (terminal != null) {
+                acknowledgeInputs();
+                if (legacyOwners != null) { legacyOwners.close(); legacyOwners = null; }
                 // Complete only this holder's original pending FULL slot, using vanilla's exact
                 // failure-and-clear mechanism. A replacement holder's slot is never selected.
                 var fullSlot = evidence.phoenium$futures().get(ChunkStatus.FULL.getIndex());
                 if (fullSlot != null && !fullSlot.isDone()) evidence.phoenium$failAndClear(ChunkStatus.FULL.getIndex(), fullSlot);
                 conversion.completeExceptionally(terminal);
+                publicationResult.complete(GenerationChunkHolder.UNLOADED_CHUNK);
             }
             cleanup();
         }
         private void cleanup() {
             custody.gate().lock();
             try {
-                if (cleaned || stopped == null || consumers != 0 || custody.hasActiveClaim(work)
+                if (cleaned || consumers != 0 || custody.hasActiveClaim(work)
                         || !registrationSettled || !attached || !adjacent.isDone() || !returned.isDone() || !retention.isDone()
                         || !invocation.producer.finished || !invocation.producer.generation.writers.isEmpty()) return;
                 cleaned = true; graphs.remove(this); returnedIndex.remove(returned, this);
@@ -637,9 +814,12 @@ public final class FullRegistrationRuntime {
                 if (savedInput != null) { savedInput.unsubscribe(savedChanged); savedInput.discardSnapshot(); savedInput = null; }
                 generations.remove(holder, invocation.producer.generation);
             } finally { custody.gate().unlock(); }
-            services.releaseFinishedWork(work, holder);
+            published.admittedSettled(publicationEntry);
+            if (stopped == null) services.settleFinishedExecution(work, holder);
+            else services.releaseFinishedWork(work, holder);
             if (clock != null) clock.forget(this);
             cleanupGenerations();
         }
     }
+    public record FullResult(CompletableFuture<ChunkAccess> returned, ChunkAccess value, Throwable failure) { }
 }

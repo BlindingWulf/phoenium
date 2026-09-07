@@ -6,7 +6,11 @@ import org.objectweb.asm.tree.*;
 /** Mirrors only Mixin call-site plumbing; all reservation, generation, registrar and stage bodies are production. */
 public final class FullRegistrationTestTransform {
     public static byte[] transform(String name, byte[] bytes) {
-        ClassNode node = new ClassNode(); new ClassReader(bytes).accept(node, 0);
+        ClassNode node = new ClassNode(); new ClassReader(bytes).accept(node, ClassReader.EXPAND_FRAMES);
+        FullFinishingQueryTestTransform.install(node);
+        FullFinishingServicesTestTransform.install(node);
+        if (name.equals(dev.phoenium.live.LiveTickPhaseBoundary.LEVEL)) dev.phoenium.live.LiveTickPhaseBoundary.installLevel(node);
+        if (name.equals(dev.phoenium.live.LiveTickPhaseBoundary.CACHE)) dev.phoenium.live.LiveTickPhaseBoundary.installCache(node);
         if (name.equals(FullStageBoundary.TARGET)) {
             FullStageBoundary.install(node); FullStageBoundary.installRegistration(node);
         } else if (name.equals("net/minecraft/nbt/CompoundTag") || name.equals("net/minecraft/nbt/ListTag")) {
@@ -23,6 +27,11 @@ public final class FullRegistrationTestTransform {
             node.interfaces.add("dev/phoenium/chunk/FullInputObservationThread");
             getter(node, "phoenium$inputThread", "mainThread", "Ljava/lang/Thread;");
         } else if (name.equals("net/minecraft/server/level/ChunkMap")) {
+            node.interfaces.add("dev/phoenium/live/LiveTickReadiness$MapAccess");
+            MethodNode ticking = new MethodNode(Opcodes.ACC_PUBLIC, "phoenium$tickCandidates", "(Lnet/minecraft/world/level/chunk/status/ChunkStatus;)Ljava/util/stream/Stream;", null, null);
+            ticking.instructions.add(new VarInsnNode(Opcodes.ALOAD, 0)); ticking.instructions.add(new VarInsnNode(Opcodes.ALOAD, 1));
+            ticking.instructions.add(new MethodInsnNode(Opcodes.INVOKEVIRTUAL, name, "allChunksWithAtLeastStatus", ticking.desc, false));
+            ticking.instructions.add(new InsnNode(Opcodes.ARETURN)); node.methods.add(ticking);
             node.interfaces.add("dev/phoenium/chunk/FullInputView");
             node.fields.add(new FieldNode(Opcodes.ACC_PRIVATE, "phoenium$inputChanges", "Ldev/phoenium/chunk/FullInputNotifications;", null, null));
             getter(node, "phoenium$inputChanges", "phoenium$inputChanges", "Ldev/phoenium/chunk/FullInputNotifications;");
@@ -104,6 +113,8 @@ public final class FullRegistrationTestTransform {
                         method.instructions.insertBefore(instruction, clockCall(name, "afterWrite"));
                 }
             }
+        } else if (FullFinishingQueryTestTransform.supports(name) || FullFinishingServicesTestTransform.supports(name)) {
+            // Query/service-only classes need no holder/saved-input fixture plumbing.
         } else {
             node.interfaces.add("dev/phoenium/chunk/FullHolderEvidence");
             String lifetimeDesc = "Ldev/phoenium/chunk/ChunkHolderLifetime;";

@@ -47,8 +47,12 @@ final class FullRegistrationFixture implements GeneratingChunkMap, FullGeneratio
         directory.publish(generation, Map.of(), Map.of(worldId, new RegionRoute(ownerId, generation, new OwnerEpoch(0))));
         set(world.cache, ServerChunkCache.class, "mainThread", Thread.currentThread());
         set(world.level, ServerLevel.class, "chunkSource", world.cache);
+        var regions = Map.of(ownerId, owner, otherId, other);
+        var topologyScheduler = new dev.phoenium.scheduler.RegionScheduler(regions, directory, barrier);
+        var topologyGateway = new dev.phoenium.scheduler.OwnerGateway(directory, regions, topologyScheduler);
         runtime = new FullRegistrationRuntime(world.level, new ChunkBindingRuntime.WorldAuthority(worldId, 1, services,
-                directory, Map.of(ownerId, owner.leases(), otherId, other.leases()), barrier), limits);
+                directory, Map.of(ownerId, owner.leases(), otherId, other.leases()), barrier), limits,
+                new FullRegionalEnclosure(directory, regions, topologyGateway, null));
         context = new WorldGenContext(world.level, null, null, null, command -> {
             beforeRegistration.run();
             if (inline) command.run(); else registrations.add(command);

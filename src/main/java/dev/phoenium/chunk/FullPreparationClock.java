@@ -12,6 +12,7 @@ public final class FullPreparationClock {
     private final ReentrantLock metadataGate = new ReentrantLock();
     private final Set<FullRegistrationRuntime.Graph> waiting = Collections.newSetFromMap(new IdentityHashMap<>());
     private final Set<FullRegistrationRuntime.Graph> readers = Collections.newSetFromMap(new IdentityHashMap<>());
+    private final Set<FullFinishingServices.Reservation> finishers = Collections.newSetFromMap(new IdentityHashMap<>());
     private boolean writing;
     private long revision;
     void subscribe(FullRegistrationRuntime.Graph graph) {
@@ -28,16 +29,28 @@ public final class FullPreparationClock {
     void release(FullRegistrationRuntime.Graph graph) {
         metadataGate.lock(); try { readers.remove(graph); } finally { metadataGate.unlock(); }
     }
+    /** The same actual clock writer participates in constructor and FULL finishing grants. */
+    boolean reserveFinishing(FullFinishingServices.Reservation reservation) {
+        metadataGate.lock(); try { return !writing && finishers.add(reservation); }
+        finally { metadataGate.unlock(); }
+    }
+    void releaseFinishing(FullFinishingServices.Reservation reservation) {
+        metadataGate.lock(); try { finishers.remove(reservation); }
+        finally { metadataGate.unlock(); }
+    }
     public void beforeWrite() {
         List<FullRegistrationRuntime.Graph> conflicts;
+        List<FullFinishingServices.Reservation> finishing;
         metadataGate.lock(); try {
             if (writing) throw new ChunkProtocolException("overlapping game-time writers");
             conflicts = List.copyOf(readers);
-            if (conflicts.isEmpty()) writing = true;
+            finishing = List.copyOf(finishers);
+            if (conflicts.isEmpty() && finishing.isEmpty()) writing = true;
         } finally { metadataGate.unlock(); }
-        if (!conflicts.isEmpty()) {
+        if (!conflicts.isEmpty() || !finishing.isEmpty()) {
             var failure = new ChunkProtocolException("game-time writer overlaps admitted FULL preparation turn");
             conflicts.forEach(graph -> graph.protocolFailure(failure));
+            finishing.forEach(reservation -> reservation.conflict(failure));
             throw failure;
         }
     }
@@ -50,6 +63,6 @@ public final class FullPreparationClock {
         wake.forEach(FullRegistrationRuntime.Graph::wake);
     }
     public long revision() { metadataGate.lock(); try { return revision; } finally { metadataGate.unlock(); } }
-    public int retainedEntries() { metadataGate.lock(); try { return waiting.size() + readers.size(); } finally { metadataGate.unlock(); } }
-    public int activeReaders() { metadataGate.lock(); try { return readers.size(); } finally { metadataGate.unlock(); } }
+    public int retainedEntries() { metadataGate.lock(); try { return waiting.size() + readers.size() + finishers.size(); } finally { metadataGate.unlock(); } }
+    public int activeReaders() { metadataGate.lock(); try { return readers.size() + finishers.size(); } finally { metadataGate.unlock(); } }
 }

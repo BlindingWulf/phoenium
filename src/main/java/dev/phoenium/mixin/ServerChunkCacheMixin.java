@@ -3,6 +3,7 @@ package dev.phoenium.mixin;
 import dev.phoenium.Phoenium;
 import dev.phoenium.live.ChunkRuntimeTrace;
 import dev.phoenium.chunk.ChunkSynchronousAccessGuard;
+import dev.phoenium.chunk.FullFinishingQueries;
 import com.llamalad7.mixinextras.injector.wrapoperation.Operation;
 import com.llamalad7.mixinextras.injector.wrapoperation.WrapOperation;
 import org.spongepowered.asm.mixin.injection.Coerce;
@@ -62,6 +63,7 @@ abstract class ServerChunkCacheMixin {
         require = 1, expect = 1)
     private void phoenium$rejectOwnedManagedWait(@Coerce Object loop, BooleanSupplier ready,
                                                   Operation<Void> original) {
+        if (FullFinishingQueries.usesPrivateResult()) return;
         ChunkSynchronousAccessGuard.beforeWait(ready);
         original.call(loop, ready);
     }
@@ -70,7 +72,27 @@ abstract class ServerChunkCacheMixin {
         at = @At(value = "INVOKE", target = "Ljava/util/concurrent/CompletableFuture;join()Ljava/lang/Object;"),
         require = 2, expect = 2)
     private Object phoenium$rejectOwnedJoin(CompletableFuture<?> future, Operation<Object> original) {
+        var privateResult = FullFinishingQueries.privateJoin(future);
+        if (privateResult != null) return privateResult;
         ChunkSynchronousAccessGuard.beforeWait(future::isDone);
         return original.call(future);
+    }
+
+    @WrapOperation(method = "getChunk(IILnet/minecraft/world/level/chunk/status/ChunkStatus;Z)Lnet/minecraft/world/level/chunk/ChunkAccess;",
+        at = @At(value = "INVOKE", target = "Lnet/minecraft/server/level/ServerChunkCache;getChunkFutureMainThread(IILnet/minecraft/world/level/chunk/status/ChunkStatus;Z)Ljava/util/concurrent/CompletableFuture;"),
+        require = 1, expect = 1)
+    private CompletableFuture<ChunkResult<ChunkAccess>> phoenium$selectedInitializedQuery(ServerChunkCache cache,
+            int x, int z, ChunkStatus status, boolean create, Operation<CompletableFuture<ChunkResult<ChunkAccess>>> original) {
+        var selected = original.call(cache, x, z, status, create);
+        FullFinishingQueries.selected(level, x, z, status, create, selected);
+        return selected;
+    }
+
+    @WrapOperation(method = "getChunk(IILnet/minecraft/world/level/chunk/status/ChunkStatus;Z)Lnet/minecraft/world/level/chunk/ChunkAccess;",
+        at = @At(value = "INVOKE", target = "Lnet/minecraft/server/level/ServerChunkCache;storeInCache(JLnet/minecraft/world/level/chunk/ChunkAccess;Lnet/minecraft/world/level/chunk/status/ChunkStatus;)V"),
+        require = 1, expect = 1)
+    private void phoenium$keepInitializedResultPrivate(ServerChunkCache cache, long position, ChunkAccess chunk,
+                                                       ChunkStatus status, Operation<Void> original) {
+        if (!FullFinishingQueries.usesPrivateResult()) original.call(cache, position, chunk, status);
     }
 }

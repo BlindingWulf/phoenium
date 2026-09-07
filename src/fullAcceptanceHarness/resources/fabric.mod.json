@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  "id": "phoenium-full-live-probe",
+  "version": "1.0.0",
+  "name": "Disposable authoritative FULL real-world fixture",
+  "environment": "server",
+  "entrypoints": { "server": ["dev.phoenium.chunk.FullRuntimeAcceptanceProbe"] },
+  "mixins": ["full-live-probe.mixins.json"],
+  "depends": { "phoenium": "*", "fabric-lifecycle-events-v1": "*", "fabric-command-api-v2": "*" }
+}

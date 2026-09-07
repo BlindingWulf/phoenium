@@ -156,7 +156,7 @@ class FullProductionBoundaryTest {
         assertEquals(1, calls(wrapper, "registerAsync")); assertEquals(0, calls(wrapper, "supplyAsync"));
         var handles = java.util.Arrays.stream(wrapper.instructions.toArray()).filter(i -> i instanceof InvokeDynamicInsnNode)
                 .map(i -> (Handle) ((InvokeDynamicInsnNode) i).bsmArgs[1]).map(Handle::getName).toList();
-        assertEquals(List.of(FullStageBoundary.SUPPLIER, FullStageBoundary.PREPARE), handles);
+        assertEquals(List.of(FullStageBoundary.SUPPLIER, FullStageBoundary.PREPARE, FullStageBoundary.FINISH), handles);
         assertThrows(IllegalStateException.class, () -> FullStageBoundary.installRegistration(node));
     }
 
