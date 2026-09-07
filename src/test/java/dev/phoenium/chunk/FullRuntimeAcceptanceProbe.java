@@ -31,14 +31,20 @@ public final class FullRuntimeAcceptanceProbe implements DedicatedServerModIniti
     private static final Map<String, Integer> READERS = new LinkedHashMap<>();
     private static final BlockPos SAVED_BED = new BlockPos(2032, 75, -1104);
     private static final Set<UUID> BED_CHECKS = new HashSet<>();
+    private static final Set<BlockPos> VAULT_POSITIONS = new HashSet<>();
+    private static int vaultTicks, vaultNeighborReads;
     private static int richVillagers, privateNeighbors;
     public static String phase() { return System.getProperty("phoenium.test.fullFixturePhase", ""); }
     private static boolean target(ChunkPos pos) { return CHUNKS.contains(pos.pack()); }
     private static String marker(String phase) { return "phoenium_full_" + phase; }
 
     @Override public void onInitializeServer() {
-        if (!Boolean.getBoolean("phoenium.full.authoritative") || phase().isEmpty())
+        boolean vaultDiagnostic = Boolean.getBoolean("phoenium.test.vaultDiagnostic");
+        if (vaultDiagnostic) registerVaultDiagnosticCommand();
+        if (!Boolean.getBoolean("phoenium.full.authoritative") || phase().isEmpty()) {
+            if (vaultDiagnostic) return;
             throw new IllegalStateException("FULL acceptance fixture requires explicitly selected authoritative runtime");
+        }
         ServerChunkEvents.CHUNK_LOAD.register((level, chunk, generated) -> {
             if (level.dimension() != Level.OVERWORLD || !target(chunk.getPos())) return;
             require(FullFinishingServices.finishing(), "actual Fabric load event escaped admitted FULL finishing");
@@ -136,6 +142,30 @@ public final class FullRuntimeAcceptanceProbe implements DedicatedServerModIniti
         BED_CHECKS.add(entity.getUUID());
         System.out.println("PHOENIUM_FULL_BED_CHECK phase=" + phase() + " entity=" + entity.getUUID()
                 + " position=" + position + " result=" + result + " distinct=" + BED_CHECKS.size());
+    }
+
+    public static void recordVaultTick(ServerLevel level, BlockPos position) {
+        if (!Boolean.getBoolean("phoenium.test.vaultDiagnostic")) return;
+        vaultTicks++;
+        VAULT_POSITIONS.add(position);
+        if (vaultTicks <= 5 || vaultTicks % 100 == 0)
+            System.out.println("PHOENIUM_VAULT_TICK position=" + position + " ticks=" + vaultTicks);
+    }
+
+    public static void recordVaultNeighbor(BlockPos position) {
+        if (!Boolean.getBoolean("phoenium.test.vaultDiagnostic") || !VAULT_POSITIONS.contains(position)) return;
+        vaultNeighborReads++;
+        if (vaultNeighborReads <= 5 || vaultNeighborReads % 100 == 0)
+            System.out.println("PHOENIUM_VAULT_NEIGHBOR position=" + position + " reads=" + vaultNeighborReads);
+    }
+
+    private static void registerVaultDiagnosticCommand() {
+        CommandRegistrationCallback.EVENT.register((dispatcher, access, selection) -> dispatcher.register(
+                Commands.literal("phoenium").then(Commands.literal("vaultprobe").executes(context -> {
+                    String result = "PHOENIUM_VAULT_DIAGNOSTICS ticks=" + vaultTicks
+                            + " neighborReads=" + vaultNeighborReads + " positions=" + VAULT_POSITIONS.size();
+                    context.getSource().sendSuccess(() -> Component.literal(result), false); return 1;
+                }))));
     }
 
     private static String verify(ServerLevel level) {
