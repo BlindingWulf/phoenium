@@ -10,8 +10,9 @@ parallel OFF, disposable PhoeniumTest0 only. No push/release/PASS tag.
 
 Recovery `39105d25f879795dcd178fba741f1b59b2d7c782` preserves all interrupted dirty source
 as UNVERIFIED. Historical `a7b40743` / 419 tests are not current proof. Source and failed
-worlds/logs retained; no reset/stash. Main checkpoint `52776dc` includes PARTIAL same-world
-selectors, lazy/nested fixes and reviewed bed setup. No final clean build or same-artifact
+worlds/logs retained; no reset/stash. Main code checkpoint `267f5a8` includes PARTIAL
+same-world selectors/entity NBT, lazy/nested fixes, reviewed bed setup and saved vault
+diagnostics. `b423f63` updates the chunk handoff. No final clean build or same-artifact
 complete acceptance yet.
 
 Lead retains selected Astra/Max and existing service_tier="default". Supported spawn
@@ -48,7 +49,11 @@ Astra workers, tier override, API keys, account changes or purchases.
   final root/installed proof. Follow-up `13e1b63` / Sol `5ed89ed`: original IMMEDIATE
   creation, nested selector scope restoration, filtered self (real nbt predicate), and
   no virtual position getter under metadata lock. Verified current XML: 58 tests / 5
-  suites green. Recursive block/entity and broader selectors remain open.
+  suites green. `47e263b` / Sol `f4c25fc` connects non-interpreting same-world ENTITY NBT:
+  original predicate/data-source serializers, exact result, caught failure and next-source
+  scope recovery; 62 tests / 5 suites green. Registered predicate= is explicitly unresolved
+  because it can read registry-derived block/biome/structure/light/environment context.
+  Recursive interpreted block/entity dependency producers and broader selectors remain open.
 * Worldgen `eba8d6f`: only original moon getter uses existing chunk event loop and named
   environment turn, worker waits owner-free. Original spawn body/RNG stays in place.
   worldgen-environment-12: 17 tests / 2 suites green.
@@ -85,6 +90,12 @@ Production SHA256 9EA68C2D04D8867B71F96625BD83E3E9ABC01994D06608FED51AFCAAD5E9D3
 probe SHA256 479575FC30FDCDE13138264393896E4145A1AC620A1101B2D8A33E8CE8B5E957.
 Production JAR contains zero acceptance/diagnostic classes.
 
+Later Luna installed PASS at transform-20260907-174445 validates `664ab21`: finishing36 /
+context7, sameWorldSelector=true; registration8/input21/published18 unchanged, child0 and
+zero barriers/retained records. Production SHA256
+532E89071FF9C6CA4868D6FC78F6BEF93A27D248B7990E1F40F3EC08AB605B2D. Current production
+probe after `47e263b` expects finishing42/context13; Luna must update its strict parser.
+
 Luna test-only bed setup `7835bc0`/`8a6711d`/`bcf1f5d`/`2ea1868` is integrated through
 `fc33f40` and reviewed against exact pinned command translation strings:
 preserve exact saved sleeping position, finite forced-ticket FULL halo + generation
@@ -110,14 +121,22 @@ run/full-resume/session-20260907/vault-saved-inventory.json. Use a disposable co
 positive original vault tick/dirty-neighbor witness; never mutate preserved failed save.
 
 1. Sol: block-NBT IMMEDIATE creation, filtered self, nested selector scopes, recursive
-   interpreted block/entity contexts. No virtual gameplay callbacks under metadata lock.
-   Review/integrate; current same-world checkpoint is partial.
+   interpreted block/entity contexts. First three are now integrated; active work is typed
+   versioned dependency-only facts for audited interpreted sources, including every
+   contributing writer/mutable alias and a possible phased retained-block context pass.
+   No virtual gameplay callbacks under metadata lock; no early serialization or replay.
+   Registered predicate footprints remain a separate missing contributor.
 2. Cross-world saved-selector authority **approval pending**. Concrete proposal:
    STAGE3_FULL_SELECTOR_CONTEXT_DECISION.md; async user question unanswered. D1-F forbids
    arbitrary foreign calls/cross-dimension same-world convergence. Do not enable the
    proposed all-or-release bundle without an actual answer.
-3. Luna: finish bed setup review, integrate stable root/Sol source, strict current probe
-   counters; installed and existing FULL fresh/reload/client campaign; positive vault proof.
+3. Luna: integrate stable root/Sol source and current probe counters; installed and existing
+   FULL fresh/reload/client campaign, positive vault proof. Vault `de89988`/`248ee11`/
+   `137fa69` is integrated: disposable preserved-save copy, exact original dirty-output
+   scope and successful cross-chunk reads. Pending review correction adds shared Stage2
+   health, not only chunk counters. Live FULL witness `010e5f9`/`6e3eaf8` is NOT integrated:
+   its finishing=false assertion was wrong for saved conversion and must be inverted,
+   scoped to exact root/source/retained private target with public FULL still pending.
 4. Final clean build, installed probes and client campaign must share recorded production
    JAR; final diff review, acceptance ledger and verified commit. No optimistic PASS.
 
