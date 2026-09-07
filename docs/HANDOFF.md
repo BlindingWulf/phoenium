@@ -1,11 +1,11 @@
 # Handoff
 
-Current chunk implementation resume: [STAGE3_CHUNK_HANDOFF.md](STAGE3_CHUNK_HANDOFF.md).
-The 2026-09-05 published-input provenance and independent acknowledgement checkpoint
-is PASS within its connected scope, with 419 passing tests. Overall initialized
-inputs and integrated FULL remain PARTIAL; general production FULL selection is
-DISABLED. Its current ledger supersedes
-historical chunk-scope and pending-approval text below.
+Active 2026-09-07 FULL integration resume: [FULL_CURRENT_WORK.md](FULL_CURRENT_WORK.md).
+The interrupted implementation is preserved in a local recovery commit and is being
+integrated and verified. Historical 419-test evidence is not a current acceptance
+result. Integrated FULL and Stage 3/R-CHUNK-01 remain PARTIAL. The current note and
+expanded user assignment supersede historical contributor-only stopping points;
+the correctness contracts and accepted approvals remain in force.
 
 > **BEFORE ANY LIVE MINECRAFT TEST: read [docs/AGENT_MINECRAFT_TESTING.md](AGENT_MINECRAFT_TESTING.md).**
 >

@@ -1,6 +1,16 @@
 # Approved FULL implementation and acceptance ledger
 
-## Current resume — published input provenance, 2026-09-05
+## Active integration resume — 2026-09-07
+
+The expanded FULL assignment is in progress. The authoritative current source,
+worker ownership, actual model selections, focused results and next unresolved
+acceptance are in [FULL_CURRENT_WORK.md](FULL_CURRENT_WORK.md). Integrated FULL
+and Stage 3/R-CHUNK-01 remain **PARTIAL**. No current clean-build/same-JAR/client/
+disk-reload acceptance is claimed. Historical contributor-only stop instructions
+below are superseded by the user's expanded assignment; correctness contracts
+and approved semantic boundaries remain in force.
+
+## Historical resume — published input provenance, 2026-09-05
 
 **PUBLISHED INPUT PROVENANCE + INDEPENDENT ACKNOWLEDGEMENT: PASS** for the connected
 original-producer scope. **Overall initialized-input checkpoint: PARTIAL.**
