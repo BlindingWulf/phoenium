@@ -1,151 +1,118 @@
 # Stage 4 current execution — 2026-09-08
 
-**PARTIAL — implementation in progress.** Stage 3 remains
-**STAGE3_SERIAL_CORRECTNESS_FROZEN** within closure sections H/I. Stage 5 has not
-started. One gameplay worker, parallel gameplay OFF throughout.
+**PARTIAL.** Stage 3 remains **STAGE3_SERIAL_CORRECTNESS_FROZEN** within closure
+sections H/I. Stage 5 is OFF. One gameplay worker; parallel gameplay OFF.
 
-## Source, ownership, and usage
+## Source, owners, and authority
 
-Original clean main: `890d38614e001ae115cb419b653e6b566c8a4d53`.
-Frozen executable reference: `c31b3f42a5bcc06c9d3bae7b475337f225e9bd06`.
-Frozen production SHA-256:
-`017EE8ED612D238894FFA5A1DC019BA8B0E31124B0B5171D08CC0D8993C1B534`.
-Development branch: `stage4/regional-world-services` in `Phoenium`.
-Historical `Phoenium-full-luna` and `Phoenium-full-sol` remain untouched.
+- Original main: `890d38614e001ae115cb419b653e6b566c8a4d53`.
+- Frozen executable: `c31b3f42a5bcc06c9d3bae7b475337f225e9bd06`.
+- Frozen production SHA-256: `017EE8ED612D238894FFA5A1DC019BA8B0E31124B0B5171D08CC0D8993C1B534`.
+- Main branch: `stage4/regional-world-services`, checkout `Phoenium`.
+- Current production source: `42bb3445e9e02741419b0890ddf08efa32e356d7`.
+- Candidate production SHA-256: `6016F943D9DCB59817F90EC6CBB9BC41B2EF73DAB8EDE7D4AF3556F8A7E6D1A8`.
+- Historical `Phoenium-full-luna` / `Phoenium-full-sol` and failed evidence remain untouched.
 
-Lead: user-selected Astra/Max; architecture, save/shutdown, integration, review.
-Implementation worker: explicit `gpt-5.6-sol`, `high`, `fork_turns=none`;
-isolated `Phoenium-stage4-sol`, regional state/execution and connected adapters.
-Verification owner: explicit `gpt-5.6-luna`, `high`, `fork_turns=none`;
-isolated `Phoenium-stage4-luna`, baseline, harness, broad/final installed campaign.
-Tool spawn/configuration fields are evidence of selection; backend runtime model
-identity and task/worker token accounting are unavailable. No recursive delegation,
-additional Astra, API billing, resets, account changes, or remote publication.
-Starting account-wide usage: Codex 35% used / 65% remaining; reserve 7% used / 93%
-remaining. First dispatcher integration: Codex 38% used / 62% remaining, reserve
-7% used / 93% remaining. Tick/event + save/stop integration: Codex 44% used / 56% remaining; reserve 7% used / 93% remaining. Native-area integration: Codex 51% used / 49% remaining; reserve 7% used / 93% remaining. Passenger/save-failure integration: Codex 58% used / 42% remaining; reserve 7% used / 93% remaining. These are account windows, not per-task consumption.
+Lead is user-selected Astra/Max: architecture, integration and review. The two
+explicitly configured, nonrecursive workers are `gpt-5.6-sol` / `high` / fork none
+in `Phoenium-stage4-sol` (implementation), and `gpt-5.6-luna` / `high` / fork none
+in `Phoenium-stage4-luna` (harness and sole broad/live verification owner). Backend
+runtime identity and task/worker token accounting are unavailable. No additional
+Astra, paid API, reset, account change, remote publication or personal client account.
 
-## Fixed implementation and acceptance map
+Account-wide Codex usage began at 35% used / 65% remaining; latest native-shutdown
+integration reading is 80% used / 20% remaining. Reserve remained 7% used / 93%
+remaining. Intermediate readings are preserved in this file's Git history; these
+are shared account windows, not task consumption.
 
-| Outcome | Connected implementation | Remaining acceptance |
+## Connected implementation and acceptance
+
+| Outcome | Connected implementation | Remaining installed acceptance |
 | --- | --- | --- |
-| Scheduled ticks | Real per-owner persistent containers, due selection, typed collection/dispatch; native clear/copy share the original current-cycle fields and finite area cut | Installed deterministic two-owner migration, exact original register-then-unpack oracle and restored effects |
-| Block events | Per-owner ordered queues, original nested enqueue and dispatch, migration | Installed ordered comparator and pending-work merge/split |
-| Entity tracking | Actual tracker partitions, original pairing/removal/update, entity/session and exact passenger/vehicle-edge receipts, source-map order; native chunk/entity/block-entity callbacks dispatch by current owner | Actual clients, ordered packets and lifecycle migration |
-| Save cuts | Original selected-holder retention, batch/operation topology cuts, detached original snapshot, original I/O acknowledgement | Final-artifact disk records/restart, replacement/pressure and affected FULL lifecycle |
-| Shutdown | Admission close, leased admitted-work drain, independent failure settlement, terminal metadata acknowledgement | Clean final installed stop under normal and adverse pending work |
-| Global services | Established named services and explicit metadata/owner-free I/O protocols | Final integrated reached-path audit; see STAGE4_SERVICE_CONTRACT.md |
+| Scheduled ticks | Actual per-owner persistent containers; original eligibility, priority, deduplication and current-cycle clear/copy; native callbacks and topology transfer | Deterministic two-owner order/effects; exact persisted records and original reload effect |
+| Block events | Per-owner ordered/deferred queues, original dispatch and nested producers, complete migration | Positive ordered event/recipient results and pending-work merge/split |
+| Tracking | Actual tracker partitions and original pairing/removal/sends; published position, session and passenger/vehicle receipts | Current real-client FULL, packets, withdrawal and migration |
+| Save cuts | Selected-holder retention, batch/operation cuts, original snapshot detached for I/O, current-owner acknowledgement/dirty restore | Final-artifact MCA/restart and affected lifecycle under pressure |
+| Shutdown | Admission close, admitted-work drain, retained-write settlement, independent native resource cleanup with failures preserved | Final normal/adverse installed pending-work stop |
+| Global services | Existing named services, explicit metadata and owner-free I/O protocols; finite native callback enclosures | Final reached-path audit and all dependent installed gates |
 
-All six need final production Mixins/JAR, deterministic timing/order/effects, actual
-clients where relevant, real saved records/reload, baseline 5/5 and larger 8/8 without
-caps, affected FULL/packet/service/saved-vault evidence, and lightweight comparable
-overhead. Two logical regions must execute services, not merely appear at startup.
-No broad lock, unowned mutation, foreign reads, callback under metadata locks, replay,
-fake readiness, failure fallback, or safe refusal counted as feature support.
-Same-holder re-promotion is now reproduced and repaired at the original FULL
-completion boundary; installed lifecycle acceptance remains required. The withdrawn
-subscriber stays invalid, and a new slot needs a distinct original-producer receipt.
+Contract and pinned-source provenance: `docs/STAGE4_SERVICE_CONTRACT.md`. No broad
+lock, unowned mutation, callback under metadata locks, fabricated readiness, replay,
+hidden fallback, or safe refusal counted as support. Genuine same-holder FULL
+re-promotion (`0d82ef3`) requires a new original-producer completion receipt; the
+withdrawn subscriber remains revoked. The 66-test lifecycle gate and original
+negative cases are preserved. Final installed lifecycle coverage is still required.
 
-## Verification and next unresolved case
+## Verified evidence and current failures
 
-Baseline: 690 tests / 59 suites PASS and ten historical hashes verified;
-`Phoenium-stage4-luna/run/stage4/baseline-20260908-012726`. Frozen production
-rebuilt to the exact SHA above. Historical Stage 3 evidence/worlds remain immutable.
-The latest consolidated gate, worker `32263af` integrating production `5d2efd5`,
-passes 784 tests / 77 suites with zero failures/errors/skips and a successful build.
-The subsequent installed transform gate fails before startup on a superclass-close
-receiver signature. Final installed verification is open.
+Fresh baseline: 690 tests / 59 suites PASS, ten historical hashes verified, frozen
+production rebuilt to its exact hash; `run/stage4/baseline-20260908-012726` in Luna.
+Latest consolidated candidate build and acceptance-probe build pass. Lead recounted
+785 tests / 77 suites, zero failures/errors/skips, from Luna's actual XML reports.
 
-Integrated production is now `42bb344` (after `5d2efd5`, `919e2ce`, `b5d75a8`, `2ba0e8a`,
-`00ce944`, `f793e57`). Native scheduled
-register/unpack and current-cycle clear/copy oracles remain intact; the container
-monitor repair `2d37d3a` passed the merged 22-test scheduled/lifetime gate. Selected
-chunk/entity/block-entity callbacks preserve native order and use finite current
-owner admission (`0a14b8a`, `ccc2f3b`). Source reads at world-service bootstrap and
-container peek/poll are outside both registry/service metadata monitors. The
-10-test merged phase/ticker/lifetime gate passed before the latest repair.
+Candidate installed `run/full-production-integration/transform-20260908-065406`
+executes six live intercepts/dispatches/executions, zero barriers/violations/fallback,
+one worker, parallel OFF. Normal stop records admissionClosed=true, queuedServices=0,
+pendingSaves=0, 528 captures and 529 protocol acknowledgements (not 529 durable writes).
+Its runner reports FAIL solely because it wrongly requires a FULL_SERVICES marker
+without installing that probe; Luna is correcting that applicability check. This is
+positive baseline installed health, not complete Stage 4 acceptance.
 
-Genuine same-holder FULL re-promotion `0d82ef3` retains the original producer,
-revokes the withdrawn subscriber, and requires a new actual completion receipt for
-the distinct slot. Fresh/reload before/after completion and later input replacement
-pass in the 66-test published/initialized/authoritative gate. Four native negative
-reproductions remain under `run/stage4/same-holder-repromotion-negative-20260908.*`.
-Source lifecycle late-producer refusals (`c3cf005`) cannot reopen bootstrap.
+Controlled FULL `transform-20260908-065445` reaches the native hooks, then fails
+`FullPublishedInputBindingTest.originalUnloadWaitsForRetainedUseThenReclaimsTheActualHolder`:
+the synthetic fixture world calls the actual regional unload adapter, which correctly
+rejects a different live world instance. The original unload callback therefore does
+not reclaim pending state. Native stop and FULL_SERVICES STOPPED PASS still occur;
+they do not erase the initiating test failure.
 
-The prior installed candidate is worker `9370007`, production SHA-256
-`B582CCFC642FC0394027CDAAD404CDDDDD80EB9EDC92DED13E7A6CD82D8D811`.
-It passes the corrected exact NaturalSpawner overload transformation (`f793e57`),
-but `Phoenium-stage4-luna/run/full-production-integration/transform-20260908-060338`
-fails on the first world tick, gameTime 1: `dispatchLevelTick` expects queued owner
-work between consecutive READINESS and BLOCK_EVENTS coordinator phases. That trips
-the barrier; subsequent unload-save refusals and shutdown waiting are secondary.
-This is not normal-stop evidence. Sol's phase repair `00ce944` advances the finite
-coordinator chain before requesting a real owner step, retains missing-work failure,
-and passes its phase/readiness focused gate plus build excluding broad tests.
+Sol owns the approved test-only repair: exact synthetic ServerLevel/ChunkMap identity
+selects genuine isolated regional service/save/lifecycle authority at the existing
+unload seams. The original production unload body and all retention/reclamation
+assertions stay active. Production world identity stays strict. Scope must clear on
+failure and reject foreign identity/late reuse. Lead reviews before integration;
+Luna alone reruns the installed controlled fixture.
 
-Lead `2ba0e8a` settles actual retained writes and protocol custody before native
-resource closure after failed admission/drain. The exception remains primary; the
-failed-stop scope is confined to that invocation. Reentrant requests cannot replay
-work; independent close failures are retained. The 19-test stop/save/generation
-focused gate passes (`run/stage4/failed-stop-order-integration-20260908.log`).
-Sol's connected exact-native failure-stop hooks are integrated in `919e2ce`; lead
-`5d2efd5` removes an inaccessible helper from the protected Mixin package. They omit
-forbidden new snapshots and unloads, send terminal transport notifications through
-existing sessions, join submitted storage work and close independent resources.
-The merged 32-test / 8-suite focused gate passes with zero failures/errors/skips
-(`run/stage4/failure-stop-native-integration-20260908.log`). This includes the native
-siege-origin repair `b5d75a8`: original pending spawn attempts remain enclosed after
-players move or leave. Healthy native stop retains its original path. Sol is idle
-on clean `16873c5`, available for concrete production failures; lead owns review and
-integration. Luna owns the stable `5d2efd5` full/build and installed campaign.
+Earlier preserved native failures: `transform-20260908-060338` first-tick consecutive
+coordinator phases, repaired `00ce944`; `transform-20260908-064318` superclass-close
+receiver signature, repaired `42bb344`. Failed-stop settlement `2ba0e8a`, native
+cleanup `919e2ce` and public transformed-handler API `5d2efd5` pass the merged
+32-test focused gate. Normal stop keeps its original native path. Source/container
+monitor repairs, exact NaturalSpawner overloads and retained VillageSiege origin
+are integrated and covered by focused native-source oracles.
 
-The newer installed JAR SHA-256 is
-`2563B8845A510E99ACE4E32F9CBE3748F2442105EA862B8FB6882757A8A9ECE7`.
-Its failed bundle `run/full-production-integration/transform-20260908-064318`
-retains the exact `FailedStopServerLevelMixin` receiver mismatch. `42bb344` repairs
-that and the matching ChunkMap superclass receiver, retaining both native finally
-sites; the 14-test target/cleanup/shutdown gate passes. Luna owns its installed rerun.
+## Next unresolved campaign case
 
-Luna alone owns broad builds and the final live campaign. Current frozen-reference
-login evidence in `run/stage4/reference-network-exception-20260908-062250` verifies
-the exact frozen JAR and an accepted TCP connection that closes before any server
-packet-decoder receive. Client Hello then times out; both process stacks and actual
-TCP tuples/PIDs are preserved. Diagnostic test-only commit `5094ad4` records native
-listener/phase/counters, exceptions and TCP state; it is not yet integrated on main.
-The earlier preflight-removal/property-parity experiment did not resolve login.
-The test observation holder needed to move out of the entire protected Mixin package,
-not only its Mixin class. Worker `e2e6317` moves it to `clientobs`; actual login/game
-packets are present in `reference-client-classload-fixed-20260908-063750` and
-`reference-primed-playerfix-20260908-073000`. Their later fixture waits still fail.
-Worker `d67e477`/`e3a59ed` sequence real FULL client receipts at all four points,
-add identical landing pads, require real successful A/B event bodies, and disable
-wire dumps by default. These coherent harness commits await final integration.
-No client/runtime PASS is inferred from startup, login or a passing build.
+Luna's shared real-TCP reference workload now logs in and receives A=(0,0) and
+B=(7,0). `run/stage4/reference-serial-receipt-20260908-072500` stalls at far (32,0)
+after teleport. Server continues normal network/tick activity; both process dumps
+are preserved. Luna owns the first missing native holder/ticket/FULL/generation
+prerequisite diagnosis. Do not increase timeouts, cap 5/5 or 8/8, substitute a
+server-only receipt, or silently widen the frozen supported topology.
 
-The shared acceptance harness is integrated through `08c3f0c` (failure thread dumps),
-`73095e7` (isolated launch/recipient/client observation repair), `b5cbea7` and `784c710`.
-It uses identical native-clock inputs on reference/candidate, real A/B regions,
-actual coordinator merge/split, authentic FULL/readiness receipts, exact event
-packets, original serializer observations, immutable pre-restart MCA copies and a
-strict behavioral comparator. Candidate-only routing metadata is separate. Remaining
-harness repairs require removing temporary preparation tickets if they make the
-deferred event eligible early, plus a startup freeze before a persisted deadline
-can pass. The old NOTE_BLOCK-to-REDSTONE_BLOCK test injection bypassed the original
-scheduled callback; replace it with a real native block transition observed after
-the original callback, including actual pending MCA record and state on restart.
-Normal restart must reuse a completed shared-client world. Server-only smoke does
-not complete the client gates.
+Main harness is integrated through `08c3f0c`. Luna has coherent later test-only
+commits through `dec8c48`, plus diagnostic `2a6c0f0` / `0f57111`, awaiting reviewed
+integration. They fix protected Mixin-package helper loading, sequence actual
+preparation receipts, add landing pads, release temporary force tickets, and replace
+a fabricated NOTE_BLOCK-to-REDSTONE_BLOCK callback with original STONE_BUTTON.tick.
+Lead review requires the following remaining corrections:
 
-Final candidate and reference 5/5 plus 8/8, ordered behavioral comparison, persisted
-MCA/restart effects, migration/lifecycle and affected FULL/packet/service/saved-vault
-checks remain open. Preserve prepared server/world bundles before Sync and verify
-the actual installed JAR hash on each launch. Earlier installed evidence under
-`integrated-installed-stable-034415` is partial: its old MCA decoder was faulty and
-re-decoding after restart passed the deadline cannot establish pre-restart tick loss.
-It recorded 14.718 s and 672 MB RSS in a different checkpoint; this is not the required
-paired final overhead result. All failed bundles and the old worlds are preserved.
+- Keep exact typed, current connection/visit chunk receipts and actual client FULL
+  application; an ever-seen packet at Netty HEAD cannot replace current readiness.
+- Match A/B successful event result parameters and occurrence after its probe marker.
+- Positively observe deferred event eligibility false before migration and true later.
+- Inspect one exact native pending minecraft:stone_button record in its actual MCA
+  chunk, saved powered=true state, priority and native relative delay at the snapshot.
+  Current parser's local/world coordinate alternatives and deadline guesses are invalid.
+- Freeze restart before a saved deadline can pass, activate observation, then step
+  through actual restored execution exactly once; do not reschedule or extend it.
+- Reuse the completed real-client world and immutable pre-restart copy. The generic
+  server-only driver does not satisfy the client or final restart gates.
 
-At the native shutdown integration boundary account-wide Codex usage is 80% used /
-20% remaining; reserve is 7% used / 93% remaining. No per-task total is exposed.
-Internal commits are recovery points. Continue repairs and the sole-owner final
-campaign; Stage 4 stays PARTIAL and Stage 5 remains blocked on these acceptance gates.
+Final reference/candidate 5/5 and 8/8, strict timing/order/effects comparator, actual
+MCA/restart, two-owner migration, affected FULL fresh/reload/packet/service/saved-vault,
+pressure/failure settlement and comparable light elapsed/RSS measurements remain
+open. The old 14.718 s / 672 MB checkpoint is not a final paired overhead result.
+
+Internal commits are recovery points, not stopping instructions. Continue connected
+repairs and the sole-owner campaign. Stage 4 stays PARTIAL; Stage 5 is blocked by
+these acceptance gates and remains disabled.
