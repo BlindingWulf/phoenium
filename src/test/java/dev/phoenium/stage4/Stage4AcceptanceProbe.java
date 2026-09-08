@@ -359,9 +359,19 @@ public final class Stage4AcceptanceProbe implements DedicatedServerModInitialize
         UUID id = player.getUUID();
         if (TELEPORT_RECEIPTS.containsKey(id))
             throw new IllegalStateException("teleport fixture already has an unsettled receipt for " + id);
-        Stage4TeleportTopology.Prepared prepared = Stage4TeleportTopology.prepare(level, player,
-            new BlockPos(x, y, z));
-        TELEPORT_RECEIPTS.put(id, prepared);
+        try {
+            Stage4TeleportTopology.Prepared prepared = Stage4TeleportTopology.prepare(level, player,
+                new BlockPos(x, y, z));
+            TELEPORT_RECEIPTS.put(id, prepared);
+        } catch (RuntimeException failure) {
+            failure.printStackTrace();
+            throw failure;
+        }
+    }
+
+    public static void observeTeleportReadiness() {
+        for (Stage4TeleportTopology.Prepared prepared : TELEPORT_RECEIPTS.values())
+            prepared.observeDestinationFull();
     }
 
     /** Completes and only then retires the matching prepared teleport receipt. */

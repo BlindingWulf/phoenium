@@ -371,6 +371,8 @@ public final class Stage4ClientTraceTest implements FabricClientGameTest {
         command(server, "stage4trace prepare-teleport " + x + " " + y + " " + z);
         awaitLogAfter(context, server, log, "STAGE4_TRACE_TELEPORT_TOPOLOGY_PREPARED", preparedOffset,
             START_TIMEOUT_TICKS, null);
+        awaitLogAfter(context, server, log, "STAGE4_TRACE_TELEPORT_TERRAIN_READY", preparedOffset,
+            START_TIMEOUT_TICKS, "destination=" + (x >> 4) + "," + (z >> 4));
         command(server, "tp " + USER + " " + x + ".5 " + y + " " + z + ".5");
         nudgeAfterTeleport(context);
         waitForClientChunks(context, server, log, expectedChunks, START_TIMEOUT_TICKS);
@@ -494,6 +496,7 @@ public final class Stage4ClientTraceTest implements FabricClientGameTest {
     private static void requireHealthyServer(Process server, Path log) {
         String contents = read(log);
         if (!server.isAlive() || contents.contains("live tick failure; simulation remains fenced")
+                || contents.contains("An unexpected error occurred while trying to execute that command")
                 || contents.contains("Encountered an unexpected exception"))
             throw new AssertionError("server failed during Stage 4 workload; evidence=" + log);
     }

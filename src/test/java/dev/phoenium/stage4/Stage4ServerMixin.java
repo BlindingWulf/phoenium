@@ -9,9 +9,15 @@ import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
+import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
 @Mixin(MinecraftServer.class)
 abstract class Stage4ServerMixin {
+    @Inject(method = "tickServer", at = @At("RETURN"), require = 1)
+    private void phoenium$teleportReadiness(CallbackInfo ci) {
+        dev.phoenium.stage4probe.Stage4AcceptanceProbe.observeTeleportReadiness();
+    }
+
     @Inject(method = "saveAllChunks(ZZZ)Z", at = @At("HEAD"), require = 1)
     private void phoenium$serverSave(boolean silent, boolean flush, boolean force, CallbackInfoReturnable<Boolean> cir) { Stage4Trace.event("save.server.begin", "flush=" + flush + " force=" + force); }
 

@@ -14,7 +14,26 @@ The session began from clean `2b3080b`; all newer work is preserved. No agents a
 - Repaired tracker selection at the existing add/move/remove callbacks to refresh current
   owner-published routes while retaining exact entity identity/incarnation. Native movement and
   replacement rejection regression included. Focused suite: 26 tests, 6 suites, zero failures.
-- Last built production: `FA0EA80AA37483D9A92C977C494704468A1597BFF6562EC8D91F5E3FA565E5E4`.
+- At `0ac44dc`, native demotion exposed tracker removal outside a named service turn.
+  The common tracking start/end callbacks now enter the existing ENTITY_LIFECYCLE turn before
+  regional tracker admission, preserving an enclosing FULL turn. Built production is now
+  `7B611FC87302400F74DDDF57916ECEC72DB7FD30E790068083D8E1FDC7D28C01`.
+- Shared teleport preparation now uses temporary native force tickets, the original native
+  getChunkFutureMainThread producer, and observed FULL futures for the destination's 3x3 terrain.
+  It releases only its own tickets after actual native ACK/movement/client FULL. This repairs
+  the helper's premature movement into unready terrain. No production teleport expansion.
+- A real frozen run verified 017EE8ED...B534 before startup. It first exposed the helper's
+  Stage4-only `serverInstance` reflection (now candidate-only). Frozen `finish-reference-5-b`
+  passed A/B/far, then watchdog-stalled in LiveTickReadiness while preparing chunk32,12.
+  Candidate `finish-candidate-5-e` also failed to reach the deferred terrain FULL receipt, while
+  its server event loop remained live. Both are preserved failures. The shared helper now
+  includes the original native load request in addition to force-ticket insertion; next run
+  will diagnose exact pending holder futures if this remains incomplete.
+- Seven actual-file identity tests PASS (`run/stage4/artifact-identity-checks.json`), including
+  reference/candidate swaps before startup and restart. Frozen Gradle prelaunch check and
+  child-process identity JSON independently verified the exact required reference hash.
+
+- Earlier tracker-repair production: `FA0EA80AA37483D9A92C977C494704468A1597BFF6562EC8D91F5E3FA565E5E4`.
   Installed acceptance of this repair is next; it is not yet the final artifact.
 - Gradle Sync now selects one production input directly. The former nested copy action is gone.
   Pre-client and pre-server/restart checks require installed==selected SHA; reference additionally

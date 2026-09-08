@@ -58,9 +58,11 @@ public final class Stage4TeleportTopology {
         if (player.level() != level) throw new IllegalArgumentException("teleport player belongs to another level");
 
         PhoeniumLiveRuntime live = Objects.requireNonNull(Phoenium.liveRuntime(), "live runtime");
-        MinecraftServer installedServer = privateField(live, "serverInstance", MinecraftServer.class);
-        if (installedServer != level.getServer())
-            throw new IllegalStateException("teleport topology scope belongs to another server instance");
+        if (Boolean.getBoolean("phoenium.stage4.candidate")) {
+            MinecraftServer installedServer = privateField(live, "serverInstance", MinecraftServer.class);
+            if (installedServer != level.getServer())
+                throw new IllegalStateException("teleport topology scope belongs to another server instance");
+        }
         FullRegionalEnclosure enclosure = privateField(live, "fullEnclosure", FullRegionalEnclosure.class);
         if (enclosure == null) throw new IllegalStateException("regional enclosure is not installed");
         RegionDirectory directory = privateField(live, "directory", RegionDirectory.class);
@@ -91,7 +93,17 @@ public final class Stage4TeleportTopology {
             + " radius=" + radius + " owner=" + binding.owner().value()
             + " generation=" + directory.snapshot().generation().value()
             + " changed=" + core.restoredOwners.size());
-        return new Prepared(level, player, objectId, binding.incarnation(), target, radius, core);
+        Prepared prepared = new Prepared(level, player, objectId, binding.incarnation(), target, radius, core);
+        // The scoped teleport helper must establish real terrain before the next native movement
+        // packet can read it. Native force tickets request generation asynchronously; no owner
+        // waits and no fabricated chunk/readiness is introduced. Release only tickets we added.
+        for (int dx = -1; dx <= 1; dx++) for (int dz = -1; dz <= 1; dz++) {
+            ChunkPos chunk = new ChunkPos(target.x() + dx, target.z() + dz);
+            if (level.getChunkSource().updateChunkForced(chunk, true)) prepared.temporaryChunks.add(chunk);
+            prepared.requests.put(chunk, ((dev.phoenium.stage4.Stage4ChunkLoadAccess) level.getChunkSource())
+                .phoenium$requestChunk(chunk.x(), chunk.z(), net.minecraft.world.level.chunk.status.ChunkStatus.FULL, true));
+        }
+        return prepared;
     }
 
     public static final class Prepared {
@@ -103,6 +115,11 @@ public final class Stage4TeleportTopology {
         private final int radius;
         private final CorePrepared core;
         private boolean completed;
+        private boolean ready;
+        private final Set<ChunkPos> temporaryChunks = new LinkedHashSet<>();
+        private final Map<ChunkPos, java.util.concurrent.CompletableFuture<ChunkResult<net.minecraft.world.level.chunk.ChunkAccess>>>
+            requests = new LinkedHashMap<>();
+        private int readinessPolls;
 
         private Prepared(ServerLevel level, ServerPlayer player, String objectId, long incarnation,
                          RoutingKey destination, int radius, CorePrepared core) {
@@ -143,6 +160,9 @@ public final class Stage4TeleportTopology {
                 throw new IllegalStateException("authentic destination FULL holder is not complete");
 
             core.complete(objectId, incarnation, destination);
+            for (ChunkPos chunk : temporaryChunks) level.getChunkSource().updateChunkForced(chunk, false);
+            temporaryChunks.clear();
+            requests.clear();
             completed = true;
             System.out.println("STAGE4_TRACE_TELEPORT_TOPOLOGY_COMPLETED player=" + objectId
                 + " destination=" + destination.x() + "," + destination.z()
@@ -152,6 +172,28 @@ public final class Stage4TeleportTopology {
         public int destinationChunkX() { return destination.x(); }
         public int destinationChunkZ() { return destination.z(); }
         public int radius() { return radius; }
+
+        public void observeDestinationFull() {
+            if (ready) return;
+            requireBoundary(level);
+            readinessPolls++;
+            for (int dx = -1; dx <= 1; dx++) for (int dz = -1; dz <= 1; dz++) {
+                ChunkHolder holder = level.getChunkSource().chunkMap.getUpdatingChunkIfPresent(
+                    ChunkPos.pack(destination.x() + dx, destination.z() + dz));
+                if (holder == null || !successful(holder.getFullChunkFuture())) {
+                    if (readinessPolls == 40 || readinessPolls == 200)
+                        System.out.println("STAGE4_TRACE_TELEPORT_TERRAIN_PENDING destination=" + destination
+                            + " chunk=" + (destination.x() + dx) + "," + (destination.z() + dz)
+                            + " holder=" + (holder == null ? "absent" : "ticket=" + holder.getTicketLevel()
+                                + " latest=" + holder.getLatestStatus() + " full=" + holder.getFullChunkFuture())
+                            + " requests=" + requests);
+                    return;
+                }
+            }
+            ready = true;
+            System.out.println("STAGE4_TRACE_TELEPORT_TERRAIN_READY destination="
+                + destination.x() + "," + destination.z() + " chunks=9");
+        }
     }
 
     static CorePrepared prepareTopology(FullRegionalEnclosure enclosure, RegionDirectory directory,
