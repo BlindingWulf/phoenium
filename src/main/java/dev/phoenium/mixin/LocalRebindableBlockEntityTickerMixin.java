@@ -1,5 +1,7 @@
 package dev.phoenium.mixin;
 
+import dev.phoenium.service.LocalNativeTickerAccess;
+
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.entity.TickingBlockEntity;
 import org.spongepowered.asm.mixin.Mixin;

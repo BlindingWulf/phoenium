@@ -2,7 +2,6 @@ package dev.phoenium.service;
 
 import dev.phoenium.mixin.LocalFurnaceTickAccess;
 import dev.phoenium.mixin.LocalHopperTickAccess;
-import dev.phoenium.mixin.LocalNativeTickerAccess;
 import net.minecraft.world.level.block.HopperBlock;
 import net.minecraft.world.level.block.entity.*;
 import net.minecraft.world.level.block.state.BlockState;

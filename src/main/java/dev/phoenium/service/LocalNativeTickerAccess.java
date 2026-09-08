@@ -1,4 +1,4 @@
-package dev.phoenium.mixin;
+package dev.phoenium.service;
 
 import net.minecraft.world.level.block.entity.BlockEntity;
 

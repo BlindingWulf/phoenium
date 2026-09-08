@@ -31,6 +31,7 @@
     "LocalRebindableBlockEntityTickerMixin",
     "LocalFurnaceTickAccess",
     "LocalHopperTickAccess",
+    "PublishedDirectHolderSetMixin",
     "RegionalBlockEntityTickerMixin",
     "RegionalDragonFightAccess",
     "RegionalSpawningWeatherMixin",
