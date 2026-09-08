@@ -167,6 +167,7 @@ final class FullTadpoleDecisionTest {
         final ArrayDeque<Runnable> execution = new ArrayDeque<>();
         final List<Entity> inserted = new ArrayList<>(); final List<String> events = new ArrayList<>();
         final List<Entity> selectorEntities = new ArrayList<>();
+        int selectorCalls;
         final Object work = new Object(); final net.minecraft.server.ServerScoreboard scoreboard;
         final CompletableFuture<ChunkResult<ChunkAccess>> fullSlot = new CompletableFuture<>();
         final ServerLevel level; final ChunkHolder holder; final ServerChunkCache cache; final ProtoChunk proto;
@@ -322,6 +323,7 @@ final class FullTadpoleDecisionTest {
         @SuppressWarnings({"rawtypes", "unchecked"})
         private void collectSelector(net.minecraft.world.level.entity.EntityTypeTest type, net.minecraft.world.phys.AABB box,
                                      java.util.function.Predicate<Object> predicate, List<Object> output, int limit) {
+            selectorCalls++;
             for (Entity entity : selectorEntities) {
                 Object selected = type.tryCast(entity);
                 if (selected == null || box != null && !box.intersects(entity.getBoundingBox()) || !predicate.test(selected)) continue;

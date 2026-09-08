@@ -1,5 +1,8 @@
 package dev.phoenium.chunk;
 
+import java.io.FileDescriptor;
+import java.io.FileOutputStream;
+import java.io.PrintStream;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
@@ -68,8 +71,12 @@ final class FullServiceCleanupWitness {
                 + " legacyRunning=" + value(legacyMetrics, "running")
                 + " legacyProducerTerminated=" + value(legacyMetrics, "producerTerminated")
                 + " legacyCacheRoots=" + value(legacyMetrics, "cacheRoots");
-        if (clean && STOP_EVENT.get()) System.out.println(line);
-        else System.err.println(line);
+        // Minecraft redirects System.out/System.err through its logger and shuts that
+        // bridge down before JVM hooks run.  Write the final witness to the inherited
+        // process stdout so the marker survives normal server shutdown ordering.
+        try (var processOut = new PrintStream(new FileOutputStream(FileDescriptor.out), true)) {
+            processOut.println(line);
+        }
     }
 
     private static boolean clean(Map<String, Long> service, Map<String, Long> entity,

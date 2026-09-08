@@ -42,6 +42,19 @@ public final class FullSavedContextTestHooks {
         } catch (ReflectiveOperationException failure) { throw new AssertionError(failure); }
     }
 
+    /** Invokes the private vanilla text setter in both the JUnit and installed harnesses. */
+    public static void setText(Display.TextDisplay entity, Component value) {
+        try {
+            var method = Display.TextDisplay.class.getDeclaredMethod("setText", Component.class);
+            method.setAccessible(true);
+            method.invoke(entity, value);
+        } catch (InvocationTargetException wrapped) {
+            if (wrapped.getCause() instanceof RuntimeException runtime) throw runtime;
+            if (wrapped.getCause() instanceof Error error) throw error;
+            throw new AssertionError(wrapped.getCause());
+        } catch (ReflectiveOperationException failure) { throw new AssertionError(failure); }
+    }
+
     @SuppressWarnings("unchecked")
     private static <T> T original(Class<?> owner, Object receiver, String method, Class<?>[] parameters, Object... arguments) {
         try {

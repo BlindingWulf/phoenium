@@ -958,14 +958,14 @@ class FullSavedContextInputTest {
         var beacon = new BeaconBlockEntity(position, state); beacon.setCustomName(Component.literal("block "));
         f.input(ChunkPos.ZERO).setBlockEntity(beacon);
 
-        var first = text(new CompoundTag()); first.putString("CustomName", "earlier saved root");
+        var first = tag(8, 8, 0); first.putString("id", "minecraft:text_display"); first.putString("text", "");
+        first.putString("CustomName", "earlier saved root");
         var selector = new CompoundTag();
         selector.putString("selector", "@e[type=minecraft:text_display,distance=..32,limit=1]");
         var laterText = new CompoundTag(); laterText.putString("translate", "%s%s");
         var arguments = new ListTag(); arguments.add(blockText(position)); arguments.add(selector); laterText.put("with", arguments);
         var second = text(laterText);
-        var selectorBodies = new AtomicInteger();
-        try (var ignored = FullSavedContextTestHooks.selectorPrefix(selectorBodies::incrementAndGet)) {
+        try {
             var proto = f.input(ChunkPos.ZERO); proto.getEntities().clear(); proto.addEntity(first); proto.addEntity(second);
             f.world.indexLegacyRoots = true;
             f.start(ChunkPos.ZERO, ChunkStatus.FULL); f.drain(); var graph = f.runtime.graph(f.holder(ChunkPos.ZERO));
@@ -974,7 +974,7 @@ class FullSavedContextInputTest {
             FullAuthoritativeFinishingTest.context(f); f.runtime.inputs.changed(); f.drain();
             assertInstanceOf(ChunkStageOutcome.Applied.class, graph.finishing.outcome().join());
             assertEquals(2, f.world.inserted.size());
-            assertEquals(1, selectorBodies.get());
+            assertEquals(1, f.world.selectorCalls, "the original selector endpoint ran once");
             assertEquals(2, f.world.selectorEntities.size());
             assertEquals("block earlier saved root", FullSavedContextTestHooks.text(
                     assertInstanceOf(Display.TextDisplay.class, f.world.inserted.get(1))).getString());
@@ -1014,7 +1014,8 @@ class FullSavedContextInputTest {
         var value = new CompoundTag(); value.putString("message", "live display text"); commandStorage.set(FIRST, value);
         var candidate = assertInstanceOf(Display.TextDisplay.class,
                 EntityTypes.TEXT_DISPLAY.create(f.world.level, EntitySpawnReason.LOAD));
-        candidate.setId(752); candidate.setPos(8, 8, 8); candidate.setText(component(f, storageText(FIRST)));
+        candidate.setId(752); candidate.setPos(8, 8, 8);
+        FullSavedContextTestHooks.setText(candidate, component(f, storageText(FIRST)));
         lookup.add(candidate); f.world.selectorEntities.add(candidate);
         try {
             saved(f, ChunkPos.ZERO, false, text(entityText("@e[type=minecraft:text_display,distance=..32,limit=1]", "text", true)));
