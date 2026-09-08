@@ -122,7 +122,7 @@ public final class FullSavedContextInputs {
         public boolean valid(FullSavedInput.Snapshot current) {
             var facts = FullFinishingServices.forServer(world.getServer()).entityFacts;
             var reservation = claim == null ? null : FullFinishingServices.currentReservation(world.getServer());
-            return !closed && current == saved && world.registryAccess() == registry
+            return !closed && !refinementRetry && current == saved && world.registryAccess() == registry
                     && (predicateRegistries == null || world.getServer().reloadableRegistries() == predicateRegistries)
                     && storage.values().stream().allMatch(FullCommandStorageInputs.Capture::valid)
                     && blockTags.values().stream().allMatch(FullBlockEntityTagInputs.Capture::valid)
@@ -158,6 +158,8 @@ public final class FullSavedContextInputs {
                         var selector = declaredSelector(fact.path(), read.target(), FullSavedTextInputs.Use.NBT);
                         if (selector != null && !read.interpreting() && (selector.self() || selector.worldLimited())) continue;
                         if (selector != null && selector.self() && read.interpreting() && read.recursionDepth() > 100)
+                            continue;
+                        if (selector != null && selector.worldLimited() && read.interpreting() && read.recursionDepth() > 100)
                             continue;
                         if (selector != null && selector.self() && read.interpreting() && read.path().equals("CustomName")) {
                             FullSavedTextInputs.decode(fact.services().customName(), world.registryAccess()).ifPresent(component ->
@@ -335,10 +337,10 @@ public final class FullSavedContextInputs {
                     var measure = FullLiveComponentInputs.measure(component, pending.read.recursionDepth());
                     if (measure.unmet() != null) return new LiveObservation(List.of(), List.of(), total,
                             pending.fact.path() + ": " + measure.unmet(), false);
-                    total = Math.addExact(total, Math.max(32L, measure.bytes()));
+                    total = Math.addExact(total, measure.bytes());
                     if (capture) {
                         var snapshot = FullLiveComponentInputs.capture(pending.fact, component, pending.read.recursionDepth(),
-                                Math.max(0L, Math.subtractExact(allowance, Math.subtractExact(total, Math.max(32L, measure.bytes())))));
+                                Math.max(0L, Math.subtractExact(allowance, Math.subtractExact(total, measure.bytes()))));
                         if (snapshot.unmet() != null && snapshot.unmet().contains("grew after"))
                             return new LiveObservation(List.of(), List.of(), total, null, true);
                         if (snapshot.unmet() != null) return new LiveObservation(List.of(), List.of(), total,
@@ -361,10 +363,10 @@ public final class FullSavedContextInputs {
                 var measure = FullLiveComponentInputs.measure(component, pending.read.recursionDepth());
                 if (measure.unmet() != null) return new LiveObservation(List.of(), List.of(), total,
                         pending.fact.path() + ": " + measure.unmet(), false);
-                total = Math.addExact(total, Math.max(32L, measure.bytes()));
+                total = Math.addExact(total, measure.bytes());
                 if (capture) {
                     var snapshot = FullLiveComponentInputs.capture(pending.fact, component, pending.read.recursionDepth(),
-                            Math.max(0L, Math.subtractExact(allowance, Math.subtractExact(total, Math.max(32L, measure.bytes())))));
+                            Math.max(0L, Math.subtractExact(allowance, Math.subtractExact(total, measure.bytes()))));
                     if (snapshot.unmet() != null && snapshot.unmet().contains("grew after"))
                         return new LiveObservation(List.of(), List.of(), total, null, true);
                     if (snapshot.unmet() != null) return new LiveObservation(List.of(), List.of(), total,

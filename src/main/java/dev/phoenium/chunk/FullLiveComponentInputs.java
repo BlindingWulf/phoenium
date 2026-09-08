@@ -61,17 +61,24 @@ public final class FullLiveComponentInputs {
     /** Allocation-free scalar pass. The original resolver stops descending after depth 100. */
     static Measure measure(Component root, int depth) {
         long[] bytes = {0}; String unmet = walk(root, depth, null, bytes);
-        return new Measure(bytes[0], unmet);
+        return new Measure(Math.max(32L, bytes[0]), unmet);
     }
 
     /** The caller reserves {@link Measure#bytes} before this detached capture. */
     static Snapshot capture(FullSavedInput.EntityFact consumer, Component root, int depth, long allowance) {
-        if (root == null) return new Snapshot(null, List.of(), 32L,
+        if (root == null) return allowance < 32L
+                ? new Snapshot(null, List.of(), 32L, null, "live component grew after its admitted scalar measurement")
+                : new Snapshot(null, List.of(), 32L,
                 FullSavedTextInputs.discoverInterpreted(consumer, Component.empty(), 101), null);
+        Measure measured = measure(root, depth);
+        if (measured.unmet() != null) return new Snapshot(root, List.of(), measured.bytes(), null, measured.unmet());
+        if (measured.bytes() > allowance)
+            return new Snapshot(root, List.of(), measured.bytes(), null, "live component grew after its admitted scalar measurement");
         long[] bytes = {0}; var nodes = new ArrayList<Node>();
         String unmet = walk(root, depth, nodes, bytes);
-        if (bytes[0] > allowance)
-            return new Snapshot(root, List.of(), bytes[0], null, "live component grew after its admitted scalar measurement");
+        if (bytes[0] != measured.bytes())
+            throw new ChunkProtocolException("live component changed inside its exact regional dependency read (depth="
+                    + depth + ", measured=" + measured.bytes() + ", captured=" + bytes[0] + ")");
         var requirements = unmet == null ? FullSavedTextInputs.discoverInterpreted(consumer, root, depth) : null;
         return new Snapshot(root, List.copyOf(nodes), bytes[0], requirements, unmet);
     }

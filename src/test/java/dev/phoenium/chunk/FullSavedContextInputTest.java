@@ -1001,6 +1001,89 @@ class FullSavedContextInputTest {
         assertCleanup(f);
     }
 
+    @Test void liveTextDisplayTextPublishesNestedStorageBeforeOriginalSerializationAndResolution() throws Exception {
+        var f = new FullRegistrationFixture(true); var lookup = new EntityLookup<Entity>();
+        var data = new SavedDataStorage(directory, null, f.world.level.registryAccess());
+        var commandStorage = new CommandStorage(data); set(f.world.level.getServer(), MinecraftServer.class, "commandStorage", commandStorage);
+        var value = new CompoundTag(); value.putString("message", "live display text"); commandStorage.set(FIRST, value);
+        var candidate = assertInstanceOf(Display.TextDisplay.class,
+                EntityTypes.TEXT_DISPLAY.create(f.world.level, EntitySpawnReason.LOAD));
+        candidate.setId(752); candidate.setPos(8, 8, 8); candidate.setText(component(f, storageText(FIRST)));
+        lookup.add(candidate); f.world.selectorEntities.add(candidate);
+        try {
+            saved(f, ChunkPos.ZERO, false, text(entityText("@e[type=minecraft:text_display,distance=..32,limit=1]", "text", true)));
+            f.start(ChunkPos.ZERO, ChunkStatus.FULL); f.drain(); var graph = f.runtime.graph(f.holder(ChunkPos.ZERO));
+            assertEquals(FullInitializedInputs.State.SATISFIED, graph.inputEvaluation().state(), graph.inputEvaluation().obligation());
+            FullAuthoritativeFinishingTest.context(f); f.runtime.inputs.changed(); f.drain();
+            assertInstanceOf(ChunkStageOutcome.Applied.class, graph.finishing.outcome().join());
+            assertEquals("live display text", FullSavedContextTestHooks.text(
+                    assertInstanceOf(Display.TextDisplay.class, f.world.inserted.getFirst())).getString());
+        } finally {
+            lookup.remove(candidate); f.stop(); FullFinishingServices.stopped(f.world.level.getServer()); data.close();
+        }
+        assertCleanup(f);
+    }
+
+    @Test void directSiblingAliasMutationIsCaughtUnderTheFinalLeaseAndRebuildsDependencies() throws Exception {
+        var f = new FullRegistrationFixture(true); var lookup = new EntityLookup<Entity>();
+        var data = new SavedDataStorage(directory, null, f.world.level.registryAccess());
+        var commandStorage = new CommandStorage(data); set(f.world.level.getServer(), MinecraftServer.class, "commandStorage", commandStorage);
+        var firstValue = new CompoundTag(); firstValue.putString("message", "first live dependency"); commandStorage.set(FIRST, firstValue);
+        var secondValue = new CompoundTag(); secondValue.putString("message", "second live dependency"); commandStorage.set(SECOND, secondValue);
+        var root = Component.empty().append(component(f, storageText(FIRST)));
+        var candidate = EntityTypes.TEXT_DISPLAY.create(f.world.level, EntitySpawnReason.LOAD); assertNotNull(candidate);
+        candidate.setId(753); candidate.setPos(8, 8, 8); candidate.setCustomName(root);
+        lookup.add(candidate); f.world.selectorEntities.add(candidate);
+        try {
+            saved(f, ChunkPos.ZERO, false, text(entityText("@e[type=minecraft:text_display,distance=..32,limit=1]", "CustomName", true)));
+            f.start(ChunkPos.ZERO, ChunkStatus.FULL); f.drain(); var graph = f.runtime.graph(f.holder(ChunkPos.ZERO));
+            var first = graph.inputReceipt(); assertNotNull(first);
+            root.getSiblings().set(0, component(f, storageText(SECOND)));
+            FullAuthoritativeFinishingTest.context(f); f.runtime.inputs.changed(); f.drain();
+            assertNotSame(first, graph.inputReceipt(), "same-lease validation must retire the stale structural receipt");
+            assertInstanceOf(ChunkStageOutcome.Applied.class, graph.finishing.outcome().join());
+            assertEquals("second live dependency", FullSavedContextTestHooks.text(
+                    assertInstanceOf(Display.TextDisplay.class, f.world.inserted.getFirst())).getString());
+            assertFalse(f.barrier.tripped());
+        } finally {
+            lookup.remove(candidate); f.stop(); FullFinishingServices.stopped(f.world.level.getServer()); data.close();
+        }
+        assertCleanup(f);
+    }
+
+    @Test void directTranslationArgumentMutationAndAbsentToPresentFieldBothRebuildBeforeOriginalBody() throws Exception {
+        var f = new FullRegistrationFixture(true); var lookup = new EntityLookup<Entity>();
+        var data = new SavedDataStorage(directory, null, f.world.level.registryAccess());
+        var commandStorage = new CommandStorage(data); set(f.world.level.getServer(), MinecraftServer.class, "commandStorage", commandStorage);
+        var firstValue = new CompoundTag(); firstValue.putString("message", "first argument"); commandStorage.set(FIRST, firstValue);
+        var secondValue = new CompoundTag(); secondValue.putString("message", "second argument"); commandStorage.set(SECOND, secondValue);
+        var translated = Component.translatable("%s", component(f, storageText(FIRST)));
+        var firstCandidate = EntityTypes.TEXT_DISPLAY.create(f.world.level, EntitySpawnReason.LOAD);
+        var absentCandidate = EntityTypes.TEXT_DISPLAY.create(f.world.level, EntitySpawnReason.LOAD);
+        assertNotNull(firstCandidate); assertNotNull(absentCandidate);
+        firstCandidate.setId(754); firstCandidate.setPos(8, 8, 8); firstCandidate.setCustomName(translated);
+        absentCandidate.setId(755); absentCandidate.setPos(9, 8, 8);
+        lookup.add(firstCandidate); lookup.add(absentCandidate); f.world.selectorEntities.add(firstCandidate); f.world.selectorEntities.add(absentCandidate);
+        try {
+            saved(f, ChunkPos.ZERO, false, text(entityText("@e[type=minecraft:text_display,distance=..32,sort=furthest,limit=2]", "CustomName", true)));
+            f.start(ChunkPos.ZERO, ChunkStatus.FULL); f.drain(); var graph = f.runtime.graph(f.holder(ChunkPos.ZERO));
+            var first = graph.inputReceipt(); assertNotNull(first);
+            assertInstanceOf(net.minecraft.network.chat.contents.TranslatableContents.class, translated.getContents())
+                    .getArgs()[0] = component(f, storageText(SECOND));
+            absentCandidate.setCustomName(Component.literal("now present"));
+            FullAuthoritativeFinishingTest.context(f); f.runtime.inputs.changed(); f.drain();
+            assertNotSame(first, graph.inputReceipt());
+            assertInstanceOf(ChunkStageOutcome.Applied.class, graph.finishing.outcome().join());
+            String result = FullSavedContextTestHooks.text(assertInstanceOf(Display.TextDisplay.class, f.world.inserted.getFirst())).getString();
+            assertTrue(result.contains("second argument")); assertTrue(result.contains("now present"));
+            assertFalse(f.barrier.tripped());
+        } finally {
+            lookup.remove(firstCandidate); lookup.remove(absentCandidate);
+            f.stop(); FullFinishingServices.stopped(f.world.level.getServer()); data.close();
+        }
+        assertCleanup(f);
+    }
+
     @Test void liveBeaconCustomNamePublishesNestedStorageBeforeOriginalImmediateGetter() throws Exception {
         var f = new FullRegistrationFixture(true); var position = new BlockPos(8, 8, 8);
         var data = new SavedDataStorage(directory, null, f.world.level.registryAccess());
