@@ -265,14 +265,6 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
                 pending.runEntityBody = phases.phoenium$beforeEntityTicks(pending.levelState);
                 pending.step = PendingTick.Step.FINAL_DECISION_COORDINATOR;
             }
-            case ENTITY_PRELUDE_OWNER -> {
-                phases.phoenium$beforeEntityList(pending.levelState);
-                pending.step = PendingTick.Step.ENTITY_COORDINATOR;
-            }
-            case BLOCK_ENTITY_OWNER -> {
-                phases.phoenium$afterEntityList(pending.levelState);
-                pending.step = PendingTick.Step.FINAL_SUFFIX_COORDINATOR;
-            }
             case FINAL_OWNER -> {
                 phases.phoenium$afterEntityTicks(pending.levelState);
                 executions++;
@@ -308,18 +300,16 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
                 queueTickPhase(pending, live, PendingTick.Step.FINAL_PREFIX_OWNER);
             }
             case FINAL_DECISION_COORDINATOR -> {
-                if (pending.runEntityBody) queueTickPhase(pending, live, PendingTick.Step.ENTITY_PRELUDE_OWNER);
+                if (pending.runEntityBody) {
+                    phases.phoenium$beforeEntityList(pending.levelState);
+                    phases.phoenium$runEntityTicks(pending.levelState);
+                    phases.phoenium$afterEntityList(pending.levelState);
+                    queueTickPhase(pending, live, PendingTick.Step.FINAL_OWNER);
+                }
                 else {
                     pending.levelState.skipEntityBody(pending.level());
                     queueTickPhase(pending, live, PendingTick.Step.FINAL_OWNER);
                 }
-            }
-            case ENTITY_COORDINATOR -> {
-                phases.phoenium$runEntityTicks(pending.levelState);
-                queueTickPhase(pending, live, PendingTick.Step.BLOCK_ENTITY_OWNER);
-            }
-            case FINAL_SUFFIX_COORDINATOR -> {
-                queueTickPhase(pending, live, PendingTick.Step.FINAL_OWNER);
             }
             default -> throw new IllegalStateException("owner-free tick coordinator reached " + pending.step);
         }
@@ -340,8 +330,9 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
             java.util.List<net.minecraft.world.level.chunk.LevelChunk> output) {
         requireRegionalServiceLifetime(); regionalServices.collectSpawningChunks(cache, map, output);
     }
-    public void regionalSpawningChunkCallback(ServerChunkCache cache, net.minecraft.world.level.chunk.LevelChunk chunk, Runnable original) {
-        requireRegionalServiceLifetime(); regionalServices.spawningChunkCallback(cache, chunk, original);
+    public void regionalSpawningChunkCallback(ServerChunkCache cache, net.minecraft.world.level.chunk.LevelChunk chunk,
+            boolean canSpawn, Runnable original) {
+        requireRegionalServiceLifetime(); regionalServices.spawningChunkCallback(cache, chunk, canSpawn, original);
     }
     public void regionalBroadcastChunkCallback(ServerChunkCache cache, net.minecraft.world.level.chunk.LevelChunk chunk, Runnable original) {
         requireRegionalServiceLifetime(); regionalServices.broadcastChunkCallback(cache, chunk, original);
@@ -358,6 +349,19 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
             java.util.function.Consumer<Entity> output) {
         requireRegionalServiceLifetime(); regionalServices.runEntityTicks(level, entities, output);
     }
+    public void runRegionalBlockEntities(ServerLevel level) {
+        requireRegionalServiceLifetime(); regionalServices.runBlockEntities(level);
+    }
+    public void runRegionalDragonFight(ServerLevel level,
+            net.minecraft.world.level.dimension.end.EnderDragonFight fight) {
+        requireRegionalServiceLifetime(); regionalServices.runDragonFight(level, fight);
+    }
+    public void onBlockEntityTickerAdded(net.minecraft.world.level.Level level,
+            net.minecraft.world.level.block.entity.TickingBlockEntity ticker) {
+        requireRegionalServiceLifetime();
+        if (regionalServices != null && level instanceof ServerLevel serverLevel)
+            regionalServices.blockEntityTickerAdded(serverLevel, ticker);
+    }
     public net.minecraft.world.entity.player.Player regionalNaturalSpawnPlayer(ServerLevel level, double x, double y, double z) {
         requireRegionalServiceLifetime(); return regionalServices.nearestNaturalSpawnPlayer(level, x, y, z);
     }
@@ -367,6 +371,12 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
     }
     public boolean regionalNaturalSpawnActive(ServerLevel level) {
         requireRegionalServiceLifetime(); return regionalServices != null && regionalServices.activeNaturalSpawn(level);
+    }
+    public boolean regionalSpawningWeather(ServerLevel level, boolean thunder) {
+        requireRegionalServiceLifetime(); return regionalServices.retainedSpawningWeather(level, thunder);
+    }
+    public boolean regionalSpawningWeatherActive(ServerLevel level) {
+        requireRegionalServiceLifetime(); return regionalServices != null && regionalServices.activeSpawningWeather(level);
     }
 
     private void queueTickPhase(PendingTick pending, LiveRegion live, PendingTick.Step step) {
@@ -1045,7 +1055,7 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
         boolean runEntityBody;
         enum Step { PREFIX_OWNER, SCHEDULED_COORDINATOR, MIDDLE_OWNER, READINESS_COORDINATOR,
             CACHE_OWNER, BLOCK_EVENTS_COORDINATOR, FINAL_PREFIX_OWNER, FINAL_DECISION_COORDINATOR,
-            ENTITY_PRELUDE_OWNER, ENTITY_COORDINATOR, BLOCK_ENTITY_OWNER, FINAL_SUFFIX_COORDINATOR, FINAL_OWNER, DONE }
+            FINAL_OWNER, DONE }
     }
     public enum State { NEW, RUNNING, STOPPED }
 }

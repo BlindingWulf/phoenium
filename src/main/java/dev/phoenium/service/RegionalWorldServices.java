@@ -93,8 +93,9 @@ public final class RegionalWorldServices implements RegionalStateMigration {
             List<net.minecraft.world.level.chunk.LevelChunk> output) {
         gameplay(cache).collectSpawningChunks(map, output);
     }
-    public void spawningChunkCallback(ServerChunkCache cache, net.minecraft.world.level.chunk.LevelChunk chunk, Runnable original) {
-        gameplay(cache).spawningChunkCallback(chunk, original);
+    public void spawningChunkCallback(ServerChunkCache cache, net.minecraft.world.level.chunk.LevelChunk chunk,
+            boolean canSpawn, Runnable original) {
+        gameplay(cache).spawningChunkCallback(chunk, canSpawn, original);
     }
     public void broadcastChunkCallback(ServerChunkCache cache, net.minecraft.world.level.chunk.LevelChunk chunk, Runnable original) {
         gameplay(cache).broadcastChunkCallback(chunk, original);
@@ -114,6 +115,24 @@ public final class RegionalWorldServices implements RegionalStateMigration {
         if (services == null) throw new IllegalStateException("unbound regional entity tick world");
         services.gameplay().entityTicks(entities, output);
     }
+    public void runBlockEntities(ServerLevel level) {
+        WorldServices services;
+        synchronized (this) { services = worlds.get(level); }
+        if (services == null) throw new IllegalStateException("unbound regional block entity world");
+        services.gameplay().tickBlockEntities();
+    }
+    public void runDragonFight(ServerLevel level,
+            net.minecraft.world.level.dimension.end.EnderDragonFight fight) {
+        WorldServices services;
+        synchronized (this) { services = worlds.get(level); }
+        if (services == null) throw new IllegalStateException("unbound regional dragon-fight world");
+        services.gameplay().tickDragonFight(fight);
+    }
+    public void blockEntityTickerAdded(ServerLevel level, net.minecraft.world.level.block.entity.TickingBlockEntity ticker) {
+        WorldServices services;
+        synchronized (this) { services = worlds.get(level); }
+        if (services != null) services.gameplay().tickerAdded(ticker);
+    }
     public net.minecraft.world.entity.player.Player nearestNaturalSpawnPlayer(ServerLevel level, double x, double y, double z) {
         return gameplay(level.getChunkSource()).nearestNaturalSpawnPlayer(x, y, z);
     }
@@ -125,6 +144,14 @@ public final class RegionalWorldServices implements RegionalStateMigration {
         WorldServices services;
         synchronized (this) { services = worlds.get(level); }
         return services != null && services.gameplay().active();
+    }
+    public boolean retainedSpawningWeather(ServerLevel level, boolean thunder) {
+        return gameplay(level.getChunkSource()).retainedWeather(thunder);
+    }
+    public boolean activeSpawningWeather(ServerLevel level) {
+        WorldServices services;
+        synchronized (this) { services = worlds.get(level); }
+        return services != null && services.gameplay().activeWeather();
     }
     private RegionalChunkGameplayService gameplay(ServerChunkCache cache) {
         WorldServices services;

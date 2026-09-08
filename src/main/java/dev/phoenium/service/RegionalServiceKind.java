@@ -9,6 +9,7 @@ public enum RegionalServiceKind {
     BLOCK_EVENT,
     SPAWN_STATE_CAPTURE,
     CHUNK_GAMEPLAY,
+    BLOCK_ENTITY_TICK,
     CHUNK_UNLOAD,
     TRACKING_UPDATE,
     TRACKING_PAIR,

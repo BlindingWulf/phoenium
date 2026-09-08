@@ -143,6 +143,13 @@ public final class LiveTickPhaseBoundary {
         MethodNode entityPrelude = portion(original, "phoenium$beforeEntityList", "(L" + LEVEL_STATE + ";)V", entityPreludeStart, entityStart);
         int preludeState = original.maxLocals;
         entityPrelude.instructions.insert(finalLocals(preludeState, "beginEntityPrelude"));
+        MethodInsnNode copiedDragon = unique(entityPrelude, "net/minecraft/world/level/dimension/end/EnderDragonFight", "tick", "()V");
+        AbstractInsnNode dragonReceiver = previous(copiedDragon);
+        require(dragonReceiver instanceof FieldInsnNode field && field.owner.equals(LEVEL) && field.name.equals("dragonFight"),
+            "dragon fight receiver changed");
+        entityPrelude.instructions.insertBefore(dragonReceiver, new VarInsnNode(Opcodes.ALOAD, 0));
+        entityPrelude.instructions.set(copiedDragon, new MethodInsnNode(Opcodes.INVOKESTATIC, PHASES, "runDragonFight",
+            "(L" + LEVEL + ";Lnet/minecraft/world/level/dimension/end/EnderDragonFight;)V", false));
         phaseEnd(entityPrelude.instructions, preludeState, "finishEntityPrelude");
         entityPrelude.maxLocals = preludeState + 1; retainLocalAcrossFrames(entityPrelude, preludeState, LEVEL_STATE);
         MethodNode entities = portion(original, "phoenium$runEntityTicks", "(L" + LEVEL_STATE + ";)V", entityStart, entityEnd);
@@ -157,6 +164,11 @@ public final class LiveTickPhaseBoundary {
         MethodNode blockEntities = portion(original, "phoenium$afterEntityList", "(L" + LEVEL_STATE + ";)V", entityEnd, suffixStart);
         int blockEntityState = original.maxLocals;
         blockEntities.instructions.insert(finalLocals(blockEntityState, "beginBlockEntities"));
+        MethodInsnNode copiedBlockEntities = unique(blockEntities, LEVEL, "tickBlockEntities", "()V");
+        AbstractInsnNode blockEntityReceiver = previous(copiedBlockEntities);
+        require(variable(blockEntityReceiver, Opcodes.ALOAD, 0), "block entity receiver changed");
+        blockEntities.instructions.set(copiedBlockEntities, new MethodInsnNode(Opcodes.INVOKESTATIC, PHASES,
+            "runBlockEntities", "(L" + LEVEL + ";)V", false));
         phaseEnd(blockEntities.instructions, blockEntityState, "finishBlockEntities");
         blockEntities.maxLocals = blockEntityState + 1; retainLocalAcrossFrames(blockEntities, blockEntityState, LEVEL_STATE);
         MethodNode finish = portion(original, "phoenium$afterEntityTicks", "(L" + LEVEL_STATE + ";)V", suffixStart, original.instructions.size());

@@ -10,6 +10,8 @@ import dev.phoenium.mixin.RegionalSpawnStateAccess;
 import dev.phoenium.mixin.RegionalVisibleChunkAccess;
 import dev.phoenium.mixin.RegionalTimedCustomSpawnerAccess;
 import dev.phoenium.mixin.RegionalTraderSpawnerAccess;
+import dev.phoenium.mixin.RegionalBlockEntityTickAccess;
+import dev.phoenium.mixin.RegionalDragonFightAccess;
 import dev.phoenium.ownership.ObjectOwnershipRegistry;
 import dev.phoenium.ownership.OwnershipContext;
 import dev.phoenium.topology.RegionDirectory;
@@ -28,6 +30,7 @@ import net.minecraft.world.level.*;
 import net.minecraft.world.level.biome.MobSpawnSettings;
 import net.minecraft.world.level.chunk.LevelChunk;
 import net.minecraft.world.level.entity.EntityTickList;
+import net.minecraft.world.level.block.entity.TickingBlockEntity;
 import net.minecraft.world.phys.Vec3;
 
 /** Owner-free coordinator for ServerChunkCache's exact selected gameplay cohorts. Temporary spawn
@@ -47,6 +50,7 @@ public final class RegionalChunkGameplayService {
     private final FullFinishingServices finishing;
     private final int recipientRadius;
     private Cycle cycle;
+    private final IdentityHashMap<TickingBlockEntity, BlockEntityReceipt> blockEntities = new IdentityHashMap<>();
     private long cycles, entityContributions, chunkCallbacks;
 
     public RegionalChunkGameplayService(WorldId world, ServerLevel level, ServerChunkCache cache,
@@ -60,6 +64,9 @@ public final class RegionalChunkGameplayService {
             maximum = Math.max(maximum, type.clientTrackingRange() * 16);
         int tracking = level.getServer().getScaledTrackingDistance(maximum);
         this.recipientRadius = (tracking + 15) / 16 + 2;
+        var ticking = (RegionalBlockEntityTickAccess) level;
+        for (TickingBlockEntity ticker : ticking.phoenium$blockEntityTickers()) bootstrapTicker(ticker);
+        for (TickingBlockEntity ticker : ticking.phoenium$pendingBlockEntityTickers()) bootstrapTicker(ticker);
     }
 
     public void runOriginal() {
@@ -77,18 +84,13 @@ public final class RegionalChunkGameplayService {
     public NaturalSpawner.SpawnState createSpawnState(int count, Iterable<Entity> originalEntities,
             NaturalSpawner.ChunkGetter chunks, SpawnFactory factory) {
         Cycle active = requireCycle();
-        List<Entity> originalOrder = new ArrayList<>(); originalEntities.forEach(originalOrder::add);
-        FullEntityFacts.Cut cut = finishing.entityFacts.cut(level);
-        if (cut.candidates().size() != originalOrder.size())
-            throw new IllegalStateException("spawn entity cohort differs from retained registry");
-        for (int i = 0; i < originalOrder.size(); i++) if (cut.candidates().get(i).alias() != originalOrder.get(i))
-            throw new IllegalStateException("spawn entity cohort order differs from retained registry");
         var caps = new RetainedLocalMobCaps(map, () -> active.players);
         NaturalSpawner.SpawnState state = factory.create(count, List.of(), chunks, caps);
         var access = (RegionalSpawnStateAccess) (Object) state;
         Object2IntOpenHashMap<MobCategory> counts = access.phoenium$getMobCategoryCounts();
         PotentialCalculator potential = access.phoenium$getSpawnPotential();
-        for (FullEntityFacts.Candidate candidate : cut.candidates()) {
+        for (Entity originalEntity : originalEntities) {
+            FullEntityFacts.Candidate candidate = finishing.entityFacts.trackingCandidate(level, originalEntity);
             Contribution[] captured = new Contribution[1]; RoutingKey key = key(candidate);
             dispatcher.executeAndDrain(key, RegionalServiceKind.SPAWN_STATE_CAPTURE, ignored -> {
                 requireEntity(candidate, key);
@@ -140,9 +142,18 @@ public final class RegionalChunkGameplayService {
         });
     }
 
-    /** Radius eight is the pinned tickThunder lightning-rod POI query's 128-block terrain reach.
-     * NaturalSpawner's unbounded player-distance selection is handled from published positions. */
-    public void spawningChunkCallback(LevelChunk chunk, Runnable original) { chunkCallback(chunk, 8, original); }
+    /** The pinned built-in NaturalSpawner groups reach three chunk keys from their selected source.
+     * Radius eight is admitted only when the exact retained rain/thunder prefix can reach the
+     * pinned 128-block lightning-rod POI query. A callback with no spawning categories and no
+     * thunder has only its selected chunk's inhabited-time mutation. */
+    public void spawningChunkCallback(LevelChunk chunk, boolean canSpawn, Runnable original) {
+        Cycle active = requireCycle();
+        boolean raining = level.isRaining();
+        boolean thundering = raining && level.isThundering();
+        active.weather = new WeatherCut(raining, thundering);
+        try { chunkCallback(chunk, thundering ? 8 : canSpawn ? 3 : 0, original); }
+        finally { active.weather = null; }
+    }
     public void blockTickCallback(LevelChunk chunk, Runnable original) { chunkCallback(chunk, 1, original); }
     public void broadcastChunkCallback(LevelChunk chunk, Runnable original) { chunkCallback(chunk, 0, original); }
     /** The pinned custom spawner set chooses terrain only relative to the current level-player
@@ -225,16 +236,26 @@ public final class RegionalChunkGameplayService {
             throw new IllegalStateException("natural spawn nearest-player observation changed");
         return selected.position.distanceToSqr(x, y, z);
     }
+    public boolean retainedWeather(boolean thunder) {
+        Cycle active = requireOwnedCycle(); WeatherCut weather = Objects.requireNonNull(active.weather,
+            "no retained spawning weather observation");
+        return thunder ? weather.thundering : weather.raining;
+    }
 
     public void entityTicks(EntityTickList entities, Consumer<Entity> output) {
         requireOwnerFree(); Objects.requireNonNull(entities); Objects.requireNonNull(output);
+        FullFinishingServices.requireWorld(level, FullFinishingServices.Kind.ENTITY_REGISTRY);
+        FullFinishingServices.requireWorld(level, FullFinishingServices.Kind.TRACKER);
+        FullFinishingServices.requireServer(level.getServer(), FullFinishingServices.Kind.CONNECTIONS);
         entities.forEach(entity -> {
             FullEntityFacts.Candidate source = finishing.entityFacts.trackingCandidate(level, entity);
             List<FullEntityFacts.Candidate> passengers = finishing.entityFacts.trackingPassengers(source);
             FullEntityFacts.VehicleRelation vehicle = finishing.entityFacts.trackingVehicle(source);
             RoutingKey key = key(source); LinkedHashSet<RoutingKey> footprint = new LinkedHashSet<>();
-            footprint.add(key); passengers.forEach(passenger -> footprint.add(key(passenger)));
-            if (vehicle.vehicle() != null) footprint.add(key(vehicle.vehicle()));
+            TopologyPlanner planner = new TopologyPlanner();
+            footprint.addAll(planner.requiredClosure(Set.of(key), 1));
+            passengers.forEach(passenger -> footprint.addAll(planner.requiredClosure(Set.of(key(passenger)), 1)));
+            if (vehicle.vehicle() != null) footprint.addAll(planner.requiredClosure(Set.of(key(vehicle.vehicle())), 1));
             PlayerCut currentPlayers = capturePlayers();
             for (PlayerProjection player : currentPlayers.players)
                 if (Math.abs((long) player.key.x() - key.x()) <= recipientRadius
@@ -249,6 +270,86 @@ public final class RegionalChunkGameplayService {
                 output.accept(entity);
             });
         });
+    }
+
+    public void tickerAdded(TickingBlockEntity ticker) {
+        FullFinishingServices.requireWorld(level, FullFinishingServices.Kind.TICK_LIST);
+        Objects.requireNonNull(ticker, "ticker"); BlockPos position = ticker.getPos().immutable();
+        ChunkPos chunk = ChunkPos.containing(position);
+        RoutingKey key = new RoutingKey(world, chunk.x(), chunk.z());
+        if (OwnershipContext.current().isPresent()) {
+            dispatcher.requireCurrentOwner(key); blockEntities.put(ticker, new BlockEntityReceipt(position, key));
+        } else dispatcher.executeAndDrain(key, RegionalServiceKind.BLOCK_ENTITY_TICK, ignored -> {
+            dispatcher.requireCurrentOwner(key);
+            if (!ticker.getPos().equals(position)) throw new IllegalStateException("new block entity ticker position changed");
+            blockEntities.put(ticker, new BlockEntityReceipt(position, key));
+        });
+    }
+
+    /** Replays Level.tickBlockEntities' exact mutable-list protocol and iterator order. Only each
+     * selected ticker's original virtual observations and callback cross into its current owner. */
+    public void tickBlockEntities() {
+        requireOwnerFree();
+        FullFinishingServices.requireWorld(level, FullFinishingServices.Kind.TICK_LIST);
+        RegionalBlockEntityTickAccess access = (RegionalBlockEntityTickAccess) level;
+        access.phoenium$tickingBlockEntities(true);
+        List<TickingBlockEntity> pending = access.phoenium$pendingBlockEntityTickers();
+        List<TickingBlockEntity> ticking = access.phoenium$blockEntityTickers();
+        if (!pending.isEmpty()) { ticking.addAll(pending); pending.clear(); }
+        Iterator<TickingBlockEntity> iterator = ticking.iterator();
+        boolean runs = level.tickRateManager().runsNormally();
+        while (iterator.hasNext()) {
+            TickingBlockEntity ticker = iterator.next();
+            BlockEntityReceipt receipt = blockEntities.get(ticker);
+            if (receipt == null) throw new IllegalStateException("unpublished block entity ticker in original list");
+            int[] outcome = {0};
+            dispatcher.ensureClosure(receipt.key, 1);
+            dispatcher.executeAndDrain(receipt.key, RegionalServiceKind.BLOCK_ENTITY_TICK, ignored -> {
+                dispatcher.requireCurrentClosure(receipt.key, 1);
+                if (tickTicker(ticker, runs, receipt.position, level::shouldTickBlocksAt)) outcome[0] = 1;
+            });
+            if (outcome[0] == 1) { iterator.remove(); blockEntities.remove(ticker); }
+        }
+        access.phoenium$tickingBlockEntities(false);
+    }
+
+    static boolean tickTicker(TickingBlockEntity ticker, boolean runs, BlockPos retainedPosition,
+            java.util.function.Predicate<BlockPos> shouldTick) {
+        if (ticker.isRemoved()) return true;
+        if (runs) {
+            if (!ticker.getPos().equals(retainedPosition))
+                throw new IllegalStateException("block entity ticker position changed");
+            if (shouldTick.test(retainedPosition)) ticker.tick();
+        }
+        return false;
+    }
+
+    /** EnderDragonFight's pinned arena reads are bounded to its origin +/-8 chunks and its
+     * ticket uses radius nine. Current level players are exact alias recipients of updatePlayers,
+     * so their owner keys join the cut without adding intervening terrain. */
+    public void tickDragonFight(net.minecraft.world.level.dimension.end.EnderDragonFight fight) {
+        requireOwnerFree(); Objects.requireNonNull(fight, "fight");
+        FullFinishingServices.requireWorld(level, FullFinishingServices.Kind.ENTITY_REGISTRY);
+        FullFinishingServices.requireServer(level.getServer(), FullFinishingServices.Kind.CONNECTIONS);
+        BlockPos origin = ((RegionalDragonFightAccess) fight).phoenium$origin();
+        ChunkPos chunk = ChunkPos.containing(origin);
+        RoutingKey source = new RoutingKey(world, chunk.x(), chunk.z());
+        LinkedHashSet<RoutingKey> footprint = new LinkedHashSet<>(
+            new TopologyPlanner().requiredClosure(Set.of(source), 9));
+        List<PlayerProjection> players = captureLevelPlayers();
+        players.forEach(player -> footprint.add(player.key));
+        dispatcher.ensureClosure(Set.copyOf(footprint));
+        dispatcher.executeAndDrain(source, RegionalServiceKind.CHUNK_GAMEPLAY, ignored -> {
+            dispatcher.requireCurrentClosure(Set.copyOf(footprint));
+            for (PlayerProjection player : players) requireEntity(player.candidate, player.key);
+            fight.tick();
+        });
+    }
+
+    private void bootstrapTicker(TickingBlockEntity ticker) {
+        BlockPos position = ticker.getPos().immutable();
+        blockEntities.put(ticker, new BlockEntityReceipt(position,
+            new RoutingKey(world, ChunkPos.getX(ChunkPos.pack(position)), ChunkPos.getZ(ChunkPos.pack(position)))));
     }
 
     private PlayerCut capturePlayers() {
@@ -305,6 +406,7 @@ public final class RegionalChunkGameplayService {
         dispatcher.requireCurrentOwner(callback); return active;
     }
     public boolean active() { return cycle != null; }
+    public boolean activeWeather() { return cycle != null && cycle.weather != null; }
     private void requireMap(ChunkMap expected) { if (expected != map) throw new IllegalStateException("chunk gameplay map changed"); }
 
     private static final class Cycle {
@@ -313,6 +415,7 @@ public final class RegionalChunkGameplayService {
         List<PlayerProjection> levelPlayers = List.of();
         PlayerProjection nearestPlayer;
         RoutingKey callbackKey;
+        WeatherCut weather;
         NaturalSpawner.SpawnState spawnState;
         Cycle(FullFinishingScoreboard.TrackingCut connectionCut, List<PlayerProjection> players) {
             this.connectionCut = connectionCut; this.players = players;
@@ -322,6 +425,8 @@ public final class RegionalChunkGameplayService {
     private record PlayerProjection(ServerPlayer player, ServerGamePacketListenerImpl listener,
                                     FullEntityFacts.Candidate candidate, RoutingKey key, Vec3 position, boolean spectator) { }
     private record Contribution(BlockPos position, MobCategory category, double charge, boolean mob) { }
+    private record BlockEntityReceipt(BlockPos position, RoutingKey key) { }
+    private record WeatherCut(boolean raining, boolean thundering) { }
     private static final class RetainedLocalMobCaps extends LocalMobCapCalculator {
         private final ChunkMap map; private final java.util.function.Supplier<List<PlayerProjection>> players;
         private final IdentityHashMap<ServerPlayer, Object2IntOpenHashMap<MobCategory>> counts = new IdentityHashMap<>();

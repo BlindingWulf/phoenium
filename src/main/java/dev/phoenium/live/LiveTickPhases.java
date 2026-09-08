@@ -79,12 +79,12 @@ public final class LiveTickPhases {
             require(expected, Phase.FINAL_PREFIX_RUNNING, true); finalActive = active; phase = Phase.FINAL_PREFIX_COMPLETE;
         }
         public void skipEntityBody(ServerLevel expected) { require(expected, Phase.FINAL_PREFIX_COMPLETE, false); phase = Phase.ENTITY_BODY_COMPLETE; }
-        public void beginEntityPrelude(ServerLevel expected) { require(expected, Phase.FINAL_PREFIX_COMPLETE, true); phase = Phase.ENTITY_PRELUDE_RUNNING; }
-        public void finishEntityPrelude(ServerLevel expected) { require(expected, Phase.ENTITY_PRELUDE_RUNNING, true); phase = Phase.ENTITY_PRELUDE_COMPLETE; }
+        public void beginEntityPrelude(ServerLevel expected) { require(expected, Phase.FINAL_PREFIX_COMPLETE, false); phase = Phase.ENTITY_PRELUDE_RUNNING; }
+        public void finishEntityPrelude(ServerLevel expected) { require(expected, Phase.ENTITY_PRELUDE_RUNNING, false); phase = Phase.ENTITY_PRELUDE_COMPLETE; }
         public void beginEntities(ServerLevel expected) { require(expected, Phase.ENTITY_PRELUDE_COMPLETE, false); phase = Phase.ENTITIES_RUNNING; }
         public void finishEntities(ServerLevel expected) { require(expected, Phase.ENTITIES_RUNNING, false); phase = Phase.ENTITIES_COMPLETE; }
-        public void beginBlockEntities(ServerLevel expected) { require(expected, Phase.ENTITIES_COMPLETE, true); phase = Phase.BLOCK_ENTITIES_RUNNING; }
-        public void finishBlockEntities(ServerLevel expected) { require(expected, Phase.BLOCK_ENTITIES_RUNNING, true); phase = Phase.ENTITY_BODY_COMPLETE; }
+        public void beginBlockEntities(ServerLevel expected) { require(expected, Phase.ENTITIES_COMPLETE, false); phase = Phase.BLOCK_ENTITIES_RUNNING; }
+        public void finishBlockEntities(ServerLevel expected) { require(expected, Phase.BLOCK_ENTITIES_RUNNING, false); phase = Phase.ENTITY_BODY_COMPLETE; }
         public void consumeFinal(ServerLevel expected) { require(expected, Phase.ENTITY_BODY_COMPLETE, true); phase = Phase.COMPLETE; }
         public void consume(ServerLevel expected) { consumeFinal(expected); }
         private void require(ServerLevel expected, Phase expectedPhase, boolean owned) {
@@ -138,5 +138,12 @@ public final class LiveTickPhases {
     }
     public static void runEntityTicks(EntityTickList entities, Consumer<Entity> output, ServerLevel level) {
         Phoenium.liveRuntime().runRegionalEntityTicks(level, entities, output);
+    }
+    public static void runBlockEntities(ServerLevel level) {
+        Phoenium.liveRuntime().runRegionalBlockEntities(level);
+    }
+    public static void runDragonFight(ServerLevel level,
+            net.minecraft.world.level.dimension.end.EnderDragonFight fight) {
+        Phoenium.liveRuntime().runRegionalDragonFight(level, fight);
     }
 }

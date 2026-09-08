@@ -22,4 +22,14 @@ final class RegionalCustomSpawnerBoundaryTest {
         assertThrows(IllegalStateException.class,
             () -> RegionalChunkGameplayService.customSpawnerRadius(unknown.getClass(), 0, true));
     }
+
+    @Test void nativeCatTimerCallbackRunsOnceWithoutSelectingTerrain() throws Exception {
+        CatSpawner spawner = new CatSpawner();
+        var counter = CatSpawner.class.getDeclaredField("nextTick");
+        counter.setAccessible(true); counter.setInt(spawner, 2);
+        assertEquals(-1, RegionalChunkGameplayService.customSpawnerRadius(CatSpawner.class,
+            counter.getInt(spawner), true));
+        spawner.tick(null, true);
+        assertEquals(1, counter.getInt(spawner));
+    }
 }

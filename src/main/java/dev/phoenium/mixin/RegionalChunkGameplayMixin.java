@@ -38,7 +38,7 @@ abstract class RegionalChunkGameplayMixin {
         target = "Lnet/minecraft/server/level/ServerChunkCache;tickSpawningChunk(Lnet/minecraft/world/level/chunk/LevelChunk;JLjava/util/List;Lnet/minecraft/world/level/NaturalSpawner$SpawnState;)V"))
     private void phoenium$spawningChunk(ServerChunkCache cache, LevelChunk chunk, long timeDiff,
             List<MobCategory> categories, NaturalSpawner.SpawnState state, Operation<Void> original) {
-        Phoenium.liveRuntime().regionalSpawningChunkCallback(cache, chunk,
+        Phoenium.liveRuntime().regionalSpawningChunkCallback(cache, chunk, !categories.isEmpty(),
             () -> original.call(cache, chunk, timeDiff, categories, state));
     }
 

@@ -26,6 +26,8 @@ final class LiveTickPhaseBoundaryTest {
         }
         expected.remove(LiveTickPhaseBoundary.CACHE + ".tickChunks()V");
         expected.remove("net/minecraft/world/level/entity/EntityTickList.forEach(Ljava/util/function/Consumer;)V");
+        expected.remove(LiveTickPhaseBoundary.LEVEL + ".tickBlockEntities()V");
+        expected.remove("net/minecraft/world/level/dimension/end/EnderDragonFight.tick()V");
         LiveTickPhaseBoundary.installLevel(level); LiveTickPhaseBoundary.installCache(cache);
         List<String> actual = new ArrayList<>();
         actual.addAll(calls(named(level, "phoenium$beforeScheduledTicks")));
@@ -48,6 +50,12 @@ final class LiveTickPhaseBoundaryTest {
         assertEquals(1, allCalls(named(level, "phoenium$runEntityTicks")).stream()
             .filter(call -> call.owner.equals("dev/phoenium/live/LiveTickPhases")
                 && call.name.equals("runEntityTicks")).count());
+        assertEquals(1, allCalls(named(level, "phoenium$afterEntityList")).stream()
+            .filter(call -> call.owner.equals("dev/phoenium/live/LiveTickPhases")
+                && call.name.equals("runBlockEntities")).count());
+        assertEquals(1, allCalls(named(level, "phoenium$beforeEntityList")).stream()
+            .filter(call -> call.owner.equals("dev/phoenium/live/LiveTickPhases")
+                && call.name.equals("runDragonFight")).count());
         assertEquals(originalLevelInstructions, List.of(levelTick.instructions.toArray()));
         assertEquals(originalCacheInstructions, List.of(cacheTick.instructions.toArray()));
         assertTrue(level.interfaces.contains("dev/phoenium/live/LiveTickPhases$LevelAccess"));
