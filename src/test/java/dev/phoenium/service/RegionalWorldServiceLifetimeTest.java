@@ -12,7 +12,9 @@ import dev.phoenium.scheduler.RegionScheduler;
 import dev.phoenium.topology.RegionDirectory;
 import java.util.LinkedHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.lang.reflect.Modifier;
 import net.minecraft.core.BlockPos;
+import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.ticks.LevelTicks;
 import net.minecraft.world.ticks.ScheduledTick;
@@ -20,6 +22,11 @@ import org.junit.jupiter.api.Test;
 import org.slf4j.LoggerFactory;
 
 final class RegionalWorldServiceLifetimeTest {
+    @Test void bindingConstructionCannotRetainTheRegistryMonitorAcrossNativeBootstrap() throws Exception {
+        assertFalse(Modifier.isSynchronized(
+            RegionalWorldServices.class.getMethod("bind", ServerLevel.class).getModifiers()));
+    }
+
     @Test
     void endedBindingsCannotBecomeTheOriginalBootstrapPathAgain() throws Exception {
         PhoeniumLiveRuntime live = new PhoeniumLiveRuntime(LoggerFactory.getLogger(getClass()));

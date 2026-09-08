@@ -34,6 +34,7 @@ public final class RegionalWorldServices implements RegionalStateMigration {
     private final ObjectOwnershipRegistry objects;
     private final Map<ServerLevel, WorldServices> worlds = new IdentityHashMap<>();
     private final Map<LevelTicks<?>, TickBinding<?>> ticks = new IdentityHashMap<>();
+    private final java.util.Set<ServerLevel> bindings = java.util.Collections.newSetFromMap(new IdentityHashMap<>());
     private volatile boolean terminated;
 
     public RegionalWorldServices(RegionDirectory directory, RegionalServiceDispatcher dispatcher,
@@ -44,36 +45,55 @@ public final class RegionalWorldServices implements RegionalStateMigration {
     }
 
     @SuppressWarnings("unchecked")
-    public synchronized void bind(ServerLevel level) {
-        requireActiveLifetime();
-        if (worlds.containsKey(level)) return;
-        WorldId world = new WorldId(level.dimension().identifier().toString());
-        LevelTicks<Block> blockTicks = level.getBlockTicks();
-        LevelTicks<Fluid> fluidTicks = level.getFluidTicks();
-        var blockAccess = (RegionalLevelTicksAccess<Block>) blockTicks;
-        var fluidAccess = (RegionalLevelTicksAccess<Fluid>) fluidTicks;
-        var blocks = new RegionalScheduledTickService<Block>(world, directory, dispatcher,
-            blockAccess.phoenium$getTickCheck(), true);
-        var fluids = new RegionalScheduledTickService<Fluid>(world, directory, dispatcher,
-            fluidAccess.phoenium$getTickCheck(), false);
-        blocks.bindOriginalCycle(blockAccess.phoenium$getNextTickForContainer(), blockAccess.phoenium$getToRunThisTick(),
-            blockAccess.phoenium$getAlreadyRunThisTick(), blockAccess.phoenium$getToRunThisTickSet());
-        fluids.bindOriginalCycle(fluidAccess.phoenium$getNextTickForContainer(), fluidAccess.phoenium$getToRunThisTick(),
-            fluidAccess.phoenium$getAlreadyRunThisTick(), fluidAccess.phoenium$getToRunThisTickSet());
-        blocks.bootstrap(new LinkedHashMap<>(blockAccess.phoenium$getAllContainers()));
-        fluids.bootstrap(new LinkedHashMap<>(fluidAccess.phoenium$getAllContainers()));
-        var events = new RegionalBlockEventService<BlockEventData>(world, directory, dispatcher, BlockEventData::pos);
-        var originalEvents = ((RegionalServerLevelAccess) level).phoenium$getBlockEvents();
-        events.bootstrap(List.copyOf(originalEvents));
-        originalEvents.clear();
-        var tracking = new RegionalTrackingService(world, level, directory, dispatcher, objects);
-        ChunkMap chunkMap = level.getChunkSource().chunkMap;
-        tracking.reconcileSource(((RegionalChunkMapAccess) chunkMap).phoenium$getTrackedEntities());
-        var gameplay = new RegionalChunkGameplayService(world, level, level.getChunkSource(), directory, dispatcher, objects);
-        WorldServices services = new WorldServices(level, blocks, fluids, events, tracking, gameplay, chunkMap);
-        worlds.put(level, services);
-        ticks.put(blockTicks, new TickBinding<>(services, blocks));
-        ticks.put(fluidTicks, new TickBinding<>(services, fluids));
+    public void bind(ServerLevel level) {
+        synchronized (this) {
+            requireActiveLifetime();
+            Objects.requireNonNull(level, "level");
+            if (worlds.containsKey(level)) return;
+            if (!bindings.add(level)) throw new IllegalStateException("regional world binding already in progress");
+        }
+        LevelTicks<Block> blockTicks = null;
+        LevelTicks<Fluid> fluidTicks = null;
+        WorldServices services;
+        try {
+            if (Thread.holdsLock(this))
+                throw new IllegalStateException("regional world callbacks cannot run under the binding monitor");
+            WorldId world = new WorldId(level.dimension().identifier().toString());
+            blockTicks = level.getBlockTicks();
+            fluidTicks = level.getFluidTicks();
+            var blockAccess = (RegionalLevelTicksAccess<Block>) blockTicks;
+            var fluidAccess = (RegionalLevelTicksAccess<Fluid>) fluidTicks;
+            var blocks = new RegionalScheduledTickService<Block>(world, directory, dispatcher,
+                blockAccess.phoenium$getTickCheck(), true);
+            var fluids = new RegionalScheduledTickService<Fluid>(world, directory, dispatcher,
+                fluidAccess.phoenium$getTickCheck(), false);
+            blocks.bindOriginalCycle(blockAccess.phoenium$getNextTickForContainer(), blockAccess.phoenium$getToRunThisTick(),
+                blockAccess.phoenium$getAlreadyRunThisTick(), blockAccess.phoenium$getToRunThisTickSet());
+            fluids.bindOriginalCycle(fluidAccess.phoenium$getNextTickForContainer(), fluidAccess.phoenium$getToRunThisTick(),
+                fluidAccess.phoenium$getAlreadyRunThisTick(), fluidAccess.phoenium$getToRunThisTickSet());
+            blocks.bootstrap(new LinkedHashMap<>(blockAccess.phoenium$getAllContainers()));
+            fluids.bootstrap(new LinkedHashMap<>(fluidAccess.phoenium$getAllContainers()));
+            var events = new RegionalBlockEventService<BlockEventData>(world, directory, dispatcher, BlockEventData::pos);
+            var originalEvents = ((RegionalServerLevelAccess) level).phoenium$getBlockEvents();
+            events.bootstrap(List.copyOf(originalEvents));
+            originalEvents.clear();
+            var tracking = new RegionalTrackingService(world, level, directory, dispatcher, objects);
+            ChunkMap chunkMap = level.getChunkSource().chunkMap;
+            tracking.reconcileSource(((RegionalChunkMapAccess) chunkMap).phoenium$getTrackedEntities());
+            var gameplay = new RegionalChunkGameplayService(world, level, level.getChunkSource(), directory, dispatcher, objects);
+            services = new WorldServices(level, blocks, fluids, events, tracking, gameplay, chunkMap);
+        } catch (Throwable failure) {
+            synchronized (this) { bindings.remove(level); }
+            throw failure;
+        }
+        synchronized (this) {
+            if (!bindings.remove(level)) throw new IllegalStateException("regional world binding reservation lost");
+            requireActiveLifetime();
+            if (worlds.putIfAbsent(level, services) != null)
+                throw new IllegalStateException("regional world published during binding");
+            ticks.put(blockTicks, new TickBinding<>(services, services.blockTicks()));
+            ticks.put(fluidTicks, new TickBinding<>(services, services.fluidTicks()));
+        }
     }
 
     public synchronized RegionalServiceDispatcher dispatcher() { return dispatcher; }

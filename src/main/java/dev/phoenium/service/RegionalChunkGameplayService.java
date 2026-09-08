@@ -210,7 +210,10 @@ public final class RegionalChunkGameplayService {
         dispatcher.ensureClosure(Set.copyOf(footprint));
         dispatcher.executeAndDrain(source, RegionalServiceKind.CHUNK_GAMEPLAY, ignored -> {
             dispatcher.requireCurrentOwner(source); cycle.callbackKey = source;
-            try { original.run(); }
+            try {
+                cycle.levelPlayers = refreshPlayerProjections(cycle.levelPlayers);
+                original.run();
+            }
             finally { cycle.callbackKey = null; cycle.nearestPlayer = null; }
         });
         chunkCallbacks = Math.incrementExact(chunkCallbacks);
@@ -222,7 +225,8 @@ public final class RegionalChunkGameplayService {
     public Player nearestNaturalSpawnPlayer(double x, double y, double z) {
         Cycle active = requireOwnedCycle();
         PlayerProjection best = null; double bestDistance = -1.0;
-        for (PlayerProjection player : active.levelPlayers) {
+        for (PlayerProjection retained : active.levelPlayers) {
+            PlayerProjection player = refreshPlayerProjection(retained);
             if (player.spectator) continue;
             double distance = player.position.distanceToSqr(x, y, z);
             if (bestDistance == -1.0 || distance < bestDistance) { best = player; bestDistance = distance; }
@@ -234,6 +238,7 @@ public final class RegionalChunkGameplayService {
         Cycle active = requireOwnedCycle(); PlayerProjection selected = active.nearestPlayer;
         if (selected == null || selected.player != player)
             throw new IllegalStateException("natural spawn nearest-player observation changed");
+        selected = refreshPlayerProjection(selected); active.nearestPlayer = selected;
         return selected.position.distanceToSqr(x, y, z);
     }
     public boolean retainedWeather(boolean thunder) {
@@ -379,6 +384,21 @@ public final class RegionalChunkGameplayService {
                 published.position(), candidate.fact().spectator()));
         }
         return List.copyOf(result);
+    }
+    private List<PlayerProjection> refreshPlayerProjections(List<PlayerProjection> retained) {
+        List<PlayerProjection> refreshed = new ArrayList<>(retained.size());
+        retained.forEach(player -> refreshed.add(refreshPlayerProjection(player)));
+        return List.copyOf(refreshed);
+    }
+    private PlayerProjection refreshPlayerProjection(PlayerProjection retained) {
+        FullEntityFacts.PublishedPosition published = finishing.entityFacts.publishedPosition(retained.player);
+        if (published.candidate().fact() != retained.candidate.fact())
+            throw new IllegalStateException("natural spawn player identity changed after owner preflight");
+        FullEntityFacts.Candidate candidate = published.candidate();
+        if (candidate.fact().world() != level)
+            throw new IllegalStateException("natural spawn player changed world after owner preflight");
+        return new PlayerProjection(retained.player, retained.listener, candidate, key(candidate),
+            published.position(), candidate.fact().spectator());
     }
     private void requireEntity(FullEntityFacts.Candidate candidate, RoutingKey key) {
         var binding = objects.current(candidate.fact().uuid().toString()).orElseThrow();
