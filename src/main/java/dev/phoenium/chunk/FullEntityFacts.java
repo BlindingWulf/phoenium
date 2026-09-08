@@ -23,6 +23,7 @@ public final class FullEntityFacts {
                        boolean enemy, boolean creative, boolean spectator) { }
     public record Candidate(Entity alias, Fact fact, ChunkPos position, long routingRevision) { }
     public record Cut(ServerLevel world, long revision, List<Candidate> candidates) { }
+    record Estimate(ServerLevel world, long revision, int candidates) { }
     private record Route(ChunkPos position, long revision) { }
     private static final AtomicLong INCARNATIONS = new AtomicLong();
     private static final ThreadLocal<Boolean> PUBLISHING = ThreadLocal.withInitial(() -> false);
@@ -160,6 +161,36 @@ public final class FullEntityFacts {
     }
     public Cut observe(ServerLevel world) {
         try (var turn = service.referenceAccess()) { return cut(world); }
+    }
+    Estimate estimate(ServerLevel world) {
+        try (var turn = service.referenceAccess()) {
+            FullFinishingServices.requireWorld(world, FullFinishingServices.Kind.ENTITY_REGISTRY);
+            candidateMetadata.lock();
+            try { return new Estimate(world, candidateRevisions.getOrDefault(world, 0L),
+                    candidates.getOrDefault(world, new LinkedHashMap<>()).size()); }
+            finally { candidateMetadata.unlock(); }
+        }
+    }
+    Cut observe(ServerLevel world, Estimate estimate) {
+        if (estimate.world != world) throw new ChunkProtocolException("foreign entity candidate estimate");
+        try (var turn = service.referenceAccess()) {
+            FullFinishingServices.requireWorld(world, FullFinishingServices.Kind.ENTITY_REGISTRY);
+            candidateMetadata.lock();
+            try {
+                var indexed = candidates.getOrDefault(world, new LinkedHashMap<>());
+                if (candidateRevisions.getOrDefault(world, 0L) != estimate.revision || indexed.size() != estimate.candidates)
+                    return null;
+                var result = new ArrayList<Candidate>(estimate.candidates);
+                for (Entity entity : indexed.values()) {
+                    Fact fact = entity instanceof Access access ? access.phoenium$referenceFact() : null;
+                    Route route = routes.get(entity);
+                    if (fact == null || fact.alias != entity || fact.world != world || route == null)
+                        throw new ChunkProtocolException("selector candidate lacks current owner-published membership facts");
+                    result.add(new Candidate(entity, fact, route.position, route.revision));
+                }
+                return new Cut(world, estimate.revision, List.copyOf(result));
+            } finally { candidateMetadata.unlock(); }
+        }
     }
     public boolean valid(Cut cut) {
         candidateMetadata.lock();

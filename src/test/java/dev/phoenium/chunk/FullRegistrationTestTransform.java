@@ -79,11 +79,13 @@ public final class FullRegistrationTestTransform {
             for (MethodNode method : node.methods) if (method.name.equals("postLoadChunk")) {
                 InsnList roots = new InsnList(); roots.add(new VarInsnNode(Opcodes.ALOAD, 1));
                 roots.add(new MethodInsnNode(Opcodes.INVOKESTATIC, "dev/phoenium/chunk/FullSavedInput", "reloadRoots", "(Ljava/util/List;)Ljava/util/List;", false));
-                roots.add(new VarInsnNode(Opcodes.ASTORE, 1)); method.instructions.insert(roots);
+                roots.add(new VarInsnNode(Opcodes.ASTORE, 1)); roots.add(new VarInsnNode(Opcodes.ALOAD, 2));
+                roots.add(new MethodInsnNode(Opcodes.INVOKESTATIC, "dev/phoenium/chunk/FullBlockEntityTagInputs", "reloadRoots", "(Ljava/util/List;)Ljava/util/List;", false));
+                roots.add(new VarInsnNode(Opcodes.ASTORE, 2)); method.instructions.insert(roots);
                 for (AbstractInsnNode instruction : method.instructions.toArray()) if (instruction.getOpcode() == Opcodes.ARETURN) {
-                    InsnList wrap = new InsnList(); wrap.add(new VarInsnNode(Opcodes.ALOAD, 1));
+                    InsnList wrap = new InsnList(); wrap.add(new VarInsnNode(Opcodes.ALOAD, 1)); wrap.add(new VarInsnNode(Opcodes.ALOAD, 2));
                     wrap.add(new MethodInsnNode(Opcodes.INVOKESTATIC, "dev/phoenium/chunk/FullSavedInput", "reload",
-                            "(Lnet/minecraft/world/level/chunk/LevelChunk$PostLoadProcessor;Ljava/util/List;)Lnet/minecraft/world/level/chunk/LevelChunk$PostLoadProcessor;", false));
+                            "(Lnet/minecraft/world/level/chunk/LevelChunk$PostLoadProcessor;Ljava/util/List;Ljava/util/List;)Lnet/minecraft/world/level/chunk/LevelChunk$PostLoadProcessor;", false));
                     method.instructions.insertBefore(instruction, wrap);
                 }
             }

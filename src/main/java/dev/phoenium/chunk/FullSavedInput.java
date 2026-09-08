@@ -41,17 +41,27 @@ public final class FullSavedInput {
         if (!observing.compareAndSet(false, true)) throw new ChunkProtocolException("saved input observation overlaps its writer");
         try { return captureExclusive(roots); } finally { endWrite(); }
     }
-    record CaptureAttempt(boolean acquired, Snapshot snapshot) { }
+    record CaptureAttempt(boolean acquired, boolean selected, boolean capacity, Snapshot snapshot) { }
     /** Nonblocking producer observation used where an overlapping legitimate writer supplies a
      * completion notification. An unacquired attempt means retry after that producer releases its
      * turn. The current snapshot is reused under the observation fence so a read can never retain
      * the old snapshot while a writer is active. */
-    CaptureAttempt captureIfAvailable(List<CompoundTag> roots) {
+    CaptureAttempt captureIfAvailable(List<CompoundTag> roots, java.util.function.LongSupplier estimate,
+                                      java.util.function.LongPredicate reserve,
+                                      java.util.function.BooleanSupplier selected) {
         tracking = true;
-        if (!observing.compareAndSet(false, true)) return new CaptureAttempt(false, null);
+        if (!observing.compareAndSet(false, true)) return new CaptureAttempt(false, false, true, null);
         try {
+            if (!selected.getAsBoolean()) return new CaptureAttempt(true, false, true, null);
             Snapshot current = snapshot;
-            return new CaptureAttempt(true, current == null ? captureExclusive(roots) : current);
+            long allocation = current == null ? estimate.getAsLong() : current.payloadBytes();
+            if (!reserve.test(allocation)) return new CaptureAttempt(true, true, false, null);
+            if (current == null) {
+                current = captureExclusive(roots);
+                if (current.payloadBytes() > allocation)
+                    throw new ChunkProtocolException("pending dependency scalar estimate did not cover its detached capture");
+            }
+            return new CaptureAttempt(true, true, true, current);
         } finally { endWrite(); }
     }
     private Snapshot captureExclusive(List<CompoundTag> roots) {
@@ -134,13 +144,29 @@ public final class FullSavedInput {
     public static List<CompoundTag> reloadRoots(List<CompoundTag> entities) {
         return FullSavedCollections.retainedReloadRoots(entities, new FullSavedInput());
     }
-    public static LevelChunk.PostLoadProcessor reload(LevelChunk.PostLoadProcessor original, List<CompoundTag> entities) {
+    public static LevelChunk.PostLoadProcessor reload(LevelChunk.PostLoadProcessor original, List<CompoundTag> entities,
+                                                       List<CompoundTag> blockEntities) {
         FullSavedInput source = FullSavedCollections.source(entities);
         if (source == null) throw new ChunkProtocolException("reload processor did not retain its actual guarded saved-input list");
-        return new ReloadProcessor(original, source, entities);
+        FullBlockEntityTagInputs.Reload blocks = FullBlockEntityTagInputs.reload(blockEntities);
+        if (blocks == null) throw new ChunkProtocolException("reload processor did not retain its actual parsed block-entity list");
+        return new ReloadProcessor(original, source, entities, blocks);
     }
-    public record ReloadProcessor(LevelChunk.PostLoadProcessor original, FullSavedInput input, List<CompoundTag> entities) implements LevelChunk.PostLoadProcessor {
-        @Override public void run(LevelChunk chunk) { if (original != null) original.run(chunk); }
+    public record ReloadProcessor(LevelChunk.PostLoadProcessor original, FullSavedInput input, List<CompoundTag> entities,
+                                  FullBlockEntityTagInputs.Reload blockEntities) implements LevelChunk.PostLoadProcessor {
+        @Override public void run(LevelChunk chunk) {
+            Throwable failure = null;
+            try { if (original != null) original.run(chunk); }
+            catch (Throwable problem) { failure = problem; }
+            try { blockEntities.close(); }
+            catch (Throwable problem) {
+                if (failure == null) failure = problem;
+                else if (failure != problem) failure.addSuppressed(problem);
+            }
+            if (failure instanceof Error error) throw error;
+            if (failure instanceof RuntimeException runtime) throw runtime;
+            if (failure != null) throw new ChunkProtocolException("reload block-tag acknowledgement failed", failure);
+        }
     }
     public interface PostLoadAccess { LevelChunk.PostLoadProcessor phoenium$postLoad(); }
 

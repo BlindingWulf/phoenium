@@ -18,6 +18,7 @@ import net.minecraft.world.level.storage.CommandStorage;
 public final class FullCommandStorageInputs {
     private static final Map<CommandStorage, State> STATES = new IdentityHashMap<>();
     private FullCommandStorageInputs() { }
+    static final class Capacity extends RuntimeException { }
 
     static final class Capture {
         final State state;
@@ -64,12 +65,21 @@ public final class FullCommandStorageInputs {
         }
         void changed() {
             if (closed) return;
-            revision = Math.incrementExact(revision);
-            FullFinishingServices.forServer(server).changed(FullFinishingServices.Kind.COMMAND_STORAGE);
-            for (Runnable listener : listeners) listener.run();
+            Throwable failure = null;
+            try {
+                revision = Math.incrementExact(revision);
+                FullFinishingServices.forServer(server).changed(FullFinishingServices.Kind.COMMAND_STORAGE);
+            } catch (Throwable problem) { failure = problem; }
+            for (Runnable listener : listeners) try { listener.run(); }
+            catch (Throwable problem) {
+                if (failure == null) failure = problem;
+                else if (failure != problem) failure.addSuppressed(problem);
+            }
+            rethrow(failure, "command storage dependency notification failed");
         }
     }
-    static Capture observe(MinecraftServer server, Identifier id) {
+    static Capture observe(MinecraftServer server, Identifier id) { return observe(server, id, ignored -> true); }
+    static Capture observe(MinecraftServer server, Identifier id, java.util.function.LongPredicate reserve) {
         if (OwnershipContext.current().isPresent() || FullFinishingServices.finishing())
             throw new ChunkProtocolException("command storage input discovered after FULL admission");
         try (var serial = FullFinishingServices.forServer(server).serial(FullFinishingServices.Phase.SERVER_TASK)) {
@@ -82,6 +92,7 @@ public final class FullCommandStorageInputs {
             CompoundTag original = storage.get(id);
             long[] size = {0, 0};
             FullSavedTextInputs.protect(original, state.custodian, 0, size);
+            if (!reserve.test(size[1])) throw new Capacity();
             return new Capture(state, id, original, size[1]);
         }
     }
@@ -127,5 +138,10 @@ public final class FullCommandStorageInputs {
         if (failure instanceof Error error) throw error;
         if (failure instanceof RuntimeException runtime) throw runtime;
         if (failure != null) throw new ChunkProtocolException("command storage shutdown acknowledgement", failure);
+    }
+    private static void rethrow(Throwable failure, String message) {
+        if (failure instanceof Error error) throw error;
+        if (failure instanceof RuntimeException runtime) throw runtime;
+        if (failure != null) throw new ChunkProtocolException(message, failure);
     }
 }

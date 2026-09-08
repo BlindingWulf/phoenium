@@ -105,10 +105,20 @@ public final class FullInitializedInputs {
         String unmet = plan.saved.unmet();
         if (unmet == null && plan.contexts == null) {
             try { plan.contexts = FullSavedContextInputs.prepare(runtime.level(), runtime.authority.world(),
-                    runtime.authority.directory(), plan.graph.finishing.stage(), plan.saved, this::changed); }
+                    runtime.authority.directory(), plan.graph.finishing.stage(), plan.saved, this::changed,
+                    contextBytes -> reserveContexts(plan, contextBytes)); }
             catch (ChunkProtocolException bound) { unmet = bound.getMessage(); }
         }
         if (unmet == null && plan.contexts != null) unmet = plan.contexts.unmet();
+        if (unmet == null && plan.contexts != null && plan.contexts.refinementRetry()) {
+            plan.contexts.close(); plan.contexts = null;
+            plan.evaluation = new Evaluation(State.PENDING, "owner-published context dependency recapture", null);
+            changed(); return;
+        }
+        if (unmet == null && plan.contexts != null && plan.contexts.refinementCapacity()) {
+            plan.contexts.close(); plan.contexts = null;
+            plan.evaluation = new Evaluation(State.CAPACITY, "expanded operation acknowledgement", null); return;
+        }
         if (plan.contexts != null) {
             long charge = Math.max(FullSavedInput.MAX_FACT_BYTES,
                     Math.addExact(plan.saved.payloadBytes(), plan.contexts.payloadBytes()));
@@ -181,10 +191,13 @@ public final class FullInitializedInputs {
             }
         }
         if (plan.contexts != null && plan.contexts.refineBlocks(targets)) {
-            plan.evaluation = plan.contexts.unmet() == null
-                    ? new Evaluation(State.PENDING, "protected block context dependency refinement", null)
-                    : new Evaluation(State.UNRESOLVED, plan.contexts.unmet(), null);
-            if (!plan.contexts.refinementWaiting()) changed();
+            plan.evaluation = plan.contexts.unmet() != null
+                    ? new Evaluation(State.UNRESOLVED, plan.contexts.unmet(), null)
+                    : plan.contexts.refinementCapacity()
+                    ? new Evaluation(State.CAPACITY, "expanded operation acknowledgement", null)
+                    : new Evaluation(State.PENDING, "protected block context dependency refinement", null);
+            if (plan.contexts.refinementCapacity()) { plan.contexts.close(); plan.contexts = null; }
+            else if (!plan.contexts.refinementWaiting()) changed();
             return;
         }
         int needed = (int) targets.stream().filter(t -> t.availability == Availability.PREPARED || t.availability == Availability.PUBLISHED || t.availability == Availability.BIOMES).count();
@@ -220,6 +233,14 @@ public final class FullInitializedInputs {
     private boolean expand(Plan plan) {
         if (expanded != null && expanded != plan) return false;
         expanded = plan; return true;
+    }
+    private boolean reserveContexts(Plan plan, long contextBytes) {
+        long charge = Math.max(FullSavedInput.MAX_FACT_BYTES,
+                Math.addExact(plan.saved.payloadBytes(), contextBytes));
+        if (charge <= plan.factCharge) return true;
+        if (!expand(plan)) return false;
+        bytes = Math.addExact(bytes, charge - plan.factCharge); plan.factCharge = charge;
+        return true;
     }
     private Target resolve(Plan plan, ChunkPos position, Set<Purpose> purposes, int footprint) {
         FullRegistrationRuntime.Graph source = plan.graph;

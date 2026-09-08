@@ -161,11 +161,11 @@ class FullSavedContextInputTest {
         var exact = new IllegalStateException("controlled pending tag retention failure");
         AutoCloseable later = null;
         try {
-            var stale = FullBlockEntityTagInputs.observe(f.input(ChunkPos.ZERO), position, f.world.level.registryAccess(), () -> { });
+            var stale = FullBlockEntityTagInputs.observe(f.input(ChunkPos.ZERO), position, f.world.level.registryAccess(), () -> { }, ignored -> true);
             customName.putString("storage", SECOND.toString());
             assertSame(exact, assertThrows(IllegalStateException.class,
                     () -> stale.retain(() -> { failedCalls.incrementAndGet(); throw exact; })));
-            var current = FullBlockEntityTagInputs.observe(f.input(ChunkPos.ZERO), position, f.world.level.registryAccess(), () -> { });
+            var current = FullBlockEntityTagInputs.observe(f.input(ChunkPos.ZERO), position, f.world.level.registryAccess(), () -> { }, ignored -> true);
             later = current.retain(laterCalls::incrementAndGet); assertTrue(current.valid());
             f.input(ChunkPos.ZERO).setBlockEntityNbt(pendingBeacon(position, net.minecraft.nbt.StringTag.valueOf("replacement")));
             assertFalse(current.valid()); assertEquals(1, failedCalls.get()); assertEquals(1, laterCalls.get());
@@ -181,7 +181,7 @@ class FullSavedContextInputTest {
         var level = new LevelChunk(f.world.level, proto, null);
         var changed = new AtomicInteger(); AutoCloseable use = null;
         try {
-            var shared = FullBlockEntityTagInputs.observe(level, position, f.world.level.registryAccess(), changed::incrementAndGet);
+            var shared = FullBlockEntityTagInputs.observe(level, position, f.world.level.registryAccess(), changed::incrementAndGet, ignored -> true);
             assertNotNull(shared); use = shared.retain(changed::incrementAndGet);
             proto.setBlockEntityNbt(pendingBeacon(position, net.minecraft.nbt.StringTag.valueOf("proto replacement")));
             assertTrue(shared.valid(), "the surviving LevelChunk map occurrence retains the shared source");
@@ -189,16 +189,43 @@ class FullSavedContextInputTest {
             assertFalse(shared.valid()); assertEquals(1, changed.get());
             use.close(); use = null;
 
-            var levelCapture = FullBlockEntityTagInputs.observe(level, position, f.world.level.registryAccess(), () -> { });
+            var levelCapture = FullBlockEntityTagInputs.observe(level, position, f.world.level.registryAccess(), () -> { }, ignored -> true);
             assertNotNull(levelCapture); use = levelCapture.retain(changed::incrementAndGet);
             level.setBlockEntityNbt(pendingBeacon(position, net.minecraft.nbt.StringTag.valueOf("level replacement")));
             assertFalse(levelCapture.valid()); assertEquals(2, changed.get());
             use.close(); use = null;
 
             proto.setBlockEntityNbt(original);
-            var reused = FullBlockEntityTagInputs.observe(proto, position, f.world.level.registryAccess(), () -> { });
+            var reused = FullBlockEntityTagInputs.observe(proto, position, f.world.level.registryAccess(), () -> { }, ignored -> true);
             assertNotNull(reused); assertTrue(reused.valid(), "last-owner retirement does not poison later exact-tag custody reuse");
         } finally { if (use != null) use.close(); f.stop(); FullFinishingServices.stopped(f.world.level.getServer()); }
+        assertCleanup(f);
+    }
+
+    @Test void independentCapturesReuseOneSnapshotAndTrackTheirExactMapOccurrence() throws Exception {
+        var f = new FullRegistrationFixture(true); var position = new BlockPos(8, 8, 8);
+        var original = pendingBeacon(position, storageText(FIRST)); var proto = f.input(ChunkPos.ZERO);
+        proto.setBlockEntityNbt(original); var level = new LevelChunk(f.world.level, proto, null);
+        AutoCloseable protoUse = null, promotingUse = null, otherUse = null;
+        try {
+            var protoCapture = FullBlockEntityTagInputs.observe(proto, position, f.world.level.registryAccess(), () -> { }, ignored -> true);
+            var promoting = FullBlockEntityTagInputs.observe(level, position, f.world.level.registryAccess(), () -> { }, ignored -> true);
+            var other = FullBlockEntityTagInputs.observe(level, position, f.world.level.registryAccess(), () -> { }, ignored -> true);
+            protoUse = protoCapture.retain(() -> { }); promotingUse = promoting.retain(() -> { }); otherUse = other.retain(() -> { });
+            assertTrue(protoCapture.valid()); assertTrue(promoting.valid());
+            assertTrue(other.valid(), "independent unchanged observations reuse the current immutable snapshot");
+            promoting.consuming();
+            level.setBlockEntityNbt(pendingBeacon(position, net.minecraft.nbt.StringTag.valueOf("promoted replacement")));
+            assertTrue(promoting.valid(), "the exact plan that entered original promotion retains its capture");
+            assertFalse(other.valid(), "another plan captured from the replaced Level occurrence becomes stale");
+            assertTrue(protoCapture.valid(), "the still-retained Proto occurrence remains valid");
+            proto.setBlockEntityNbt(pendingBeacon(position, net.minecraft.nbt.StringTag.valueOf("proto replacement")));
+            assertFalse(protoCapture.valid(), "replacing the exact Proto occurrence stales only its remaining capture");
+        } finally {
+            if (protoUse != null) protoUse.close(); if (promotingUse != null) promotingUse.close();
+            if (otherUse != null) otherUse.close();
+            f.stop(); FullFinishingServices.stopped(f.world.level.getServer());
+        }
         assertCleanup(f);
     }
 
@@ -212,7 +239,7 @@ class FullSavedContextInputTest {
         AutoCloseable firstUse = null, secondUse = null;
         try {
             var firstCapture = FullBlockEntityTagInputs.observe(f.input(ChunkPos.ZERO), firstPosition,
-                    f.world.level.registryAccess(), () -> { });
+                    f.world.level.registryAccess(), () -> { }, ignored -> true);
             firstUse = firstCapture.retain(() -> { throw firstFailure; });
             secondUse = firstCapture.retain(() -> { throw secondFailure; });
             var thrown = assertThrows(IllegalStateException.class, () -> firstName.putString("storage", SECOND.toString()));
@@ -220,9 +247,9 @@ class FullSavedContextInputTest {
             firstUse.close(); firstUse = null; secondUse.close(); secondUse = null;
 
             var currentFirst = FullBlockEntityTagInputs.observe(f.input(ChunkPos.ZERO), firstPosition,
-                    f.world.level.registryAccess(), () -> { });
+                    f.world.level.registryAccess(), () -> { }, ignored -> true);
             var currentSecond = FullBlockEntityTagInputs.observe(f.input(ChunkPos.ZERO), secondPosition,
-                    f.world.level.registryAccess(), () -> { });
+                    f.world.level.registryAccess(), () -> { }, ignored -> true);
             var later = new AtomicInteger();
             firstUse = currentFirst.retain(() -> { throw firstFailure; });
             secondUse = currentSecond.retain(later::incrementAndGet);
@@ -283,6 +310,92 @@ class FullSavedContextInputTest {
         } finally {
             if (producerActive) { Runnable notify = producer.written(List.of(pending)); producer.endWrite(); if (notify != null) notify.run(); }
             f.stop(); FullFinishingServices.stopped(f.world.level.getServer());
+        }
+        assertCleanup(f);
+    }
+
+    @Test void pendingTagCapacityIsReservedBeforeDetachedCaptureAndOnlyOneExpandedPlanCopiesAtATime() throws Exception {
+        var f = new FullRegistrationFixture(true, new FullInitializedInputs.Limits(4, 8, 32, 32, 1024 * 1024));
+        var x = ChunkPos.ZERO; var y = new ChunkPos(1, 0); var xBlock = new BlockPos(8, 8, 8); var yBlock = new BlockPos(24, 8, 8);
+        var xTag = pendingBeacon(xBlock, net.minecraft.nbt.StringTag.valueOf("x"));
+        var yTag = pendingBeacon(yBlock, net.minecraft.nbt.StringTag.valueOf("y"));
+        f.input(x).getSection(0).setBlockState(8, 8, 8, Blocks.BEACON.defaultBlockState()); f.input(x).setBlockEntityNbt(xTag);
+        f.input(y).getSection(0).setBlockState(8, 8, 8, Blocks.BEACON.defaultBlockState()); f.input(y).setBlockEntityNbt(yTag);
+        var xSource = FullSavedCollections.source(xTag); var ySource = FullSavedCollections.source(yTag);
+        assertNull(xSource.snapshot()); assertNull(ySource.snapshot());
+        assertThrows(FullBlockEntityTagInputs.Capacity.class, () -> FullBlockEntityTagInputs.observe(
+                f.input(x), xBlock, f.world.level.registryAccess(), () -> { }, ignored -> false));
+        assertNull(xSource.snapshot(), "capacity refusal precedes detached syntax allocation");
+        try {
+            saved(f, x, false, text(blockText(xBlock))); saved(f, y, false, text(blockText(yBlock)));
+            f.start(x, ChunkStatus.FULL); f.start(y, ChunkStatus.FULL); f.drain();
+            var first = f.runtime.graph(f.holder(x)); var second = f.runtime.graph(f.holder(y));
+            assertEquals(1L, f.runtime.inputs.measurements().get("expandedOperations"));
+            assertNotEquals(first.inputReceipt() == null, second.inputReceipt() == null,
+                    "exactly one plan owns the expanded-operation capture allowance");
+            var admitted = first.inputReceipt() != null ? first : second;
+            var waiting = admitted == first ? second : first;
+            var admittedSource = admitted == first ? xSource : ySource;
+            var waitingSource = admitted == first ? ySource : xSource;
+            assertNotNull(admittedSource.snapshot());
+            assertNull(waitingSource.snapshot(), "waiting plans allocate no detached pending-tag capture");
+            admitted.acknowledgeInputs(); f.drain();
+            assertNotNull(waiting.inputReceipt()); assertNotNull(waitingSource.snapshot());
+        } finally { f.stop(); FullFinishingServices.stopped(f.world.level.getServer()); }
+        assertCleanup(f);
+    }
+
+    @Test void actualReloadParsedBlockTagsAreRetainedForDependencyRefinementWithoutEarlyInstallation() throws Exception {
+        var f = new FullRegistrationFixture(true); var position = new BlockPos(8, 8, 8);
+        var data = new SavedDataStorage(directory, net.minecraft.util.datafix.DataFixers.getDataFixer(), f.world.level.registryAccess());
+        var storage = new CommandStorage(data); set(f.world.level.getServer(), MinecraftServer.class, "commandStorage", storage);
+        var stored = new CompoundTag(); stored.putString("message", "parsed dependency"); storage.set(SECOND, stored);
+        var proto = f.input(ChunkPos.ZERO); proto.getSection(0).setBlockState(8, 8, 8, Blocks.BEACON.defaultBlockState());
+        var blockTag = pendingBeacon(position, storageText(SECOND)); blockTag.putBoolean("keepPacked", true);
+        var entityTag = text(blockText(position));
+        var factory = net.minecraft.world.level.chunk.storage.SerializableChunkData.class.getDeclaredMethod(
+                "postLoadChunk", net.minecraft.server.level.ServerLevel.class, List.class, List.class);
+        factory.setAccessible(true);
+        var callback = (LevelChunk.PostLoadProcessor) factory.invoke(null, f.world.level, List.of(entityTag), List.of(blockTag));
+        var blockSource = FullSavedCollections.source(blockTag); assertNotNull(blockSource);
+        var loaded = new LevelChunk(f.world.level, proto, callback);
+        assertNull(loaded.getBlockEntityNbt(position), "the parsed tag remains in the original post-load callback before FULL");
+        f.inputs.put(ChunkPos.ZERO.pack(), new net.minecraft.world.level.chunk.ImposterProtoChunk(loaded, false));
+        try {
+            f.start(ChunkPos.ZERO, ChunkStatus.FULL); f.drain(); var graph = f.runtime.graph(f.holder(ChunkPos.ZERO));
+            assertEquals(FullInitializedInputs.State.SATISFIED, graph.inputEvaluation().state(), graph.inputEvaluation().obligation());
+            assertEquals(1, graph.inputReceipt().contexts().blockTagCaptures());
+            assertTrue(graph.inputReceipt().contexts().requirements("root[0]").size() >= 3,
+                    "the retained parsed CustomName contributes its nested storage dependency");
+            assertNull(loaded.getBlockEntityNbt(position), "dependency discovery does not install the parsed tag early");
+            FullAuthoritativeFinishingTest.context(f); f.runtime.inputs.changed(); f.drain();
+            assertInstanceOf(ChunkStageOutcome.Applied.class, graph.finishing.outcome().join());
+            assertEquals("", FullSavedContextTestHooks.text(
+                    assertInstanceOf(Display.TextDisplay.class, f.world.inserted.getFirst())).getString(),
+                    "the original entity-before-block-entity post-load order remains observable");
+            assertNull(blockSource.snapshot(), "the original post-load callback retires parsed-list custody after its exact installation loop");
+            assertFalse(f.barrier.tripped());
+        } finally { f.stop(); FullFinishingServices.stopped(f.world.level.getServer()); data.close(); }
+        assertCleanup(f);
+    }
+
+    @Test void parsedBlockTagCustodyRetiresAfterOriginalReloadFailureAndSuppressesLaterListenerFailure() throws Exception {
+        var f = new FullRegistrationFixture(true); var position = new BlockPos(8, 8, 8);
+        var blockTag = pendingBeacon(position, storageText(SECOND));
+        var blocks = FullBlockEntityTagInputs.reloadRoots(new java.util.ArrayList<>(List.of(blockTag)));
+        var entities = FullSavedInput.reloadRoots(new java.util.ArrayList<CompoundTag>());
+        var reload = FullBlockEntityTagInputs.reload(blocks);
+        var capture = reload.observe(ChunkPos.ZERO, position, f.world.level.registryAccess(), () -> { }, ignored -> true);
+        var originalFailure = new IllegalStateException("original parsed reload failed");
+        var listenerFailure = new IllegalArgumentException("parsed block-tag listener failed during cleanup");
+        var use = capture.retain(() -> { throw listenerFailure; });
+        try {
+            var processor = FullSavedInput.reload(chunk -> { throw originalFailure; }, entities, blocks);
+            var thrown = assertThrows(IllegalStateException.class, () -> processor.run(null));
+            assertSame(originalFailure, thrown); assertArrayEquals(new Throwable[]{listenerFailure}, thrown.getSuppressed());
+            assertFalse(capture.valid(), "parsed-list custody retires despite the original post-load failure");
+        } finally {
+            use.close(); f.stop(); FullFinishingServices.stopped(f.world.level.getServer());
         }
         assertCleanup(f);
     }
@@ -696,6 +809,27 @@ class FullSavedContextInputTest {
             FullCommandStorageInputs.stopped(f.level.getServer());
             assertEquals(1, notices.get()); assertFalse(capture.valid());
         } finally { FullFinishingServices.stopped(f.level.getServer()); data.close(); }
+    }
+
+    @Test void storageMutationNotifiesEveryRetainedPlanAndAggregatesListenerFailures() throws Exception {
+        var f = new FullTadpoleDecisionTest.Fixture(1);
+        var data = new SavedDataStorage(directory, null, f.level.registryAccess());
+        var storage = new CommandStorage(data); set(f.level.getServer(), MinecraftServer.class, "commandStorage", storage);
+        var capture = FullCommandStorageInputs.observe(f.level.getServer(), FIRST);
+        var firstFailure = new IllegalStateException("first storage mutation listener failed");
+        var secondFailure = new IllegalArgumentException("second storage mutation listener failed");
+        var first = capture.retain(() -> { throw firstFailure; });
+        var second = capture.retain(() -> { throw secondFailure; });
+        try {
+            var replacement = new CompoundTag(); replacement.putString("message", "committed");
+            try (var serial = FullFinishingServices.forServer(f.level.getServer()).serial(FullFinishingServices.Phase.SERVER_TASK)) {
+                var thrown = assertThrows(IllegalStateException.class, () -> storage.set(FIRST, replacement));
+                assertSame(firstFailure, thrown); assertArrayEquals(new Throwable[]{secondFailure}, thrown.getSuppressed());
+            }
+            assertFalse(capture.valid());
+        } finally {
+            first.close(); second.close(); FullFinishingServices.stopped(f.level.getServer()); data.close();
+        }
     }
 
     @Test void storageShutdownAcknowledgesLaterConsumersAfterAnEarlierFailureAndCannotResurrect() throws Exception {

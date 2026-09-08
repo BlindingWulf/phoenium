@@ -28,10 +28,11 @@ public final class FullSavedContextInputs {
     private FullSavedContextInputs() { }
 
     public static Plan prepare(ServerLevel world, WorldId worldId, RegionDirectory directory,
-                               ChunkCustodyModel.StageId stage, FullSavedInput.Snapshot saved, Runnable changed) {
+                               ChunkCustodyModel.StageId stage, FullSavedInput.Snapshot saved, Runnable changed,
+                               java.util.function.LongPredicate capacity) {
         if (OwnershipContext.current().isPresent() || FullFinishingServices.finishing())
             throw new ChunkProtocolException("saved context preparation requires owner-free discovery");
-        Plan plan = new Plan(world, worldId, directory, stage, saved, changed);
+        Plan plan = new Plan(world, worldId, directory, stage, saved, changed, capacity);
         try {
             for (var fact : saved.entities()) if (fact.type().equals("minecraft:text_display")) plan.discover(fact);
             return plan;
@@ -55,6 +56,7 @@ public final class FullSavedContextInputs {
         private final Map<BlockPos, AutoCloseable> blockWaiters = new HashMap<>();
         private final List<AutoCloseable> consumers = new ArrayList<>();
         private final Runnable changed;
+        private final java.util.function.LongPredicate capacity;
         private FullEntityFacts.Cut entityCut;
         private IdentityHashMap<Entity, FullEntityFacts.Fact> selectorCandidates;
         private String unmet;
@@ -62,17 +64,21 @@ public final class FullSavedContextInputs {
         private ChunkStageClaim claim;
         private String currentText;
         private boolean refinementWaiting;
+        private boolean refinementCapacity;
+        private boolean refinementRetry;
         private boolean closed;
         private Plan(ServerLevel world, WorldId worldId, RegionDirectory directory, ChunkCustodyModel.StageId stage,
-                     FullSavedInput.Snapshot saved, Runnable changed) {
+                     FullSavedInput.Snapshot saved, Runnable changed, java.util.function.LongPredicate capacity) {
             this.world = world; this.worldId = worldId; this.directory = directory;
-            this.stage = stage; this.saved = saved; this.changed = changed;
+            this.stage = stage; this.saved = saved; this.changed = changed; this.capacity = capacity;
             registry = world.registryAccess();
         }
         public String unmet() { return unmet; }
         long payloadBytes() { return bytes; }
         int blockTagCaptures() { return blockTags.size(); }
         boolean refinementWaiting() { return refinementWaiting; }
+        boolean refinementCapacity() { return refinementCapacity; }
+        boolean refinementRetry() { return refinementRetry; }
         public boolean valid(FullSavedInput.Snapshot current) {
             return !closed && current == saved && world.registryAccess() == registry
                     && storage.values().stream().allMatch(FullCommandStorageInputs.Capture::valid)
@@ -120,7 +126,8 @@ public final class FullSavedContextInputs {
                 Identifier id = Identifier.parse(read.target());
                 var capture = storage.get(id);
                 if (capture == null) {
-                    capture = FullCommandStorageInputs.observe(world.getServer(), id);
+                    try { capture = FullCommandStorageInputs.observe(world.getServer(), id, this::reserve); }
+                    catch (FullCommandStorageInputs.Capacity capacity) { refinementCapacity = true; return; }
                     bytes = Math.addExact(bytes, capture.bytes);
                     storage.put(id, capture);
                     consumers.add(capture.retain(changed));
@@ -141,7 +148,7 @@ public final class FullSavedContextInputs {
          * pending-tag producer, never the chunk's live block entities or serializer. */
         boolean refineBlocks(List<FullInitializedInputs.Target> targets) {
             boolean changedPlan = false;
-            refinementWaiting = false;
+            refinementWaiting = false; refinementCapacity = false;
             var byPosition = new HashMap<net.minecraft.world.level.ChunkPos, FullInitializedInputs.Target>();
             for (var target : targets) byPosition.put(target.position(), target);
             for (int index = 0; index < pendingBlocks.size() && unmet == null; index++) {
@@ -156,12 +163,19 @@ public final class FullSavedContextInputs {
                 var capture = blockTags.get(read.block());
                 if (capture == null) {
                     try {
-                        capture = FullBlockEntityTagInputs.observe(target.actual(), read.block(), world.registryAccess(), changed);
+                        capture = FullBlockEntityTagInputs.observe(target.actual(), read.block(), world.registryAccess(), changed, this::reserve);
+                        if (capture == null && target.actual() instanceof FullSavedInput.PostLoadAccess access
+                                && access.phoenium$postLoad() instanceof FullSavedInput.ReloadProcessor reload)
+                            capture = reload.blockEntities().observe(target.actual().getPos(), read.block(),
+                                    world.registryAccess(), changed, this::reserve);
                     } catch (FullBlockEntityTagInputs.Retry retry) {
-                        AutoCloseable prior = blockWaiters.putIfAbsent(read.block(), retry.waiter);
-                        if (prior == null) consumers.add(retry.waiter);
-                        else close(retry.waiter, "duplicate pending block dependency waiter");
+                        AutoCloseable prior = blockWaiters.put(read.block(), retry.waiter);
+                        consumers.add(retry.waiter);
+                        if (prior != null) close(prior, "replaced pending block dependency waiter");
                         refinementWaiting = true; changedPlan = true;
+                        continue;
+                    } catch (FullBlockEntityTagInputs.Capacity capacity) {
+                        refinementCapacity = true; changedPlan = true;
                         continue;
                     }
                     AutoCloseable waiter = blockWaiters.remove(read.block());
@@ -184,6 +198,7 @@ public final class FullSavedContextInputs {
             }
             return changedPlan;
         }
+        private boolean reserve(long addition) { return capacity.test(Math.addExact(bytes, addition)); }
         private static void close(AutoCloseable value, String message) {
             try { value.close(); }
             catch (RuntimeException | Error failure) { throw failure; }
@@ -202,8 +217,13 @@ public final class FullSavedContextInputs {
                     unmet = fact.path() + ": protected display selector context producer pending for " + selector.source(); return;
                 }
                 if (!ownedSelf && !identityScore && entityCut == null) {
-                    entityCut = FullFinishingServices.forServer(world.getServer()).entityFacts.observe(world);
-                    bytes = Math.addExact(bytes, Math.multiplyExact(64L, entityCut.candidates().size()));
+                    var facts = FullFinishingServices.forServer(world.getServer()).entityFacts;
+                    var estimate = facts.estimate(world);
+                    long charge = Math.multiplyExact(64L, estimate.candidates());
+                    if (!reserve(charge)) { refinementCapacity = true; return; }
+                    entityCut = facts.observe(world, estimate);
+                    if (entityCut == null) { refinementRetry = true; return; }
+                    bytes = Math.addExact(bytes, charge);
                 }
             }
             for (var read : requirements.nbtReads()) queue.add(new Pending(fact, read));
