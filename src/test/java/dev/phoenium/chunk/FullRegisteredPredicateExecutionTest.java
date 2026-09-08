@@ -1,6 +1,7 @@
 package dev.phoenium.chunk;
 
 import static dev.phoenium.chunk.FullDecisionWitnessSupport.set;
+import static dev.phoenium.chunk.FullDecisionWitnessSupport.allocate;
 import static dev.phoenium.chunk.FullInitializedInputBindingTest.assertCleanup;
 import static dev.phoenium.chunk.FullInitializedInputBindingTest.saved;
 import static dev.phoenium.chunk.FullInitializedInputBindingTest.tag;
@@ -21,6 +22,7 @@ import net.minecraft.nbt.CompoundTag;
 import net.minecraft.resources.Identifier;
 import net.minecraft.resources.ResourceKey;
 import net.minecraft.server.MinecraftServer;
+import net.minecraft.server.level.ServerChunkCache;
 import net.minecraft.server.ReloadableServerRegistries;
 import net.minecraft.world.attribute.EnvironmentAttributes;
 import net.minecraft.world.attribute.EnvironmentAttributeSystem;
@@ -156,11 +158,21 @@ final class FullRegisteredPredicateExecutionTest {
                 .filter(target -> target.purposes().contains(FullInitializedInputs.Purpose.ENVIRONMENT))
                 .findFirst().orElseThrow();
         assertNotNull(biomeTarget.biomes(), "registered positional environment must retain a BIOMES input");
+        set(fixture.world.cache, ServerChunkCache.class, "level", fixture.world.level);
+        set(fixture.world.cache, ServerChunkCache.class, "mainThreadProcessor",
+                allocate(Class.forName("net.minecraft.server.level.ServerChunkCache$MainThreadExecutor")));
         fixture.world.queryEndpoint = args -> {
             if (args[2] == ChunkStatus.BIOMES) {
                 assertFalse((boolean) args[3], "environment route must preserve LevelReader's BIOMES,false request");
+                var cached = fixture.world.cache.getChunk((int) args[0], (int) args[1],
+                        (ChunkStatus) args[2], (boolean) args[3]);
+                assertSame(biomeTarget.biomes().actual(), cached,
+                        "original ServerChunkCache must return the retained BIOMES object");
                 fixture.world.biomeReads++;
-                return biomeTarget.biomes().actual();
+                var biome = cached.getNoiseBiome(0, 0, 0);
+                assertEquals(net.minecraft.world.level.biome.Biomes.PLAINS,
+                        biome.unwrapKey().orElseThrow(), "the retained original biome value must be consumed");
+                return cached;
             }
             return fixture.world.borrow(fixture.world.work, (int) args[0], (int) args[1]);
         };
