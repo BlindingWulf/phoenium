@@ -1,14 +1,27 @@
 # Approved FULL implementation and acceptance ledger
 
-## Active integration resume — 2026-09-07
+## Final Stage 3 closure — 2026-09-08
 
-The expanded FULL assignment is in progress. The authoritative current source,
-worker ownership, actual model selections, focused results and next unresolved
-acceptance are in [FULL_CURRENT_WORK.md](FULL_CURRENT_WORK.md). Integrated FULL
-and Stage 3/R-CHUNK-01 remain **PARTIAL**. No current clean-build/same-JAR/client/
-disk-reload acceptance is claimed. Historical contributor-only stop instructions
-below are superseded by the user's expanded assignment; correctness contracts
-and approved semantic boundaries remain in force.
+**STAGE3_SERIAL_CORRECTNESS_FROZEN** for the supported serial scope in
+[STAGE3_CLOSURE_REPORT.md](STAGE3_CLOSURE_REPORT.md). All final gates pass:
+690 tests / 59 suites, strict installed probe, actual offline-client fresh FULL,
+normal save and actual region-NBT proof before restart, normal stop, actual persisted
+reload/reconnect with ADMITTED_IMPOSTER, and final normal stop. The original saved-vault
+regression also passes. Required ownership/fallback/barrier/unleased/terminal retention
+counters are zero. No remaining blocker within that scope.
+
+Frozen executable source: c31b3f42a5bcc06c9d3bae7b475337f225e9bd06, main.
+Same production SHA for every final runtime gate:
+017EE8ED612D238894FFA5A1DC019BA8B0E31124B0B5171D08CC0D8993C1B534.
+Final main documentation HEAD and clean state are recorded under
+run/stage3-closure/closure-head.json. [FULL_CURRENT_WORK.md](FULL_CURRENT_WORK.md)
+is the short recovery note; the A–L closure report contains all suite counts,
+artifact/evidence hashes, fixture provenance, scope limits and rerun commands.
+
+One gameplay worker, parallel OFF. Stage 3 expansion is stopped. No Stage 4 code,
+remote push, public release or PASS tag. Older PARTIAL/DISABLED/open-vault statements
+below are historical checkpoint evidence and are superseded by this final entry;
+their correctness contracts and provenance limits remain in force.
 
 ## Historical resume — published input provenance, 2026-09-05
 

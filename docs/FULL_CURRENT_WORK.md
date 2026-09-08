@@ -1,84 +1,62 @@
 # Current FULL / Stage 3 closure — 2026-09-08
 
-The latest user direction is the Stage 3 closure request in attachment
-C:/Users/Admin/.codex/attachments/7c97b080-1373-4f6c-84c0-07f0ea145144/pasted-text.txt.
-Finish the bounded active work, fix demonstrated correctness failures, prove all gates,
-produce the A–L report and stop. No speculative expansion, Stage 4, push, release or PASS tag.
-Historical contributor-only stop and approval-pending passages are superseded.
+**STAGE3_SERIAL_CORRECTNESS_FROZEN**. The latest user closure request is satisfied.
+Stage 3 expansion has stopped. No Stage 4 code, remote push, public release or PASS tag.
 
-## Authoritative source and owners
+The complete A–L recovery/handoff report is [STAGE3_CLOSURE_REPORT.md](STAGE3_CLOSURE_REPORT.md).
+Its supported scope, intentional rejection boundaries and fixture provenance are part of
+this freeze; no universal Minecraft/mod/parallel compatibility is claimed.
 
-Authoritative checkout: C:/Users/Admin/Downloads/Project PHOENIUM/Phoenium, main.
-Current integrated executable source: c31b3f4 (production fix 328b95c plus current client parser).
-Main was clean before the final verification dispatch. This note is documentation only.
+## Authoritative source and verified artifact
 
-| Owner | Checkout / responsibility |
-| --- | --- |
-| Root | Phoenium/main: narrow blocker diagnosis, integration, evidence review and closure report |
-| /root/sol_services | Phoenium-full-sol: final pinned-source read-only review; accepted implementation integrated |
-| /root/luna_harness | Phoenium-full-luna: sole clean build, installed, actual fresh/disk/reload and saved-vault campaign owner |
+Main checkout: C:/Users/Admin/Downloads/Project PHOENIUM/Phoenium, branch main.
+Frozen executable-source HEAD: c31b3f42a5bcc06c9d3bae7b475337f225e9bd06.
+Production fix328b95c preserves the original claimed FULL completion after ticket demotion
+withdraws its subscriber; invalid dependency evidence still cannot grant authority.
+The final documentation HEAD and clean state are in run/stage3-closure/closure-head.json.
+No executable edits follow the tested revision.
 
-Supported spawn controls explicitly selected gpt-5.6-sol/high and gpt-5.6-luna/high,
-fork_turns=none; their minimal useful assignments verified the controls were accepted.
-Runtime model identity metadata is unavailable. Lead retains the user-selected Astra effort.
-No recursive delegation, additional Astra, tier override, separately billed API or account change.
-At the latest integration boundary account-wide Codex weekly use was 34%, reserve 7%;
-per-task/per-worker tokens are unknown. Two reset credits remain unused.
+Luna verification HEAD: efa82c3eda12fefad1fdcca5d5ea3aac2bbda6e7, clean, executable tree
+independently verified identical to main. Main holds hash-checked artifact copies in
+run/stage3-closure/final-artifacts/. Production SHA-256:
+017EE8ED612D238894FFA5A1DC019BA8B0E31124B0B5171D08CC0D8993C1B534.
+Registration probe: A495EB51CDCEB7C4F96555D804DF1D30FF2839FC4D5F4A263BCC3BF05DE708D6.
+Live probe: 0D5A0EE266AFAE675042DF377E0A8250DDD13C68FACFA1BF90DF4AAC36FE142F.
+Production server-only; 542 entries; zero overlap with 198 compiled test/client classes.
 
-Pinned MC26.2 / Java25 / Loader0.19.5 / Fabric0.159.0+26.2 / Loom1.17.20 /
-Gradle9.5.1. One gameplay worker, parallel OFF, view/simulation5, offline PhoeniumTest0.
-Disposable local worlds only. Root/Sol do not run competing full builds or servers.
+## Final gates
 
-## Latest demonstrated failure and narrow fix
+* Clean build: 690 PASS/59 suites, 0 failures/errors/skips. Exact archive in Luna
+  run/full-resume/session-20260907/final-postbuild-20260908-0014; root inventory and
+  per-XML hashes in run/stage3-closure/final-test-inventory.json.
+* Installed: Luna run/full-production-integration/transform-20260908-001135, PASS/exit0.
+  Finishing67/publication4, plus registration8/input19/published18/entity3/structure10/
+  registered5; strict original paths and terminal cleanup proved.
+* Real FULL: Luna run/full-authoritative/live-1788844341347, PASS, both child exits0.
+  World FULL-LIVE-1788844341437, seed -4448537946587151198. Real fresh and reload client,
+  four sources/eight saved readers/four villagers/four frogs/four bed checks/eight collision
+  queries/eight IMMEDIATE Shulker reads/four private neighbors per lifecycle. ADMITTED_PROTO
+  then ADMITTED_IMPOSTER. Normal flush and exact MCA coordinates/status/eight roots/payloads/
+  UUIDs recorded before restart. Both normal stops and all terminal ownership/residue zero.
+* Saved vault: Luna run/nonself-input-decision/saved-vault-20260908-001318, PASS/exit0.
+  Original [143,-31,28] on disposable copy:600 ticks,30 dirty starts/30 completions,
+  120 neighbor reads/30 cross-chunk,owner and ordinary scope30 each,scopeCleared=true.
+  Same production artifact; source world untouched; ordinary tick path outside FULL.
 
-Current failed real-client evidence (old production SHA D27633AEB68D5086061491820555B698B81553AD9113FEBF4B253895B23ABE82):
-Phoenium-full-luna/run/full-authoritative/live-1788843598570/full-acceptance.json.
-Fresh FULL and real TCP chunk receipt passed, then runtime diagnostics reported
-ChunkProtocolException: obsolete admitted publication before save-all flush timed out.
-The earlier 4-second save timeout run is preserved at live-1788843351880.
-Neither run proves disk/reload or clean shutdown.
+All required runtime failure diagnostics are clear. No Minecraft server/client remains;
+only the existing Gradle daemon. Exact hashes and raw evidence paths are in
+run/stage3-closure/verified-evidence.json. Historical failed evidence is preserved.
 
-328b95c reproduces the exact exception deterministically for fresh and Imposter inputs:
-original ticket demotion fails and clears a pending FULL subscriber while the admitted
-producer still owns its work. FullPublishedInputs conflated invalid consumer evidence
-with cancelled producer authority. admittedPublishing now retains the exact stage claim,
-owner/settled/retired guards and original completion; it does not clear invalid or permit
-invalid evidence in proposing/matches. Original withdrawn subscriber remains UNLOADED.
-Before-fix XML has two exact obsolete-publication failures; after-fix six suites/72 cases
-pass (authoritative8, published27, registration28, acknowledgements6, generation shutdown2,
-shutdown failure ordering1), zero failures/errors/skips. Evidence is under
-run/full-resume/session-20260907/closure-withdrawn-publication-{before,after}.* in main.
-Both new cases are connected to installed finishing67/publication4 markers.
+## Working arrangement and stopping rule
 
-1375b59 gives only normal synchronous save-all flush a bounded 30-second response,
-and correctly parses final end-of-line teardown fields. c31b3f4 captures and rejects
-nonempty runtime failure diagnostics before either lifecycle save. These are harness-only.
+Root led integration/review; supported explicit worker controls selected gpt-5.6-sol/High
+and gpt-5.6-luna/High, fork_turns=none. Workers completed and are idle. Lead Astra retained
+the user's effort; runtime identity metadata is unavailable. No extra Astra, recursive
+agents, premium tier override, separately billed API, reset redemption or account change.
+Latest measured account-wide weekly use: Codex34%, reserve7%; task/worker tokens unknown.
 
-## Final gate state and next action
-
-Luna is cherry-picking 328b95c onto its current equivalent parser/probe tree, then running:
-
-1. One clean build and all current probes; expected 690 tests/59 suites. Archive exact XML.
-2. Strict installed transformed production probe; finishing67/publication4 plus all prior markers.
-3. The exact same production artifact through actual fresh FULL, normal flush and MCA payload
-   proof before restart, normal stop, actual disk reload/reconnect, final clean stop.
-4. The existing saved-vault reproduction on that same artifact (preserved source world untouched).
-
-Classify any failure before a retry. Do not repeat unchanged live runs or extend timeouts
-again without evidence. A production change invalidates installed and complete live gates.
-
-Latest prior installed PASS is transform-20260907-235421, old production D27633...;
-registration SHA449B96AABDBA3BA98169ADEA56E5B8FEB8EF92749655FFE81DBA3B5C3CFB50A9.
-It is superseded by the current production fix and is not the final gate.
-Previous clean result was 688/59; final current 690/59 remains pending verification.
-
-Accepted scope includes direct live component/context refinement, pending command/sign,
-same-world original predicates, connected structure references/starts and service/lifetime work.
-Cached DataComponents context encoding is explicitly deferred: independent global encoders
-can make original getUnchecked wait under R after final validation. No production cache hooks
-remain. Cross-world selectors and unknown serializers/predicates remain explicit unresolved
-boundaries under the latest closure authorization. See STAGE3_CACHED_COMPONENT_CONTEXT_BOUNDARY.md.
-
-Assembly note: run/full-resume/session-20260907/closure-narrative.md (ignored, not final PASS).
-After gates, write docs/STAGE3_CLOSURE_REPORT.md sections A–L with exact artifacts/evidence,
-refresh this note and the acceptance ledger, commit documentation and STOP if all criteria pass.
+MC26.2 / Java25.0.4.101 / Loader0.19.5 / Fabric0.159.0+26.2 / Loom1.17.20 / Gradle9.5.1.
+One gameplay worker, parallel OFF, view/simulation5, offline PhoeniumTest0, disposable worlds.
+The final source, probes and parsers correspond. Do not restart completed Stage 3 work or
+run more campaigns merely for speculative coverage. Future work requires a new task scope;
+preserve the serial oracle and explicit unresolved authority boundaries in report H/I/K.

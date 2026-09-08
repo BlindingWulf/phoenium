@@ -1,5 +1,15 @@
 # Production initialized-input discovery and operation receipts
 
+## Final serial closure — 2026-09-08
+
+The connected implementation and acceptance status is now
+**STAGE3_SERIAL_CORRECTNESS_FROZEN** within the supported scope and explicit deferrals
+in [STAGE3_CLOSURE_REPORT.md](STAGE3_CLOSURE_REPORT.md). That report supersedes the
+historical PARTIAL/contributor status below and records the current 690-test build,
+strict installed probe, actual fresh/disk/reload and saved-vault proof on the same
+production SHA. Historical tests and limited evidence below remain honestly labeled.
+No Stage 4 or PASS tag was created.
+
 ## Saved villager contributor — 2026-09-06
 
 The expanded integrated-FULL assignment supersedes the historical contributor-only
