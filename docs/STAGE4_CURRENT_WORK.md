@@ -106,8 +106,11 @@ reading its now-cleared position. Lead's integrated phase/block-ticker/lifetime 
 passes 10 tests (`run/stage4/final-callback-integration-20260908.log`).
 `ccc2f3b` moves native service bootstrap outside the registry monitor and refreshes
 natural-spawn player receipts after admission and before use; Sol's focused gate
-passes 23 tests. Sol is completing a final related monitor audit: original container
-peek/poll calls must also run outside service and outer registry metadata monitors.
+passes 23 tests. `2d37d3a` integrates the final container-monitor repair: bound native
+index hooks add no extra peek; native collection/drain calls run outside both metadata
+monitors. The merged scheduled/lifetime gate passes 22 tests, retaining all original
+register/unpack and area oracles (`run/stage4/native-tick-lock-integration-20260908.log`).
+Sol is idle on clean `eae63b1`, available for concrete installed failures only.
 Lead owns save/stop, provenance and integration.
 Luna alone owns broad builds/live campaigns, exact native oracles, controlled real
 client comparison, immutable MCA/reload effects, real merge/split and lifecycle, 5/5
@@ -118,8 +121,11 @@ uses the same native-clock workload on both JARs, genuine FULL receipts and nati
 fluid-queue inputs. It keeps far ticks in the simulated viewport through their
 deadline, observes entity removal while visible and checks exact client event packets.
 `b5cbea7` adds real A/B serializer observations, successful-return shutdown evidence,
-explicit reference selection and separate run paths. Luna is starting the independent
-frozen-reference 5/5 and 8/8 runs. Final candidate, comparison, persisted MCA/restart
+explicit reference selection and separate run paths. Luna owns the stable production
+campaign at `2d37d3a` and is repairing a reached test-only PlayerList Mixin local-capture
+failure in the initial frozen-reference 5/5 run. The failed bundle is preserved at
+`Phoenium-stage4-luna/run/stage4/reference-client-5-playerlist-failure-20260908-052925`.
+Final candidate, reference 5/5 and 8/8, comparison, persisted MCA/restart
 and foundation gates remain open. Preserve each prepared server/world bundle before
 another Sync preparation; verify the actual installed JAR hash on every launch.
 Lead `c3cf005` rejects late producers after service termination before native mutation;
@@ -130,6 +136,7 @@ are retained in `run/stage4/same-holder-repromotion-negative-20260908.*`. Fresh/
 before/after-completion cases and admitted FULL re-promotion plus subsequent input
 replacement pass in the 66-test published/initialized/authoritative focused gate.
 At the re-promotion boundary account-wide Codex usage was 66% used / 34% remaining.
-At the final callback integration boundary it is 71% used / 29% remaining;
+At the final callback integration boundary it was 71% used / 29% remaining;
+at stable production `2d37d3a` it is 74% used / 26% remaining;
 reserve remains 7% used / 93% remaining. No per-task token total is exposed.
 Internal commits remain recovery points; continue until all required gates pass.
