@@ -42,8 +42,9 @@ caps, affected FULL/packet/service/saved-vault evidence, and lightweight compara
 overhead. Two logical regions must execute services, not merely appear at startup.
 No broad lock, unowned mutation, foreign reads, callback under metadata locks, replay,
 fake readiness, failure fallback, or safe refusal counted as feature support.
-Same-holder re-promotion remains deferred until reached; then authenticate fresh
-original lineage without repeated conversion or resurrected old evidence.
+Same-holder re-promotion is now reproduced and repaired at the original FULL
+completion boundary; installed lifecycle acceptance remains required. The withdrawn
+subscriber stays invalid, and a new slot needs a distinct original-producer receipt.
 
 ## Verification and next unresolved case
 
@@ -99,9 +100,10 @@ Sol owns the reached outer cache/entity producer gap: the old CACHE_OWNER phase
 ran all selected chunks under the world anchor owner. Actual callbacks need finite
 owner-free admission and current source/recipient closure, preserving original RNG,
 order and synchronous effects. Worker recovery `07bdc81` has the first cache split;
-it is not yet integrated or ready for a campaign: final entity/custom spawner coverage,
-exact lazy mob-cap semantics and narrower genuine callback footprints remain under
-review. Lead owns save/stop, persistence review and integration.
+it is not yet integrated or ready for a campaign. Recovery `c14eac5` adds final entity
+dispatch, published nearest-player observations, per-spawner conditional footprints,
+and removes the per-tick entity-binding scan. Original block-entity suffix and entity
+terrain closure are still under review. Lead owns save/stop, provenance and integration.
 Luna alone owns broad builds/live campaigns, exact native oracles, controlled real
 client comparison, immutable MCA/reload effects, real merge/split and lifecycle, 5/5
 and 8/8, affected foundation regressions, and comparable elapsed/RSS observations.
@@ -110,4 +112,13 @@ directory publication); pending review corrections include cancellation-resistan
 trace hooks, separated behavioral/authority comparisons, transferred deferred-event
 and fluid effects, and genuinely distinct region geometry for tracking callbacks.
 The next stable campaign must include all production repairs.
+Lead `c3cf005` rejects late producers after service termination before native mutation;
+its new focused lifetime regression passes. The genuine same-holder withdrawal /
+re-promotion repair preserves the original producer, revoked old subscriber, current
+lower-input identity and new actual FULL slot/result. Four native negative reproductions
+are retained in `run/stage4/same-holder-repromotion-negative-20260908.*`. Fresh/reload
+before/after-completion cases and admitted FULL re-promotion plus subsequent input
+replacement pass in the 66-test published/initialized/authoritative focused gate.
+At this integration boundary account-wide Codex usage is 66% used / 34% remaining;
+reserve remains 7% used / 93% remaining. No per-task token total is exposed.
 Internal commits remain recovery points; continue until all required gates pass.

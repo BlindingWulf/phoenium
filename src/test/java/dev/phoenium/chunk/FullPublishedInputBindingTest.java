@@ -64,6 +64,53 @@ final class FullPublishedInputBindingTest {
             f.inputs.put(y.pack(), new ImposterProtoChunk(new LevelChunk(f.world.level, proto, processor), false));
         }
     }
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.CsvSource({"false,false", "false,true", "true,false", "true,true"})
+    void originalCompletionAuthenticatesNewSlotAfterSameHolderSubscriberWithdrawal(boolean reload,
+            boolean promoteBeforeCompletion) throws Exception {
+        var f = new FullRegistrationFixture(false); var y = new ChunkPos(1, 0);
+        try {
+            baselineInput(f, y, reload); f.startBaseline(y);
+            Runnable delivery = f.registrations.removeFirst();
+            var holder = f.holder(y); var hooks = (FullHolderEvidence) (Object) holder;
+            var origin = hooks.phoenium$publication();
+            var withdrawn = holder.scheduleChunkGenerationTask(ChunkStatus.FULL, f.fixtureMap);
+            int originalCalls = f.mapCalls;
+            holder.eligibility(34, f.fixtureMap);
+            assertSame(GenerationChunkHolder.UNLOADED_CHUNK, withdrawn.getNow(null));
+            assertNull(hooks.phoenium$futures().get(ChunkStatus.FULL.getIndex()));
+            assertNull(f.runtime.published.observe(holder));
+            if (promoteBeforeCompletion) holder.eligibility(33, f.fixtureMap);
+            var newDemand = promoteBeforeCompletion
+                ? holder.scheduleChunkGenerationTask(ChunkStatus.FULL, f.fixtureMap) : null;
+            delivery.run(); f.runGenerationTasks();
+            if (!promoteBeforeCompletion) {
+                assertNull(f.runtime.published.observe(holder), "real demotion remains ineligible");
+                holder.eligibility(33, f.fixtureMap);
+                newDemand = holder.scheduleChunkGenerationTask(ChunkStatus.FULL, f.fixtureMap);
+            }
+            var current = f.runtime.published.observe(holder);
+            assertNotNull(current, "new original FULL slot requires its own authentic publication lineage");
+            assertSame(origin, hooks.phoenium$publication());
+            assertTrue(origin.invalid, "the earlier subscriber lineage stays revoked");
+            assertNotSame(origin.reservation, current.reservation());
+            assertSame(origin.reservation, current.subscriberLineage().producerReservation());
+            assertSame(withdrawn, current.subscriberLineage().withdrawnSlot());
+            assertSame(newDemand, current.slot()); assertNotSame(withdrawn, current.slot());
+            assertSame(current.result(), newDemand.getNow(null));
+            assertSame(current.actual(), holder.getChunkIfPresent(ChunkStatus.FULL));
+            assertEquals(originalCalls, f.mapCalls, "same-holder re-promotion must not repeat original conversion");
+            assertEquals(reload ? 0 : 1, holder.replacements);
+            assertSame(GenerationChunkHolder.UNLOADED_CHUNK, withdrawn.getNow(null));
+            var use = f.runtime.published.retain(current); assertNotNull(use); use.close();
+            var consumer = source(f, ChunkPos.ZERO, 15.8);
+            assertEquals(FullInitializedInputs.State.SATISFIED, consumer.lastInputEvaluation().state());
+            assertSame(current, target(consumer, y).publication());
+            consumer.acknowledgeInputs();
+        } finally { f.stop(); }
+        assertCleanup(f);
+        assertEquals(0L, f.runtime.published.measurements().get("records"));
+    }
     static FullRegistrationRuntime.Graph source(FullRegistrationFixture f, ChunkPos pos, double entityX) throws Exception {
         saved(f, pos, false, tag(entityX, 8, 24000)); f.start(pos, ChunkStatus.FULL); f.drain(); return f.runtime.graph(f.holder(pos));
     }
@@ -302,7 +349,7 @@ final class FullPublishedInputBindingTest {
             f.startBaseline(y); f.runGenerationTasks(); var graph = source(f, ChunkPos.ZERO, 15.8);
             var old = graph.inputReceipt(); var e = target(graph, y).publication();
             var copied = new FullPublishedInputs.Evidence(e.holder(), e.lifecycle(), e.work(), e.step(), e.reservation(), e.origin(),
-                    e.slot(), e.result(), e.originalValue(), e.actual(), e.lowerSlot(), e.revision());
+                    e.slot(), e.result(), e.originalValue(), e.actual(), e.lowerSlot(), e.revision(), e.subscriberLineage());
             assertNull(f.runtime.published.retain(copied));
             f.input(ChunkPos.ZERO).getEntities().getFirst().putInt("Age", 24001); f.drain();
             var current = graph.inputReceipt(); assertNotSame(old, current);

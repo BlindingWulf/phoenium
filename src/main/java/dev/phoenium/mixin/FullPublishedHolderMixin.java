@@ -46,6 +46,6 @@ abstract class FullPublishedHolderMixin {
     private void phoenium$eligibility(CallbackInfo ci) { FullPublishedInputs.eligibilityChanged((GenerationChunkHolder) (Object) this); }
     @Inject(method = "failAndClearPendingFuture", at = @At("HEAD"), require = 1, expect = 1)
     private void phoenium$invalidating(int index, CompletableFuture<ChunkResult<ChunkAccess>> future, CallbackInfo ci) {
-        if (index == ChunkStatus.FULL.getIndex() && !future.isDone()) FullPublishedInputs.invalidating((GenerationChunkHolder) (Object) this);
+        if (index == ChunkStatus.FULL.getIndex() && !future.isDone()) FullPublishedInputs.invalidating((GenerationChunkHolder) (Object) this, future);
     }
 }

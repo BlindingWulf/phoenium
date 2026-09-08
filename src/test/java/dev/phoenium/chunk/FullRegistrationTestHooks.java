@@ -27,7 +27,7 @@ public final class FullRegistrationTestHooks {
         boolean won = slots.compareAndSet(index, previous, value); FullPublishedInputs.completed(holder, status, won); return won;
     }
     public static void invalidating(GenerationChunkHolder holder, int index, CompletableFuture<?> future) {
-        if (index == net.minecraft.world.level.chunk.status.ChunkStatus.FULL.getIndex() && !future.isDone()) FullPublishedInputs.invalidating(holder);
+        if (index == net.minecraft.world.level.chunk.status.ChunkStatus.FULL.getIndex() && !future.isDone()) FullPublishedInputs.invalidating(holder, future);
     }
     public static void visiblePublished(boolean changed, ChunkMap map) { if (changed) ((FullInputView) map).phoenium$inputChanges().published(); }
 

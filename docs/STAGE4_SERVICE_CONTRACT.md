@@ -52,6 +52,13 @@ lease and no monitor across storage. The retained source is the actual originall
 selected holder/chunk; an original unload retains that lineage before conditional
 pending-map removal. Original serialization and dirty claims are not replayed.
 
+When a pending FULL subscriber is withdrawn, its slot and evidence remain revoked.
+The still-winning original producer may complete a distinct slot. Only that exact
+native completion, its original result, and the earlier actual UNLOADED outcome mint
+a new subscriber receipt tied to the existing producer reservation. Re-promotion
+does not repeat conversion. Current holder, lower-input slot, lifecycle, and ticket
+eligibility still gate use; later input replacement invalidates the new receipt too.
+
 Each outstanding write retains one source and detached snapshot until its original
 future completes and the current owner acknowledges it. A changed topology may
 route that acknowledgement to a new owner without changing the historical capture
@@ -78,6 +85,8 @@ then releases only protocol custody and records failure; it neither restores dir
 state from an unowned caller nor reports successful flush. Remaining rejected work
 is acknowledged as unexecuted. Persistent scheduled ticks belong to actual chunk
 records; transient block-event/tracker metadata ends with the original world lifetime.
+An ended service binding retains its terminal marker. Later producer entrypoints
+reject before original mutation; clearing its maps cannot reopen the bootstrap path.
 
 ## Provenance and acceptance boundary
 

@@ -19,11 +19,16 @@ import net.minecraft.world.level.chunk.status.*;
 public final class FullPublishedInputs {
     private static final ThreadLocal<Entry> ORIGINAL_INVOCATION = new ThreadLocal<>();
     public enum Origin { ORIGINAL_BASELINE_PROTO, ORIGINAL_BASELINE_IMPOSTER, ADMITTED_PROTO, ADMITTED_IMPOSTER }
+    /** A distinct subscriber slot populated by the still-winning original producer after
+     * Minecraft actually withdrew the earlier subscriber. The producer is never rerun. */
+    public record SubscriberLineage(Object producerReservation,
+            CompletableFuture<?> withdrawnSlot) { }
     public record Evidence(GenerationChunkHolder holder, ChunkCustodyModel.LifecycleId lifecycle,
             ChunkCustodyModel.WorkId work, ChunkStep step, Object reservation, Origin origin,
             CompletableFuture<ChunkResult<ChunkAccess>> slot, ChunkResult<ChunkAccess> result,
             ChunkAccess originalValue, LevelChunk actual,
-            CompletableFuture<ChunkResult<ChunkAccess>> lowerSlot, long revision) { }
+            CompletableFuture<ChunkResult<ChunkAccess>> lowerSlot, long revision,
+            SubscriberLineage subscriberLineage) { }
     public static final class Entry {
         final FullPublishedInputs owner;
         final GenerationChunkHolder holder;
@@ -37,9 +42,11 @@ public final class FullPublishedInputs {
         CompletableFuture<ChunkAccess> returned;
         ChunkAccess value;
         Evidence evidence;
+        CompletableFuture<?> withdrawnSlot;
+        SubscriberLineage subscriberLineage;
         long revision;
         int uses;
-        boolean attached, settled, invalid, retired, announced, originalAsync;
+        boolean attached, settled, invalid, retired, announced, originalAsync, lineageBroken;
         Entry(FullPublishedInputs owner, GenerationChunkHolder holder, ChunkCustodyModel.WorkId work,
                 ChunkStep step, GeneratingChunkMap map, Origin origin) {
             this.owner = owner; this.holder = holder; this.work = work; this.step = step;
@@ -97,7 +104,8 @@ public final class FullPublishedInputs {
             // Ticket demotion can fail and clear a pending FULL subscriber while this
             // exact generation work still owns its original adjacent completion. That
             // invalidates dependency evidence, not the claimed producer's execution.
-            // Keep invalid set: proposing/matches must never resurrect that evidence.
+            // Keep invalid set. A later original completion may authenticate a distinct
+            // subscriber slot; it never revives the withdrawn slot or its evidence.
             entry.attached = true; entry.value = value;
         } finally { custody.gate().unlock(); }
     }
@@ -193,11 +201,24 @@ public final class FullPublishedInputs {
         if (entry == null || status != ChunkStatus.FULL) return;
         var owner = entry.owner;
         owner.custody.gate().lock(); try {
-            if (entry.invalid || entry.settled || !entry.originalAsync || !entry.attached || entry.value == null || result.orElse(null) != entry.value) return;
+            if (!owner.open || entry.retired || entry.lineageBroken || entry.settled
+                    || !entry.originalAsync || !entry.attached || entry.value == null
+                    || result.orElse(null) != entry.value) return;
+            SubscriberLineage subscriber = null;
+            if (entry.invalid) {
+                // This is reached only by the original completeFuture call-site. Both its
+                // exact producer result and the earlier actual UNLOADED outcome are needed.
+                // A copied slot, changed input, or merely raised ticket cannot mint lineage.
+                if (entry.withdrawnSlot == slot || !actuallyWithdrawn(entry.withdrawnSlot)) return;
+                subscriber = new SubscriberLineage(entry.reservation, entry.withdrawnSlot);
+            }
             LevelChunk actual = actual(entry.value);
             if (actual == null || entry.value.getPersistedStatus() != ChunkStatus.FULL) return;
-            entry.evidence = new Evidence(holder, entry.work.lifecycle(), entry.work, entry.step, entry.reservation, entry.origin,
-                    slot, result, entry.value, actual, ((FullHolderEvidence) holder).phoenium$futures().get(ChunkStatus.SPAWN.getIndex()), entry.revision);
+            entry.subscriberLineage = subscriber;
+            entry.evidence = new Evidence(holder, entry.work.lifecycle(), entry.work, entry.step,
+                    subscriber == null ? entry.reservation : new Object(), entry.origin,
+                    slot, result, entry.value, actual, ((FullHolderEvidence) holder).phoenium$futures().get(ChunkStatus.SPAWN.getIndex()),
+                    entry.revision, subscriber);
         } finally { owner.custody.gate().unlock(); }
     }
     public static void completed(GenerationChunkHolder holder, ChunkStatus status, boolean won) {
@@ -210,6 +231,10 @@ public final class FullPublishedInputs {
     }
     private static LevelChunk actual(ChunkAccess value) {
         return value instanceof LevelChunk full ? full : value instanceof ImposterProtoChunk imposter ? imposter.getWrapped() : null;
+    }
+    private static boolean actuallyWithdrawn(CompletableFuture<?> slot) {
+        return slot != null && slot.isDone() && !slot.isCompletedExceptionally()
+                && slot.getNow(null) == GenerationChunkHolder.UNLOADED_CHUNK;
     }
     private void settled(Entry entry) {
         custody.gate().lock(); try {
@@ -227,7 +252,13 @@ public final class FullPublishedInputs {
         if (evidence == null) return false;
         Entry entry = ((FullHolderEvidence) evidence.holder()).phoenium$publication();
         var hooks = (FullHolderEvidence) evidence.holder();
-        if (!open || entry == null || entry.owner != this || entry.invalid || entry.retired || entry.evidence != evidence
+        if (!open || entry == null || entry.owner != this || entry.lineageBroken || entry.retired || entry.evidence != evidence
+                || (entry.invalid && (evidence.subscriberLineage() == null
+                    || evidence.subscriberLineage() != entry.subscriberLineage
+                    || evidence.subscriberLineage().producerReservation() != entry.reservation
+                    || evidence.subscriberLineage().withdrawnSlot() != entry.withdrawnSlot
+                    || entry.withdrawnSlot == evidence.slot()
+                    || !actuallyWithdrawn(entry.withdrawnSlot)))
                 || entry.revision != evidence.revision() || level.getServer() != server
                 || !services.lifecycles().isCurrent(evidence.lifecycle())
                 || hooks.phoenium$startedWork().get() != ChunkStatus.FULL
@@ -286,7 +317,10 @@ public final class FullPublishedInputs {
     public static void replacing(GenerationChunkHolder holder) {
         Entry entry = ((FullHolderEvidence) holder).phoenium$publication();
         if (entry == null) return;
-        entry.owner.custody.gate().lock(); try { entry.revision++; if (entry.evidence != null) entry.invalid = true; }
+        entry.owner.custody.gate().lock(); try {
+            entry.revision++;
+            if (entry.evidence != null) { entry.invalid = true; entry.lineageBroken = true; entry.subscriberLineage = null; }
+        }
         finally { entry.owner.custody.gate().unlock(); }
         entry.owner.changes.published();
     }
@@ -298,10 +332,15 @@ public final class FullPublishedInputs {
         Entry entry = ((FullHolderEvidence) holder).phoenium$publication();
         if (entry != null) entry.owner.retire(entry);
     }
-    public static void invalidating(GenerationChunkHolder holder) {
+    public static void invalidating(GenerationChunkHolder holder, CompletableFuture<?> withdrawnSlot) {
         Entry entry = ((FullHolderEvidence) holder).phoenium$publication();
         if (entry == null) return;
-        entry.owner.custody.gate().lock(); try { entry.invalid = true; entry.revision++; }
+        entry.owner.custody.gate().lock(); try {
+            if (((FullHolderEvidence) holder).phoenium$futures().get(ChunkStatus.FULL.getIndex()) != withdrawnSlot
+                    || withdrawnSlot.isDone()) return;
+            entry.invalid = true; entry.revision++;
+            entry.withdrawnSlot = withdrawnSlot; entry.subscriberLineage = null;
+        }
         finally { entry.owner.custody.gate().unlock(); }
         entry.owner.changes.published();
     }
@@ -325,6 +364,7 @@ public final class FullPublishedInputs {
             if (((FullHolderEvidence) entry.holder).phoenium$publication() == entry)
                 ((FullHolderEvidence) entry.holder).phoenium$publication(null);
             entry.evidence = null;
+            entry.withdrawnSlot = null; entry.subscriberLineage = null;
             custody.acknowledgeLifecycle(entry.work.lifecycle());
             services.tryReleaseRetiredLifecycle(entry.work.lifecycle());
         } finally { custody.gate().unlock(); }

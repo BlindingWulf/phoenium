@@ -109,11 +109,36 @@ class FullAuthoritativeFinishingTest {
             assertSame(actual, holder.getChunkIfPresentUnchecked(ChunkStatus.FULL));
             assertSame(net.minecraft.server.level.GenerationChunkHolder.UNLOADED_CHUNK, subscriber.join(),
                     "the original withdrawn subscriber cannot be rewritten by later publication");
-            assertNull(f.runtime.published.observe(holder), "withdrawn evidence grants no dependency authority");
-            assertEquals(0L, f.runtime.published.measurements().get("publications"));
+            assertNull(f.runtime.published.observe(holder), "demotion grants no dependency authority");
+            assertEquals(1L, f.runtime.published.measurements().get("publications"),
+                    "the actual original completion authenticated its distinct replacement slot");
             assertEquals(1L, f.runtime.measurements().get("finishingCalls"));
             assertEquals(1L, f.runtime.measurements().get("publicationCalls"));
             f.runGenerationTasks(); f.drain();
+            int originalCalls = f.mapCalls;
+            holder.eligibility(33, f.fixtureMap);
+            var newSubscriber = holder.scheduleChunkGenerationTask(ChunkStatus.FULL, f.fixtureMap);
+            var publication = f.runtime.published.observe(holder);
+            assertNotNull(publication);
+            assertTrue(entry.invalid, "the withdrawn lineage is never revived");
+            assertNotSame(subscriber, newSubscriber); assertSame(publication.slot(), newSubscriber);
+            assertSame(publication.result(), newSubscriber.getNow(null)); assertSame(actual, publication.actual());
+            assertNotSame(entry.reservation, publication.reservation());
+            assertSame(entry.reservation, publication.subscriberLineage().producerReservation());
+            assertSame(subscriber, publication.subscriberLineage().withdrawnSlot());
+            var retained = f.runtime.published.retain(publication); assertNotNull(retained);
+            // A new lineage still rejects subsequent real lower-input replacement, and an old
+            // receipt still has to acknowledge its original generation/save pin independently.
+            holder.replaceProtoChunk(new ImposterProtoChunk(new LevelChunk(f.world.level, f.input(ChunkPos.ZERO), null), false));
+            assertNull(f.runtime.published.observe(holder)); assertNull(f.runtime.published.retain(publication));
+            retained.close();
+            holder.eligibility(34, f.fixtureMap); holder.eligibility(33, f.fixtureMap);
+            assertNull(f.runtime.published.observe(holder), "ticket changes cannot reauthenticate replaced input");
+            assertSame(net.minecraft.server.level.GenerationChunkHolder.UNLOADED_CHUNK, subscriber.join());
+            assertEquals(originalCalls, f.mapCalls);
+            assertEquals(1L, f.runtime.measurements().get("finishingCalls"));
+            assertEquals(1L, f.runtime.measurements().get("publicationCalls"));
+            assertEquals(0L, f.runtime.published.measurements().get("uses"));
         } finally { f.stop(); FullFinishingServices.stopped(f.world.level.getServer()); }
         FullInitializedInputBindingTest.assertCleanup(f);
     }
