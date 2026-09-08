@@ -23,7 +23,7 @@ identity and task/worker token accounting are unavailable. No recursive delegati
 additional Astra, API billing, resets, account changes, or remote publication.
 Starting account-wide usage: Codex 35% used / 65% remaining; reserve 7% used / 93%
 remaining. First dispatcher integration: Codex 38% used / 62% remaining, reserve
-7% used / 93% remaining. Tick/event + save/stop integration: Codex 44% used / 56% remaining; reserve 7% used / 93% remaining. These are account windows, not per-task consumption.
+7% used / 93% remaining. Tick/event + save/stop integration: Codex 44% used / 56% remaining; reserve 7% used / 93% remaining. Native-area integration: Codex 51% used / 49% remaining; reserve 7% used / 93% remaining. These are account windows, not per-task consumption.
 
 ## Fixed implementation and acceptance map
 
@@ -65,7 +65,7 @@ and narrow fixture setup; missing pending tick records/reload effect correctly F
 Paired explicitTopology + chunkFixtureSupport flags repair the missing-route fixture.
 Subsequent `integrated-installed-repair-031256` has positive first-run block/fluid,
 events, save and clean stop, but restart reports a foreign closure owner. Preserve
-both bundles. Do not widen a valid fixture boundary simply to hide that production
+both bundles. Root repaired the nested producer overclaim: enqueue requires only the destination owner; the future callback halo is admitted when due. A regression crosses that same boundary and later executes after genuine convergence. Do not widen a valid fixture boundary simply to hide that production
 failure. No integrated Stage 4 installed PASS exists.
 
 Lead owns native tick clear/copy integration, exact eligibility repair and next
@@ -76,3 +76,4 @@ MCA pending tick deadline/readback/reached effects, real merge/split and lifecyc
 5/5 and 8/8, affected foundation regressions, and elapsed/RSS/GC-limit observations.
 Next stable campaign must include all production repairs, not an earlier JAR.
 Internal commits remain recovery points; continue until all required gates pass.
+

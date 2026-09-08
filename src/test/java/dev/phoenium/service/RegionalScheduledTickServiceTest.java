@@ -28,6 +28,42 @@ import org.junit.jupiter.api.Test;
 
 final class RegionalScheduledTickServiceTest {
     @Test
+    void nestedSchedulingOwnsTheDestinationWithoutClaimingItsFutureCallbackHalo() {
+        Fixture f = new Fixture(); var service = f.service(key -> true);
+        long adjacentChunk = ChunkPos.pack(1, 0);
+        var adjacent = new LevelChunkTicks<Object>();
+        service.addContainer(adjacentChunk, adjacent);
+        Object type = new Object();
+        var first = tick(type, new BlockPos(15, 64, 0), 1, TickPriority.NORMAL, 1);
+        var nested = tick(type, new BlockPos(16, 64, 0), 2, TickPriority.NORMAL, 2);
+        f.aTicks.schedule(first); service.scheduled(f.aChunk, f.aTicks);
+        // The callback at chunk 0 owns its immediate chunk-1 destination. Chunk 2 is
+        // foreign, so requiring chunk 1's future halo during enqueue would reject it.
+        var generation = f.directory.snapshot().generation().next();
+        var routes = new LinkedHashMap<>(f.directory.snapshot().routes());
+        routes.replaceAll((key, route) -> new RegionRoute(route.region(), generation, route.ownerEpoch()));
+        for (int z = -1; z <= 1; z++) routes.put(new RoutingKey(f.world, 2, z),
+            new RegionRoute(f.bId, generation, f.b.ownerEpoch()));
+        f.directory.publish(generation, routes);
+        service.tick(1, 65536, (pos, ignored) -> {
+            service.requireScheduleOwner(adjacentChunk, adjacent);
+            adjacent.schedule(nested); service.scheduled(adjacentChunk, adjacent);
+        });
+        assertSame(nested, adjacent.peek());
+        assertEquals(f.bId, f.directory.resolve(new RoutingKey(f.world, 2, 0)).orElseThrow().region());
+        var enclosure = new dev.phoenium.chunk.FullRegionalEnclosure(f.directory, f.runtimes, f.gateway, null,
+            proposed -> { var plan = service.planMigration(proposed); return published -> service.installMigration(plan, published); });
+        // Replace the fixture's static predicate with a fresh dispatcher is unnecessary:
+        // the installed callback below routes its enclosure through the fixture delegate.
+        f.liveEnclosure = enclosure;
+        f.dispatcher.installBoundaryAdvancer(enclosure::advance);
+        var reached = new java.util.ArrayList<BlockPos>();
+        service.tick(2, 65536, (pos, ignored) -> reached.add(pos));
+        assertEquals(List.of(nested.pos()), reached);
+        assertEquals(f.aId, f.directory.resolve(new RoutingKey(f.world, 2, 0)).orElseThrow().region());
+    }
+
+    @Test
     void nativeClearAndCopySeeTheActualRegionalCurrentAndRemainingCohort() throws Exception {
         assertEquals(nativeAreaTrace(false, false), nativeAreaTrace(true, false));
         // clearArea intentionally leaves vanilla's already-built query set unchanged.
@@ -269,6 +305,7 @@ final class RegionalScheduledTickServiceTest {
         final RegionScheduler scheduler;
         final OwnerGateway gateway;
         final RegionalServiceDispatcher dispatcher;
+        dev.phoenium.chunk.FullRegionalEnclosure liveEnclosure;
         Fixture() {
             TopologyGeneration generation = new TopologyGeneration(1);
             Map<RoutingKey, RegionRoute> routes = new LinkedHashMap<>();
@@ -281,6 +318,7 @@ final class RegionalScheduledTickServiceTest {
             dispatcher.installClosureEncloser(this::enclosed);
         }
         boolean enclosed(java.util.Set<RoutingKey> keys) {
+            if (liveEnclosure != null) return liveEnclosure.enclose(keys);
             RegionId owner = null;
             for (RoutingKey key : keys) {
                 RegionRoute route = directory.resolve(key).orElse(null);

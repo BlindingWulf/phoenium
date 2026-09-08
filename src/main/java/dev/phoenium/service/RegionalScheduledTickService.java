@@ -137,7 +137,9 @@ public final class RegionalScheduledTickService<T> {
         RegionRoute current = route(chunkKey);
         if (!current.region().equals(state.owner()))
             throw new IllegalStateException("regional tick producer reached stale owner partition");
-        dispatcher.requireCurrentClosure(key(chunkKey), 1);
+        // Scheduling changes this container and its scheduling index only. Its future
+        // callback halo is admitted when that tick becomes due, not recursively here.
+        dispatcher.requireCurrentOwner(key(chunkKey));
     }
     RegionalServiceKind producerKind() { return collectKind; }
     WorldId world() { return world; }
