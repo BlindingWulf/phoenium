@@ -21,6 +21,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
 import java.util.List;
+import java.security.MessageDigest;
 
 /** Account-free client lifecycle for the installed Stage 4 ordered trace fixture. */
 public final class Stage4ClientTraceTest implements FabricClientGameTest {
@@ -80,20 +81,16 @@ public final class Stage4ClientTraceTest implements FabricClientGameTest {
             // Prime the four exact fixture chunks through the real player distance path before
             // freezing.  This avoids a synchronous managed getChunk wait in the server command,
             // while each client-side FULL receipt proves the native holder future completed.
-            command(server, "tp " + USER + " 8.5 65 8.5");
-            nudgeAfterTeleport(context);
-            waitForClientChunks(context, new int[][] {{0, 0}}, START_TIMEOUT_TICKS);
+            context.waitFor(client -> client.player != null, CONNECT_TIMEOUT_TICKS);
+            topologyTeleport(context, server, log, 8, 65, 8, new int[][] {{0, 0}});
             command(server, "stage4trace prepare-a");
             awaitLog(context, server, log, "STAGE4_TRACE_PREPARED_POINT label=A", START_TIMEOUT_TICKS);
-            command(server, "tp " + USER + " 120.5 65 8.5");
-            nudgeAfterTeleport(context);
+            topologyTeleport(context, server, log, 120, 65, 8, new int[][] {{7, 0}});
             command(server, "stage4trace inspect-demand 7 0");
             awaitLog(context, server, log, "STAGE4_TRACE_DEMAND_DIAGNOSTIC chunk=7,0", START_TIMEOUT_TICKS);
-            waitForClientChunks(context, new int[][] {{7, 0}}, START_TIMEOUT_TICKS);
             command(server, "stage4trace prepare-b");
             awaitLog(context, server, log, "STAGE4_TRACE_PREPARED_POINT label=B", START_TIMEOUT_TICKS);
-            command(server, "tp " + USER + " 520.5 65 8.5");
-            nudgeAfterTeleport(context);
+            topologyTeleport(context, server, log, 520, 65, 8, new int[][] {{32, 0}});
             command(server, "stage4trace inspect-far");
             awaitLog(context, server, log, "STAGE4_TRACE_FAR_DEMAND_DONE center=32,0", START_TIMEOUT_TICKS);
             // Let the native distance manager consume the teleport before the second snapshot;
@@ -101,17 +98,12 @@ public final class Stage4ClientTraceTest implements FabricClientGameTest {
             for (int tick = 0; tick < 120; tick++) context.waitTick();
             command(server, "stage4trace inspect-far-late");
             awaitLog(context, server, log, "STAGE4_TRACE_FAR_DEMAND_DONE_LATE center=32,0", START_TIMEOUT_TICKS);
-            waitForClientChunks(context, new int[][] {{32, 0}}, START_TIMEOUT_TICKS);
             command(server, "stage4trace prepare-far");
             awaitLog(context, server, log, "STAGE4_TRACE_PREPARED_POINT label=far", START_TIMEOUT_TICKS);
-            command(server, "tp " + USER + " 520.5 65 200.5");
-            nudgeAfterTeleport(context);
-            waitForClientChunks(context, new int[][] {{32, 12}}, START_TIMEOUT_TICKS);
+            topologyTeleport(context, server, log, 520, 65, 200, new int[][] {{32, 12}});
             command(server, "stage4trace prepare-deferred");
             awaitLog(context, server, log, "STAGE4_TRACE_PREPARED_FAR", START_TIMEOUT_TICKS);
-            command(server, "tp " + USER + " 8.5 65 8.5");
-            nudgeAfterTeleport(context);
-            waitForClientChunks(context, new int[][] {{0, 0}}, START_TIMEOUT_TICKS);
+            topologyTeleport(context, server, log, 8, 65, 8, new int[][] {{0, 0}});
             command(server, "stage4trace freeze");
             awaitLog(context, server, log, "STAGE4_TRACE_CLOCK_FROZEN", START_TIMEOUT_TICKS);
             command(server, "stage4trace run");
@@ -142,14 +134,12 @@ public final class Stage4ClientTraceTest implements FabricClientGameTest {
             command(server, "stage4trace step initial 4");
             awaitLog(context, server, log, "STAGE4_TRACE_CLOCK_STEP_REACHED label=initial", START_TIMEOUT_TICKS);
             assertClientEntity(context, ENTITY_A, 8, 8, true);
-            command(server, "tp " + USER + " 8.5 65 8.5");
-            nudgeAfterTeleport(context);
+            topologyTeleport(context, server, log, 8, 65, 8, new int[][] {{0, 0}});
             command(server, "stage4trace barrier setup");
             awaitLog(context, server, log, "STAGE4_TRACE_BARRIER label=setup", START_TIMEOUT_TICKS);
             command(server, "stage4trace step settle 80");
             awaitLog(context, server, log, "STAGE4_TRACE_CLOCK_STEP_REACHED label=settle", START_TIMEOUT_TICKS);
-            command(server, "tp " + USER + " 120.5 65 8.5");
-            nudgeAfterTeleport(context);
+            topologyTeleport(context, server, log, 120, 65, 8, new int[][] {{7, 0}});
             command(server, "stage4trace barrier region-b");
             awaitLog(context, server, log, "STAGE4_TRACE_BARRIER label=region-b", START_TIMEOUT_TICKS);
             command(server, "stage4trace clear-block-probe-support");
@@ -169,7 +159,6 @@ public final class Stage4ClientTraceTest implements FabricClientGameTest {
             command(server, "stage4trace block-probe-check-b");
             command(server, "stage4trace step settle-b 80");
             awaitLog(context, server, log, "STAGE4_TRACE_CLOCK_STEP_REACHED label=settle-b", START_TIMEOUT_TICKS);
-            waitForClientChunks(context, new int[][] {{7, 0}}, START_TIMEOUT_TICKS);
             assertClientEntity(context, ENTITY_B, 120, 8, true);
             // Check withdrawal while the client is still viewing B; after the next teleport
             // absence would be ambiguous because the entity can simply be out of range.
@@ -180,13 +169,11 @@ public final class Stage4ClientTraceTest implements FabricClientGameTest {
             // The split is intentionally requested only after the final distant viewport and
             // its FULL dependencies have settled, so the real admission path cannot merge it
             // again while the split is being proposed.
-            command(server, "tp " + USER + " 520.5 65 8.5");
-            nudgeAfterTeleport(context);
+            topologyTeleport(context, server, log, 520, 65, 8, new int[][] {{32, 0}});
             command(server, "stage4trace barrier region-b-far");
             awaitLog(context, server, log, "STAGE4_TRACE_BARRIER label=region-b-far", START_TIMEOUT_TICKS);
             command(server, "stage4trace step settle-b-far 80");
             awaitLog(context, server, log, "STAGE4_TRACE_CLOCK_STEP_REACHED label=settle-b-far", START_TIMEOUT_TICKS);
-            waitForClientChunks(context, new int[][] {{32, 0}}, START_TIMEOUT_TICKS);
             assertClientEntity(context, ENTITY_B_FAR, 520, 8, true);
             command(server, "stage4trace await-full-far");
             awaitLog(context, server, log, "STAGE4_TRACE_FULL_READY label=far", START_TIMEOUT_TICKS);
@@ -200,11 +187,9 @@ public final class Stage4ClientTraceTest implements FabricClientGameTest {
             awaitLog(context, server, log, "STAGE4_TRACE_CLOCK_STEP_REACHED label=far-effects", START_TIMEOUT_TICKS);
             command(server, "stage4trace check-far");
             awaitLog(context, server, log, "STAGE4_TRACE_FAR_CHECK pass=true", START_TIMEOUT_TICKS);
-            command(server, "tp " + USER + " 520.5 65 200.5");
-            nudgeAfterTeleport(context);
+            topologyTeleport(context, server, log, 520, 65, 200, new int[][] {{32, 12}});
             command(server, "stage4trace barrier deferred-ready");
             awaitLog(context, server, log, "STAGE4_TRACE_BARRIER label=deferred-ready", START_TIMEOUT_TICKS);
-            waitForClientChunks(context, new int[][] {{32, 12}}, START_TIMEOUT_TICKS);
             command(server, "stage4trace await-full-deferred");
             awaitLog(context, server, log, "STAGE4_TRACE_FULL_READY label=deferred", START_TIMEOUT_TICKS);
             command(server, "stage4trace check-deferred-eligible");
@@ -250,9 +235,7 @@ public final class Stage4ClientTraceTest implements FabricClientGameTest {
             connectClient(context);
             connected = true;
             context.waitFor(client -> client.player != null, CONNECT_TIMEOUT_TICKS);
-            command(server, "tp " + USER + " 120.5 65 8.5");
-            nudgeAfterTeleport(context);
-            waitForClientChunks(context, new int[][] {{7, 0}}, START_TIMEOUT_TICKS);
+            topologyTeleport(context, server, restartLog, 120, 65, 8, new int[][] {{7, 0}});
             command(server, "stage4trace reload");
             awaitLog(context, server, restartLog, "STAGE4_TRACE_RELOAD_UNPACK", START_TIMEOUT_TICKS);
             awaitLog(context, server, restartLog, "STAGE4_TRACE_RELOAD_CLOCK_FROZEN", START_TIMEOUT_TICKS);
@@ -340,6 +323,22 @@ public final class Stage4ClientTraceTest implements FabricClientGameTest {
         throw new AssertionError("client did not apply exact FULL chunks "
             + java.util.Arrays.deepToString(chunks) + " within " + timeoutTicks + " ticks; "
             + clientState + " received=" + ClientTraceObservations.receivedChunksSnapshot());
+    }
+
+    /**
+     * Runs one unchanged native teleport inside the test-only coordinator scope.  Preparation
+     * and completion are separate server commands so the helper can verify the real native ACK,
+     * section update, player-distance demand and applied FULL payload before restoring routes.
+     */
+    private static void topologyTeleport(ClientGameTestContext context, Process server, Path log,
+                                          int x, int y, int z, int[][] expectedChunks) throws IOException {
+        command(server, "stage4trace prepare-teleport " + x + " " + y + " " + z);
+        awaitLog(context, server, log, "STAGE4_TRACE_TELEPORT_TOPOLOGY_PREPARED", START_TIMEOUT_TICKS);
+        command(server, "tp " + USER + " " + x + ".5 " + y + " " + z + ".5");
+        nudgeAfterTeleport(context);
+        waitForClientChunks(context, expectedChunks, START_TIMEOUT_TICKS);
+        command(server, "stage4trace complete-teleport");
+        awaitLog(context, server, log, "STAGE4_TRACE_TELEPORT_TOPOLOGY_COMPLETED", START_TIMEOUT_TICKS);
     }
 
     /**
@@ -538,6 +537,9 @@ public final class Stage4ClientTraceTest implements FabricClientGameTest {
         if (parent != null) Files.createDirectories(parent);
         String viewDistance = System.getProperty("phoenium.stage4.viewDistance", "8");
         String simulationDistance = System.getProperty("phoenium.stage4.simulationDistance", "8");
+        Path installedMods = restartLog.getParent().resolve("mods");
+        String productionSha = sha256(installedMods.resolve("phoenium-0.2.0-stage2.jar"));
+        String probeSha = sha256(installedMods.resolve("stage4-acceptance-probe.jar"));
         Files.writeString(evidence, "{\n" +
             "  \"kind\": \"stage4-account-free-client-trace\",\n" +
             "  \"username\": \"" + USER + "\",\n" +
@@ -547,6 +549,8 @@ public final class Stage4ClientTraceTest implements FabricClientGameTest {
             "  \"realTcpConnection\": " + connected + ",\n" +
             "  \"viewDistance\": " + viewDistance + ",\n" +
             "  \"simulationDistance\": " + simulationDistance + ",\n" +
+            "  \"productionSha256\": \"" + productionSha + "\",\n" +
+            "  \"probeSha256\": \"" + probeSha + "\",\n" +
             "  \"serverExitCode\": " + exitCode + ",\n" +
             "  \"trace\": \"" + trace.toAbsolutePath().toString().replace("\\", "\\\\") + "\",\n" +
             "  \"log\": \"" + log.toAbsolutePath().toString().replace("\\", "\\\\") + "\",\n" +
@@ -554,6 +558,22 @@ public final class Stage4ClientTraceTest implements FabricClientGameTest {
             "  \"restartLog\": \"" + restartLog.toAbsolutePath().toString().replace("\\", "\\\\") + "\",\n" +
             "  \"mcaSnapshot\": \"" + mcaSnapshot.toAbsolutePath().toString().replace("\\", "\\\\") + "\"\n}\n",
             StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING);
+    }
+
+    private static String sha256(Path path) throws IOException {
+        try {
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            try (var input = Files.newInputStream(path)) {
+                byte[] buffer = new byte[1024 * 1024];
+                for (int read; (read = input.read(buffer)) >= 0; )
+                    if (read > 0) digest.update(buffer, 0, read);
+            }
+            StringBuilder result = new StringBuilder(64);
+            for (byte value : digest.digest()) result.append(String.format("%02X", value));
+            return result.toString();
+        } catch (java.security.NoSuchAlgorithmException failure) {
+            throw new IOException("SHA-256 unavailable", failure);
+        }
     }
 
     private static void copyMcaSnapshot(Path world, Path snapshot) throws IOException {

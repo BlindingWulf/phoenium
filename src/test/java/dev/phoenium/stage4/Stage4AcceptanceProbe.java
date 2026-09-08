@@ -1,6 +1,7 @@
 package dev.phoenium.stage4probe;
 
 import dev.phoenium.Phoenium;
+import dev.phoenium.stage4probe.Stage4TeleportTopology;
 import dev.phoenium.stage4probe.Stage4Trace;
 import net.fabricmc.api.DedicatedServerModInitializer;
 import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback;
@@ -9,6 +10,7 @@ import net.minecraft.commands.Commands;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.ButtonBlock;
@@ -34,13 +36,17 @@ import net.minecraft.server.level.FullChunkStatus;
 import net.minecraft.world.level.chunk.status.ChunkStatus;
 import java.lang.reflect.Field;
 import java.util.HashSet;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.UUID;
 
 /** Dedicated-server command fixture for real vanilla producers/consumers and ordered comparison. */
 public final class Stage4AcceptanceProbe implements DedicatedServerModInitializer {
+    /** One retained server-side receipt per player; completion removes it only after success. */
+    private static final Map<UUID, Stage4TeleportTopology.Prepared> TELEPORT_RECEIPTS = new HashMap<>();
     public static final BlockPos REGION_A = new BlockPos(8, 65, 8); // chunk (0, 0), A interior
     public static final BlockPos REGION_B = new BlockPos(120, 65, 8); // chunk (7, 0), B interior
     /** Far B interior (chunk 32) used only by the client tracking lifecycle at 8/8. */
@@ -102,6 +108,20 @@ public final class Stage4AcceptanceProbe implements DedicatedServerModInitialize
                         }))))
                 .then(Commands.literal("prepare-deferred").executes(context -> {
                     prepareChunk(context.getSource().getLevel(), REGION_DEFERRED_EVENT, "deferred");
+                    return 1;
+                }))
+                .then(Commands.literal("prepare-teleport")
+                    .then(Commands.argument("x", IntegerArgumentType.integer())
+                        .then(Commands.argument("y", IntegerArgumentType.integer())
+                            .then(Commands.argument("z", IntegerArgumentType.integer()).executes(context -> {
+                                prepareTeleport(context.getSource().getLevel(),
+                                    IntegerArgumentType.getInteger(context, "x"),
+                                    IntegerArgumentType.getInteger(context, "y"),
+                                    IntegerArgumentType.getInteger(context, "z"));
+                                return 1;
+                            })))))
+                .then(Commands.literal("complete-teleport").executes(context -> {
+                    completeTeleport(context.getSource().getLevel());
                     return 1;
                 }))
                 .then(Commands.literal("release-temporary").executes(context -> {
@@ -325,6 +345,35 @@ public final class Stage4AcceptanceProbe implements DedicatedServerModInitialize
         Stage4Trace.clockStep(level, label, (int) ticks);
         if (!level.getServer().tickRateManager().stepGameIfPaused((int) ticks))
             throw new IllegalStateException("native restored step rejected while frozen: " + label);
+    }
+
+    /**
+     * Establishes the real coordinator-backed ownership scope used around a server teleport.
+     * This command is deliberately separate from the vanilla {@code /tp}: the client harness
+     * sends the latter unchanged, waits for its native ACK and exact FULL payload, then invokes
+     * {@link #completeTeleport} at a later owner-free command boundary.
+     */
+    private static void prepareTeleport(ServerLevel level, int x, int y, int z) {
+        ServerPlayer player = level.players().stream().findFirst()
+            .orElseThrow(() -> new IllegalStateException("teleport fixture player is not connected"));
+        UUID id = player.getUUID();
+        if (TELEPORT_RECEIPTS.containsKey(id))
+            throw new IllegalStateException("teleport fixture already has an unsettled receipt for " + id);
+        Stage4TeleportTopology.Prepared prepared = Stage4TeleportTopology.prepare(level, player,
+            new BlockPos(x, y, z));
+        TELEPORT_RECEIPTS.put(id, prepared);
+    }
+
+    /** Completes and only then retires the matching prepared teleport receipt. */
+    private static void completeTeleport(ServerLevel level) {
+        ServerPlayer player = level.players().stream().findFirst()
+            .orElseThrow(() -> new IllegalStateException("teleport fixture player is not connected"));
+        UUID id = player.getUUID();
+        Stage4TeleportTopology.Prepared prepared = TELEPORT_RECEIPTS.get(id);
+        if (prepared == null)
+            throw new IllegalStateException("teleport fixture has no prepared receipt for " + id);
+        prepared.completeAfterClientFull(player);
+        TELEPORT_RECEIPTS.remove(id);
     }
 
     private static void arm(ServerLevel level) {
