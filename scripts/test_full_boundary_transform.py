@@ -150,7 +150,7 @@ with log.open("w") as output:
             finishing_probe = [line for line in text.splitlines() if "PHOENIUM_FULL_FINISHING_PROBE PASS" in line]
             assert len(finishing_probe) == 1, "installed FULL finishing fixture did not pass exactly once"
             required_finishing_fields = (
-                "cases=45", "queryCases=13", "serviceCases=7", "d1Cases=7", "contextCases=16", "publicationCases=2",
+                "cases=51", "queryCases=13", "serviceCases=7", "d1Cases=7", "contextCases=22", "publicationCases=2",
                 "originalFinishing=true", "separatePublication=true",
                 "cyclicPreparedPair=true", "bothPairOrders=true",
                 "proto=true", "inMemoryImposter=true", "diskReload=false",
@@ -158,7 +158,7 @@ with log.open("w") as output:
                 "originalShulkerImmediate=true", "originalLaterRegistration=true",
                 "originalMovingPiston=true", "savedVillagerOriginalBiomeCacheAlias=true",
                 "originalCachedAbsentBiomeFallback=true", "originalReadyAbsent=true",
-                "recursiveStorageContext=true", "retainedBlockNbt=true", "originalAbsentBlockBranch=true",
+                "recursiveStorageContext=true", "retainedBlockNbt=true", "pendingBlockDependencies=true", "originalAbsentBlockBranch=true",
                 "sameWorldSelector=true", "sameWorldEntityNbt=true", "lazyBlockEntity=true",
                 "filteredSelfSelector=true", "nestedSelector=true", "interpretedSavedCustomName=true",
                 "caughtQueryBarrier=true", "noPrivateCacheEntries=true",
