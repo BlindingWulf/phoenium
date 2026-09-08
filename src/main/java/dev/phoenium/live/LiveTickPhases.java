@@ -1,6 +1,7 @@
 package dev.phoenium.live;
 
 import dev.phoenium.ownership.OwnershipContext;
+import dev.phoenium.Phoenium;
 import java.util.Objects;
 import java.util.function.BooleanSupplier;
 import net.minecraft.server.level.ServerChunkCache;
@@ -59,8 +60,8 @@ public final class LiveTickPhases {
         public void finishMiddle(ServerLevel expected, ServerChunkCache cache) {
             require(expected, Phase.MIDDLE_RUNNING, true); this.cache = Objects.requireNonNull(cache); phase = Phase.MIDDLE_COMPLETE;
         }
-        public void consumeChunk(ServerLevel expected) { require(expected, Phase.MIDDLE_COMPLETE, true); phase = Phase.CHUNK_RUNNING; }
-        public void finishChunk(ServerLevel expected) { require(expected, Phase.CHUNK_RUNNING, true); phase = Phase.CHUNK_GAMEPLAY_COMPLETE; }
+        public void consumeChunk(ServerLevel expected) { require(expected, Phase.MIDDLE_COMPLETE, false); phase = Phase.CHUNK_RUNNING; }
+        public void finishChunk(ServerLevel expected) { require(expected, Phase.CHUNK_RUNNING, false); phase = Phase.CHUNK_GAMEPLAY_COMPLETE; }
         public void finishMaintenance(ServerLevel expected) { require(expected, Phase.CHUNK_GAMEPLAY_COMPLETE, false); phase = Phase.CHUNK_COMPLETE; }
         public void beginBlockEvents(ServerLevel expected) { require(expected, Phase.CHUNK_COMPLETE, false); phase = Phase.BLOCK_EVENTS_RUNNING; }
         public void finishBlockEvents(ServerLevel expected) { require(expected, Phase.BLOCK_EVENTS_RUNNING, false); phase = Phase.BLOCK_EVENTS_COMPLETE; }
@@ -88,8 +89,8 @@ public final class LiveTickPhases {
         public BooleanSupplier haveTime() { return haveTime; }
         public boolean tickChunks() { return tickChunks; }
         public ProfilerFiller profiler() { return profiler; }
-        public void beginGameplay(ServerChunkCache expected) { require(expected, Phase.PREPARED, true); phase = Phase.GAMEPLAY_RUNNING; }
-        public void finishGameplay(ServerChunkCache expected) { require(expected, Phase.GAMEPLAY_RUNNING, true); phase = Phase.GAMEPLAY_COMPLETE; }
+        public void beginGameplay(ServerChunkCache expected) { require(expected, Phase.PREPARED, false); phase = Phase.GAMEPLAY_RUNNING; }
+        public void finishGameplay(ServerChunkCache expected) { require(expected, Phase.GAMEPLAY_RUNNING, false); phase = Phase.GAMEPLAY_COMPLETE; }
         public void beginMaintenance(ServerChunkCache expected) { require(expected, Phase.GAMEPLAY_COMPLETE, false); phase = Phase.MAINTENANCE_RUNNING; }
         public void finishMaintenance(ServerChunkCache expected) { require(expected, Phase.MAINTENANCE_RUNNING, false); phase = Phase.COMPLETE; }
         public void consume(ServerChunkCache expected) { beginGameplay(expected); finishGameplay(expected); }
@@ -108,5 +109,9 @@ public final class LiveTickPhases {
     public static void finishCacheMaintenance(ServerChunkCache cache, CacheState state) {
         if (state.cache != cache) throw new IllegalStateException("chunk maintenance changed original cache");
         ((CacheAccess) cache).phoenium$finishChunkMaintenance(state);
+    }
+    /** Exact replacement for the copied private tickChunks invocation at its owner-free cut. */
+    public static void runChunkGameplay(ServerChunkCache cache) {
+        Phoenium.liveRuntime().runRegionalChunkGameplay(cache);
     }
 }

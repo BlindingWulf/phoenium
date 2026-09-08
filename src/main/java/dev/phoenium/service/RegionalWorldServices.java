@@ -17,6 +17,7 @@ import java.util.function.BiConsumer;
 import net.minecraft.core.BlockPos;
 import net.minecraft.network.protocol.game.ClientboundBlockEventPacket;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.server.level.ServerChunkCache;
 import net.minecraft.server.level.ChunkMap;
 import net.minecraft.world.level.BlockEventData;
 import net.minecraft.world.level.ChunkPos;
@@ -68,7 +69,8 @@ public final class RegionalWorldServices implements RegionalStateMigration {
         var tracking = new RegionalTrackingService(world, level, directory, dispatcher, objects);
         ChunkMap chunkMap = level.getChunkSource().chunkMap;
         tracking.reconcileSource(((RegionalChunkMapAccess) chunkMap).phoenium$getTrackedEntities());
-        WorldServices services = new WorldServices(level, blocks, fluids, events, tracking, chunkMap);
+        var gameplay = new RegionalChunkGameplayService(world, level, level.getChunkSource(), directory, dispatcher, objects);
+        WorldServices services = new WorldServices(level, blocks, fluids, events, tracking, gameplay, chunkMap);
         worlds.put(level, services);
         ticks.put(blockTicks, new TickBinding<>(services, blocks));
         ticks.put(fluidTicks, new TickBinding<>(services, fluids));
@@ -79,6 +81,31 @@ public final class RegionalWorldServices implements RegionalStateMigration {
     /** An ended binding is not the pre-start vanilla bootstrap path. */
     public void requireActiveLifetime() {
         if (terminated) throw new IllegalStateException("regional world service requested after shutdown");
+    }
+
+    public void runChunkGameplay(ServerChunkCache cache) { gameplay(cache).runOriginal(); }
+    public net.minecraft.world.level.NaturalSpawner.SpawnState createSpawnState(ServerChunkCache cache, int count,
+            Iterable<net.minecraft.world.entity.Entity> entities, net.minecraft.world.level.NaturalSpawner.ChunkGetter chunks,
+            RegionalChunkGameplayService.SpawnFactory factory) {
+        return gameplay(cache).createSpawnState(count, entities, chunks, factory);
+    }
+    public void collectSpawningChunks(ServerChunkCache cache, ChunkMap map,
+            List<net.minecraft.world.level.chunk.LevelChunk> output) {
+        gameplay(cache).collectSpawningChunks(map, output);
+    }
+    public void chunkCallback(ServerChunkCache cache, net.minecraft.world.level.chunk.LevelChunk chunk, Runnable original) {
+        gameplay(cache).chunkCallback(chunk, original);
+    }
+    public void forEachBlockTickingChunk(ServerChunkCache cache, ChunkMap map,
+            java.util.function.Consumer<net.minecraft.world.level.chunk.LevelChunk> output) {
+        gameplay(cache).forEachBlockTickingChunk(map, output);
+    }
+    private RegionalChunkGameplayService gameplay(ServerChunkCache cache) {
+        WorldServices services;
+        synchronized (this) { services = worlds.get(((dev.phoenium.mixin.RegionalServerChunkCacheAccess) cache).phoenium$getLevel()); }
+        if (services == null || services.level().getChunkSource() != cache)
+            throw new IllegalStateException("unbound regional chunk gameplay cache");
+        return services.gameplay();
     }
 
     public void initializeTracking() {
@@ -347,7 +374,7 @@ public final class RegionalWorldServices implements RegionalStateMigration {
     public record WorldServices(ServerLevel level, RegionalScheduledTickService<Block> blockTicks,
                                 RegionalScheduledTickService<Fluid> fluidTicks,
                                 RegionalBlockEventService<BlockEventData> events,
-                                RegionalTrackingService tracking, ChunkMap chunkMap) { }
+                                RegionalTrackingService tracking, RegionalChunkGameplayService gameplay, ChunkMap chunkMap) { }
     private record TickBinding<T>(WorldServices world, RegionalScheduledTickService<T> service) { }
     private record WorldMigration(RegionalScheduledTickService.MigrationPlan blocks,
                                   RegionalScheduledTickService.MigrationPlan fluids,

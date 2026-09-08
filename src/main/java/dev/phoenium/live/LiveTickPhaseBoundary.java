@@ -153,6 +153,9 @@ public final class LiveTickPhaseBoundary {
         int state = original.maxLocals;
         after.instructions.insert(cacheLocals(state, "beginGameplay"));
         MethodInsnNode copiedTracking = unique(after, "net/minecraft/server/level/ChunkMap", "tick", "()V");
+        MethodInsnNode copiedGameplay = unique(after, CACHE, "tickChunks", "()V");
+        after.instructions.set(copiedGameplay, new MethodInsnNode(Opcodes.INVOKESTATIC, PHASES, "runChunkGameplay",
+            "(L" + CACHE + ";)V", false));
         AbstractInsnNode trackingField = previous(copiedTracking), trackingReceiver = previous(trackingField);
         require(trackingField instanceof FieldInsnNode field && field.owner.equals(CACHE) && field.name.equals("chunkMap")
                 && variable(trackingReceiver, Opcodes.ALOAD, 0), "chunk tracking receiver changed");

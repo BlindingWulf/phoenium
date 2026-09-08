@@ -24,6 +24,7 @@ final class LiveTickPhaseBoundaryTest {
             if (call.equals(LiveTickPhaseBoundary.CACHE + ".tick(Ljava/util/function/BooleanSupplier;Z)V")) expected.addAll(calls(cacheTick));
             else expected.add(call);
         }
+        expected.remove(LiveTickPhaseBoundary.CACHE + ".tickChunks()V");
         LiveTickPhaseBoundary.installLevel(level); LiveTickPhaseBoundary.installCache(cache);
         List<String> actual = new ArrayList<>();
         actual.addAll(calls(named(level, "phoenium$beforeScheduledTicks")));
@@ -36,6 +37,9 @@ final class LiveTickPhaseBoundaryTest {
         actual.addAll(calls(named(level, "phoenium$runBlockEvents")));
         actual.addAll(calls(named(level, "phoenium$finishLevelTick")));
         assertEquals(expected, actual, "Control preparation and resumed gameplay retain the original complete call order");
+        assertEquals(1, allCalls(named(cache, "phoenium$finishChunkTick")).stream()
+            .filter(call -> call.owner.equals("dev/phoenium/live/LiveTickPhases")
+                && call.name.equals("runChunkGameplay")).count());
         assertEquals(originalLevelInstructions, List.of(levelTick.instructions.toArray()));
         assertEquals(originalCacheInstructions, List.of(cacheTick.instructions.toArray()));
         assertTrue(level.interfaces.contains("dev/phoenium/live/LiveTickPhases$LevelAccess"));
@@ -105,6 +109,11 @@ final class LiveTickPhaseBoundaryTest {
         List<String> result = new ArrayList<>();
         for (AbstractInsnNode instruction : method.instructions) if (instruction instanceof MethodInsnNode call && call.owner.startsWith("net/minecraft/"))
             result.add(call.owner + "." + call.name + call.desc);
+        return result;
+    }
+    private static List<MethodInsnNode> allCalls(MethodNode method) {
+        List<MethodInsnNode> result = new ArrayList<>();
+        for (AbstractInsnNode instruction : method.instructions) if (instruction instanceof MethodInsnNode call) result.add(call);
         return result;
     }
 }

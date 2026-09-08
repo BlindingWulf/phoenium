@@ -47,6 +47,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.function.BooleanSupplier;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.server.level.ServerChunkCache;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.server.network.ServerGamePacketListenerImpl;
 import net.minecraft.network.protocol.game.ServerboundMovePlayerPacket;
@@ -285,7 +286,9 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
                     pending.cacheState = ((LiveTickPhases.CacheAccess) pending.levelState.cache())
                         .phoenium$prepareChunkTick(pending.shouldKeepTicking(), true);
                 pending.readiness = LiveTickReadiness.await(pending.level());
-                queueTickPhase(pending, live, PendingTick.Step.CACHE_OWNER);
+                if (!pending.readiness.current()) throw new IllegalStateException("live chunk readiness changed before gameplay");
+                phases.phoenium$afterChunkTick(pending.levelState, pending.cacheState);
+                pending.step = PendingTick.Step.BLOCK_EVENTS_COORDINATOR;
             }
             case BLOCK_EVENTS_COORDINATOR -> {
                 LiveTickPhases.finishCacheMaintenance(pending.levelState.cache(), pending.cacheState);
@@ -295,6 +298,28 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
             }
             default -> throw new IllegalStateException("owner-free tick coordinator reached " + pending.step);
         }
+    }
+
+    public void runRegionalChunkGameplay(ServerChunkCache cache) {
+        if (regionalServices == null) throw new IllegalStateException("regional chunk gameplay before service binding");
+        regionalServices.runChunkGameplay(cache);
+    }
+
+    public net.minecraft.world.level.NaturalSpawner.SpawnState regionalSpawnState(ServerChunkCache cache, int count,
+            Iterable<net.minecraft.world.entity.Entity> entities, net.minecraft.world.level.NaturalSpawner.ChunkGetter chunks,
+            dev.phoenium.service.RegionalChunkGameplayService.SpawnFactory factory) {
+        return regionalServices.createSpawnState(cache, count, entities, chunks, factory);
+    }
+    public void regionalCollectSpawningChunks(ServerChunkCache cache, net.minecraft.server.level.ChunkMap map,
+            java.util.List<net.minecraft.world.level.chunk.LevelChunk> output) {
+        regionalServices.collectSpawningChunks(cache, map, output);
+    }
+    public void regionalChunkCallback(ServerChunkCache cache, net.minecraft.world.level.chunk.LevelChunk chunk, Runnable original) {
+        regionalServices.chunkCallback(cache, chunk, original);
+    }
+    public void regionalForEachBlockTickingChunk(ServerChunkCache cache, net.minecraft.server.level.ChunkMap map,
+            java.util.function.Consumer<net.minecraft.world.level.chunk.LevelChunk> output) {
+        regionalServices.forEachBlockTickingChunk(cache, map, output);
     }
 
     private void queueTickPhase(PendingTick pending, LiveRegion live, PendingTick.Step step) {
