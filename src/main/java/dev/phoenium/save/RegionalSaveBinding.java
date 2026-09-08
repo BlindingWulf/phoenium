@@ -66,10 +66,10 @@ public final class RegionalSaveBinding {
         Source source = coordinator.prepareSource(key, () -> {
             Unload unload = UNLOAD.get();
             if (unload != null && unload.map == map && ChunkSaveRetention.sameChunk(unload.chunk, chunk))
-                return new Source(key, chunk, unload.retention.fork(), unload, null);
+                return new Source(key, level, chunk, unload.retention.fork(), unload, null);
             Selection selected = Objects.requireNonNull(SELECTION.get(), "original save has no selected holder scope");
             selected.require(map, chunk);
-            return new Source(key, chunk, selected.retention.fork(), null, selected);
+            return new Source(key, level, chunk, selected.retention.fork(), null, selected);
         });
         RegionalSaveCoordinator.Attempt attempt = coordinator.begin(source);
         Invocation before = CURRENT.get();
@@ -197,8 +197,10 @@ public final class RegionalSaveBinding {
 
     public static void flush(MinecraftServer server, RegionalSaveCoordinator coordinator) {
         if (OwnershipContext.current().isPresent()) throw new IllegalStateException("save flush attempted under regional ownership");
-        server.managedBlock(() -> { coordinator.pumpOne(); return coordinator.pending() == 0; });
-        coordinator.requireFlushed();
+        try (var turn = FullFinishingServices.forServer(server).serial(FullFinishingServices.Phase.SAVE)) {
+            server.managedBlock(() -> { coordinator.pumpOne(); return coordinator.pending() == 0; });
+            coordinator.requireFlushed();
+        }
     }
 
     public static RoutingKey key(ServerLevel level, ChunkPos pos) {
@@ -261,12 +263,13 @@ public final class RegionalSaveBinding {
     }
     private static final class Source implements RegionalSaveCoordinator.Source {
         final RoutingKey key;
+        final ServerLevel level;
         final ChunkAccess chunk;
         final ChunkSaveRetention retention;
         final Unload originalUnload;
         final Selection originalSelection;
-        Source(RoutingKey key, ChunkAccess chunk, ChunkSaveRetention retention, Unload originalUnload, Selection originalSelection) {
-            this.key = key; this.chunk = chunk; this.retention = retention; this.originalUnload = originalUnload;
+        Source(RoutingKey key, ServerLevel level, ChunkAccess chunk, ChunkSaveRetention retention, Unload originalUnload, Selection originalSelection) {
+            this.key = key; this.level = level; this.chunk = chunk; this.retention = retention; this.originalUnload = originalUnload;
             this.originalSelection = originalSelection;
         }
         public RoutingKey key() { return key; }
@@ -274,7 +277,10 @@ public final class RegionalSaveBinding {
             return retention.matches(chunk) && (retention.current() || originalUnload != null && originalUnload.open
                     || originalSelection != null && originalSelection.open && originalSelection.chunk == chunk);
         }
-        public void restoreDirty() { chunk.markUnsaved(); }
+        public void restoreDirty() {
+            FullFinishingServices.requireWorld(level, FullFinishingServices.Kind.UNSAVED);
+            chunk.markUnsaved();
+        }
         public void release() { retention.close(); }
     }
 }

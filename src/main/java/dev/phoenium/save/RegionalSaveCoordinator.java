@@ -193,6 +193,10 @@ public final class RegionalSaveCoordinator {
     }
 
     public int pending() { return retained.size(); }
+    public boolean hasAcknowledgement() {
+        Attempt first = completed.peek();
+        return first != null && first.bodyFinished;
+    }
 
     /** A hard barrier forbids the source mutation that a normal failed-write ACK would do.
      * Keep every snapshot until the real write completes, then acknowledge terminal failure

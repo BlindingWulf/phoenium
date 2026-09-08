@@ -422,8 +422,12 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
         return regionalSaves;
     }
     public boolean pumpSaveOne() {
-        if (OwnershipContext.current().isPresent()) return false;
-        return regionalSaves != null && regionalSaves.pumpOne();
+        if (OwnershipContext.current().isPresent() || dev.phoenium.chunk.FullFinishingServices.finishing()
+                || regionalSaves == null || !regionalSaves.hasAcknowledgement()) return false;
+        try (var turn = dev.phoenium.chunk.FullFinishingServices.forServer(serverInstance)
+                .serial(dev.phoenium.chunk.FullFinishingServices.Phase.SERVER_TASK)) {
+            return regionalSaves.pumpOne();
+        }
     }
 
     public <T> void regionalTickContainerAdded(LevelTicks<T> owner, ChunkPos pos, LevelChunkTicks<T> container) {
