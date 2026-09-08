@@ -46,11 +46,21 @@ public final class FullSavedInput {
     /** Runs a bounded saved-input read under the same nonblocking observation fence used by
      * original saved readers. A busy writer/observer returns acquired=false for retry. */
     <T> ObservationAttempt<T> observeIfAvailable(java.util.function.Supplier<T> action) {
+        return observeIfAvailable(action, null);
+    }
+    <T> ObservationAttempt<T> observeIfAvailable(java.util.function.Supplier<T> action, Runnable busyWake) {
         tracking = true;
-        if (!observing.compareAndSet(false, true)) return new ObservationAttempt<>(false, null);
+        if (!observing.compareAndSet(false, true)) {
+            if (busyWake != null) {
+                busyWaiters.add(busyWake);
+                if (!observing.get() && busyWaiters.remove(busyWake)) busyWake.run();
+            }
+            return new ObservationAttempt<>(false, null);
+        }
         try { return new ObservationAttempt<>(true, action.get()); }
         finally { endWrite(); }
     }
+    private final java.util.concurrent.CopyOnWriteArrayList<Runnable> busyWaiters = new java.util.concurrent.CopyOnWriteArrayList<>();
     /** Nonblocking producer observation used where an overlapping legitimate writer supplies a
      * completion notification. An unacquired attempt means retry after that producer releases its
      * turn. The current snapshot is reused under the observation fence so a read can never retain
@@ -128,7 +138,21 @@ public final class FullSavedInput {
         if (!observing.compareAndSet(false, true)) throw new ChunkProtocolException("saved input producer overlaps its exclusive observation turn");
         writer = Thread.currentThread();
     }
-    public void endWrite() { writer = null; observing.set(false); }
+    public void endWrite() {
+        writer = null; observing.set(false);
+        Throwable failure = null;
+        for (Runnable waiter : busyWaiters) {
+            if (!busyWaiters.remove(waiter)) continue;
+            try { waiter.run(); }
+            catch (Throwable problem) {
+                if (failure == null) failure = problem;
+                else if (failure != problem) failure.addSuppressed(problem);
+            }
+        }
+        if (failure instanceof Error error) throw error;
+        if (failure instanceof RuntimeException runtime) throw runtime;
+        if (failure != null) throw new ChunkProtocolException("saved input observation wake failed", failure);
+    }
     <T> T mutate(java.util.function.Supplier<T> action) {
         if (!tracking) return action.get();
         if (observing.get() && writer == Thread.currentThread()) return action.get();

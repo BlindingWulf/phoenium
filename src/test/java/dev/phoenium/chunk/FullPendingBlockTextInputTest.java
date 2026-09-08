@@ -310,11 +310,15 @@ class FullPendingBlockTextInputTest {
             assertDoesNotThrow(() -> fresh.components("front_text.messages[]", ignored -> true, () -> { }));
             var source = FullSavedCollections.source(tag);
             source.beforeWrite();
+            var wakes = new AtomicInteger();
+            FullBlockEntityTagInputs.Retry busy;
             try {
-                var busy = assertThrows(FullBlockEntityTagInputs.Retry.class, () ->
-                        fresh.components("front_text.messages[]", ignored -> true, () -> { }));
-                busy.waiter.close();
+                busy = assertThrows(FullBlockEntityTagInputs.Retry.class, () ->
+                        fresh.components("front_text.messages[]", ignored -> true, wakes::incrementAndGet));
+                assertEquals(0, wakes.get(), "busy observation must wait for fence release");
             } finally { source.endWrite(); }
+            assertEquals(1, wakes.get(), "observation release wakes the blocked plan callback");
+            busy.waiter.close();
             assertDoesNotThrow(() -> fresh.components("front_text.messages[]", ignored -> true, () -> { }));
         } finally {
             if (waiter != null) waiter.close();

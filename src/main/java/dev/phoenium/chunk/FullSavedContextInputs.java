@@ -294,6 +294,12 @@ public final class FullSavedContextInputs {
                     }
                     List<FullSavedTextInputs.Saved> components;
                     try { components = capture.components(read.path(), this::reserve, changed); }
+                    catch (FullBlockEntityTagInputs.Retry retry) {
+                        blockTags.remove(read.block());
+                        AutoCloseable prior = blockWaiters.put(read.block(), retry.waiter);
+                        if (prior != null) close(prior, "replaced pending block dependency waiter");
+                        refinementWaiting = true; changedPlan = true; continue;
+                    }
                     catch (FullBlockEntityTagInputs.Capacity capacity) {
                         refinementCapacity = true; changedPlan = true; continue;
                     }

@@ -106,7 +106,7 @@ public final class FullBlockEntityTagInputs {
         /** Returns every component-valued slot of the audited serialized field. Classification
          * is deliberately conservative and does not evaluate an arbitrary NBT path. */
         List<FullSavedTextInputs.Saved> components(String path, LongPredicate reserve, Runnable changed) {
-            var initial = source.custody.observeIfAvailable(() -> componentMeasure(path));
+            var initial = source.custody.observeIfAvailable(() -> componentMeasure(path), changed);
             if (!initial.acquired() || initial.value() == null) throw occurrence.retry(changed, reload, reloadRevision);
             long admitted = initial.value().bytes();
             if (!reserve.test(admitted)) throw new Capacity();
@@ -118,13 +118,8 @@ public final class FullBlockEntityTagInputs {
                 var result = new ArrayList<FullSavedTextInputs.Saved>(refreshed.tags().size());
                 for (var tag : refreshed.tags()) result.add(FullSavedTextInputs.captureTag(tag, source.custody));
                 return new ComponentCopies(List.copyOf(result), refreshed.bytes());
-            });
-            if (!copies.acquired() || copies.value() == null) {
-                var refreshed = source.custody.observeIfAvailable(() -> componentMeasure(path));
-                if (refreshed.acquired() && refreshed.value() != null && refreshed.value().bytes() > admitted)
-                    throw new Capacity();
-                throw occurrence.retry(changed, reload, reloadRevision);
-            }
+            }, changed);
+            if (!copies.acquired() || copies.value() == null) throw occurrence.retry(changed, reload, reloadRevision);
             return copies.value().values();
         }
         private ComponentMeasure componentMeasure(String path) {
@@ -141,11 +136,11 @@ public final class FullBlockEntityTagInputs {
         private List<net.minecraft.nbt.Tag> componentTags(String path) {
             var result = new ArrayList<net.minecraft.nbt.Tag>();
             var fields = FullNbtPathInputs.leadingFields(path, 2);
-            if (fields.size() == 1 && fields.getFirst().equals("CustomName")) {
+            if (!fields.isEmpty() && fields.getFirst().equals("CustomName")) {
                 var tag = source.tag.get("CustomName"); if (tag != null) result.add(tag);
                 return result;
             }
-            if (fields.size() == 1 && fields.getFirst().equals("LastOutput")) {
+            if (!fields.isEmpty() && fields.getFirst().equals("LastOutput")) {
                 if (!source.tag.getBooleanOr("TrackOutput", true)) return result;
                 var tag = source.tag.get("LastOutput"); if (tag != null) result.add(tag);
                 return result;
