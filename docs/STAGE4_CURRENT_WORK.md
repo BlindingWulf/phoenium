@@ -111,10 +111,13 @@ not resolve readiness: `reference-nudge-5-20260908-074500` stalls at B=(7,0), de
 actual movement/input packets. Luna now captures generic first-failure server/client
 position, lastSection, ticket types, teleport/ack state and exact native cache state.
 Lead review also found the recorded accepted FULL reference used authoritative=true
-and explicitTopology=true, whereas the shared launcher omits them. Serial means one
-gameplay worker, not one logical owner. Luna must resolve the exact frozen flag and
-native dependency semantics before changing the reference workload. Closure H/I's
-distant ordinary-tick deferral remains explicit; no new scope is silently claimed.
+and explicitTopology=true, whereas the earlier shared launcher omitted them. The
+source audit confirms explicitTopology is the established one-worker fixture;
+`stage4.candidate` alone gates new coordinator calls. Shared correction `8a2847a`
+restores both recorded FULL flags on reference/candidate and adds generic native
+ticket/teleport/client-state diagnostics. Its compilation passes; positive live
+readiness is still required. Closure H/I's distant-demand and old same-holder
+re-promotion boundaries remain explicit; no new reference scope is silently claimed.
 Do not increase timeouts, cap distances, substitute server-only receipts or weaken
 the actual current client FULL gate.
 
