@@ -24,6 +24,6 @@ abstract class Stage4LevelTicksMixin {
 
     @Inject(method = "tick(JILjava/util/function/BiConsumer;)V", at = @At("RETURN"), require = 1)
     private void phoenium$tickReturn(long gameTime, int limit, java.util.function.BiConsumer<?, ?> action, CallbackInfo ci) {
-        // Per-tick batch boundaries are intentionally omitted: the fixture compares callbacks.
+        Stage4Trace.observeTick(gameTime);
     }
 }

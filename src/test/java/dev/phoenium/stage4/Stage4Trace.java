@@ -7,9 +7,12 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.HashSet;
+import java.util.Set;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.core.BlockPos;
 import net.minecraft.world.level.block.Block;
+import net.minecraft.world.entity.Entity;
 
 /** Test-only ordered trace. It records original callbacks without changing their values. */
 public final class Stage4Trace {
@@ -20,6 +23,10 @@ public final class Stage4Trace {
     private static volatile String world = "unknown";
     private static volatile long lastGameTime = -1;
     private static volatile Path output;
+    private static volatile long barrierTarget = -1;
+    private static volatile String barrierLabel = "";
+    private static volatile boolean reloadMode;
+    private static final Set<Integer> changeSeen = new HashSet<>();
     private Stage4Trace() { }
 
     public static void begin(ServerLevel level) {
@@ -28,6 +35,10 @@ public final class Stage4Trace {
             active = true;
             startedAt = level.getGameTime();
             lastGameTime = startedAt;
+            barrierTarget = -1;
+            barrierLabel = "";
+            reloadMode = false;
+            changeSeen.clear();
             world = level.dimension().identifier().toString();
             output = Path.of(System.getProperty("phoenium.stage4.tracePath", "run/stage4/acceptance/trace.json"));
             event("trace.begin", "world=" + level.dimension() + " gameTime=" + startedAt);
@@ -35,6 +46,60 @@ public final class Stage4Trace {
     }
 
     public static boolean active() { return active; }
+
+    public static void beginReload(ServerLevel level) {
+        begin(level);
+        reloadMode = true;
+        event("trace.reload", "gameTime=" + level.getGameTime());
+        System.out.println("STAGE4_TRACE_RELOAD gameTime=" + level.getGameTime());
+    }
+
+    public static void barrier(ServerLevel level, String label) {
+        event("trace.barrier", "label=" + label + " gameTime=" + level.getGameTime());
+        System.out.println("STAGE4_TRACE_BARRIER label=" + label + " gameTime=" + level.getGameTime());
+    }
+
+    public static void await(ServerLevel level, String label, int ticks) {
+        barrierLabel = label;
+        barrierTarget = level.getGameTime() + Math.max(1, ticks);
+        event("trace.await", "label=" + label + " target=" + barrierTarget);
+    }
+
+    public static void observeTick(long gameTime) {
+        if (!active || barrierTarget < 0 || gameTime < barrierTarget) return;
+        String label = barrierLabel;
+        long reached = gameTime;
+        barrierTarget = -1;
+        barrierLabel = "";
+        event("trace.barrier.reached", "label=" + label + " gameTime=" + reached);
+        System.out.println("STAGE4_TRACE_BARRIER label=" + label + " gameTime=" + reached);
+    }
+
+    public static void trackingPacket(String operation, Entity entity, Object packet) {
+        if (!relevantEntity(entity) || packet == null) return;
+        long gameTime = entity.level() instanceof ServerLevel level ? level.getGameTime() : -1;
+        event("tracking.packet", "operation=" + operation + " entityId=" + entity.getId()
+            + " packet=" + packet.getClass().getName() + " gameTime=" + gameTime);
+    }
+
+    public static void trackingChanges(Entity entity) {
+        if (!relevantEntity(entity)) return;
+        synchronized (LOCK) {
+            if (!changeSeen.add(entity.getId())) return;
+        }
+        long gameTime = entity.level() instanceof ServerLevel level ? level.getGameTime() : -1;
+        event("tracking.changes", "entityId=" + entity.getId()
+            + " pos=" + entity.blockPosition() + " gameTime=" + gameTime);
+    }
+
+    public static boolean relevantEntity(Entity entity) {
+        return entity != null && (entity.entityTags().contains("stage4_trace_a")
+            || entity.entityTags().contains("stage4_trace_b"));
+    }
+
+    public static boolean reloadEffect(BlockPos pos) {
+        return active && reloadMode && pos.equals(new BlockPos(120, 65, 9));
+    }
 
     public static void event(String kind, String detail) {
         if (!active) return;
@@ -49,8 +114,9 @@ public final class Stage4Trace {
 
     /** Positions owned by the two-region fixture; background world activity is excluded. */
     public static boolean fixture(BlockPos pos) {
-        return pos.equals(new BlockPos(70, 65, 8)) || pos.equals(new BlockPos(85, 65, 8))
-            || pos.equals(new BlockPos(86, 65, 8)) || pos.equals(new BlockPos(70, 66, 8));
+        return pos.equals(new BlockPos(8, 65, 8)) || pos.equals(new BlockPos(120, 65, 8))
+            || pos.equals(new BlockPos(120, 65, 9))
+            || pos.equals(new BlockPos(121, 65, 8)) || pos.equals(new BlockPos(8, 66, 8));
     }
 
     public static List<String> snapshot() {

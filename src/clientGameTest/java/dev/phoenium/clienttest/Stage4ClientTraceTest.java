@@ -25,38 +25,50 @@ public final class Stage4ClientTraceTest implements FabricClientGameTest {
 
     @Override public void runTest(ClientGameTestContext context) {
         Path directory = Path.of(System.getProperty("phoenium.test.serverDirectory"));
+        String runId = System.getProperty("phoenium.stage4.runId",
+            Long.toUnsignedString(System.nanoTime()));
+        String worldName = "stage4-client-world-" + runId;
         Path trace = Path.of(System.getProperty("phoenium.stage4.tracePath",
-            directory.resolve("stage4-trace.json").toString()));
+            directory.resolve("stage4-trace-" + runId + ".json").toString()));
+        Path log = directory.resolve("stage4-client-server-" + runId + ".log");
         Process server = null;
         boolean connected = false;
         try {
-            configure(directory);
+            configure(directory, worldName);
             List<String> command = List.of(Path.of(System.getProperty("java.home"), "bin",
                 System.getProperty("os.name", "").toLowerCase().contains("win") ? "java.exe" : "java").toString(),
                 "-Xmx2G", "-Dphoenium.test.diagnostics=true",
                 "-Dphoenium.stage4.tracePath=" + trace.toAbsolutePath(), "-jar",
                 "fabric-server-launch.jar", "nogui");
-            Path log = directory.resolve("stage4-client-server.log");
             server = new ProcessBuilder(command).directory(directory.toFile()).redirectErrorStream(true)
                 .redirectOutput(ProcessBuilder.Redirect.appendTo(log.toFile())).start();
             waitForReady(context, server, log);
             connectClient(context);
             connected = true;
             command(server, "stage4trace run");
-            command(server, "summon minecraft:armor_stand 72 65 8 {NoGravity:1b,Invulnerable:1b,Tags:[\"stage4_trace_a\"]}");
-            command(server, "summon minecraft:armor_stand 84 65 8 {NoGravity:1b,Invulnerable:1b,Tags:[\"stage4_trace_b\"]}");
-            command(server, "tp " + USER + " 72.5 65 8.5");
-            context.waitTicks(80);
+            awaitLog(context, server, log, "STAGE4_TRACE_ARMED", START_TIMEOUT_TICKS);
+            command(server, "summon minecraft:armor_stand 8 65 8 {NoGravity:1b,Invulnerable:1b,Tags:[\"stage4_trace_a\"]}");
+            command(server, "summon minecraft:armor_stand 120 65 8 {NoGravity:1b,Invulnerable:1b,Tags:[\"stage4_trace_b\"]}");
+            command(server, "tp " + USER + " 8.5 65 8.5");
+            command(server, "stage4trace barrier setup");
+            awaitLog(context, server, log, "STAGE4_TRACE_BARRIER label=setup", START_TIMEOUT_TICKS);
+            command(server, "stage4trace await settle 80");
+            awaitLog(context, server, log, "STAGE4_TRACE_BARRIER label=settle", START_TIMEOUT_TICKS);
+            command(server, "tp " + USER + " 120.5 65 8.5");
+            command(server, "stage4trace barrier region-b");
+            awaitLog(context, server, log, "STAGE4_TRACE_BARRIER label=region-b", START_TIMEOUT_TICKS);
+            command(server, "stage4trace await settle-b 80");
+            awaitLog(context, server, log, "STAGE4_TRACE_BARRIER label=settle-b", START_TIMEOUT_TICKS);
             command(server, "save-all flush");
-            context.waitTicks(30);
+            command(server, "stage4trace await saved 5");
+            awaitLog(context, server, log, "STAGE4_TRACE_BARRIER label=saved", START_TIMEOUT_TICKS);
             disconnectClient(context);
             connected = false;
-            context.waitTicks(30);
             command(server, "stage4trace finish");
-            context.waitTicks(10);
+            awaitLog(context, server, log, "STAGE4_TRACE_RESULT", START_TIMEOUT_TICKS);
             command(server, "stop");
             waitForExit(context, server);
-            writeEvidence(trace, log, true, server.exitValue());
+            writeEvidence(trace, log, worldName, runId, true, server.exitValue());
         } catch (Throwable failure) {
             if (connected) try { disconnectClient(context); } catch (Throwable ignored) { }
             if (server != null && server.isAlive()) {
@@ -68,13 +80,15 @@ public final class Stage4ClientTraceTest implements FabricClientGameTest {
         }
     }
 
-    private static void configure(Path directory) throws IOException {
+    private static void configure(Path directory, String worldName) throws IOException {
+        Path world = directory.resolve(worldName).normalize();
+        if (!world.startsWith(directory.normalize())) throw new IOException("fixture world escaped server directory");
         String viewDistance = System.getProperty("phoenium.stage4.viewDistance", "8");
         String simulationDistance = System.getProperty("phoenium.stage4.simulationDistance", "8");
         Files.writeString(directory.resolve("eula.txt"), "eula=true\n",
             StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING);
         Files.writeString(directory.resolve("server.properties"), String.join("\n",
-            "level-name=stage4-client-world", "level-seed=444444", "level-type=minecraft:flat",
+            "level-name=" + worldName, "level-seed=444444", "level-type=minecraft:flat",
             "online-mode=false", "enforce-secure-profile=false", "server-ip=127.0.0.1",
             "server-port=" + PORT, "enable-rcon=false", "max-players=1", "difficulty=peaceful",
             "gamemode=creative", "view-distance=" + viewDistance,
@@ -99,6 +113,15 @@ public final class Stage4ClientTraceTest implements FabricClientGameTest {
         }
         server.destroyForcibly();
         throw new AssertionError("server did not stop normally");
+    }
+
+    private static void awaitLog(ClientGameTestContext context, Process server, Path log, String token, int timeoutTicks) {
+        for (int tick = 0; tick < timeoutTicks; tick++) {
+            if (!server.isAlive()) throw new AssertionError("server exited before barrier " + token + ": " + read(log));
+            if (read(log).contains(token)) return;
+            context.waitTick();
+        }
+        throw new AssertionError("server did not reach barrier " + token + ": " + log);
     }
 
     private static String read(Path path) {
@@ -128,7 +151,8 @@ public final class Stage4ClientTraceTest implements FabricClientGameTest {
         context.waitFor(client -> client.level == null, 600);
     }
 
-    private static void writeEvidence(Path trace, Path log, boolean connected, int exitCode) throws IOException {
+    private static void writeEvidence(Path trace, Path log, String worldName, String runId,
+                                      boolean connected, int exitCode) throws IOException {
         Path evidence = Path.of(System.getProperty("phoenium.client.gametest.evidence",
             trace.resolveSibling("STAGE4-CLIENT.json").toString()));
         Path parent = evidence.toAbsolutePath().getParent();
@@ -138,6 +162,8 @@ public final class Stage4ClientTraceTest implements FabricClientGameTest {
         Files.writeString(evidence, "{\n" +
             "  \"kind\": \"stage4-account-free-client-trace\",\n" +
             "  \"username\": \"" + USER + "\",\n" +
+            "  \"runId\": \"" + runId + "\",\n" +
+            "  \"world\": \"" + worldName + "\",\n" +
             "  \"microsoftAuthentication\": false,\n" +
             "  \"realTcpConnection\": " + connected + ",\n" +
             "  \"viewDistance\": " + viewDistance + ",\n" +

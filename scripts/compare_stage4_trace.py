@@ -12,7 +12,7 @@ import json
 import re
 from pathlib import Path
 
-TIME = re.compile(r"\b(?:gameTime|trigger)=(-?\d+)\b")
+TIME = re.compile(r"\b(?:gameTime|trigger|now|target)=(-?\d+)\b")
 IDENTITY = re.compile(r"@[0-9a-fA-F]+")
 
 

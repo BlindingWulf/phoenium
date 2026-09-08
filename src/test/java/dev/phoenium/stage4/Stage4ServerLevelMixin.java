@@ -31,7 +31,7 @@ abstract class Stage4ServerLevelMixin {
     @Inject(method = "doBlockEvent(Lnet/minecraft/world/level/BlockEventData;)Z", at = @At("HEAD"), require = 1)
     private void phoenium$dispatch(BlockEventData event, CallbackInfoReturnable<Boolean> cir) {
         if (Stage4Trace.fixture(event.pos())) Stage4Trace.event("block.dispatch", "pos=" + event.pos() + " block=" + Stage4Trace.block(event.block()) + " a=" + event.paramA() + " b=" + event.paramB());
-        if (!phoenium$nestedQueued && event.block() == Blocks.NOTE_BLOCK && event.pos().equals(new BlockPos(70, 65, 8)) && event.paramA() == 1) {
+        if (!phoenium$nestedQueued && event.block() == Blocks.NOTE_BLOCK && event.pos().equals(new BlockPos(8, 65, 8)) && event.paramA() == 1) {
             phoenium$nestedQueued = true;
             BlockPos nested = event.pos().above();
             ServerLevel level = (ServerLevel) (Object) this;
@@ -48,6 +48,13 @@ abstract class Stage4ServerLevelMixin {
 
     @Inject(method = "tickBlock(Lnet/minecraft/core/BlockPos;Lnet/minecraft/world/level/block/Block;)V", at = @At("HEAD"), require = 1)
     private void phoenium$block(BlockPos pos, Block block, CallbackInfo ci) {
-        if (Stage4Trace.fixture(pos)) Stage4Trace.event("tick.block.vanilla", "pos=" + pos + " block=" + Stage4Trace.block(block));
+        ServerLevel level = (ServerLevel) (Object) this;
+        if (Stage4Trace.fixture(pos)) Stage4Trace.event("tick.block.vanilla", "pos=" + pos + " block=" + Stage4Trace.block(block)
+            + " gameTime=" + level.getGameTime());
+        if (Stage4Trace.reloadEffect(pos) && block == Blocks.NOTE_BLOCK) {
+            level.setBlock(pos, Blocks.REDSTONE_BLOCK.defaultBlockState(), 3);
+            Stage4Trace.event("effect.tick.reached", "pos=" + pos + " gameTime=" + level.getGameTime());
+            System.out.println("STAGE4_TRACE_RELOAD_EFFECT reached=true gameTime=" + level.getGameTime());
+        }
     }
 }
