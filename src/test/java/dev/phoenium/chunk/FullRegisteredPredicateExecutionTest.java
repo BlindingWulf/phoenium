@@ -23,6 +23,7 @@ import net.minecraft.resources.ResourceKey;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.ReloadableServerRegistries;
 import net.minecraft.world.attribute.EnvironmentAttributes;
+import net.minecraft.world.attribute.EnvironmentAttributeSystem;
 import net.minecraft.world.entity.Display;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.EntitySpawnReason;
@@ -105,8 +106,12 @@ final class FullRegisteredPredicateExecutionTest {
     }
 
     @Test void registeredPositionalEnvironmentCheckUsesOriginalEnvironmentContext() throws Exception {
+        assertTrue(EnvironmentAttributes.VILLAGER_ACTIVITY.isPositional());
         runRegistered(new EnvironmentAttributeCheck<>(EnvironmentAttributes.VILLAGER_ACTIVITY,
-                EnvironmentAttributes.VILLAGER_ACTIVITY.defaultValue()), "environment candidate", (fixture, candidate) -> { });
+                EnvironmentAttributes.VILLAGER_ACTIVITY.defaultValue()), "environment candidate",
+                (fixture, candidate) -> { }, FullRegisteredPredicateExecutionTest::installBiomeEnvironment,
+                (fixture, candidate) -> assertTrue(fixture.world.biomeReads > 0,
+                        "original positional environment sampler must consume the biome route"));
     }
 
     @Test void registeredRandomChanceUsesExactlyOneOriginalRandomDraw() throws Exception {
@@ -135,6 +140,23 @@ final class FullRegisteredPredicateExecutionTest {
         return storage;
     }
 
+    private static void installBiomeEnvironment(FullRegistrationFixture fixture, Entity ignored) throws Exception {
+        var plains = fixture.world.level.registryAccess().lookupOrThrow(
+                net.minecraft.core.registries.Registries.BIOME).getOrThrow(
+                net.minecraft.world.level.biome.Biomes.PLAINS);
+        var biomeManager = new net.minecraft.world.level.biome.BiomeManager((x, y, z) -> {
+            fixture.world.biomeReads++;
+            return plains;
+        }, 0L);
+        var builder = EnvironmentAttributeSystem.builder();
+        builder.addPositionalLayer(EnvironmentAttributes.VILLAGER_ACTIVITY, (base, position, interpolator) -> {
+            fixture.world.biomeReads++;
+            var biome = biomeManager.getNoiseBiomeAtPosition(position.x(), position.y(), position.z());
+            return biome.value().getAttributes().applyModifier(EnvironmentAttributes.VILLAGER_ACTIVITY, base);
+        });
+        fixture.world.level.setEnvironmentAttributes(builder.build());
+    }
+
     @FunctionalInterface
     private interface Verify { void verify(FullRegistrationFixture fixture, Entity candidate) throws Exception; }
 
@@ -143,6 +165,11 @@ final class FullRegisteredPredicateExecutionTest {
     }
 
     private static void runRegistered(LootItemCondition condition, String name, Setup setup, Verify verify) throws Exception {
+        runRegistered(condition, name, setup, null, verify);
+    }
+
+    private static void runRegistered(LootItemCondition condition, String name, Setup setup,
+                                      Setup afterContext, Verify verify) throws Exception {
         var fixture = new FullRegistrationFixture(true);
         var lookup = new EntityLookup<Entity>();
         var candidate = EntityTypes.TEXT_DISPLAY.create(fixture.world.level, EntitySpawnReason.LOAD);
@@ -164,7 +191,9 @@ final class FullRegisteredPredicateExecutionTest {
             var graph = fixture.runtime.graph(fixture.holder(ChunkPos.ZERO));
             assertEquals(FullInitializedInputs.State.SATISFIED, graph.inputEvaluation().state(),
                     graph.inputEvaluation().obligation());
-            FullAuthoritativeFinishingTest.context(fixture); fixture.runtime.inputs.changed(); fixture.drain();
+            FullAuthoritativeFinishingTest.context(fixture);
+            if (afterContext != null) afterContext.install(fixture, candidate);
+            fixture.runtime.inputs.changed(); fixture.drain();
             assertInstanceOf(ChunkStageOutcome.Applied.class, graph.finishing.outcome().join());
             assertEquals(name, FullSavedContextTestHooks.text(
                     assertInstanceOf(Display.TextDisplay.class, fixture.world.inserted.getFirst())).getString());

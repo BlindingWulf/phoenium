@@ -119,6 +119,7 @@ public final class FullRegistrationServerProbe implements DedicatedServerModInit
             contexts.sameWorldSelectorRunsOriginalPredicateOrderAndNameReadInsideTheConvergedRegion(false);
             contexts.sameWorldSelectorRunsOriginalPredicateOrderAndNameReadInsideTheConvergedRegion(true);
             contexts.registeredBiomePredicateRunsItsOriginalLookupAndWorldReadOnce();
+            contexts.reloadablePredicateRegistryReplacementStalesAndRebuildsTheExactPlan();
             contexts.earlierSavedRootInsertionExtendsOnlyItsOwnActiveSelectorCut();
             contexts.retainedBlockNbtUsesTheOriginalImmediateLazyCreationAndSerializationSuffix();
             contexts.originalCaughtBlockSerializerFailureReleasesTheScopeForTheNextSavedEntity();
@@ -151,11 +152,11 @@ public final class FullRegistrationServerProbe implements DedicatedServerModInit
             var completion = new FullAuthoritativeFinishingTest();
             completion.originalFinishingAndSeparatePublicationCompleteExactlyOnce(false);
             completion.originalFinishingAndSeparatePublicationCompleteExactlyOnce(true);
-            System.out.println("PHOENIUM_FULL_FINISHING_PROBE PASS cases=54 queryCases=13 serviceCases=7 d1Cases=7 contextCases=25 publicationCases=2 "
+            System.out.println("PHOENIUM_FULL_FINISHING_PROBE PASS cases=54 queryCases=13 serviceCases=7 d1Cases=7 contextCases=26 publicationCases=2 "
                     + "originalFinishing=true separatePublication=true cyclicPreparedPair=true bothPairOrders=true "
                     + "proto=true inMemoryImposter=true diskReload=false originalDifficulty=true originalCollision=true "
                     + "originalShulkerImmediate=true originalLaterRegistration=true originalMovingPiston=true "
-                    + "savedVillagerOriginalBiomeCacheAlias=true originalCachedAbsentBiomeFallback=true originalReadyAbsent=true caughtQueryBarrier=true "
+                    + "savedVillagerOriginalBiomeCacheAlias=true originalCachedAbsentBiomeFallback=true originalReadyAbsent=true caughtQueryBarrier=true registeredBiomeOriginalRead=true predicateRegistryReplacement=true "
                     + "recursiveStorageContext=true retainedBlockNbt=true pendingBlockDependencies=true originalAbsentBlockBranch=true lazyBlockEntity=true "
                     + "sameWorldSelector=true registeredSelectorPredicate=true earlierSavedRootSelector=true sameWorldEntityNbt=true filteredSelfSelector=true nestedSelector=true interpretedSavedCustomName=true liveEntityContext=true liveTextContext=true liveBlockContext=true "
                     + "noPrivateCacheEntries=true claimedOperationRequired=true controlledWorldEndpoints=true "
