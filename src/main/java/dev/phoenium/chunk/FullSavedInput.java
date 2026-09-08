@@ -39,7 +39,10 @@ public final class FullSavedInput {
     public Snapshot capture(List<CompoundTag> roots) {
         tracking = true;
         if (!observing.compareAndSet(false, true)) throw new ChunkProtocolException("saved input observation overlaps its writer");
-        try { return captureExclusive(roots); } finally { endWrite(); }
+        Throwable primary = null;
+        try { return captureExclusive(roots); }
+        catch (RuntimeException | Error failure) { primary = failure; throw failure; }
+        finally { finishObservation(primary); }
     }
     record CaptureAttempt(boolean acquired, boolean selected, boolean capacity, Snapshot snapshot) { }
     record ObservationAttempt<T>(boolean acquired, T value, AutoCloseable busyRegistration) { }
@@ -83,6 +86,7 @@ public final class FullSavedInput {
                                       java.util.function.BooleanSupplier selected) {
         tracking = true;
         if (!observing.compareAndSet(false, true)) return new CaptureAttempt(false, false, true, null);
+        Throwable primary = null;
         try {
             if (!selected.getAsBoolean()) return new CaptureAttempt(true, false, true, null);
             Snapshot current = snapshot;
@@ -94,7 +98,8 @@ public final class FullSavedInput {
                     throw new ChunkProtocolException("pending dependency scalar estimate did not cover its detached capture");
             }
             return new CaptureAttempt(true, true, true, current);
-        } finally { endWrite(); }
+        } catch (RuntimeException | Error failure) { primary = failure; throw failure; }
+        finally { finishObservation(primary); }
     }
     private Snapshot captureExclusive(List<CompoundTag> roots) {
         paths.clear();
@@ -163,6 +168,11 @@ public final class FullSavedInput {
             }
         }
         return failure;
+    }
+    private void finishObservation(Throwable primary) {
+        Throwable release = endWrite();
+        if (primary != null) addSuppressed(primary, release);
+        else rethrow(release, "saved input observation wake failed");
     }
     <T> T mutate(java.util.function.Supplier<T> action) {
         if (!tracking) return action.get();

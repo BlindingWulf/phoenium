@@ -33,12 +33,15 @@ abstract class FullSavedProtoMixin implements FullSavedInput.Access {
             notify = phoenium$saved.written(((ProtoChunk) (Object) this).getEntities());
         } catch (Throwable problem) { failure = problem; }
         Throwable wakeFailure = phoenium$saved.endWrite();
-        if (failure == null && notify != null) {
-            try { notify.run(); }
-            catch (Throwable problem) { failure = problem; }
-        }
         if (failure == null) failure = wakeFailure;
         else if (wakeFailure != null && wakeFailure != failure) failure.addSuppressed(wakeFailure);
+        if (notify != null) {
+            try { notify.run(); }
+            catch (Throwable problem) {
+                if (failure == null) failure = problem;
+                else if (problem != failure) failure.addSuppressed(problem);
+            }
+        }
         FullSavedInput.rethrow(failure, "saved ProtoChunk entity publication failed");
     }
 }

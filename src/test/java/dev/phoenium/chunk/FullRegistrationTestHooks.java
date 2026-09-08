@@ -46,16 +46,22 @@ public final class FullRegistrationTestHooks {
         input.beforeWrite();
         try {
             try { proto.getClass().getMethod("phoenium$originalAddEntity", net.minecraft.nbt.CompoundTag.class).invoke(proto, tag); }
+            catch (java.lang.reflect.InvocationTargetException reflectionFailure) {
+                FullSavedInput.rethrow(reflectionFailure.getCause(), "original ProtoChunk.addEntity failed");
+            }
             catch (ReflectiveOperationException reflectionFailure) { throw new AssertionError(reflectionFailure); }
             notify = input.written(proto.getEntities());
         } catch (Throwable problem) { failure = problem; }
         Throwable wakeFailure = input.endWrite();
-        if (failure == null && notify != null) {
-            try { notify.run(); }
-            catch (Throwable problem) { failure = problem; }
-        }
         if (failure == null) failure = wakeFailure;
         else if (wakeFailure != null && wakeFailure != failure) failure.addSuppressed(wakeFailure);
+        if (notify != null) {
+            try { notify.run(); }
+            catch (Throwable problem) {
+                if (failure == null) failure = problem;
+                else if (problem != failure) failure.addSuppressed(problem);
+            }
+        }
         FullSavedInput.rethrow(failure, "saved ProtoChunk entity publication failed");
     }
     public static CompletableFuture<ChunkAccess> applyWinning(GeneratingChunkMap map, GenerationChunkHolder holder,

@@ -1,5 +1,7 @@
 package dev.phoenium.chunk;
 
+import java.util.List;
+
 import java.nio.file.Path;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -373,6 +375,27 @@ class FullPendingBlockTextInputTest {
             assertNull(source.endWrite(), "cancelled waiter leaves no wake failure");
         }
         assertEquals(0, wakes.get(), "a cancelled plan cannot be woken after acknowledgement");
+    }
+
+    @Test void savedSnapshotCapturePreservesActionFailureAndDoesNotDropReleaseFailure() {
+        var source = new FullSavedInput();
+        var primary = new IllegalStateException("original scalar observation");
+        var wake = new IllegalArgumentException("observation release");
+        var thrown = assertThrows(IllegalStateException.class, () -> source.captureIfAvailable(List.of(), () -> {
+            assertFalse(source.observeIfAvailable(() -> null, () -> { throw wake; }).acquired());
+            throw primary;
+        }, ignored -> true, () -> true));
+        assertSame(primary, thrown); assertArrayEquals(new Throwable[]{wake}, thrown.getSuppressed());
+        assertTrue(source.available());
+
+        var secondWake = new IllegalArgumentException("release after successful capture");
+        assertSame(secondWake, assertThrows(IllegalArgumentException.class, () -> source.captureIfAvailable(List.of(),
+                () -> 0L, ignored -> {
+                    assertFalse(source.observeIfAvailable(() -> null, () -> { throw secondWake; }).acquired());
+                    return true;
+                }, () -> true)));
+        assertTrue(source.available());
+        assertNotNull(source.snapshot(), "the reached successful capture remains committed despite notification failure");
     }
 
     private static CompoundTag text(CompoundTag contents) {

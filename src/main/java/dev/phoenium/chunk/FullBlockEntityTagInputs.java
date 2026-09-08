@@ -123,7 +123,7 @@ public final class FullBlockEntityTagInputs {
             }, changed);
             if (!copies.acquired()) throw retry(changed, copies.busyRegistration());
             var copy = copies.value();
-            if (copy == null) throw new Capacity();
+            if (copy == null || !copy.stale() && copy.values() == null) throw new Capacity();
             if (copy.stale()) {
                 // A stale occurrence retains its normal source/reload wake waiter;
                 // post-reservation growth above is a capacity refusal instead.

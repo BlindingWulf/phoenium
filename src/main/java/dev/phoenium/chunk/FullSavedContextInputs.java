@@ -295,7 +295,9 @@ public final class FullSavedContextInputs {
                     List<FullSavedTextInputs.Saved> components;
                     try { components = capture.components(read.path(), this::reserve, changed); }
                     catch (FullBlockEntityTagInputs.Retry retry) {
-                        blockTags.remove(read.block());
+                        // Keep the exact capture in valid(): a source change must rebuild
+                        // and acknowledge the whole plan, including every old retention.
+                        // A merely busy observer can retry this same valid capture later.
                         AutoCloseable prior = blockWaiters.put(read.block(), retry.waiter);
                         if (prior != null) close(prior, "replaced pending block dependency waiter");
                         refinementWaiting = true; changedPlan = true; continue;
