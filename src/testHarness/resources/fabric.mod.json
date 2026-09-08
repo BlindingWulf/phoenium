@@ -5,5 +5,6 @@
   "name": "Disposable FULL registration fixture",
   "environment": "server",
   "entrypoints": { "server": ["dev.phoenium.chunk.FullRegistrationServerProbe"] },
+  "mixins": ["full-registration-probe.mixins.json"],
   "depends": { "phoenium": "*", "fabric-lifecycle-events-v1": "*" }
 }

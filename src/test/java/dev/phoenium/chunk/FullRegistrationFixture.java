@@ -3,6 +3,8 @@ package dev.phoenium.chunk;
 import dev.phoenium.core.*;
 import dev.phoenium.failure.FailureBarrier;
 import dev.phoenium.region.*;
+import dev.phoenium.save.RegionalSaveCoordinator;
+import dev.phoenium.service.RegionalServiceDispatcher;
 import dev.phoenium.topology.*;
 import java.util.*;
 import java.util.concurrent.*;
@@ -28,6 +30,8 @@ final class FullRegistrationFixture implements GeneratingChunkMap, FullGeneratio
     final Map<Long, ProtoChunk> inputs = new HashMap<>();
     final ArrayDeque<Runnable> registrations = new ArrayDeque<>();
     final FullRegistrationRuntime runtime;
+    final ChunkBindingRuntime.WorldAuthority authority;
+    final RegionalSaveCoordinator saveCoordinator;
     final WorldGenContext context;
     ChunkMap fixtureMap;
     final Set<ChunkGenerationTask> tasks = new LinkedHashSet<>();
@@ -36,6 +40,7 @@ final class FullRegistrationFixture implements GeneratingChunkMap, FullGeneratio
     CompletableFuture<ChunkAccess> producer;
     int mapCalls;
     Runnable beforeRegistration = () -> {};
+    FullRegistrationFixtureSaveBridge.Binding installedSaveBinding;
 
     FullRegistrationFixture(boolean inline) throws Exception {
         this(inline, FullInitializedInputs.Limits.production());
@@ -50,8 +55,12 @@ final class FullRegistrationFixture implements GeneratingChunkMap, FullGeneratio
         var regions = Map.of(ownerId, owner, otherId, other);
         var topologyScheduler = new dev.phoenium.scheduler.RegionScheduler(regions, directory, barrier);
         var topologyGateway = new dev.phoenium.scheduler.OwnerGateway(directory, regions, topologyScheduler);
-        runtime = new FullRegistrationRuntime(world.level, new ChunkBindingRuntime.WorldAuthority(worldId, 1, services,
-                directory, Map.of(ownerId, owner.leases(), otherId, other.leases()), barrier), limits,
+        authority = new ChunkBindingRuntime.WorldAuthority(worldId, 1, services,
+                directory, Map.of(ownerId, owner.leases(), otherId, other.leases()), barrier);
+        var saveDispatcher = new RegionalServiceDispatcher("controlled-full-registration-save", 1,
+                directory, regions, topologyGateway, topologyScheduler);
+        saveCoordinator = new RegionalSaveCoordinator(directory, regions, saveDispatcher);
+        runtime = new FullRegistrationRuntime(world.level, authority, limits,
                 new FullRegionalEnclosure(directory, regions, topologyGateway, null));
         context = new WorldGenContext(world.level, null, null, null, command -> {
             beforeRegistration.run();
@@ -72,6 +81,8 @@ final class FullRegistrationFixture implements GeneratingChunkMap, FullGeneratio
         set(world.cache, ServerChunkCache.class, "chunkMap", map);
         set(map, ChunkMap.class, "phoenium$inputChanges", new FullInputNotifications());
         fixtureMap = map; publishVisible();
+        installedSaveBinding = FullRegistrationFixtureSaveBridge.register(
+                world.level, fixtureMap, authority, saveCoordinator, runtime);
     }
     public FullRegistrationRuntime phoenium$fullRegistration() { return runtime; }
     /** Separate map selects the ordinary original FULL supplier from the start of its task. */
@@ -136,10 +147,26 @@ final class FullRegistrationFixture implements GeneratingChunkMap, FullGeneratio
     }
     void drain() { while (!registrations.isEmpty()) registrations.remove().run(); while (runtime.pumpOne()) { } }
     void stop() {
-        runtime.shutdown();
-        while (!registrations.isEmpty()) registrations.remove().run();
-        for (var task : List.copyOf(tasks)) { task.markForCancellation(); resume(task); }
-        runtime.shutdown();
+        var failures = new FullInputNotifications.Failures();
+        failures.run(runtime::shutdown);
+        failures.run(() -> { while (!registrations.isEmpty()) registrations.remove().run(); });
+        failures.run(() -> { for (var task : List.copyOf(tasks)) { task.markForCancellation(); resume(task); } });
+        failures.run(runtime::shutdown);
+        FullFinishingServices finishing = installedSaveBinding.finishing();
+        failures.run(() -> {
+            if (finishing == null) {
+                while (saveCoordinator.pumpOne()) { }
+                saveCoordinator.requireFlushed();
+                return;
+            }
+            try (var turn = finishing.serial(FullFinishingServices.Phase.SERVER_TASK)) {
+                while (saveCoordinator.pumpOne()) { }
+                saveCoordinator.requireFlushed();
+            }
+        });
+        failures.run(installedSaveBinding::close);
+        if (finishing != null) failures.run(() -> FullFinishingServices.stopped(world.level.getServer()));
+        failures.rethrow();
     }
     static final class Holder extends ChunkHolder {
         final List<CompletableFuture<?>> saves = new ArrayList<>();
