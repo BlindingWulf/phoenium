@@ -426,7 +426,11 @@ public final class FullRuntimeAcceptanceProbe implements DedicatedServerModIniti
                 return "FULL_LIVE_PENDING phase=" + phase() + " entityReadiness=" + position;
         }
         int frogs = 0, villagers = 0;
-        for (Entity entity : level.getAllEntities()) if (entity.entityTags().contains(marker(phase()))) {
+        List<Entity> fixtureEntities = new ArrayList<>();
+        for (Entity entity : level.getAllEntities()) {
+            if (entity.entityTags().contains(marker(phase()))) fixtureEntities.add(entity);
+        }
+        for (Entity entity : fixtureEntities) {
             // Vanilla can retain the discarded source alias in its raw visible entity store even
             // after the original reader has returned a discarded Tadpole. Validate it by the
             // exact prior reader/transfer witness and never count it as a surviving root.
@@ -455,7 +459,7 @@ public final class FullRuntimeAcceptanceProbe implements DedicatedServerModIniti
         }
         if (!inventoryLogged) {
             inventoryLogged = true;
-            for (Entity entity : level.getAllEntities()) if (entity.entityTags().contains(marker(phase())))
+            for (Entity entity : fixtureEntities)
                 System.out.println("PHOENIUM_FULL_ENTITY_INVENTORY phase=" + phase() + " entity=" + entity.getUUID()
                         + " type=" + entity.getType() + " chunk=" + entity.chunkPosition()
                         + " removed=" + entity.isRemoved() + " reason=" + entity.getRemovalReason() + " team="

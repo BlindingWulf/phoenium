@@ -1822,23 +1822,24 @@ public final class Stage3ClientTest implements FabricClientGameTest {
                 require(active.stopNormally(context), active.serverFailure("FULL normal stop timed out"));
                 String log = active.readLatestLog();
                 String processLog = active.readProcessLog();
+                String lifecycleProcessLog = currentLifecycleProcessLog(processLog);
                 Path worldRoot = directory.resolve(world);
                 long levelDatBytes = persistedLevelBytes(worldRoot);
                 require(levelDatBytes > 0, active.serverFailure(
                         "FULL lifecycle did not leave a readable on-disk level.dat: " + worldRoot));
-                List<String> suffixLines = processLog.lines()
+                List<String> suffixLines = lifecycleProcessLog.lines()
                         .filter(line -> line.contains("PHOENIUM_FULL_LIVE_SUFFIX phase=" + phase))
                         .toList();
                 require(suffixLines.size() == 4 && suffixLines.stream().allMatch(line ->
                                 line.contains("publicPending=true") && line.contains("admitted=true")),
                         active.serverFailure("FULL suffix admission evidence was incomplete: " + suffixLines));
-                long generatedFixtures = processLog.lines()
+                long generatedFixtures = lifecycleProcessLog.lines()
                         .filter(line -> line.contains("PHOENIUM_FULL_LIVE_GENERATED chunk=")).count();
                 require(generatedFixtures == (phase.equals("fresh") ? 4 : 0),
                         active.serverFailure("FULL serializer/generation route was not phase-correct: generated="
                                 + generatedFixtures + " phase=" + phase));
                 require(active.process.exitValue() == 0 && healthyFullAcceptanceLog(log)
-                        && healthyFullAcceptanceLog(processLog),
+                        && healthyFullAcceptanceLog(lifecycleProcessLog),
                         active.serverFailure("FULL server health check failed"));
                 require(log.contains("PHOENIUM_FULL STOPPED"), "authoritative FULL teardown evidence missing");
                 Path savedLatestLog = directory.resolve(phase + "-latest.log");
@@ -1932,6 +1933,12 @@ public final class Stage3ClientTest implements FabricClientGameTest {
             && !log.contains("Exception stopping the server")
             && !log.contains("FULL_LIVE_FAIL")
             && !log.contains("FULL fixture failed");
+    }
+
+    /** The two acceptance lifecycles append to one process log; scope route evidence to this boot. */
+    private static String currentLifecycleProcessLog(String processLog) {
+        int start = processLog.lastIndexOf("Starting minecraft server version");
+        return start < 0 ? processLog : processLog.substring(start);
     }
 
     private static long persistedLevelBytes(Path worldRoot) {
