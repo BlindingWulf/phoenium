@@ -1,0 +1,146 @@
+package dev.phoenium.service;
+
+import dev.phoenium.core.WorldId;
+import dev.phoenium.mixin.RegionalLevelTicksAccess;
+import dev.phoenium.mixin.RegionalServerLevelAccess;
+import dev.phoenium.topology.RegionDirectory;
+import dev.phoenium.topology.RegionalStateMigration;
+import java.util.IdentityHashMap;
+import java.util.LinkedHashMap;
+import java.util.Map;
+import java.util.Objects;
+import java.util.function.BiConsumer;
+import net.minecraft.core.BlockPos;
+import net.minecraft.network.protocol.game.ClientboundBlockEventPacket;
+import net.minecraft.server.level.ServerLevel;
+import net.minecraft.world.level.BlockEventData;
+import net.minecraft.world.level.ChunkPos;
+import net.minecraft.world.level.block.Block;
+import net.minecraft.world.level.material.Fluid;
+import net.minecraft.world.ticks.LevelChunkTicks;
+import net.minecraft.world.ticks.LevelTicks;
+
+/** Connected per-server registry for actual Minecraft scheduled ticks and block events. */
+public final class RegionalWorldServices implements RegionalStateMigration {
+    private final RegionDirectory directory;
+    private final RegionalServiceDispatcher dispatcher;
+    private final Map<ServerLevel, WorldServices> worlds = new IdentityHashMap<>();
+    private final Map<LevelTicks<?>, TickBinding<?>> ticks = new IdentityHashMap<>();
+
+    public RegionalWorldServices(RegionDirectory directory, RegionalServiceDispatcher dispatcher) {
+        this.directory = Objects.requireNonNull(directory, "directory");
+        this.dispatcher = Objects.requireNonNull(dispatcher, "dispatcher");
+    }
+
+    @SuppressWarnings("unchecked")
+    public synchronized void bind(ServerLevel level) {
+        if (worlds.containsKey(level)) return;
+        WorldId world = new WorldId(level.dimension().identifier().toString());
+        LevelTicks<Block> blockTicks = level.getBlockTicks();
+        LevelTicks<Fluid> fluidTicks = level.getFluidTicks();
+        var blockAccess = (RegionalLevelTicksAccess<Block>) blockTicks;
+        var fluidAccess = (RegionalLevelTicksAccess<Fluid>) fluidTicks;
+        var blocks = new RegionalScheduledTickService<Block>(world, directory, dispatcher,
+            blockAccess.phoenium$getTickCheck(), true);
+        var fluids = new RegionalScheduledTickService<Fluid>(world, directory, dispatcher,
+            fluidAccess.phoenium$getTickCheck(), false);
+        blocks.bootstrap(new LinkedHashMap<>(blockAccess.phoenium$getAllContainers()));
+        fluids.bootstrap(new LinkedHashMap<>(fluidAccess.phoenium$getAllContainers()));
+        var events = new RegionalBlockEventService<BlockEventData>(world, directory, dispatcher, BlockEventData::pos);
+        WorldServices services = new WorldServices(level, blocks, fluids, events);
+        worlds.put(level, services);
+        ticks.put(blockTicks, new TickBinding<>(services, blocks));
+        ticks.put(fluidTicks, new TickBinding<>(services, fluids));
+    }
+
+    public synchronized RegionalServiceDispatcher dispatcher() { return dispatcher; }
+
+    @SuppressWarnings("unchecked")
+    public synchronized <T> void containerAdded(LevelTicks<T> owner, ChunkPos pos, LevelChunkTicks<T> container) {
+        TickBinding<T> binding = (TickBinding<T>) ticks.get(owner);
+        if (binding != null) binding.service().addContainer(pos.pack(), container);
+    }
+    @SuppressWarnings("unchecked")
+    public synchronized <T> void containerRemoved(LevelTicks<T> owner, ChunkPos pos, LevelChunkTicks<T> container) {
+        TickBinding<T> binding = (TickBinding<T>) ticks.get(owner);
+        if (binding != null) binding.service().removeContainer(pos.pack(), container);
+    }
+    @SuppressWarnings("unchecked")
+    public synchronized <T> void scheduled(LevelTicks<T> owner, long chunkKey, LevelChunkTicks<T> container) {
+        TickBinding<T> binding = (TickBinding<T>) ticks.get(owner);
+        if (binding != null) binding.service().scheduled(chunkKey, container);
+    }
+    @SuppressWarnings("unchecked")
+    public synchronized <T> Boolean willTickThisTick(LevelTicks<T> owner, BlockPos pos, T type) {
+        TickBinding<T> binding = (TickBinding<T>) ticks.get(owner);
+        return binding == null ? null : binding.service().willTickThisTick(pos, type);
+    }
+    @SuppressWarnings("unchecked")
+    public <T> boolean runScheduled(LevelTicks<T> owner, long currentTick, int maxTicks, BiConsumer<BlockPos, T> output) {
+        TickBinding<T> binding;
+        synchronized (this) { binding = (TickBinding<T>) ticks.get(owner); }
+        if (binding == null) return false;
+        binding.service().tick(currentTick, maxTicks, output);
+        return true;
+    }
+
+    public boolean enqueueBlockEvent(ServerLevel level, BlockEventData event) {
+        WorldServices services;
+        synchronized (this) { services = worlds.get(level); }
+        if (services == null) return false;
+        services.events().enqueue(event);
+        return true;
+    }
+
+    public boolean runBlockEvents(ServerLevel level) {
+        WorldServices services;
+        synchronized (this) { services = worlds.get(level); }
+        if (services == null) return false;
+        services.events().runCycle(event -> level.shouldTickBlocksAt(event.pos()), event -> {
+            if (((RegionalServerLevelAccess) level).phoenium$invokeDoBlockEvent(event)) {
+                level.getServer().getPlayerList().broadcast(null, event.pos().getX(), event.pos().getY(),
+                    event.pos().getZ(), 64.0, level.dimension(),
+                    new ClientboundBlockEventPacket(event.pos(), event.block(), event.paramA(), event.paramB()));
+            }
+        });
+        return true;
+    }
+
+    public synchronized WorldServices world(ServerLevel level) {
+        return Objects.requireNonNull(worlds.get(level), "unbound regional world services");
+    }
+
+    @Override
+    public synchronized Prepared prepare(RegionDirectory.View proposed) {
+        Map<ServerLevel, WorldMigration> plans = new IdentityHashMap<>();
+        worlds.forEach((level, services) -> plans.put(level, new WorldMigration(
+            services.blockTicks().planMigration(proposed), services.fluidTicks().planMigration(proposed),
+            services.events().planMigration(proposed))));
+        return published -> {
+            if (!published.equals(proposed)) throw new IllegalStateException("regional world-service migration view changed");
+            synchronized (RegionalWorldServices.this) {
+                if (!plans.keySet().equals(worlds.keySet()))
+                    throw new IllegalStateException("regional world-service set changed during topology transition");
+                plans.forEach((level, plan) -> {
+                    WorldServices services = Objects.requireNonNull(worlds.get(level));
+                    services.blockTicks().installMigration(plan.blocks(), published);
+                    services.fluidTicks().installMigration(plan.fluids(), published);
+                    services.events().installMigration(plan.events(), published);
+                });
+            }
+        };
+    }
+
+    public synchronized void unbindAll() {
+        worlds.clear();
+        ticks.clear();
+    }
+
+    public record WorldServices(ServerLevel level, RegionalScheduledTickService<Block> blockTicks,
+                                RegionalScheduledTickService<Fluid> fluidTicks,
+                                RegionalBlockEventService<BlockEventData> events) { }
+    private record TickBinding<T>(WorldServices world, RegionalScheduledTickService<T> service) { }
+    private record WorldMigration(RegionalScheduledTickService.MigrationPlan blocks,
+                                  RegionalScheduledTickService.MigrationPlan fluids,
+                                  RegionalBlockEventService.MigrationPlan events) { }
+}

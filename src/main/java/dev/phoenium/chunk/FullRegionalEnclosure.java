@@ -15,8 +15,13 @@ public final class FullRegionalEnclosure {
     private final TopologyCoordinator coordinator;
     public FullRegionalEnclosure(RegionDirectory directory, Map<RegionId, RegionRuntime> runtimes,
                                  OwnerGateway gateway, ObjectOwnershipRegistry objects) {
+        this(directory, runtimes, gateway, objects, RegionalStateMigration.NONE);
+    }
+    public FullRegionalEnclosure(RegionDirectory directory, Map<RegionId, RegionRuntime> runtimes,
+                                 OwnerGateway gateway, ObjectOwnershipRegistry objects,
+                                 RegionalStateMigration stateMigration) {
         this.directory = directory;
-        coordinator = new TopologyCoordinator(directory, runtimes, gateway, objects);
+        coordinator = new TopologyCoordinator(directory, runtimes, gateway, objects, stateMigration);
     }
     public boolean advance() {
         if (OwnershipContext.current().isPresent()) return false;

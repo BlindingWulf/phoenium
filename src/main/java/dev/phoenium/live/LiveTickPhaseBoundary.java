@@ -41,49 +41,85 @@ public final class LiveTickPhaseBoundary {
         require(one.getOpcode() == Opcodes.ICONST_1 && variable(haveTime, Opcodes.ALOAD, 1)
                 && getter instanceof MethodInsnNode get && get.owner.equals(LEVEL) && get.name.equals("getChunkSource")
                 && get.desc.equals("()L" + CACHE + ";") && variable(cut, Opcodes.ALOAD, 0), "level chunk-tick invocation changed");
-        int boundary = original.instructions.indexOf(haveTime);
-        require(original.instructions.indexOf(unique(original, LEVEL, "tickTime", "()V")) < boundary,
+        int chunkBoundary = original.instructions.indexOf(haveTime);
+        require(original.instructions.indexOf(unique(original, LEVEL, "tickTime", "()V")) < chunkBoundary,
                 "world-time prefix moved");
-        require(original.instructions.indexOf(unique(original, "net/minecraft/world/entity/raid/Raids", "tick", "(L" + LEVEL + ";)V")) < boundary,
+        MethodInsnNode raid = unique(original, "net/minecraft/world/entity/raid/Raids", "tick", "(L" + LEVEL + ";)V");
+        require(original.instructions.indexOf(raid) < chunkBoundary,
                 "raid prefix moved");
-        require(original.instructions.indexOf(unique(original, LEVEL, "tickBlockEntities", "()V")) > boundary,
+        MethodInsnNode blockEvents = unique(original, LEVEL, "runBlockEvents", "()V");
+        require(original.instructions.indexOf(unique(original, LEVEL, "tickBlockEntities", "()V")) > chunkBoundary,
                 "block-entity callback moved");
-        require(original.instructions.indexOf(unique(original, LEVEL, "runBlockEvents", "()V")) > boundary,
+        require(original.instructions.indexOf(blockEvents) > chunkBoundary,
                 "block-event callback moved");
-        checkCut(original, boundary, Set.of(0, 1, 2, 3, 4, 5));
-        MethodNode before = portion(original, "phoenium$beforeChunkTick", "(" + BOOL + ")L" + LEVEL_STATE + ";", 0, boundary);
-        // The original getChunkSource receiver lookup also belongs to the prefix; retain the
-        // one returned cache instead of invoking it again when the continuation resumes.
-        before.instructions.add(new VarInsnNode(Opcodes.ASTORE, original.maxLocals));
-        before.instructions.add(new TypeInsnNode(Opcodes.NEW, LEVEL_STATE)); before.instructions.add(new InsnNode(Opcodes.DUP));
-        before.instructions.add(new VarInsnNode(Opcodes.ALOAD, 0));
-        before.instructions.add(new VarInsnNode(Opcodes.ALOAD, original.maxLocals));
-        for (int local = 1; local <= 3; local++) before.instructions.add(new VarInsnNode(Opcodes.ALOAD, local));
-        before.instructions.add(new VarInsnNode(Opcodes.ILOAD, 4)); before.instructions.add(new VarInsnNode(Opcodes.ILOAD, 5));
-        before.instructions.add(new MethodInsnNode(Opcodes.INVOKESPECIAL, LEVEL_STATE, "<init>",
-                "(L" + LEVEL + ";L" + CACHE + ";" + BOOL + PROFILER + RATE + "ZI)V", false)); before.instructions.add(new InsnNode(Opcodes.ARETURN));
-        before.maxLocals = original.maxLocals + 1;
-        MethodNode after = portion(original, "phoenium$afterChunkTick", "(L" + LEVEL_STATE + ";L" + CACHE_STATE + ";)V",
-                boundary, original.instructions.size());
-        int levelLocal = original.maxLocals, cacheLocal = levelLocal + 1;
-        InsnList locals = new InsnList();
-        locals.add(new VarInsnNode(Opcodes.ALOAD, 1)); locals.add(new VarInsnNode(Opcodes.ASTORE, levelLocal));
-        locals.add(new VarInsnNode(Opcodes.ALOAD, 2)); locals.add(new VarInsnNode(Opcodes.ASTORE, cacheLocal));
-        consume(locals, LEVEL_STATE, LEVEL, levelLocal);
-        restore(locals, LEVEL_STATE, levelLocal, "haveTime", BOOL, 1, Opcodes.ASTORE);
-        restore(locals, LEVEL_STATE, levelLocal, "profiler", PROFILER, 2, Opcodes.ASTORE);
-        restore(locals, LEVEL_STATE, levelLocal, "tickRate", RATE, 3, Opcodes.ASTORE);
-        restore(locals, LEVEL_STATE, levelLocal, "runs", "Z", 4, Opcodes.ISTORE);
-        restore(locals, LEVEL_STATE, levelLocal, "sleepingPercentage", "I", 5, Opcodes.ISTORE);
-        locals.add(new VarInsnNode(Opcodes.ALOAD, levelLocal));
-        locals.add(new MethodInsnNode(Opcodes.INVOKEVIRTUAL, LEVEL_STATE, "cache", "()L" + CACHE + ";", false));
-        after.instructions.insert(locals);
-        MethodInsnNode copied = unique(after, CACHE, "tick", "(" + BOOL + "Z)V");
-        after.instructions.insertBefore(copied, new VarInsnNode(Opcodes.ALOAD, cacheLocal));
-        after.instructions.set(copied, new MethodInsnNode(Opcodes.INVOKESTATIC, PHASES, "finishCache",
+        int scheduledStart = boundaryAtConstant(original, "tickPending");
+        int scheduledEnd = boundaryAtConstant(original, "raid");
+        int cacheEnd = original.instructions.indexOf(tick) + 1;
+        int blockEnd = boundaryBeforeFieldWrite(original, LEVEL, "handlingTick", "Z");
+        require(scheduledStart < scheduledEnd && scheduledEnd < chunkBoundary && chunkBoundary < cacheEnd
+                && cacheEnd < original.instructions.indexOf(blockEvents) && original.instructions.indexOf(blockEvents) < blockEnd,
+                "level phase order changed");
+        for (int boundary : new int[] { scheduledStart, scheduledEnd, chunkBoundary, cacheEnd, blockEnd })
+            checkCut(original, boundary, Set.of(0, 1, 2, 3, 4, 5));
+
+        MethodNode prefix = portion(original, "phoenium$beforeScheduledTicks", "(" + BOOL + ")L" + LEVEL_STATE + ";", 0, scheduledStart);
+        prefix.instructions.add(new TypeInsnNode(Opcodes.NEW, LEVEL_STATE)); prefix.instructions.add(new InsnNode(Opcodes.DUP));
+        prefix.instructions.add(new VarInsnNode(Opcodes.ALOAD, 0));
+        for (int local = 1; local <= 3; local++) prefix.instructions.add(new VarInsnNode(Opcodes.ALOAD, local));
+        prefix.instructions.add(new VarInsnNode(Opcodes.ILOAD, 4)); prefix.instructions.add(new VarInsnNode(Opcodes.ILOAD, 5));
+        prefix.instructions.add(new MethodInsnNode(Opcodes.INVOKESPECIAL, LEVEL_STATE, "<init>",
+                "(L" + LEVEL + ";" + BOOL + PROFILER + RATE + "ZI)V", false)); prefix.instructions.add(new InsnNode(Opcodes.ARETURN));
+
+        MethodNode scheduled = portion(original, "phoenium$runScheduledTicks", "(L" + LEVEL_STATE + ";)V", scheduledStart, scheduledEnd);
+        int scheduledState = original.maxLocals;
+        InsnList scheduledLocals = levelLocals(scheduledState, "beginScheduled");
+        scheduled.instructions.insert(scheduledLocals);
+        phaseEnd(scheduled.instructions, scheduledState, "finishScheduled");
+        scheduled.maxLocals = scheduledState + 1;
+        retainLocalAcrossFrames(scheduled, scheduledState, LEVEL_STATE);
+
+        MethodNode middle = portion(original, "phoenium$beforeChunkTick", "(L" + LEVEL_STATE + ";)V", scheduledEnd, chunkBoundary);
+        int middleState = original.maxLocals, cacheLocal = middleState + 1;
+        middle.instructions.insert(levelLocals(middleState, "beginMiddle"));
+        middle.instructions.add(new VarInsnNode(Opcodes.ASTORE, cacheLocal));
+        middle.instructions.add(new VarInsnNode(Opcodes.ALOAD, middleState));
+        middle.instructions.add(new VarInsnNode(Opcodes.ALOAD, 0));
+        middle.instructions.add(new VarInsnNode(Opcodes.ALOAD, cacheLocal));
+        middle.instructions.add(new MethodInsnNode(Opcodes.INVOKEVIRTUAL, LEVEL_STATE, "finishMiddle", "(L" + LEVEL + ";L" + CACHE + ";)V", false));
+        middle.instructions.add(new InsnNode(Opcodes.RETURN));
+        middle.maxLocals = cacheLocal + 1;
+        retainLocalAcrossFrames(middle, middleState, LEVEL_STATE);
+
+        MethodNode chunk = portion(original, "phoenium$afterChunkTick", "(L" + LEVEL_STATE + ";L" + CACHE_STATE + ";)V", chunkBoundary, cacheEnd);
+        int chunkState = original.maxLocals, cacheState = chunkState + 1;
+        InsnList chunkLocals = new InsnList();
+        chunkLocals.add(new VarInsnNode(Opcodes.ALOAD, 2)); chunkLocals.add(new VarInsnNode(Opcodes.ASTORE, cacheState));
+        chunkLocals.add(levelLocals(chunkState, "consumeChunk"));
+        chunkLocals.add(new VarInsnNode(Opcodes.ALOAD, chunkState));
+        chunkLocals.add(new MethodInsnNode(Opcodes.INVOKEVIRTUAL, LEVEL_STATE, "cache", "()L" + CACHE + ";", false));
+        chunk.instructions.insert(chunkLocals);
+        MethodInsnNode copied = unique(chunk, CACHE, "tick", "(" + BOOL + "Z)V");
+        chunk.instructions.insertBefore(copied, new VarInsnNode(Opcodes.ALOAD, cacheState));
+        chunk.instructions.set(copied, new MethodInsnNode(Opcodes.INVOKESTATIC, PHASES, "finishCache",
                 "(L" + CACHE + ";" + BOOL + "ZL" + CACHE_STATE + ";)V", false));
-        after.maxLocals = cacheLocal + 1;
-        node.interfaces.add(PHASES + "$LevelAccess"); node.methods.add(before); node.methods.add(after);
+        chunk.instructions.add(new InsnNode(Opcodes.RETURN));
+        chunk.maxLocals = cacheState + 1;
+
+        MethodNode events = portion(original, "phoenium$runBlockEvents", "(L" + LEVEL_STATE + ";)V", cacheEnd, blockEnd);
+        int eventState = original.maxLocals;
+        events.instructions.insert(levelLocals(eventState, "beginBlockEvents"));
+        phaseEnd(events.instructions, eventState, "finishBlockEvents");
+        events.maxLocals = eventState + 1;
+        retainLocalAcrossFrames(events, eventState, LEVEL_STATE);
+
+        MethodNode finish = portion(original, "phoenium$finishLevelTick", "(L" + LEVEL_STATE + ";)V", blockEnd, original.instructions.size());
+        int finishState = original.maxLocals;
+        finish.instructions.insert(levelLocals(finishState, "consumeFinal"));
+        finish.maxLocals = finishState + 1;
+
+        node.interfaces.add(PHASES + "$LevelAccess");
+        node.methods.add(prefix); node.methods.add(scheduled); node.methods.add(middle);
+        node.methods.add(chunk); node.methods.add(events); node.methods.add(finish);
     }
 
     public static void installCache(ClassNode node) {
@@ -115,7 +151,7 @@ public final class LiveTickPhaseBoundary {
         node.interfaces.add(PHASES + "$CacheAccess"); node.methods.add(before); node.methods.add(after);
     }
     private static MethodNode original(ClassNode node, String descriptor) {
-        require(node.methods.stream().noneMatch(method -> method.name.startsWith("phoenium$beforeChunkTick")
+        require(node.methods.stream().noneMatch(method -> method.name.startsWith("phoenium$beforeScheduledTicks")
                 || method.name.startsWith("phoenium$prepareChunkTick")), "adapter already installed");
         return node.methods.stream().filter(method -> method.name.equals("tick") && method.desc.equals(descriptor))
                 .findFirst().orElseThrow(() -> drift("missing original tick"));
@@ -152,6 +188,49 @@ public final class LiveTickPhaseBoundary {
     private static void restore(InsnList out, String state, int local, String name, String type, int target, int opcode) {
         out.add(new VarInsnNode(Opcodes.ALOAD, local)); out.add(new MethodInsnNode(Opcodes.INVOKEVIRTUAL, state, name, "()" + type, false));
         out.add(new VarInsnNode(opcode, target));
+    }
+    private static InsnList levelLocals(int stateLocal, String phaseMethod) {
+        InsnList locals = new InsnList();
+        locals.add(new VarInsnNode(Opcodes.ALOAD, 1)); locals.add(new VarInsnNode(Opcodes.ASTORE, stateLocal));
+        locals.add(new VarInsnNode(Opcodes.ALOAD, stateLocal)); locals.add(new VarInsnNode(Opcodes.ALOAD, 0));
+        locals.add(new MethodInsnNode(Opcodes.INVOKEVIRTUAL, LEVEL_STATE, phaseMethod, "(L" + LEVEL + ";)V", false));
+        restore(locals, LEVEL_STATE, stateLocal, "haveTime", BOOL, 1, Opcodes.ASTORE);
+        restore(locals, LEVEL_STATE, stateLocal, "profiler", PROFILER, 2, Opcodes.ASTORE);
+        restore(locals, LEVEL_STATE, stateLocal, "tickRate", RATE, 3, Opcodes.ASTORE);
+        restore(locals, LEVEL_STATE, stateLocal, "runs", "Z", 4, Opcodes.ISTORE);
+        restore(locals, LEVEL_STATE, stateLocal, "sleepingPercentage", "I", 5, Opcodes.ISTORE);
+        return locals;
+    }
+    private static void phaseEnd(InsnList out, int stateLocal, String phaseMethod) {
+        out.add(new VarInsnNode(Opcodes.ALOAD, stateLocal)); out.add(new VarInsnNode(Opcodes.ALOAD, 0));
+        out.add(new MethodInsnNode(Opcodes.INVOKEVIRTUAL, LEVEL_STATE, phaseMethod, "(L" + LEVEL + ";)V", false));
+        out.add(new InsnNode(Opcodes.RETURN));
+    }
+    private static int boundaryAtConstant(MethodNode method, String value) {
+        LdcInsnNode found = null;
+        for (AbstractInsnNode instruction : method.instructions) if (instruction instanceof LdcInsnNode ldc && value.equals(ldc.cst)) {
+            require(found == null, "duplicate phase marker " + value); found = ldc;
+        }
+        require(found != null, "missing phase marker " + value);
+        return method.instructions.indexOf(previous(found));
+    }
+    private static int boundaryBeforeFieldWrite(MethodNode method, String owner, String name, String desc) {
+        FieldInsnNode found = null;
+        for (AbstractInsnNode instruction : method.instructions) if (instruction instanceof FieldInsnNode field
+                && field.getOpcode() == Opcodes.PUTFIELD && field.owner.equals(owner) && field.name.equals(name) && field.desc.equals(desc)
+                && previous(field).getOpcode() == Opcodes.ICONST_0) {
+            require(found == null, "duplicate field phase marker " + name); found = field;
+        }
+        require(found != null, "missing field phase marker " + name);
+        return method.instructions.indexOf(previous(previous(found)));
+    }
+    private static void retainLocalAcrossFrames(MethodNode method, int local, String type) {
+        for (AbstractInsnNode instruction : method.instructions) if (instruction instanceof FrameNode frame) {
+            if (frame.local == null) frame.local = new ArrayList<>();
+            while (frame.local.size() < local) frame.local.add(Opcodes.TOP);
+            if (frame.local.size() == local) frame.local.add(type);
+            else frame.local.set(local, type);
+        }
     }
     private static MethodInsnNode unique(MethodNode method, String owner, String name, String desc) {
         MethodInsnNode found = null;

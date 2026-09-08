@@ -284,7 +284,9 @@ class CoreAcceptanceTest {
         // prohibition for every other production class instead of rejecting these bounded
         // metadata guards by a source-wide string check.
         var boundedMetadata = java.util.Set.of(
-                "PoiLoadBookkeeping.java", "FullBlockEntityTagInputs.java", "FullCommandStorageInputs.java");
+                "PoiLoadBookkeeping.java", "FullBlockEntityTagInputs.java", "FullCommandStorageInputs.java",
+                "RegionalScheduledTickService.java", "RegionalBlockEventService.java", "RegionalWorldServices.java",
+                "RegionalSaveCoordinator.java");
         String otherCore = Files.walk(Path.of("src/main/java/dev/phoenium"))
             .filter(path -> path.toString().endsWith(".java"))
             .filter(path -> !boundedMetadata.contains(path.getFileName().toString()))

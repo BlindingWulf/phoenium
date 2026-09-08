@@ -1,0 +1,297 @@
+package dev.phoenium.service;
+
+import dev.phoenium.core.WorldId;
+import dev.phoenium.ownership.OwnershipContext;
+import dev.phoenium.region.RegionId;
+import dev.phoenium.topology.RegionDirectory;
+import dev.phoenium.topology.RegionRoute;
+import dev.phoenium.topology.RoutingKey;
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.HashSet;
+import java.util.IdentityHashMap;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+import java.util.Set;
+import java.util.TreeSet;
+import java.util.function.BiConsumer;
+import java.util.function.LongPredicate;
+import net.minecraft.core.BlockPos;
+import net.minecraft.world.level.ChunkPos;
+import net.minecraft.world.ticks.LevelChunkTicks;
+import net.minecraft.world.ticks.ScheduledTick;
+
+/**
+ * Owner-local view of Minecraft's real per-chunk tick containers. The vanilla
+ * {@link LevelChunkTicks} remains the persistence object and therefore preserves saved delay,
+ * priority, sub-tick order, and its per-position/type deduplication. This service owns selection
+ * and dispatch: no unchanged world-global {@code LevelTicks.tick} call remains on the live path.
+ */
+public final class RegionalScheduledTickService<T> {
+    private static final Comparator<Head<?>> HEAD_ORDER = (left, right) -> {
+        int tick = ScheduledTick.INTRA_TICK_DRAIN_ORDER.compare(left.tick(), right.tick());
+        if (tick != 0) return tick;
+        return Long.compare(left.chunkKey(), right.chunkKey());
+    };
+
+    private final WorldId world;
+    private final RegionDirectory directory;
+    private final RegionalServiceDispatcher dispatcher;
+    private final RegionalServiceKind collectKind;
+    private final RegionalServiceKind runKind;
+    private final LongPredicate tickCheck;
+    private final Map<RegionId, Map<Long, ContainerState<T>>> partitions = new LinkedHashMap<>();
+    private final Map<Long, ContainerState<T>> containers = new LinkedHashMap<>();
+    private final TreeSet<Head<T>> heads = new TreeSet<>(headComparator());
+    private final List<Collected<T>> collected = new ArrayList<>();
+    private final Set<TickIdentity<T>> remainingThisCycle = new HashSet<>();
+    private long cycle;
+    private boolean cycling;
+    private long collectedCount;
+    private long executedCount;
+    private long migratedContainers;
+
+    public RegionalScheduledTickService(WorldId world, RegionDirectory directory,
+                                        RegionalServiceDispatcher dispatcher,
+                                        LongPredicate tickCheck, boolean blockTicks) {
+        this.world = Objects.requireNonNull(world, "world");
+        this.directory = Objects.requireNonNull(directory, "directory");
+        this.dispatcher = Objects.requireNonNull(dispatcher, "dispatcher");
+        this.tickCheck = Objects.requireNonNull(tickCheck, "tickCheck");
+        this.collectKind = blockTicks ? RegionalServiceKind.COLLECT_SCHEDULED_BLOCK_TICK
+                                      : RegionalServiceKind.COLLECT_SCHEDULED_FLUID_TICK;
+        this.runKind = blockTicks ? RegionalServiceKind.RUN_SCHEDULED_BLOCK_TICK
+                                  : RegionalServiceKind.RUN_SCHEDULED_FLUID_TICK;
+    }
+
+    /** One-time registration for already loaded persistent chunk containers. */
+    public synchronized void bootstrap(Map<Long, LevelChunkTicks<T>> initial) {
+        if (!containers.isEmpty()) throw new IllegalStateException("scheduled tick service already bootstrapped");
+        initial.forEach(this::addContainer);
+    }
+
+    public synchronized void addContainer(long chunkKey, LevelChunkTicks<T> container) {
+        Objects.requireNonNull(container, "container");
+        if (containers.containsKey(chunkKey)) throw new IllegalStateException("duplicate regional tick container " + key(chunkKey));
+        RegionId owner = route(chunkKey).region();
+        ContainerState<T> state = new ContainerState<>(chunkKey, owner, container);
+        containers.put(chunkKey, state);
+        partitions.computeIfAbsent(owner, ignored -> new LinkedHashMap<>()).put(chunkKey, state);
+        refreshHead(state);
+    }
+
+    public synchronized void removeContainer(long chunkKey, LevelChunkTicks<T> expected) {
+        ContainerState<T> state = containers.remove(chunkKey);
+        if (state == null) return;
+        if (state.container() != expected) throw new IllegalStateException("regional tick container identity changed " + key(chunkKey));
+        removeHead(state);
+        Map<Long, ContainerState<T>> partition = partitions.get(state.owner());
+        if (partition == null || partition.remove(chunkKey) != state)
+            throw new IllegalStateException("regional tick partition lost container " + key(chunkKey));
+        if (partition.isEmpty()) partitions.remove(state.owner());
+    }
+
+    /** Called after vanilla's real container applies its deduplication rule. */
+    public synchronized void scheduled(long chunkKey, LevelChunkTicks<T> expected) {
+        ContainerState<T> state = containers.get(chunkKey);
+        if (state == null) return; // unloaded scheduling retains vanilla's original warning/no-op
+        if (state.container() != expected) throw new IllegalStateException("regional tick scheduled through foreign container");
+        refreshHead(state);
+    }
+
+    /**
+     * Collects the same globally ordered cohort before invoking any callback, so
+     * willTickThisTick observes all not-yet-run entries and callback-created ticks wait until the
+     * next cycle exactly as in the pinned LevelTicks algorithm.
+     */
+    public void tick(long currentTick, int maxTicksToProcess, BiConsumer<BlockPos, T> output) {
+        Objects.requireNonNull(output, "output");
+        if (OwnershipContext.current().isPresent())
+            throw new IllegalStateException("regional scheduled-tick cycle entered with owner authority");
+        if (maxTicksToProcess < 0) throw new IllegalArgumentException("negative scheduled tick limit");
+        synchronized (this) {
+            if (cycling) throw new IllegalStateException("nested regional scheduled-tick cycle");
+            cycling = true;
+            cycle++;
+        }
+        List<Head<T>> skipped = new ArrayList<>();
+        try {
+            while (collectedSize() < maxTicksToProcess) {
+                Head<T> head = takeDueHead(currentTick);
+                if (head == null) break;
+                boolean[] accepted = {false};
+                dispatcher.executeAndDrain(key(head.chunkKey()), collectKind, execution -> {
+                    ContainerState<T> state;
+                    synchronized (this) {
+                        state = requireCurrentState(head, execution.runtime().id());
+                    }
+                    if (!tickCheck.test(head.chunkKey())) return;
+                    ScheduledTick<T> polled = state.container().poll();
+                    if (polled != head.tick())
+                        throw new IllegalStateException("scheduled tick head changed after selection " + key(head.chunkKey()));
+                    synchronized (this) {
+                        collected.add(new Collected<>(head.chunkKey(), state.owner(), polled));
+                        remainingThisCycle.add(TickIdentity.of(polled));
+                        collectedCount++;
+                        refreshHead(state);
+                    }
+                    accepted[0] = true;
+                });
+                if (!accepted[0]) skipped.add(head);
+            }
+            synchronized (this) { heads.addAll(skipped); }
+
+            for (int index = 0; ; index++) {
+                Collected<T> entry;
+                synchronized (this) {
+                    if (index >= collected.size()) break;
+                    entry = collected.get(index);
+                }
+                dispatcher.executeAndDrain(key(entry.chunkKey()), runKind, execution -> {
+                    RegionRoute current = route(entry.chunkKey());
+                    if (!current.region().equals(execution.runtime().id()))
+                        throw new IllegalStateException("collected scheduled tick reached stale owner");
+                    output.accept(entry.tick().pos(), entry.tick().type());
+                    synchronized (this) {
+                        remainingThisCycle.remove(TickIdentity.of(entry.tick()));
+                        executedCount++;
+                    }
+                });
+            }
+        } finally {
+            synchronized (this) {
+                heads.addAll(skipped);
+                collected.clear();
+                remainingThisCycle.clear();
+                cycling = false;
+            }
+        }
+    }
+
+    public synchronized boolean willTickThisTick(BlockPos pos, T type) {
+        return remainingThisCycle.contains(new TickIdentity<>(type, pos.immutable()));
+    }
+
+    /**
+     * Builds and installs an explicit partition transfer against an already published immutable
+     * directory view. Callers must keep topology admission closed and prove all leases absent.
+     */
+    public synchronized MigrationPlan planMigration(RegionDirectory.View published) {
+        if (OwnershipContext.current().isPresent() || cycling)
+            throw new IllegalStateException("scheduled tick migration is not owner-free");
+        Map<Long, RegionId> owners = new LinkedHashMap<>();
+        for (long chunkKey : containers.keySet()) {
+            RoutingKey key = key(chunkKey);
+            RegionRoute route = resolve(published, key);
+            owners.put(chunkKey, route.region());
+        }
+        return new MigrationPlan(published.generation().value(), Map.copyOf(owners));
+    }
+
+    public synchronized void installMigration(MigrationPlan plan, RegionDirectory.View published) {
+        Objects.requireNonNull(plan, "plan");
+        if (plan.generation() != published.generation().value())
+            throw new IllegalStateException("scheduled tick migration generation changed");
+        if (!plan.owners().keySet().equals(containers.keySet()))
+            throw new IllegalStateException("scheduled tick migration container set changed");
+        Map<RegionId, Map<Long, ContainerState<T>>> next = new LinkedHashMap<>();
+        for (var entry : containers.entrySet()) {
+            RegionId owner = Objects.requireNonNull(plan.owners().get(entry.getKey()));
+            ContainerState<T> state = entry.getValue();
+            if (!state.owner().equals(owner)) {
+                removeHead(state);
+                state.owner = owner;
+                refreshHead(state);
+                migratedContainers++;
+            }
+            next.computeIfAbsent(owner, ignored -> new LinkedHashMap<>()).put(entry.getKey(), state);
+        }
+        partitions.clear();
+        partitions.putAll(next);
+    }
+
+    public synchronized Measurements measurements() {
+        return new Measurements(partitions.size(), containers.size(), heads.size(), collected.size(),
+            collectedCount, executedCount, migratedContainers, cycle, cycling);
+    }
+
+    private synchronized int collectedSize() { return collected.size(); }
+    private synchronized Head<T> takeDueHead(long currentTick) {
+        if (heads.isEmpty() || heads.first().tick().triggerTick() > currentTick) return null;
+        return heads.pollFirst();
+    }
+    private ContainerState<T> requireCurrentState(Head<T> head, RegionId executingOwner) {
+        ContainerState<T> state = containers.get(head.chunkKey());
+        if (state == null || state.container() != head.container() || state.headVersion() != head.version())
+            throw new IllegalStateException("stale scheduled tick selection " + key(head.chunkKey()));
+        if (!state.owner().equals(executingOwner))
+            throw new IllegalStateException("scheduled tick partition owner changed before collection");
+        return state;
+    }
+    private void refreshHead(ContainerState<T> state) {
+        removeHead(state);
+        ScheduledTick<T> tick = state.container().peek();
+        state.headVersion++;
+        if (tick != null) {
+            Head<T> next = new Head<>(state.chunkKey(), state.owner(), state.container(), tick, state.headVersion());
+            state.head = next;
+            heads.add(next);
+        }
+    }
+    private void removeHead(ContainerState<T> state) {
+        if (state.head != null) {
+            heads.remove(state.head);
+            state.head = null;
+        }
+    }
+    private RegionRoute route(long chunkKey) {
+        return directory.resolve(key(chunkKey)).orElseThrow(() -> new IllegalStateException("unresolved scheduled tick chunk " + key(chunkKey)));
+    }
+    private RoutingKey key(long chunkKey) {
+        return new RoutingKey(world, ChunkPos.getX(chunkKey), ChunkPos.getZ(chunkKey));
+    }
+    private static RegionRoute resolve(RegionDirectory.View view, RoutingKey key) {
+        RegionRoute route = view.routes().get(key);
+        if (route != null) return route;
+        if (view.hasExplicitRoutesForWorld(key.world()))
+            throw new IllegalStateException("unresolved scheduled tick migration key " + key);
+        route = view.worldDefaults().get(key.world());
+        if (route == null) throw new IllegalStateException("unresolved scheduled tick migration key " + key);
+        return route;
+    }
+    @SuppressWarnings({"unchecked", "rawtypes"})
+    private static <T> Comparator<Head<T>> headComparator() { return (Comparator) HEAD_ORDER; }
+
+    private static final class ContainerState<T> {
+        private final long chunkKey;
+        private RegionId owner;
+        private final LevelChunkTicks<T> container;
+        private long headVersion;
+        private Head<T> head;
+        private ContainerState(long chunkKey, RegionId owner, LevelChunkTicks<T> container) {
+            this.chunkKey = chunkKey; this.owner = owner; this.container = container;
+        }
+        long chunkKey() { return chunkKey; }
+        RegionId owner() { return owner; }
+        LevelChunkTicks<T> container() { return container; }
+        long headVersion() { return headVersion; }
+    }
+    private record Head<T>(long chunkKey, RegionId owner, LevelChunkTicks<T> container,
+                           ScheduledTick<T> tick, long version) { }
+    private record Collected<T>(long chunkKey, RegionId owner, ScheduledTick<T> tick) { }
+    private record TickIdentity<T>(T type, BlockPos pos) {
+        static <T> TickIdentity<T> of(ScheduledTick<T> tick) { return new TickIdentity<>(tick.type(), tick.pos().immutable()); }
+        @Override public boolean equals(Object other) {
+            return other instanceof TickIdentity<?> identity && type == identity.type && pos.equals(identity.pos);
+        }
+        @Override public int hashCode() { return 31 * System.identityHashCode(type) + pos.hashCode(); }
+    }
+    public record MigrationPlan(long generation, Map<Long, RegionId> owners) {
+        public MigrationPlan { owners = Map.copyOf(owners); }
+    }
+    public record Measurements(int ownerPartitions, int containers, int indexedHeads, int collectedNow,
+                               long collected, long executed, long migratedContainers, long cycles,
+                               boolean cycling) { }
+}

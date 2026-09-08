@@ -23,6 +23,8 @@ import dev.phoenium.region.RegionRuntime;
 import dev.phoenium.scheduler.OwnerGateway;
 import dev.phoenium.scheduler.RegionScheduler;
 import dev.phoenium.scheduler.SchedulerLifecycle;
+import dev.phoenium.service.RegionalServiceDispatcher;
+import dev.phoenium.service.RegionalWorldServices;
 import dev.phoenium.task.AdmissionPolicy;
 import dev.phoenium.task.RegionTaskEnvelope;
 import dev.phoenium.task.TaskCorrelationId;
@@ -53,6 +55,12 @@ import net.minecraft.server.level.ChunkResult;
 import net.minecraft.world.level.chunk.ChunkAccess;
 import net.minecraft.world.level.chunk.status.ChunkStatus;
 import net.minecraft.world.entity.Entity;
+import net.minecraft.world.level.BlockEventData;
+import net.minecraft.world.level.ChunkPos;
+import net.minecraft.world.ticks.LevelChunkTicks;
+import net.minecraft.world.ticks.LevelTicks;
+import net.minecraft.core.BlockPos;
+import java.util.function.BiConsumer;
 import org.slf4j.Logger;
 
 /**
@@ -81,6 +89,8 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
     private OwnerGateway gateway;
     private ObjectOwnerGateway objectGateway;
     private ChunkCompletionGateway chunkGateway;
+    private RegionalServiceDispatcher regionalDispatcher;
+    private RegionalWorldServices regionalServices;
     private dev.phoenium.save.RegionalSaveCoordinator regionalSaves;
     private final ChunkCustody chunkCustody = new ChunkCustody();
     private PendingTick pendingTick;
@@ -148,6 +158,11 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
         gateway = new OwnerGateway(directory, runtimes, scheduler);
         objectGateway = new ObjectOwnerGateway(objects, directory, gateway);
         chunkGateway = new ChunkCompletionGateway(directory, gateway, chunkCustody);
+        regionalDispatcher = new RegionalServiceDispatcher("phoenium-regional-services", lifecycleStarts + 1,
+            directory, runtimes, gateway, scheduler);
+        regionalServices = new RegionalWorldServices(directory, regionalDispatcher);
+        initializeRegionalSaves(regionalDispatcher);
+        for (ServerLevel level : server.getAllLevels()) regionalServices.bind(level);
         state = State.RUNNING;
         ChunkRuntimeTrace.start();
         for (ServerLevel level : server.getAllLevels()) refreshEntityBindings(level);
@@ -182,23 +197,7 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
         pendingTick = new PendingTick(level, shouldKeepTicking, envelope);
         try {
             while (executions < dispatches && scheduler.lifecycle().acceptsSimulationWork()) {
-                if (pendingTick.levelState != null && !pendingTick.continuationQueued) {
-                    // The original clock/scheduled-tick/raid prefix has committed under its
-                    // owner. Original distance updates now run once in their original order,
-                    // while no region is held; ordinary ticking futures can then finish.
-                    if (pendingTick.cacheState == null)
-                        pendingTick.cacheState = ((LiveTickPhases.CacheAccess) pendingTick.levelState.cache())
-                                .phoenium$prepareChunkTick(shouldKeepTicking, true);
-                    pendingTick.readiness = LiveTickReadiness.await(level);
-                    RegionRoute next = directory.resolve(live.key()).orElseThrow();
-                    RegionTaskEnvelope continuation = new RegionTaskEnvelope("live-level-tick-suffix",
-                            new TaskPayload.LiveLevelTick(world.value()), live.key(), next.generation(), next.ownerEpoch(),
-                            "minecraft-server", new TaskCorrelationId(++sequence), new TaskSequence(sequence), AdmissionPolicy.REJECT);
-                    if (gateway.submit(continuation) != OwnerGateway.Delivery.QUEUED)
-                        throw new IllegalStateException("live tick suffix admission rejected for " + world.value());
-                    pendingTick.envelope = continuation;
-                    pendingTick.continuationQueued = true;
-                }
+                if (!pendingTick.queued) advanceOwnerFreeTickPhase(pendingTick, live);
                 long before = scheduler.advances();
                 scheduler.advanceOne();
                 if (scheduler.advances() == before) {
@@ -228,24 +227,72 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
             unleasedExecutions++;
             throw new IllegalStateException("live tick execution was not bound to its admitted envelope");
         }
-        if (pending.levelState == null && injectedFailureAt > 0 && dispatches == injectedFailureAt) {
+        if (pending.step == PendingTick.Step.PREFIX_OWNER && injectedFailureAt > 0 && dispatches == injectedFailureAt) {
             throw new IllegalStateException("Stage 2 requested live tick failure at dispatch " + dispatches);
         }
         var phases = (LiveTickPhases.LevelAccess) pending.level();
-        if (pending.levelState == null) {
-            pending.levelState = phases.phoenium$beforeChunkTick(pending.shouldKeepTicking());
-            return;
+        if (!pending.queued) throw new IllegalStateException("live tick owner phase was not queued");
+        switch (pending.step) {
+            case PREFIX_OWNER -> {
+                pending.levelState = phases.phoenium$beforeScheduledTicks(pending.shouldKeepTicking());
+                pending.step = PendingTick.Step.SCHEDULED_COORDINATOR;
+            }
+            case MIDDLE_OWNER -> {
+                phases.phoenium$beforeChunkTick(pending.levelState);
+                pending.step = PendingTick.Step.READINESS_COORDINATOR;
+            }
+            case CACHE_OWNER -> {
+                if (pending.readiness == null || !pending.readiness.current())
+                    throw new IllegalStateException("live chunk phase has no current original readiness");
+                phases.phoenium$afterChunkTick(pending.levelState, pending.cacheState);
+                pending.step = PendingTick.Step.BLOCK_EVENTS_COORDINATOR;
+            }
+            case FINAL_OWNER -> {
+                phases.phoenium$finishLevelTick(pending.levelState);
+                refreshEntityBindings(pending.level());
+                executions++;
+                runtime.tick();
+                pending.step = PendingTick.Step.DONE;
+            }
+            default -> throw new IllegalStateException("regional coordinator phase reached owner scheduler " + pending.step);
         }
-        if (!pending.continuationQueued || pending.readiness == null)
-            throw new IllegalStateException("live tick suffix has no prepared original readiness");
-        if (!pending.readiness.current()) {
-            pending.continuationQueued = false;
-            return; // No suffix effect occurred; release this owner before re-observation.
+        pending.queued = false;
+    }
+
+    private void advanceOwnerFreeTickPhase(PendingTick pending, LiveRegion live) {
+        if (OwnershipContext.current().isPresent()) throw new IllegalStateException("tick coordinator retained owner authority");
+        var phases = (LiveTickPhases.LevelAccess) pending.level();
+        switch (pending.step) {
+            case SCHEDULED_COORDINATOR -> {
+                phases.phoenium$runScheduledTicks(pending.levelState);
+                queueTickPhase(pending, live, PendingTick.Step.MIDDLE_OWNER);
+            }
+            case READINESS_COORDINATOR -> {
+                if (pending.cacheState == null)
+                    pending.cacheState = ((LiveTickPhases.CacheAccess) pending.levelState.cache())
+                        .phoenium$prepareChunkTick(pending.shouldKeepTicking(), true);
+                pending.readiness = LiveTickReadiness.await(pending.level());
+                queueTickPhase(pending, live, PendingTick.Step.CACHE_OWNER);
+            }
+            case BLOCK_EVENTS_COORDINATOR -> {
+                phases.phoenium$runBlockEvents(pending.levelState);
+                queueTickPhase(pending, live, PendingTick.Step.FINAL_OWNER);
+            }
+            default -> throw new IllegalStateException("owner-free tick coordinator reached " + pending.step);
         }
-        phases.phoenium$afterChunkTick(pending.levelState, pending.cacheState);
-        refreshEntityBindings(pending.level());
-        executions++;
-        runtime.tick();
+    }
+
+    private void queueTickPhase(PendingTick pending, LiveRegion live, PendingTick.Step step) {
+        RegionRoute route = directory.resolve(live.key()).orElseThrow();
+        long currentSequence = ++sequence;
+        RegionTaskEnvelope continuation = new RegionTaskEnvelope("live-level-tick-" + step.name().toLowerCase(),
+            new TaskPayload.LiveLevelTick(worldId(pending.level()).value()), live.key(), route.generation(), route.ownerEpoch(),
+            "minecraft-server", new TaskCorrelationId(currentSequence), new TaskSequence(currentSequence), AdmissionPolicy.REJECT);
+        if (gateway.submit(continuation) != OwnerGateway.Delivery.QUEUED)
+            throw new IllegalStateException("live tick phase admission rejected for " + worldId(pending.level()).value() + " / " + step);
+        pending.envelope = continuation;
+        pending.step = step;
+        pending.queued = true;
     }
 
     public void stop() {
@@ -256,6 +303,7 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
         if (scheduler != null) { scheduler.quiesce(); scheduler.stop(); }
         chunkPrerequisiteServices.values().forEach(ChunkPrerequisiteServices::shutdown);
         chunkPrerequisiteServices.clear();
+        if (regionalServices != null) regionalServices.unbindAll();
         fullRegistrations.clear();
         state = State.STOPPED;
         lifecycleStops++;
@@ -285,13 +333,48 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
     }
 
     public ChunkBindingRuntime chunkBinding() { return chunkBinding; }
-    public void initializeRegionalSaves(dev.phoenium.service.RegionalServiceDispatcher dispatcher) {
-        if (regionalSaves != null) throw new IllegalStateException("regional save service installed twice");
+    public RegionalWorldServices regionalServices() {
+        if (regionalServices == null) throw new IllegalStateException("regional services unavailable before live start");
+        return regionalServices;
+    }
+    public RegionalServiceDispatcher regionalDispatcher() {
+        if (regionalDispatcher == null) throw new IllegalStateException("regional dispatcher unavailable before live start");
+        return regionalDispatcher;
+    }
+    public void initializeRegionalSaves(RegionalServiceDispatcher dispatcher) {
+        if (regionalSaves != null) throw new IllegalStateException("regional save coordinator initialized twice");
         regionalSaves = new dev.phoenium.save.RegionalSaveCoordinator(directory, runtimes, dispatcher);
     }
-    /** Null only before regional services are installed at the original start boundary. */
-    public dev.phoenium.save.RegionalSaveCoordinator regionalSaves() { return regionalSaves; }
-    public boolean pumpSaveOne() { return regionalSaves != null && regionalSaves.pumpOne(); }
+    public dev.phoenium.save.RegionalSaveCoordinator regionalSaves() {
+        // Null only before the original live-start service installation boundary.
+        return regionalSaves;
+    }
+    public boolean pumpSaveOne() {
+        if (OwnershipContext.current().isPresent()) return false;
+        return regionalSaves != null && regionalSaves.pumpOne();
+    }
+
+    public <T> void regionalTickContainerAdded(LevelTicks<T> owner, ChunkPos pos, LevelChunkTicks<T> container) {
+        if (regionalServices != null) regionalServices.containerAdded(owner, pos, container);
+    }
+    public <T> void regionalTickContainerRemoved(LevelTicks<T> owner, ChunkPos pos, LevelChunkTicks<T> container) {
+        if (regionalServices != null) regionalServices.containerRemoved(owner, pos, container);
+    }
+    public <T> void regionalTickScheduled(LevelTicks<T> owner, long chunkKey, LevelChunkTicks<T> container) {
+        if (regionalServices != null) regionalServices.scheduled(owner, chunkKey, container);
+    }
+    public <T> Boolean regionalWillTickThisTick(LevelTicks<T> owner, BlockPos pos, T type) {
+        return regionalServices == null ? null : regionalServices.willTickThisTick(owner, pos, type);
+    }
+    public <T> boolean runRegionalScheduledTicks(LevelTicks<T> owner, long currentTick, int maxTicks, BiConsumer<BlockPos, T> output) {
+        return regionalServices != null && regionalServices.runScheduled(owner, currentTick, maxTicks, output);
+    }
+    public boolean enqueueRegionalBlockEvent(ServerLevel level, BlockEventData event) {
+        return regionalServices != null && regionalServices.enqueueBlockEvent(level, event);
+    }
+    public boolean runRegionalBlockEvents(ServerLevel level) {
+        return regionalServices != null && regionalServices.runBlockEvents(level);
+    }
     private final boolean authoritativeFull = Boolean.getBoolean("phoenium.full.authoritative");
     private final java.util.Map<ServerLevel, dev.phoenium.chunk.FullRegistrationRuntime> fullRegistrations = new java.util.concurrent.ConcurrentHashMap<>();
     private dev.phoenium.chunk.FullRegionalEnclosure fullEnclosure;
@@ -304,7 +387,7 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
                 // has no queued owner work; this gateway is only its mailbox revalidator.
                 var topologyScheduler = new RegionScheduler(runtimes, directory, barrier, this, this);
                 var topologyGateway = new OwnerGateway(directory, runtimes, topologyScheduler);
-                fullEnclosure = new dev.phoenium.chunk.FullRegionalEnclosure(directory, runtimes, topologyGateway, objects);
+                fullEnclosure = new dev.phoenium.chunk.FullRegionalEnclosure(directory, runtimes, topologyGateway, objects, regionalServices);
             }
             return new dev.phoenium.chunk.FullRegistrationRuntime(world, authority,
                     dev.phoenium.chunk.FullInitializedInputs.Limits.production(), fullEnclosure);
@@ -729,13 +812,16 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
         LiveTickPhases.LevelState levelState;
         LiveTickPhases.CacheState cacheState;
         LiveTickReadiness.Receipt readiness;
-        boolean continuationQueued;
+        Step step = Step.PREFIX_OWNER;
+        boolean queued = true;
         PendingTick(ServerLevel level, BooleanSupplier shouldKeepTicking, RegionTaskEnvelope envelope) {
             this.level = level; this.shouldKeepTicking = shouldKeepTicking; this.envelope = envelope;
         }
         ServerLevel level() { return level; }
         BooleanSupplier shouldKeepTicking() { return shouldKeepTicking; }
         RegionTaskEnvelope envelope() { return envelope; }
+        enum Step { PREFIX_OWNER, SCHEDULED_COORDINATOR, MIDDLE_OWNER, READINESS_COORDINATOR,
+            CACHE_OWNER, BLOCK_EVENTS_COORDINATOR, FINAL_OWNER, DONE }
     }
     public enum State { NEW, RUNNING, STOPPED }
 }

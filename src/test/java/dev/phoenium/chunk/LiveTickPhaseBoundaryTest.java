@@ -26,10 +26,14 @@ final class LiveTickPhaseBoundaryTest {
         }
         LiveTickPhaseBoundary.installLevel(level); LiveTickPhaseBoundary.installCache(cache);
         List<String> actual = new ArrayList<>();
+        actual.addAll(calls(named(level, "phoenium$beforeScheduledTicks")));
+        actual.addAll(calls(named(level, "phoenium$runScheduledTicks")));
         actual.addAll(calls(named(level, "phoenium$beforeChunkTick")));
         actual.addAll(calls(named(cache, "phoenium$prepareChunkTick")));
         actual.addAll(calls(named(cache, "phoenium$finishChunkTick")));
         actual.addAll(calls(named(level, "phoenium$afterChunkTick")));
+        actual.addAll(calls(named(level, "phoenium$runBlockEvents")));
+        actual.addAll(calls(named(level, "phoenium$finishLevelTick")));
         assertEquals(expected, actual, "Control preparation and resumed gameplay retain the original complete call order");
         assertEquals(originalLevelInstructions, List.of(levelTick.instructions.toArray()));
         assertEquals(originalCacheInstructions, List.of(cacheTick.instructions.toArray()));

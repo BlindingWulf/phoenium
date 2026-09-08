@@ -4,6 +4,10 @@
   "compatibilityLevel": "JAVA_25",
   "mixins": [
     "MinecraftServerMixin",
+    "RegionalLevelTicksAccess",
+    "RegionalLevelTicksMixin",
+    "RegionalServerLevelAccess",
+    "RegionalBlockEventMixin",
     "ServerGamePacketListenerMixin",
     "ServerGamePacketListenerInvoker",
     "ServerChunkCacheMixin",
