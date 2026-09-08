@@ -47,6 +47,7 @@
     "FullLiveChunkComponentMixin",
     "FullStructureChunkAccessMixin",
     "FullStructureCacheAccessMixin",
+    "FullStructureDemandMixin",
     "FullLiveNamedBlockComponentMixin",
     "FullLiveSkullComponentMixin",
     "FullLiveBaseCommandComponentMixin",

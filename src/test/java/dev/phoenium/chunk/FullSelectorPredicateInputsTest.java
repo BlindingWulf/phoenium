@@ -28,6 +28,7 @@ import org.junit.jupiter.api.Test;
 /** Dependency discovery tests. The reflected visitor is used so these cases do not require
  * a server or predicate registry, and can assert that discovery never evaluates providers. */
 final class FullSelectorPredicateInputsTest {
+    @org.junit.jupiter.api.BeforeAll static void bootstrap() { FullSavedVillagerInputTest.bootstrap(); }
     private static final ChunkPos CANDIDATE = new ChunkPos(3, -2);
 
     @Test void nestedNumericProvidersExposeStorageWithoutEvaluatingScoreRandomOrStorage() throws Exception {
@@ -109,12 +110,14 @@ final class FullSelectorPredicateInputsTest {
         assertEquals(expectedBiomes, field(visitor, "biomes"));
     }
 
-    @Test void locationStructureClauseRemainsUnmetUntilReferencedChunkInputsAreTyped() throws Exception {
+    @Test void locationStructureClauseDeclaresReferenceInputsWithoutDemandingFull() throws Exception {
         var location = new LocationPredicate(Optional.empty(), Optional.empty(),
                 Optional.of(HolderSet.<net.minecraft.world.level.levelgen.structure.Structure>empty()),
                 Optional.empty(), Optional.empty(), Optional.empty(), Optional.empty(), Optional.empty(), Optional.empty());
         Object visitor = visit(new LocationCheck(Optional.of(location), net.minecraft.core.BlockPos.ZERO));
-        assertTrue(((String) field(visitor, "unmet")).contains("STRUCTURE_REFERENCES/STRUCTURE_STARTS"));
+        assertNull(field(visitor, "unmet"));
+        assertEquals(Set.of(CANDIDATE), field(visitor, "structures"));
+        assertEquals(Set.of(), field(visitor, "full"));
     }
 
     @Test void unknownNumberProviderIsRejectedWithoutCallingItsOriginalMethod() throws Exception {

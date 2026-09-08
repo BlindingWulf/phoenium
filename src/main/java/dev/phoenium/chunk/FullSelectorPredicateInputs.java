@@ -180,22 +180,16 @@ public final class FullSelectorPredicateInputs {
         void location(LocationCheck check) {
             LocationPredicate predicate = check.predicate().orElse(null);
             if (predicate == null) return;
-            // Structure lookup follows candidate STRUCTURE_REFERENCES into data-dependent
-            // STRUCTURE_STARTS chunks. A single candidate FULL receipt cannot authorize that
-            // graph, so retain the original query as an honest unmet dependency until its typed
-            // consumer is bound.
-            if (predicate.structures().isPresent()) {
-                unmet = "registered location structure predicate requires data-dependent STRUCTURE_REFERENCES/STRUCTURE_STARTS inputs";
-                return;
-            }
-            boolean needsFull = predicate.structures().isPresent() || predicate.smokey().isPresent()
+            boolean needsStructures = predicate.structures().isPresent();
+            boolean needsFull = predicate.smokey().isPresent()
                     || predicate.light().isPresent() || predicate.block().isPresent()
                     || predicate.fluid().isPresent() || predicate.canSeeSky().isPresent();
             boolean needsBiomes = predicate.biomes().isPresent();
-            if (!needsFull && !needsBiomes) return;
+            if (!needsFull && !needsBiomes && !needsStructures) return;
             for (ChunkPos candidate : candidates) {
                 for (ChunkPos affected : affected(candidate, check.offset())) {
                     if (needsFull && !add(full, affected)) return;
+                    if (needsStructures && !add(structures, affected)) return;
                     if (needsBiomes) {
                         // LocationPredicate.getBiome samples a fiddled position. Its ±2 block
                         // corner can cross one additional chunk in either axis, including when a

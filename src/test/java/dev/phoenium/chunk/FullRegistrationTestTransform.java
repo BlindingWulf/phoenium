@@ -10,6 +10,7 @@ public final class FullRegistrationTestTransform {
         FullFinishingQueryTestTransform.install(node);
         FullFinishingServicesTestTransform.install(node);
         FullSavedContextTestTransform.install(node);
+        FullStructureTestTransform.install(node);
         if (name.equals(dev.phoenium.live.LiveTickPhaseBoundary.LEVEL)) dev.phoenium.live.LiveTickPhaseBoundary.installLevel(node);
         if (name.equals(dev.phoenium.live.LiveTickPhaseBoundary.CACHE)) dev.phoenium.live.LiveTickPhaseBoundary.installCache(node);
         if (name.equals(FullStageBoundary.TARGET)) {

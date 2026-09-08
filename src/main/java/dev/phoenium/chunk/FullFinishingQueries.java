@@ -252,7 +252,7 @@ public final class FullFinishingQueries {
                 || !query.target.position().equals(new ChunkPos(x, z)))
             throw breach("initialized query selector does not match its exact typed invocation");
         query.selected = Objects.requireNonNull(selected);
-        if (status == ChunkStatus.FULL && selected != (query.target.availability() == FullInitializedInputs.Availability.ABSENT
+        if (status == ChunkStatus.FULL && selected != (query.target.holder() == null || query.target.ticketLevel() > ChunkLevel.byStatus(ChunkStatus.FULL)
                 ? GenerationChunkHolder.UNLOADED_CHUNK_FUTURE : query.target.publicSlot()))
             throw breach("initialized getter selected another original FULL future");
         if (status == ChunkStatus.BIOMES && (biomePresent(query.target)

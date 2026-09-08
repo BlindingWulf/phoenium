@@ -302,6 +302,7 @@ public final class FullRegistrationRuntime {
             var structures = structureMutations.measurements();
             result.put("structureHolders", structures.get("holders")); result.put("structureReaders", structures.get("readers"));
             result.put("structureWriters", structures.get("writers")); result.put("structureWaitingWriters", structures.get("waitingWriters"));
+            result.put("structureDemandTickets", graphs.stream().mapToLong(graph -> graph.structureDemand.size()).sum());
             return Map.copyOf(result);
         } finally { custody.gate().unlock(); }
     }
@@ -381,6 +382,7 @@ public final class FullRegistrationRuntime {
         private FullInitializedInputs.Receipt claimedInputs;
         private FullFinishingServices.Reservation serviceReservation;
         private FullStructureMutationTurns.Read structureRead;
+        final FullStructureDemand structureDemand = new FullStructureDemand(FullRegistrationRuntime.this);
         private FullLegacyOwners.Plan legacyOwners;
         private boolean finished, finishingParked;
         private final CompletableFuture<ChunkAccess> conversion = new CompletableFuture<>();
@@ -759,7 +761,10 @@ public final class FullRegistrationRuntime {
         public void acknowledgeInputs() {
             inputRequested = false; lastInputEvaluation = null;
             if (savedInput != null) savedInput.unsubscribe(savedChanged);
-            inputs.release(this);
+            var failures = new FullInputNotifications.Failures();
+            failures.run(() -> inputs.release(this));
+            failures.run(structureDemand::close);
+            failures.rethrow();
         }
         /** Receipt-specific completion cannot close a newer discovery plan for this operation. */
         public void acknowledgeInputs(FullInitializedInputs.Receipt receipt) {

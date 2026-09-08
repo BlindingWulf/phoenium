@@ -75,7 +75,7 @@ public final class FullInitializedInputs {
     private final FullRegistrationRuntime runtime;
     private final Limits limits;
     private final Map<FullRegistrationRuntime.Graph, Plan> plans = new LinkedHashMap<>();
-    private final Set<GenerationChunkHolder> requested = Collections.newSetFromMap(new IdentityHashMap<>());
+    private final Map<GenerationChunkHolder, ChunkStatus> requested = new IdentityHashMap<>();
     private final java.util.concurrent.atomic.AtomicBoolean dirty = new java.util.concurrent.atomic.AtomicBoolean();
     private long nextPlan, validations;
     private long edges, consumers, bytes;
@@ -88,8 +88,9 @@ public final class FullInitializedInputs {
     boolean pump() {
         if (!dirty.getAndSet(false)) return false;
         runtime.requireObservationThread();
-        requested.removeIf(holder -> runtime.visible(holder.getPos()) != holder || runtime.findGraph(holder).isPresent()
-                || holder.getChunkIfPresent(ChunkStatus.BIOMES) != null);
+        requested.entrySet().removeIf(entry -> runtime.visible(entry.getKey().getPos()) != entry.getKey()
+                || runtime.findGraph(entry.getKey()).isPresent()
+                || FullStatusInputs.capture(entry.getKey(), entry.getValue()) != null && runtime.statusReleased(entry.getKey(), entry.getValue()));
         boolean progress = false;
         for (var graph : runtime.graphSnapshot()) {
             if (!graph.inputRequested()) { release(graph); continue; }
@@ -195,7 +196,10 @@ public final class FullInitializedInputs {
             plan.evaluation = new Evaluation(State.CAPACITY, "input edge capacity release", null); return;
         }
         var targets = new ArrayList<Target>();
-        for (var entry : required.entrySet()) targets.add(resolve(plan, entry.getKey(), entry.getValue(), required.size()));
+        for (var entry : required.entrySet()) {
+            targets.add(resolve(plan, entry.getKey(), entry.getValue(), required.size()));
+            if (plans.get(plan.graph) != plan || !plan.graph.inputRequested()) { release(plan.graph); return; }
+        }
         edges += targets.size() - plan.targets.size(); plan.targets = List.copyOf(targets);
         for (var target : targets) {
             switch (target.availability) {
@@ -247,6 +251,9 @@ public final class FullInitializedInputs {
         if (refinementFailure instanceof Error error) throw error;
         if (refinementFailure instanceof RuntimeException failure) throw failure;
         if (refinementFailure != null) throw new ChunkProtocolException("live context refinement failed", refinementFailure);
+        if (!refinedLive && plan.structures != null && (refinedStructures == FullStructureInputs.State.READY
+                || refinedStructures == FullStructureInputs.State.CHANGED))
+            plan.graph.structureDemand.retainOnly(plan.structures.starts());
         if (refinedStructures != FullStructureInputs.State.READY) {
             plan.evaluation = new Evaluation(refinedStructures == FullStructureInputs.State.CAPACITY ? State.CAPACITY : State.PENDING,
                     "original structure reference/status dependency refinement", null);
@@ -370,11 +377,23 @@ public final class FullInitializedInputs {
                     null, null, null, route, ticket);
         }
         if (purposes.stream().allMatch(purpose -> purpose == Purpose.ENVIRONMENT || purpose == Purpose.ENTITY_CONTEXT
-                || purpose == Purpose.STRUCTURE_REFERENCES || purpose == Purpose.STRUCTURE_STARTS)) {
-            ChunkStatus status = purposes.contains(Purpose.ENVIRONMENT) ? ChunkStatus.BIOMES
-                    : purposes.contains(Purpose.STRUCTURE_REFERENCES) ? ChunkStatus.STRUCTURE_REFERENCES : ChunkStatus.STRUCTURE_STARTS;
+                || purpose == Purpose.STRUCTURE_REFERENCES || purpose == Purpose.STRUCTURE_STARTS)
+                || purposes.contains(Purpose.STRUCTURE_STARTS) && (holder == null || ticket > ChunkLevel.byStatus(ChunkStatus.FULL))) {
+            // BIOMES,false and LocationPredicate's loaded=false branch stay absent when
+            // ineligible. A referenced STARTS,true input independently requires loading.
+            ChunkStatus status = purposes.contains(Purpose.ENVIRONMENT) && ticket <= ChunkLevel.byStatus(ChunkStatus.BIOMES)
+                    ? ChunkStatus.BIOMES
+                    : purposes.contains(Purpose.STRUCTURE_REFERENCES) && ticket <= ChunkLevel.byStatus(ChunkStatus.STRUCTURE_REFERENCES)
+                    ? ChunkStatus.STRUCTURE_REFERENCES
+                    : purposes.contains(Purpose.STRUCTURE_STARTS) ? ChunkStatus.STRUCTURE_STARTS
+                    : purposes.contains(Purpose.ENVIRONMENT) ? ChunkStatus.BIOMES : ChunkStatus.STRUCTURE_REFERENCES;
             if (holder == null || ticket > ChunkLevel.byStatus(status))
-                return target(position, purposes, Availability.ABSENT, holder, null, null, route, ticket);
+                if (purposes.contains(Purpose.STRUCTURE_STARTS)) {
+                    // This data-dependent original create=true query must have an eligible
+                    // status holder before R. It does not require FULL or change public FULL.
+                    source.structureDemand.require(position);
+                    return target(position, purposes, Availability.PREPARATION_PENDING, holder, null, null, route, ticket);
+                } else return target(position, purposes, Availability.ABSENT, holder, null, null, route, ticket);
             if (route == null) return target(position, purposes,
                     runtime.authority.directory().pendingChange(key).isPresent() ? Availability.TOPOLOGY_PENDING : Availability.UNROUTABLE,
                     holder, null, null, route, ticket);
@@ -382,9 +401,9 @@ public final class FullInitializedInputs {
             if (settled != null && runtime.statusReleased(holder, status))
                 return target(position, purposes, status == ChunkStatus.BIOMES ? Availability.BIOMES : Availability.STRUCTURES,
                         holder, null, null, route, ticket);
-            if (requested.size() >= demandCapacity && !requested.contains(holder))
+            if (requested.size() >= demandCapacity && !requested.containsKey(holder))
                 return target(position, purposes, Availability.CAPACITY, holder, null, null, route, ticket);
-            if (requested.add(holder)) {
+            if (request(holder, status)) {
                 holder.scheduleChunkGenerationTask(status, runtime.level().getChunkSource().chunkMap)
                         .whenComplete((ignored, failure) -> changed());
                 runtime.level().getChunkSource().chunkMap.runGenerationTasks();
@@ -409,9 +428,9 @@ public final class FullInitializedInputs {
         }
         var graph = runtime.findGraph(holder).orElse(null);
         if (graph == null) {
-            if (!requested.contains(holder) && requested.size() >= demandCapacity)
+            if (!requested.containsKey(holder) && requested.size() >= demandCapacity)
                 return target(position, purposes, Availability.CAPACITY, holder, null, null, route, ticket);
-            if (requested.size() < demandCapacity && requested.add(holder)) {
+            if (requested.size() < demandCapacity && request(holder, ChunkStatus.FULL)) {
                 // Exactly the original FULL,false holder policy: no new ticket and no invented reservation.
                 // Observe preparation events from the registrar; never subscribe to this public FULL future.
                 holder.scheduleChunkGenerationTask(ChunkStatus.FULL, runtime.level().getChunkSource().chunkMap);
@@ -449,6 +468,11 @@ public final class FullInitializedInputs {
                 holder == null || !purposes.contains(Purpose.ENVIRONMENT) ? null : FullBiomeInputs.capture(holder),
                 holder == null || !purposes.contains(Purpose.STRUCTURE_REFERENCES) ? null : FullStatusInputs.capture(holder, ChunkStatus.STRUCTURE_REFERENCES),
                 holder == null || !purposes.contains(Purpose.STRUCTURE_STARTS) ? null : FullStatusInputs.capture(holder, ChunkStatus.STRUCTURE_STARTS));
+    }
+    private boolean request(GenerationChunkHolder holder, ChunkStatus status) {
+        var prior = requested.get(holder);
+        if (prior != null && prior.getIndex() >= status.getIndex()) return false;
+        requested.put(holder, status); return true;
     }
     private boolean stale(Plan plan) {
         if (plan.graph.savedSnapshot() != plan.saved || runtime.authority.directory().snapshot() != plan.routes) return true;
@@ -532,8 +556,8 @@ public final class FullInitializedInputs {
                 if (failure == null) failure = problem;
                 else if (failure != problem) failure.addSuppressed(problem);
             }
-            boolean active = runtime.graphSnapshot().stream().anyMatch(g -> g.inputActive());
-            requested.removeIf(holder -> runtime.findGraph(holder).isPresent() || !active);
+            requested.keySet().removeIf(holder -> runtime.findGraph(holder).isPresent()
+                    || plans.values().stream().noneMatch(remaining -> remaining.targets.stream().anyMatch(target -> target.holder == holder)));
         } finally { changed(); }
         if (failure instanceof RuntimeException runtimeFailure) throw runtimeFailure;
         if (failure instanceof Error error) throw error;
