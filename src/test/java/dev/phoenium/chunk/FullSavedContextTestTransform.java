@@ -17,6 +17,11 @@ public final class FullSavedContextTestTransform {
             "net/minecraft/world/level/block/entity/EnchantingTableBlockEntity",
             "net/minecraft/world/level/block/entity/BannerBlockEntity",
             "net/minecraft/world/level/block/entity/SkullBlockEntity",
+            "net/minecraft/world/level/BaseCommandBlock",
+            "net/minecraft/world/level/block/entity/CommandBlockEntity",
+            "net/minecraft/world/level/block/entity/SignBlockEntity",
+            "net/minecraft/world/level/block/entity/SignText",
+            "net/minecraft/world/entity/decoration/Mannequin",
             "net/minecraft/world/level/storage/loot/predicates/CompositeLootItemCondition",
             "net/minecraft/world/level/storage/loot/IntRange");
     public static boolean supports(String name) { return TARGETS.contains(name); }
@@ -59,6 +64,19 @@ public final class FullSavedContextTestTransform {
             method.instructions.add(new TypeInsnNode(Opcodes.CHECKCAST, "net/minecraft/network/chat/Component"));
             method.instructions.add(new InsnNode(Opcodes.ARETURN)); node.methods.add(method);
             wrap(node, "readAdditionalSaveData", "(Lnet/minecraft/world/level/storage/ValueInput;)V", "textReader");
+        } else if (node.name.endsWith("/Mannequin")) {
+            node.interfaces.add("dev/phoenium/chunk/FullLiveComponentInputs$MannequinAccess");
+            var method = new MethodNode(Opcodes.ACC_PUBLIC, "phoenium$rawDescription", "()Lnet/minecraft/network/chat/Component;", null, null);
+            method.instructions.add(new VarInsnNode(Opcodes.ALOAD, 0));
+            method.instructions.add(new MethodInsnNode(Opcodes.INVOKEVIRTUAL, node.name, "getEntityData", "()Lnet/minecraft/network/syncher/SynchedEntityData;", false));
+            method.instructions.add(new FieldInsnNode(Opcodes.GETSTATIC, node.name, "DATA_DESCRIPTION", "Lnet/minecraft/network/syncher/EntityDataAccessor;"));
+            method.instructions.add(new MethodInsnNode(Opcodes.INVOKEVIRTUAL, "net/minecraft/network/syncher/SynchedEntityData", "get",
+                    "(Lnet/minecraft/network/syncher/EntityDataAccessor;)Ljava/lang/Object;", false));
+            method.instructions.add(new TypeInsnNode(Opcodes.CHECKCAST, "java/util/Optional"));
+            method.instructions.add(new InsnNode(Opcodes.ACONST_NULL));
+            method.instructions.add(new MethodInsnNode(Opcodes.INVOKEVIRTUAL, "java/util/Optional", "orElse", "(Ljava/lang/Object;)Ljava/lang/Object;", false));
+            method.instructions.add(new TypeInsnNode(Opcodes.CHECKCAST, "net/minecraft/network/chat/Component"));
+            method.instructions.add(new InsnNode(Opcodes.ARETURN)); node.methods.add(method);
         } else if (node.name.endsWith("/ChunkAccess")) {
             node.interfaces.add("dev/phoenium/chunk/FullLiveComponentInputs$ChunkAccessView");
             var method = new MethodNode(Opcodes.ACC_PUBLIC, "phoenium$rawBlockEntities", "()Ljava/util/Map;", null, null);
@@ -66,6 +84,22 @@ public final class FullSavedContextTestTransform {
             method.instructions.add(new VarInsnNode(Opcodes.ALOAD, 0));
             method.instructions.add(new FieldInsnNode(Opcodes.GETFIELD, node.name, "blockEntities", "Ljava/util/Map;"));
             method.instructions.add(new InsnNode(Opcodes.ARETURN)); node.methods.add(method);
+        } else if (node.name.endsWith("/BaseCommandBlock")) {
+            node.interfaces.add("dev/phoenium/chunk/FullLiveComponentInputs$CommandAccess");
+            fieldGetter(node, "phoenium$rawCommandName", "()Lnet/minecraft/network/chat/Component;", "customName", "Lnet/minecraft/network/chat/Component;");
+            fieldGetter(node, "phoenium$rawLastOutput", "()Lnet/minecraft/network/chat/Component;", "lastOutput", "Lnet/minecraft/network/chat/Component;");
+            fieldGetter(node, "phoenium$rawTrackOutput", "()Z", "trackOutput", "Z");
+        } else if (node.name.endsWith("/CommandBlockEntity")) {
+            node.interfaces.add("dev/phoenium/chunk/FullLiveComponentInputs$CommandBlockAccess");
+            fieldGetter(node, "phoenium$rawCommandBlock", "()Lnet/minecraft/world/level/BaseCommandBlock;", "commandBlock", "Lnet/minecraft/world/level/BaseCommandBlock;");
+        } else if (node.name.endsWith("/SignBlockEntity")) {
+            node.interfaces.add("dev/phoenium/chunk/FullLiveComponentInputs$SignAccess");
+            fieldGetter(node, "phoenium$rawFrontText", "()Lnet/minecraft/world/level/block/entity/SignText;", "frontText", "Lnet/minecraft/world/level/block/entity/SignText;");
+            fieldGetter(node, "phoenium$rawBackText", "()Lnet/minecraft/world/level/block/entity/SignText;", "backText", "Lnet/minecraft/world/level/block/entity/SignText;");
+        } else if (node.name.endsWith("/SignText")) {
+            node.interfaces.add("dev/phoenium/chunk/FullLiveComponentInputs$SignTextAccess");
+            fieldGetter(node, "phoenium$rawMessages", "()[Lnet/minecraft/network/chat/Component;", "messages", "[Lnet/minecraft/network/chat/Component;");
+            fieldGetter(node, "phoenium$rawFilteredMessages", "()[Lnet/minecraft/network/chat/Component;", "filteredMessages", "[Lnet/minecraft/network/chat/Component;");
         } else if (node.name.endsWith("/SkullBlockEntity")) {
             node.interfaces.add("dev/phoenium/chunk/FullLiveComponentInputs$NamedBlockAccess");
             fieldGetter(node, "phoenium$rawBlockName", "()Lnet/minecraft/network/chat/Component;", "customName", "Lnet/minecraft/network/chat/Component;");

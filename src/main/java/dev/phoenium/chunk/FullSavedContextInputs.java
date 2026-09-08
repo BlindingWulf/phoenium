@@ -40,7 +40,7 @@ public final class FullSavedContextInputs {
         } catch (RuntimeException | Error failure) { plan.close(); throw failure; }
     }
     private record Pending(FullSavedInput.EntityFact fact, FullSavedTextInputs.NbtRead read) { }
-    private record LiveContribution(Pending pending, FullLiveComponentInputs.Snapshot snapshot) { }
+    private record LiveContribution(Pending pending, FullSavedTextInputs.Requirements requirements) { }
     private sealed interface LiveReceipt permits EntityLiveReceipt, BlockLiveReceipt {
         boolean valid(FullContextReadClaim claim, FullRegistrationRuntime.Graph graph);
     }
@@ -54,14 +54,12 @@ public final class FullSavedContextInputs {
         }
     }
     private record BlockLiveReceipt(net.minecraft.world.level.chunk.ChunkAccess chunk, BlockPos position,
-                                    BlockEntity block, FullLiveComponentInputs.Snapshot snapshot,
+                                    BlockEntity block, FullLiveComponentInputs.BlockSnapshot snapshot,
                                     RoutingKey route) implements LiveReceipt {
         @Override public boolean valid(FullContextReadClaim claim, FullRegistrationRuntime.Graph graph) {
             claim.require(graph, route);
             BlockEntity current = FullLiveComponentInputs.block(chunk, position);
-            return current == block && (current == null
-                    ? snapshot.root() == null : FullLiveComponentInputs.supportedBlock(current)
-                    && snapshot.valid(FullLiveComponentInputs.blockName(current)));
+            return current == block && snapshot.valid(current);
         }
     }
     private record LiveObservation(List<LiveReceipt> receipts, List<LiveContribution> contributions,
@@ -178,12 +176,21 @@ public final class FullSavedContextInputs {
                                     add(fact, FullSavedTextInputs.discoverInterpreted(fact, component, read.recursionDepth()), queue));
                             continue;
                         }
+                        if (selector != null && selector.self() && read.interpreting() && read.path().equals("description")
+                                && fact.type().equals("minecraft:mannequin")) {
+                            FullSavedTextInputs.decode(fact.services().description(), world.registryAccess()).ifPresent(component ->
+                                    add(fact, FullSavedTextInputs.discoverInterpreted(fact, component, read.recursionDepth()), queue));
+                            continue;
+                        }
                         if (selector != null && selector.worldLimited() && read.interpreting()
-                                && (read.path().equals("CustomName") || read.path().equals("text"))) {
+                                && (read.path().equals("CustomName") || read.path().equals("text")
+                                || read.path().equals("description"))) {
                             pendingEntities.add(next);
                             for (var savedCandidate : saved.entities()) {
                                 var source = read.path().equals("CustomName") ? savedCandidate.services().customName()
-                                        : savedCandidate.type().equals("minecraft:text_display") ? savedCandidate.services().text() : FullSavedTextInputs.Saved.EMPTY;
+                                        : read.path().equals("text") && savedCandidate.type().equals("minecraft:text_display") ? savedCandidate.services().text()
+                                        : read.path().equals("description") && savedCandidate.type().equals("minecraft:mannequin")
+                                        ? savedCandidate.services().description() : FullSavedTextInputs.Saved.EMPTY;
                                 FullSavedTextInputs.decode(source, world.registryAccess()).ifPresent(component ->
                                         add(fact, FullSavedTextInputs.discoverInterpreted(fact, component, read.recursionDepth()), queue));
                             }
@@ -270,8 +277,7 @@ public final class FullSavedContextInputs {
                 }
                 refinedBlocks.add(pending); changedPlan = true;
                 if (capture == null) {
-                    if (read.path().equals("CustomName")) pendingLiveBlocks.add(pending);
-                    else unmet = pending.fact.path() + ": live block-entity interpreted path producer pending for " + read.path();
+                    pendingLiveBlocks.add(pending);
                     continue;
                 }
                 if (!read.path().equals("CustomName")) {
@@ -323,7 +329,7 @@ public final class FullSavedContextInputs {
             bytes = Math.addExact(bytes, size.bytes()); liveReceipts.addAll(observation.receipts());
             var queue = new ArrayDeque<Pending>();
             for (LiveContribution contribution : observation.contributions()) {
-                add(contribution.pending.fact, contribution.snapshot.requirements(), queue);
+                add(contribution.pending.fact, contribution.requirements(), queue);
             }
             refinedEntities.addAll(entities); refinedLiveBlocks.addAll(blocks); process(queue);
             return true;
@@ -340,8 +346,19 @@ public final class FullSavedContextInputs {
                 return new LiveObservation(List.of(), List.of(), 0L, null, true);
             if (!entities.isEmpty() && entityCut != null) for (Pending pending : entities) {
                 FullLiveComponentInputs.Field field = pending.read.path().equals("text")
-                        ? FullLiveComponentInputs.Field.DISPLAY_TEXT : FullLiveComponentInputs.Field.CUSTOM_NAME;
+                        ? FullLiveComponentInputs.Field.DISPLAY_TEXT
+                        : pending.read.path().equals("description") ? FullLiveComponentInputs.Field.MANNEQUIN_DESCRIPTION
+                        : FullLiveComponentInputs.Field.CUSTOM_NAME;
                 for (var candidate : entityCut.candidates()) {
+                    if (field == FullLiveComponentInputs.Field.DISPLAY_TEXT
+                            && candidate.fact().type() != net.minecraft.world.entity.EntityTypes.TEXT_DISPLAY) continue;
+                    if (field == FullLiveComponentInputs.Field.MANNEQUIN_DESCRIPTION
+                            && candidate.fact().type() != net.minecraft.world.entity.EntityTypes.MANNEQUIN) continue;
+                    if (field == FullLiveComponentInputs.Field.MANNEQUIN_DESCRIPTION
+                            && candidate.fact().dispatch() != net.minecraft.world.entity.decoration.Mannequin.class)
+                        return new LiveObservation(List.of(), List.of(), total,
+                                pending.fact.path() + ": mannequin description producer has an unaudited virtual override "
+                                        + candidate.fact().dispatch().getName(), false);
                     RoutingKey key = new RoutingKey(worldId, candidate.position().x(), candidate.position().z()); claim.require(graph, key);
                     if (!(candidate.alias() instanceof FullEntityFacts.Access access)
                             || access.phoenium$referenceFact() != candidate.fact())
@@ -359,7 +376,7 @@ public final class FullSavedContextInputs {
                         if (snapshot.unmet() != null) return new LiveObservation(List.of(), List.of(), total,
                                 pending.fact.path() + ": " + snapshot.unmet(), false);
                         receipts.add(new EntityLiveReceipt(candidate.alias(), candidate.fact(), key, field, snapshot));
-                        contributions.add(new LiveContribution(pending, snapshot));
+                        contributions.add(new LiveContribution(pending, snapshot.requirements()));
                     }
                 }
             }
@@ -371,23 +388,23 @@ public final class FullSavedContextInputs {
                 if (!validLiveTarget(runtime, target))
                     return new LiveObservation(List.of(), List.of(), total, null, true);
                 BlockEntity block = FullLiveComponentInputs.block(target.actual(), position);
-                if (block != null && !FullLiveComponentInputs.supportedBlock(block))
+                FullLiveComponentInputs.BlockField field = FullLiveComponentInputs.blockField(pending.read.path());
+                if (field == null)
                     return new LiveObservation(List.of(), List.of(), total,
-                            pending.fact.path() + ": instantiated block component producer is not audited for " + block.getClass().getName(), false);
-                Component component = block == null ? null : FullLiveComponentInputs.blockName(block);
-                var measure = FullLiveComponentInputs.measure(component, pending.read.recursionDepth());
+                            pending.fact.path() + ": live block-entity interpreted path producer pending for " + pending.read.path(), false);
+                var measure = FullLiveComponentInputs.measureBlock(block, field, pending.read.recursionDepth());
                 if (measure.unmet() != null) return new LiveObservation(List.of(), List.of(), total,
                         pending.fact.path() + ": " + measure.unmet(), false);
                 total = Math.addExact(total, measure.bytes());
                 if (capture) {
-                    var snapshot = FullLiveComponentInputs.capture(pending.fact, component, pending.read.recursionDepth(),
+                    var snapshot = FullLiveComponentInputs.captureBlock(pending.fact, block, field, pending.read.recursionDepth(),
                             Math.max(0L, Math.subtractExact(allowance, Math.subtractExact(total, measure.bytes()))));
                     if (snapshot.unmet() != null && snapshot.unmet().contains("grew after"))
                         return new LiveObservation(List.of(), List.of(), total, null, true);
                     if (snapshot.unmet() != null) return new LiveObservation(List.of(), List.of(), total,
                             pending.fact.path() + ": " + snapshot.unmet(), false);
                     receipts.add(new BlockLiveReceipt(target.actual(), position, block, snapshot, key));
-                    contributions.add(new LiveContribution(pending, snapshot));
+                    for (var requirement : snapshot.requirements()) contributions.add(new LiveContribution(pending, requirement));
                 }
             }
             return new LiveObservation(List.copyOf(receipts), List.copyOf(contributions), total, null, capture && total > allowance);

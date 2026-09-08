@@ -6,13 +6,19 @@ import net.minecraft.nbt.CompoundTag;
 
 /** Detached values for original saved service edges; never invokes an entity reader. */
 public record FullSavedServicesFacts(UUID entityId, String team, String legacyOwner, UUID owner, UUID anger,
-                                     FullSavedTextInputs.Saved text, FullSavedTextInputs.Saved customName) {
+                                     FullSavedTextInputs.Saved text, FullSavedTextInputs.Saved customName,
+                                     FullSavedTextInputs.Saved description) {
     public FullSavedServicesFacts(UUID entityId, String team, String legacyOwner, UUID owner, UUID anger) {
-        this(entityId, team, legacyOwner, owner, anger, FullSavedTextInputs.Saved.EMPTY, FullSavedTextInputs.Saved.EMPTY);
+        this(entityId, team, legacyOwner, owner, anger, FullSavedTextInputs.Saved.EMPTY,
+                FullSavedTextInputs.Saved.EMPTY, FullSavedTextInputs.Saved.EMPTY);
     }
     public FullSavedServicesFacts(UUID entityId, String team, String legacyOwner, UUID owner, UUID anger,
                                   FullSavedTextInputs.Saved text) {
-        this(entityId, team, legacyOwner, owner, anger, text, FullSavedTextInputs.Saved.EMPTY);
+        this(entityId, team, legacyOwner, owner, anger, text, FullSavedTextInputs.Saved.EMPTY, FullSavedTextInputs.Saved.EMPTY);
+    }
+    public FullSavedServicesFacts(UUID entityId, String team, String legacyOwner, UUID owner, UUID anger,
+                                  FullSavedTextInputs.Saved text, FullSavedTextInputs.Saved customName) {
+        this(entityId, team, legacyOwner, owner, anger, text, customName, FullSavedTextInputs.Saved.EMPTY);
     }
     public static final FullSavedServicesFacts EMPTY = new FullSavedServicesFacts(null, null, null, null, null);
     private static final Set<String> LEGACY_OWNER_READERS = Set.of("minecraft:cat", "minecraft:wolf", "minecraft:parrot",
@@ -28,11 +34,13 @@ public record FullSavedServicesFacts(UUID entityId, String team, String legacyOw
         return new FullSavedServicesFacts(tag.read("UUID", UUIDUtil.CODEC).orElse(null), tag.getString("Team").orElse(null),
                 legacy, owner, tag.read("angry_at", UUIDUtil.CODEC).orElse(null),
                 type.equals("minecraft:text_display") ? FullSavedTextInputs.capture(tag, custodian) : FullSavedTextInputs.Saved.EMPTY,
-                FullSavedTextInputs.captureComponent(tag, "CustomName", custodian));
+                FullSavedTextInputs.captureComponent(tag, "CustomName", custodian),
+                type.equals("minecraft:mannequin") ? FullSavedTextInputs.captureComponent(tag, "description", custodian)
+                        : FullSavedTextInputs.Saved.EMPTY);
     }
     public long payloadBytes() {
         long names = Math.addExact(team == null ? 0L : team.length(), legacyOwner == null ? 0L : legacyOwner.length());
-        return Math.addExact(Math.addExact(Math.addExact(72L, Math.multiplyExact(2L, names)), text.payloadBytes()),
-                customName.payloadBytes());
+        return Math.addExact(Math.addExact(Math.addExact(Math.addExact(72L, Math.multiplyExact(2L, names)), text.payloadBytes()),
+                customName.payloadBytes()), description.payloadBytes());
     }
 }

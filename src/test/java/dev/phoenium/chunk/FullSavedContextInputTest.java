@@ -23,6 +23,10 @@ import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.entity.BeaconBlockEntity;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.entity.BlockEntityTypes;
+import net.minecraft.world.level.block.entity.CommandBlockEntity;
+import net.minecraft.world.level.block.entity.SignBlockEntity;
+import net.minecraft.world.level.block.entity.SignText;
+import net.minecraft.world.entity.decoration.Mannequin;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.Identifier;
 import org.junit.jupiter.api.BeforeAll;
@@ -1133,6 +1137,153 @@ class FullSavedContextInputTest {
         assertCleanup(f);
     }
 
+    @Test void liveCommandBlockNameAndLastOutputPublishNestedStorageAtTheOriginalBlockSerializer() throws Exception {
+        var f = new FullRegistrationFixture(true); var position = new BlockPos(8, 8, 8);
+        var data = new SavedDataStorage(directory, net.minecraft.util.datafix.DataFixers.getDataFixer(), f.world.level.registryAccess());
+        var storage = new CommandStorage(data); set(f.world.level.getServer(), MinecraftServer.class, "commandStorage", storage);
+        var first = new CompoundTag(); first.putString("message", "command name "); storage.set(FIRST, first);
+        var second = new CompoundTag(); second.putString("message", "command output"); storage.set(SECOND, second);
+        var state = Blocks.COMMAND_BLOCK.defaultBlockState(); f.input(ChunkPos.ZERO).getSection(0).setBlockState(8, 8, 8, state);
+        var command = new CommandBlockEntity(position, state);
+        command.getCommandBlock().setCustomName(component(f, storageText(FIRST)));
+        command.getCommandBlock().setLastOutput(component(f, storageText(SECOND)));
+        f.input(ChunkPos.ZERO).setBlockEntity(command);
+        var root = new CompoundTag(); root.putString("text", ""); var extra = new ListTag();
+        extra.add(blockText(position, "CustomName", true)); extra.add(blockText(position, "LastOutput", true)); root.put("extra", extra);
+        try {
+            saved(f, ChunkPos.ZERO, false, text(root)); f.start(ChunkPos.ZERO, ChunkStatus.FULL); f.drain();
+            var graph = f.runtime.graph(f.holder(ChunkPos.ZERO));
+            assertEquals(FullInitializedInputs.State.SATISFIED, graph.inputEvaluation().state(), graph.inputEvaluation().obligation());
+            FullAuthoritativeFinishingTest.context(f); f.runtime.inputs.changed(); f.drain();
+            assertInstanceOf(ChunkStageOutcome.Applied.class, graph.finishing.outcome().join());
+            assertEquals("command name command output", FullSavedContextTestHooks.text(
+                    assertInstanceOf(Display.TextDisplay.class, f.world.inserted.getFirst())).getString());
+            assertSame(command, graph.prepared().orElseThrow().actual().getBlockEntity(position)); assertFalse(f.barrier.tripped());
+        } finally { f.stop(); FullFinishingServices.stopped(f.world.level.getServer()); data.close(); }
+        assertCleanup(f);
+    }
+
+    @Test void commandOutputPresenceGateRebuildsToTheOriginalAbsentPathWhenTrackingIsDisabled() throws Exception {
+        var f = new FullRegistrationFixture(true); var position = new BlockPos(8, 8, 8);
+        var state = Blocks.COMMAND_BLOCK.defaultBlockState(); f.input(ChunkPos.ZERO).getSection(0).setBlockState(8, 8, 8, state);
+        var command = new CommandBlockEntity(position, state);
+        command.getCommandBlock().setLastOutput(Component.literal("initial output")); f.input(ChunkPos.ZERO).setBlockEntity(command);
+        try {
+            saved(f, ChunkPos.ZERO, false, text(blockText(position, "LastOutput", true)));
+            f.start(ChunkPos.ZERO, ChunkStatus.FULL); f.drain(); var graph = f.runtime.graph(f.holder(ChunkPos.ZERO));
+            var firstReceipt = graph.inputReceipt(); assertNotNull(firstReceipt);
+            command.getCommandBlock().setTrackOutput(false);
+            FullAuthoritativeFinishingTest.context(f); f.runtime.inputs.changed(); f.drain();
+            assertNotSame(firstReceipt, graph.inputReceipt(), "TrackOutput changes whether the original serializer emits LastOutput");
+            assertInstanceOf(ChunkStageOutcome.Applied.class, graph.finishing.outcome().join());
+            assertEquals("", FullSavedContextTestHooks.text(
+                    assertInstanceOf(Display.TextDisplay.class, f.world.inserted.getFirst())).getString());
+            assertFalse(f.barrier.tripped());
+        } finally { f.stop(); FullFinishingServices.stopped(f.world.level.getServer()); }
+        assertCleanup(f);
+    }
+
+    @Test void liveSignArrayAliasesAndSideReplacementRebuildBeforeOriginalFilteredAndBackTextSelection() throws Exception {
+        var f = new FullRegistrationFixture(true); var position = new BlockPos(8, 8, 8);
+        var data = new SavedDataStorage(directory, net.minecraft.util.datafix.DataFixers.getDataFixer(), f.world.level.registryAccess());
+        var storage = new CommandStorage(data); set(f.world.level.getServer(), MinecraftServer.class, "commandStorage", storage);
+        var first = new CompoundTag(); first.putString("message", "first"); storage.set(FIRST, first);
+        var second = new CompoundTag(); second.putString("message", "second"); storage.set(SECOND, second);
+        var state = Blocks.OAK_SIGN.defaultBlockState(); f.input(ChunkPos.ZERO).getSection(0).setBlockState(8, 8, 8, state);
+        var sign = new SignBlockEntity(position, state);
+        var front = new SignText().setMessage(0, Component.literal("raw"), component(f, storageText(FIRST)));
+        var back = new SignText().setMessage(1, component(f, storageText(FIRST)));
+        set(sign, SignBlockEntity.class, "frontText", front); set(sign, SignBlockEntity.class, "backText", back);
+        f.input(ChunkPos.ZERO).setBlockEntity(sign);
+        var root = new CompoundTag(); root.putString("text", ""); var extra = new ListTag();
+        extra.add(blockText(position, "front_text.filtered_messages[0]", true));
+        extra.add(blockText(position, "back_text.messages[1]", true)); root.put("extra", extra);
+        try {
+            saved(f, ChunkPos.ZERO, false, text(root)); f.start(ChunkPos.ZERO, ChunkStatus.FULL); f.drain();
+            var graph = f.runtime.graph(f.holder(ChunkPos.ZERO)); var firstReceipt = graph.inputReceipt(); assertNotNull(firstReceipt);
+            front.getMessages(true)[0] = component(f, storageText(SECOND));
+            set(sign, SignBlockEntity.class, "backText", sign.getBackText().setMessage(1, component(f, storageText(SECOND))));
+            FullAuthoritativeFinishingTest.context(f); f.runtime.inputs.changed(); f.drain();
+            assertNotSame(firstReceipt, graph.inputReceipt(), "array-slot and side-field aliases must rebuild the dependency receipt");
+            assertInstanceOf(ChunkStageOutcome.Applied.class, graph.finishing.outcome().join());
+            assertEquals("secondsecond", FullSavedContextTestHooks.text(
+                    assertInstanceOf(Display.TextDisplay.class, f.world.inserted.getFirst())).getString());
+            assertFalse(f.barrier.tripped());
+        } finally { f.stop(); FullFinishingServices.stopped(f.world.level.getServer()); data.close(); }
+        assertCleanup(f);
+    }
+
+    @Test void liveMannequinDescriptionReplacementRebuildsBeforeOriginalEntitySerialization() throws Exception {
+        var f = new FullRegistrationFixture(true); var lookup = new EntityLookup<Entity>();
+        var data = new SavedDataStorage(directory, net.minecraft.util.datafix.DataFixers.getDataFixer(), f.world.level.registryAccess());
+        var storage = new CommandStorage(data); set(f.world.level.getServer(), MinecraftServer.class, "commandStorage", storage);
+        var first = new CompoundTag(); first.putString("message", "first description"); storage.set(FIRST, first);
+        var second = new CompoundTag(); second.putString("message", "second description"); storage.set(SECOND, second);
+        var mannequin = EntityTypes.MANNEQUIN.create(f.world.level, EntitySpawnReason.LOAD); assertNotNull(mannequin);
+        mannequin.setId(759); mannequin.setPos(8, 8, 8); setMannequinDescription(mannequin, component(f, storageText(FIRST)));
+        lookup.add(mannequin); f.world.selectorEntities.add(mannequin);
+        try {
+            saved(f, ChunkPos.ZERO, false, text(entityText("@e[type=minecraft:mannequin,distance=..32,limit=1]", "description", true)));
+            f.start(ChunkPos.ZERO, ChunkStatus.FULL); f.drain(); var graph = f.runtime.graph(f.holder(ChunkPos.ZERO));
+            var firstReceipt = graph.inputReceipt(); assertNotNull(firstReceipt);
+            setMannequinDescription(mannequin, component(f, storageText(SECOND)));
+            FullAuthoritativeFinishingTest.context(f); f.runtime.inputs.changed(); f.drain();
+            assertNotSame(firstReceipt, graph.inputReceipt());
+            assertInstanceOf(ChunkStageOutcome.Applied.class, graph.finishing.outcome().join());
+            assertEquals("second description", FullSavedContextTestHooks.text(
+                    assertInstanceOf(Display.TextDisplay.class, f.world.inserted.getFirst())).getString());
+            assertFalse(f.barrier.tripped());
+        } finally {
+            lookup.remove(mannequin); f.stop(); FullFinishingServices.stopped(f.world.level.getServer()); data.close();
+        }
+        assertCleanup(f);
+    }
+
+    @Test void retainedSavedMannequinDescriptionPublishesDependenciesBeforeTheLaterOriginalSelector() throws Exception {
+        var f = new FullRegistrationFixture(true);
+        var data = new SavedDataStorage(directory, net.minecraft.util.datafix.DataFixers.getDataFixer(), f.world.level.registryAccess());
+        var storage = new CommandStorage(data); set(f.world.level.getServer(), MinecraftServer.class, "commandStorage", storage);
+        var value = new CompoundTag(); value.putString("message", "saved mannequin description"); storage.set(FIRST, value);
+        var mannequin = tag(8, 8, 0); mannequin.putString("id", "minecraft:mannequin"); mannequin.put("description", storageText(FIRST));
+        var display = text(entityText("@e[type=minecraft:mannequin,distance=..32,limit=1]", "description", true));
+        var proto = f.input(ChunkPos.ZERO); proto.getEntities().clear(); proto.addEntity(mannequin); proto.addEntity(display);
+        f.world.indexLegacyRoots = true;
+        try {
+            f.start(ChunkPos.ZERO, ChunkStatus.FULL); f.drain(); var graph = f.runtime.graph(f.holder(ChunkPos.ZERO));
+            assertEquals(FullInitializedInputs.State.SATISFIED, graph.inputEvaluation().state(), graph.inputEvaluation().obligation());
+            FullAuthoritativeFinishingTest.context(f); f.runtime.inputs.changed(); f.drain();
+            assertInstanceOf(ChunkStageOutcome.Applied.class, graph.finishing.outcome().join());
+            assertEquals(2, f.world.inserted.size());
+            assertEquals("saved mannequin description", FullSavedContextTestHooks.text(
+                    assertInstanceOf(Display.TextDisplay.class, f.world.inserted.get(1))).getString());
+            assertFalse(f.barrier.tripped());
+        } finally { f.stop(); FullFinishingServices.stopped(f.world.level.getServer()); data.close(); }
+        assertCleanup(f);
+    }
+
+    @Test void signDependencyCapacityIsCheckedBeforeAnyArrayOrComponentCopies() throws Exception {
+        var f = new FullRegistrationFixture(true); var position = new BlockPos(8, 8, 8);
+        var state = Blocks.OAK_SIGN.defaultBlockState(); var sign = new SignBlockEntity(position, state);
+        var front = new SignText().setMessage(0, Component.literal("raw"), Component.literal("filtered"));
+        set(sign, SignBlockEntity.class, "frontText", front);
+        var fact = new FullSavedInput.EntityFact("capacity", "minecraft:text_display", 8, 8, 8, 0, false);
+        try {
+            var measured = FullLiveComponentInputs.measureBlock(sign,
+                    FullLiveComponentInputs.BlockField.SIGN_FRONT_FILTERED_MESSAGES, 0);
+            var refused = FullLiveComponentInputs.captureBlock(fact, sign,
+                    FullLiveComponentInputs.BlockField.SIGN_FRONT_FILTERED_MESSAGES, 0, measured.bytes() - 1);
+            assertTrue(refused.unmet().contains("grew after")); assertTrue(refused.components().isEmpty());
+            assertNull(refused.firstValues()); assertNull(refused.secondValues());
+
+            var captured = FullLiveComponentInputs.captureBlock(fact, sign,
+                    FullLiveComponentInputs.BlockField.SIGN_FRONT_FILTERED_MESSAGES, 0, measured.bytes());
+            assertNull(captured.unmet()); assertEquals(8, captured.components().size()); assertTrue(captured.valid(sign));
+            front.getMessages(false)[0] = Component.literal("raw replacement");
+            assertFalse(captured.valid(sign), "the retained raw/filtered equality decision includes both exposed arrays");
+        } finally { f.stop(); FullFinishingServices.stopped(f.world.level.getServer()); }
+        assertCleanup(f);
+    }
+
     @Test void laterSavedSelectorChargesOneAdditionalCandidateForEachPossibleConversionProduct() throws Exception {
         var f = new FullRegistrationFixture(true);
         var tadpole = FullInitializedInputBindingTest.tag(8, 8, 24000);
@@ -1320,6 +1471,12 @@ class FullSavedContextInputTest {
         return net.minecraft.network.chat.ComponentSerialization.CODEC.parse(
                 fixture.world.level.registryAccess().createSerializationContext(net.minecraft.nbt.NbtOps.INSTANCE), encoded)
                 .result().orElseThrow();
+    }
+    private static void setMannequinDescription(Mannequin mannequin, Component description) {
+        try {
+            var method = Mannequin.class.getDeclaredMethod("setDescription", Component.class);
+            method.setAccessible(true); method.invoke(mannequin, description);
+        } catch (ReflectiveOperationException failure) { throw new AssertionError(failure); }
     }
     private static CompoundTag pendingBeacon(BlockPos position, net.minecraft.nbt.Tag customName) {
         var tag = new CompoundTag(); tag.putString("id", "minecraft:beacon");
