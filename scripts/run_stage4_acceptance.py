@@ -545,26 +545,49 @@ def run_process(server, trace_path=None, drive=False, explicit_topology=False, t
                         dump_path = capture_thread_dump(server, process, "reload-clock-freeze")
                     else:
                         # The probe derives the restored ScheduledTick trigger from the native
-                        # LevelChunkTicks.unpack receipt and performs deadline-1, deadline, and
-                        # one post-deadline native steps while the server remains frozen.
+                        # LevelChunkTicks.unpack receipt.  Each native step is scheduled in its
+                        # own command turn and observed after the server executes it; this keeps
+                        # state assertions outside ServerTickRateManager's scheduling call.
                         send("stage4trace step-restored 450")
-                        reload_barrier = read_until(process, read_line, log, lines,
-                                                    "STAGE4_TRACE_RELOAD_STEP_EFFECT_REACHED", 180)
-                        if not reload_barrier and process.poll() is None:
-                            dump_path = capture_thread_dump(server, process, "reload-deadline")
+                        scheduled = read_until(process, read_line, log, lines,
+                                                "STAGE4_TRACE_RELOAD_STEP_SCHEDULED phase=before", 30)
+                        reached_before = read_until(process, read_line, log, lines,
+                                                    "STAGE4_TRACE_CLOCK_STEP_REACHED label=restored-before-deadline", 180)
+                        if not scheduled or not reached_before:
+                            reload_barrier = False
+                            if process.poll() is None:
+                                dump_path = capture_thread_dump(server, process, "reload-deadline-before")
                         else:
-                            dump_path = None
-                        if reload_barrier:
-                            send("stage4trace verify")
-                            effect_observed = read_until(process, read_line, log, lines,
-                                                         "STAGE4_TRACE_RELOAD_EFFECT", 30)
+                            send("stage4trace check-restored-before")
+                            before_ok = read_until(process, read_line, log, lines,
+                                                   "STAGE4_TRACE_RELOAD_PHASE phase=before", 30)
+                            before_ok = before_ok and any("STAGE4_TRACE_RELOAD_PHASE phase=before" in line
+                                                          and "pass=true" in line for line in lines)
+                            send("stage4trace step restored-deadline 1")
+                            reached_deadline = read_until(process, read_line, log, lines,
+                                                          "STAGE4_TRACE_CLOCK_STEP_REACHED label=restored-deadline", 30)
+                            send("stage4trace check-restored-deadline")
+                            deadline_ok = read_until(process, read_line, log, lines,
+                                                     "STAGE4_TRACE_RELOAD_PHASE phase=deadline", 30)
+                            deadline_ok = deadline_ok and any("STAGE4_TRACE_RELOAD_PHASE phase=deadline" in line
+                                                              and "pass=true" in line for line in lines)
+                            send("stage4trace step restored-after-deadline 1")
+                            reached_after = read_until(process, read_line, log, lines,
+                                                       "STAGE4_TRACE_CLOCK_STEP_REACHED label=restored-after-deadline", 30)
+                            send("stage4trace check-restored-after")
+                            after_ok = read_until(process, read_line, log, lines,
+                                                  "STAGE4_TRACE_RELOAD_PHASE phase=after", 30)
+                            after_ok = after_ok and any("STAGE4_TRACE_RELOAD_PHASE phase=after" in line
+                                                        and "pass=true" in line for line in lines)
+                            reload_barrier = all((before_ok, reached_deadline, deadline_ok,
+                                                  reached_after, after_ok))
+                            if not reload_barrier and process.poll() is None:
+                                dump_path = capture_thread_dump(server, process, "reload-deadline")
                             effect_lines = [line for line in lines if "STAGE4_TRACE_RELOAD_EFFECT" in line]
                             if effect_lines:
                                 reload_effect = "reached=true" in effect_lines[-1]
                             if not reload_started:
                                 reload_effect = False
-                            if not effect_observed and process.poll() is None:
-                                dump_path = capture_thread_dump(server, process, "reload-effect")
                     send("stop")
             except OSError:
                 runner_error = "restart command pipe closed"

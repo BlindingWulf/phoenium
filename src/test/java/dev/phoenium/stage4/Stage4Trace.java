@@ -106,18 +106,31 @@ public final class Stage4Trace {
 
     /** Records the native LevelChunkTicks unpack edge, including the restored relative delay. */
     public static void observeUnpack(net.minecraft.world.ticks.LevelChunkTicks<?> container,
-                                     long currentTick) {
-        List<? extends net.minecraft.world.ticks.ScheduledTick<?>> matches = container.getAll()
+                                     long currentTick,
+                                     List<? extends net.minecraft.world.ticks.SavedTick<?>> pendingBefore) {
+        if (pendingBefore == null) return;
+        List<? extends net.minecraft.world.ticks.SavedTick<?>> pending = pendingBefore.stream()
             .filter(tick -> tick.pos().equals(Stage4AcceptanceProbe.REGION_B_FUTURE)
                 && tick.type() == net.minecraft.world.level.block.Blocks.STONE_BUTTON)
             .toList();
-        if (matches.isEmpty()) return;
+        if (pending.isEmpty()) return;
+        List<? extends net.minecraft.world.ticks.ScheduledTick<?>> scheduled = container.getAll()
+            .filter(tick -> tick.pos().equals(Stage4AcceptanceProbe.REGION_B_FUTURE)
+                && tick.type() == net.minecraft.world.level.block.Blocks.STONE_BUTTON)
+            .toList();
         restoredUnpackCurrent = currentTick;
-        restoredUnpackTrigger = matches.get(0).triggerTick();
-        restoredUnpackMatches = matches.size();
+        restoredUnpackMatches = pending.size();
+        restoredUnpackTrigger = -1;
+        if (pending.size() == 1 && scheduled.size() == 1) {
+            var saved = pending.get(0);
+            var unpacked = scheduled.get(0);
+            if (unpacked.triggerTick() == currentTick + saved.delay()
+                && unpacked.priority() == saved.priority()) restoredUnpackTrigger = unpacked.triggerTick();
+        }
         if (active) event("tick.unpack.target", "currentTick=" + currentTick
             + " trigger=" + restoredUnpackTrigger + " delay="
-            + (restoredUnpackTrigger - currentTick) + " matches=" + matches.size());
+            + (restoredUnpackTrigger < 0 ? -1 : restoredUnpackTrigger - currentTick)
+            + " matches=" + pending.size() + " scheduled=" + scheduled.size());
     }
 
     public static long restoredUnpackCurrent() { return restoredUnpackCurrent; }
@@ -126,6 +139,20 @@ public final class Stage4Trace {
 
     public static boolean restoredCallbackObserved() {
         return snapshot().stream().anyMatch(item -> item.startsWith("effect.tick.reached "));
+    }
+
+    public static long restoredCallbackCount() {
+        return snapshot().stream().filter(item -> item.startsWith("effect.tick.reached ")).count();
+    }
+
+    public static void reloadEligibility(ServerLevel level, boolean eligible) {
+        event("tick.reload.eligibility", "pos=" + Stage4AcceptanceProbe.REGION_B_FUTURE
+            + " eligible=" + eligible + " gameTime=" + level.getGameTime());
+        System.out.println("STAGE4_TRACE_RELOAD_ELIGIBILITY pos="
+            + Stage4AcceptanceProbe.REGION_B_FUTURE + " eligible=" + eligible
+            + " gameTime=" + level.getGameTime());
+        if (!eligible)
+            throw new IllegalStateException("restored target is not natively block-ticking at reload");
     }
 
     public static void barrier(ServerLevel level, String label) {
