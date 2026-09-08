@@ -4,7 +4,6 @@ import dev.phoenium.chunk.FullFinishingServices;
 import dev.phoenium.core.WorldId;
 import dev.phoenium.mixin.RegionalLevelTicksAccess;
 import dev.phoenium.mixin.RegionalChunkMapAccess;
-import dev.phoenium.mixin.RegionalPlayerMapAccess;
 import dev.phoenium.mixin.RegionalServerLevelAccess;
 import dev.phoenium.ownership.ObjectOwnershipRegistry;
 import dev.phoenium.topology.RegionDirectory;
@@ -195,8 +194,7 @@ public final class RegionalWorldServices implements RegionalStateMigration {
         if (services.chunkMap() != map) throw new IllegalStateException("regional tracker ChunkMap identity changed");
         FullFinishingServices.requireWorld(level, FullFinishingServices.Kind.TRACKER);
         FullFinishingServices.requireServer(level.getServer(), FullFinishingServices.Kind.CONNECTIONS);
-        List<net.minecraft.server.level.ServerPlayer> active = List.copyOf(
-            ((RegionalPlayerMapAccess) access.phoenium$getPlayerMap()).phoenium$invokeAllPlayers());
+        List<net.minecraft.server.level.ServerPlayer> active = List.copyOf(access.phoenium$getPlayerMap().getAllPlayers());
         services.tracking().tick(map, active, List.copyOf(level.players()));
         return true;
     }

@@ -5,7 +5,6 @@ import dev.phoenium.chunk.FullEntityFacts;
 import dev.phoenium.chunk.FullFinishingScoreboard;
 import dev.phoenium.chunk.FullFinishingServices;
 import dev.phoenium.mixin.RegionalChunkMapAccess;
-import dev.phoenium.mixin.RegionalDistanceManagerAccess;
 import dev.phoenium.mixin.RegionalTrackedEntityAccess;
 import dev.phoenium.ownership.ObjectOwnershipRegistry;
 import dev.phoenium.ownership.OwnershipContext;
@@ -239,8 +238,7 @@ public final class RegionalTrackingService {
                         tracker.phoenium$setLastSectionPos(preview.section);
                     }
                     if (preview.sectionChanged || entry.entity.needsSync
-                            || ((RegionalDistanceManagerAccess) mapAccess.phoenium$getDistanceManager())
-                                .phoenium$invokeInEntityTickingRange(preview.section.chunk().pack()))
+                            || map.getDistanceManager().inEntityTickingRange(preview.section.chunk().pack()))
                         tracker.phoenium$getServerEntity().sendChanges();
                     synchronized (this) { updates++; }
                 });

@@ -10,8 +10,6 @@
     "RegionalBlockEventMixin",
     "RegionalChunkMapAccess",
     "RegionalChunkMapTrackingMixin",
-    "RegionalDistanceManagerAccess",
-    "RegionalPlayerMapAccess",
     "RegionalTrackedEntityAccess",
     "ServerGamePacketListenerMixin",
     "ServerGamePacketListenerInvoker",
