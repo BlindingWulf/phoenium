@@ -111,4 +111,77 @@ final class FullLegacyOwnerCacheTest {
             assertFalse(Files.exists(directory.resolve("usercache.json")), "rejection must not run the write on a caller or fallback thread");
         }
     }
+
+    @Test void shutdownCannotStrandAcceptedSaveBehindAnUnqueuedEarlierSnapshot() throws Exception {
+        CountDownLatch earlierAtAdmission = new CountDownLatch(1), releaseEarlier = new CountDownLatch(1);
+        CountDownLatch writeSubmitted = new CountDownLatch(1);
+        var earlierResult = new CompletableFuture<Throwable>();
+        var laterResult = new CompletableFuture<Throwable>();
+        try (Cache cache = new Cache(provider(name -> Optional.empty()), directory.resolve("usercache.json"))) {
+            var gate = new java.util.concurrent.locks.ReentrantLock() {
+                @Override public void lock() {
+                    if (Thread.currentThread().getName().equals("earlier-profile-save")) {
+                        earlierAtAdmission.countDown();
+                        try { assertTrue(releaseEarlier.await(5, TimeUnit.SECONDS)); }
+                        catch (InterruptedException failure) { throw new AssertionError(failure); }
+                    }
+                    super.lock();
+                }
+            };
+            var field = FullLegacyOwnerCache.class.getDeclaredField("writesGate");
+            field.setAccessible(true); field.set(cache.protocol, gate);
+            var stateGate = (java.util.concurrent.locks.ReentrantLock)
+                    field(cache.protocol, FullLegacyOwnerCache.class, "state");
+            var storageField = FullLegacyOwnerCache.class.getDeclaredField("storage");
+            storageField.setAccessible(true);
+            var actualStorage = (ExecutorService) storageField.get(cache.protocol);
+            storageField.set(cache.protocol, new AbstractExecutorService() {
+                public void execute(Runnable task) { actualStorage.execute(task); writeSubmitted.countDown(); }
+                public void shutdown() { actualStorage.shutdown(); }
+                public List<Runnable> shutdownNow() { return actualStorage.shutdownNow(); }
+                public boolean isShutdown() { return actualStorage.isShutdown(); }
+                public boolean isTerminated() { return actualStorage.isTerminated(); }
+                public boolean awaitTermination(long timeout, TimeUnit unit) throws InterruptedException {
+                    return actualStorage.awaitTermination(timeout, unit);
+                }
+            });
+            Thread earlier = new Thread(() -> {
+                try { cache.save(); earlierResult.complete(null); }
+                catch (Throwable failure) { earlierResult.complete(failure); }
+            }, "earlier-profile-save");
+            Thread later = new Thread(() -> {
+                try { cache.save(); laterResult.complete(null); }
+                catch (Throwable failure) { laterResult.complete(failure); }
+            }, "later-profile-save");
+            earlier.setDaemon(true); later.setDaemon(true);
+            try {
+                earlier.start(); assertTrue(earlierAtAdmission.await(5, TimeUnit.SECONDS));
+                later.start();
+                // Old code permits the later snapshot to queue through this gate; the fixed
+                // code keeps it behind the earlier snapshot's still-held state turn.
+                long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(2);
+                while (cache.protocol.pendingWrites() == 0 && !stateGate.hasQueuedThread(later)
+                        && System.nanoTime() < deadline)
+                    java.util.concurrent.locks.LockSupport.parkNanos(100_000);
+                boolean queued = cache.protocol.pendingWrites() != 0;
+                assertTrue(queued || stateGate.hasQueuedThread(later), "later save reached its actual ordering boundary");
+                if (queued) assertTrue(writeSubmitted.await(5, TimeUnit.SECONDS), "later write was accepted by original storage executor");
+                cache.protocol.shutdown();
+                releaseEarlier.countDown();
+                Throwable first = earlierResult.get(5, TimeUnit.SECONDS);
+                Throwable second = laterResult.get(2, TimeUnit.SECONDS);
+                assertInstanceOf(RejectedExecutionException.class, first);
+                assertTrue(second == null || second instanceof RejectedExecutionException,
+                        "a save either settles its actual write or reports its own rejected admission");
+                assertEquals(0, cache.protocol.pendingWrites());
+            } finally {
+                releaseEarlier.countDown();
+                // Preserve a failing old-path test without leaving its deliberately stranded
+                // caller behind in the test process. This is cleanup only, not its assertion.
+                var reject = FullLegacyOwnerCache.class.getDeclaredMethod("rejectQueuedWrites", RejectedExecutionException.class);
+                reject.setAccessible(true); reject.invoke(cache.protocol, new RejectedExecutionException("test cleanup"));
+                earlier.join(5000); later.join(5000);
+            }
+        } finally { releaseEarlier.countDown(); }
+    }
 }

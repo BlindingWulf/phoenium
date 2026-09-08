@@ -146,21 +146,24 @@ public final class FullLegacyOwnerCache {
         if (OwnershipContext.current().isPresent() || FullFinishingServices.finishing())
             throw new ChunkProtocolException("profile persistence reached with regional or FULL authority");
         final Write write;
+        boolean submit = false;
+        RejectedExecutionException stoppedFailure = null;
         state.lock();
         try {
             List<Saved> frozen = byId.values().stream().map(entry -> new Saved(identity(entry), expires(entry), access(entry)))
                     .sorted(Comparator.comparingLong(Saved::mru).reversed()).limit(1000).toList();
             write = new Write(++saveSequence, frozen, new CompletableFuture<>());
+            // Publish the ordered receipt in the same snapshot turn. Otherwise a later save
+            // can queue first, then shutdown can reject this missing earlier sequence forever.
+            // No submission, future callback, serialization or I/O occurs under either gate.
+            writesGate.lock(); try {
+                if (stopped) stoppedFailure = new RejectedExecutionException("profile storage is stopped");
+                else {
+                    writes.put(write.sequence, write);
+                    if (!draining) { draining = true; submit = true; }
+                }
+            } finally { writesGate.unlock(); }
         } finally { state.unlock(); }
-        boolean submit = false;
-        RejectedExecutionException stoppedFailure = null;
-        writesGate.lock(); try {
-            if (stopped) stoppedFailure = new RejectedExecutionException("profile storage is stopped");
-            else {
-                writes.put(write.sequence, write);
-                if (!draining) { draining = true; submit = true; }
-            }
-        } finally { writesGate.unlock(); }
         if (stoppedFailure != null)
             write.completion.complete(new SaveAttempt(write.sequence, Persistence.RUNTIME_FAILURE, stoppedFailure));
         else if (submit) try { storage.execute(this::drainWrites); }

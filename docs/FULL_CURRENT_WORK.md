@@ -48,6 +48,11 @@ Astra workers, tier override, API keys, account changes or purchases.
   after a publication error. Exact first failure retained with later failures suppressed.
   publication-ack-27: 59 tests / 3 suites green, including reentrant shutdown; two prior
   skipped-listener/partial-retirement failures preserved in publication-ack-25-before.*.
+* D2 save ordering: snapshot and ordered queue admission share one metadata turn before
+  submission/I/O. This prevents an accepted later save from waiting forever behind an
+  earlier snapshot rejected by concurrent shutdown. legacy-save-31: 26 tests / 3 suites
+  green; deterministic old-path timeout preserved in legacy-save-30-before.*. First draft
+  legacy-save-29-before did not force executor acceptance and is not failure proof.
 * Saved text/storage `d1f2278`: actual admitted recursive resolution and independent
   proto/in-memory Imposter publication. Block NBT `4d7df64` retains ready/absent branches;
   IMMEDIATE-creation mismatch is repaired in `13e1b63`. `664ab21` same-world route-only selector
@@ -203,5 +208,5 @@ the finite support preserves existing A/B ownership. Final same-artifact rerun r
 4. Final clean build, installed probes and client campaign must share recorded production
    JAR; final diff review, acceptance ledger and verified commit. No optimistic PASS.
 
-Latest supported account-wide weekly usage:31% used (start1%); reserve7% (start7%).
+Latest supported account-wide weekly usage:35% used (start1%); reserve7% (start7%).
 Per-worker/task tokens unknown. No usage reset or additional spending.
