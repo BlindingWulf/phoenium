@@ -231,6 +231,7 @@ public final class LiveTickPhaseBoundary {
         return locals;
     }
     private static void cachePhaseEnd(InsnList out, int stateLocal, String phaseMethod) {
+        removeCopiedReturn(out);
         out.add(new VarInsnNode(Opcodes.ALOAD, stateLocal)); out.add(new VarInsnNode(Opcodes.ALOAD, 0));
         out.add(new MethodInsnNode(Opcodes.INVOKEVIRTUAL, CACHE_STATE, phaseMethod, "(L" + CACHE + ";)V", false));
         out.add(new InsnNode(Opcodes.RETURN));
@@ -248,9 +249,15 @@ public final class LiveTickPhaseBoundary {
         return locals;
     }
     private static void phaseEnd(InsnList out, int stateLocal, String phaseMethod) {
+        removeCopiedReturn(out);
         out.add(new VarInsnNode(Opcodes.ALOAD, stateLocal)); out.add(new VarInsnNode(Opcodes.ALOAD, 0));
         out.add(new MethodInsnNode(Opcodes.INVOKEVIRTUAL, LEVEL_STATE, phaseMethod, "(L" + LEVEL + ";)V", false));
         out.add(new InsnNode(Opcodes.RETURN));
+    }
+    private static void removeCopiedReturn(InsnList out) {
+        AbstractInsnNode tail = out.getLast();
+        while (tail != null && tail.getOpcode() < 0) tail = tail.getPrevious();
+        if (tail != null && tail.getOpcode() == Opcodes.RETURN) out.remove(tail);
     }
     private static int boundaryAtConstant(MethodNode method, String value) {
         LdcInsnNode found = null;
