@@ -18,6 +18,7 @@ final class RegionalTrackingPartitions<T> {
     record Plan(long generation, Map<Integer, RegionId> owners) {
         Plan { owners = Map.copyOf(owners); }
     }
+    record Identity(int id, Object identity) { Identity { Objects.requireNonNull(identity); } }
     private final LinkedHashMap<Integer, Item<T>> ordered = new LinkedHashMap<>();
     private final LinkedHashMap<RegionId, LinkedHashMap<Integer, Item<T>>> partitions = new LinkedHashMap<>();
 
@@ -45,6 +46,19 @@ final class RegionalTrackingPartitions<T> {
         ordered.put(item.id, item); rebuild();
     }
 
+    void reorder(List<Identity> sourceOrder) {
+        if (sourceOrder.size() != ordered.size()) throw new IllegalStateException("tracker source order size changed");
+        var replacement = new LinkedHashMap<Integer, Item<T>>();
+        for (Identity identity : sourceOrder) {
+            Item<T> item = ordered.get(identity.id);
+            if (item == null || item.identity != identity.identity)
+                throw new IllegalStateException("tracker source order identity changed " + identity.id);
+            if (replacement.put(identity.id, item) != null)
+                throw new IllegalStateException("duplicate tracker source order id " + identity.id);
+        }
+        ordered.clear(); ordered.putAll(replacement); rebuild();
+    }
+
     T remove(int id, Object expectedIdentity) {
         Item<T> previous = ordered.get(id);
         if (previous != null && previous.identity != expectedIdentity)
@@ -56,8 +70,13 @@ final class RegionalTrackingPartitions<T> {
 
     void update(int id, RoutingKey key, RegionId owner) {
         Item<T> previous = Objects.requireNonNull(ordered.get(id), "missing retained tracker " + id);
+        if (previous.key.equals(key) && previous.owner.equals(owner)) return;
+        LinkedHashMap<Integer, Item<T>> oldPartition = partitions.get(previous.owner);
+        if (oldPartition == null || oldPartition.remove(id) != previous)
+            throw new IllegalStateException("tracker owner partition lost " + id);
+        if (oldPartition.isEmpty()) partitions.remove(previous.owner);
         ordered.put(id, new Item<>(id, previous.identity, previous.value, key, owner));
-        rebuild();
+        partitions.computeIfAbsent(owner, ignored -> new LinkedHashMap<>()).put(id, ordered.get(id));
     }
 
     Plan plan(long generation, Function<RoutingKey, RegionId> resolver) {

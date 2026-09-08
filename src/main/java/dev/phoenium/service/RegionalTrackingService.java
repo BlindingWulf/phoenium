@@ -27,6 +27,7 @@ import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.server.network.ServerGamePacketListenerImpl;
 import net.minecraft.world.entity.Entity;
+import net.minecraft.core.registries.BuiltInRegistries;
 
 /**
  * Owner-partitioned index of the actual ChunkMap tracker objects. The source map remains the
@@ -40,6 +41,7 @@ public final class RegionalTrackingService {
     private final RegionDirectory directory;
     private final RegionalServiceDispatcher dispatcher;
     private final ObjectOwnershipRegistry objects;
+    private final int maximumTrackingRange;
     private final RegionalTrackingPartitions<Entry> index = new RegionalTrackingPartitions<>();
     private final ThreadLocal<AddPlan> activeAdd = new ThreadLocal<>();
     private final ThreadLocal<RemovePlan> activeRemove = new ThreadLocal<>();
@@ -56,6 +58,9 @@ public final class RegionalTrackingService {
         this.directory = Objects.requireNonNull(directory);
         this.dispatcher = Objects.requireNonNull(dispatcher);
         this.objects = Objects.requireNonNull(objects);
+        int maximum = 0;
+        for (var type : BuiltInRegistries.ENTITY_TYPE) maximum = Math.max(maximum, type.clientTrackingRange() * 16);
+        this.maximumTrackingRange = level.getServer().getScaledTrackingDistance(maximum);
     }
 
     /** Bootstrap/reconciliation reads only the named tracker registry's identity/order. */
@@ -114,6 +119,7 @@ public final class RegionalTrackingService {
             retained.effectiveRange = effectiveRange;
             retained.seenConnections = seenConnections;
             index.put(new RegionalTrackingPartitions.Item<>(id, tracker, retained, key, retained.owner));
+            reorderSource(source);
             sourceReconciliations++;
         }
     }
@@ -132,6 +138,7 @@ public final class RegionalTrackingService {
             Entry removed = index.remove(id, previous == null ? entity : previous.tracker);
             if (removed != null && removed.entity != entity)
                 throw new IllegalStateException("tracker removal names a displaced entity " + id);
+            reorderSource(source);
             sourceReconciliations++;
         }
     }
@@ -189,8 +196,8 @@ public final class RegionalTrackingService {
             }
         }
 
-        for (var item : previews.entrySet()) {
-            Preview preview = item.getValue();
+        for (Entry entry : entries) {
+            Preview preview = previews.get(entry);
             LinkedHashSet<RoutingKey> footprint = new LinkedHashSet<>();
             footprint.add(preview.key);
             for (ServerPlayer player : levelPlayers) {
@@ -227,12 +234,13 @@ public final class RegionalTrackingService {
                             requirePlayer(player, connectionCut);
                             tracker.phoenium$invokeUpdatePlayer(player.session.player());
                         }
+                        refreshProjection(entry);
                         if (entry.entity instanceof ServerPlayer player) moved.add(player);
                         tracker.phoenium$setLastSectionPos(preview.section);
                     }
-                    boolean ticking = ((RegionalDistanceManagerAccess) mapAccess.phoenium$getDistanceManager())
-                        .phoenium$invokeInEntityTickingRange(preview.section.chunk().pack());
-                    if (preview.sectionChanged || entry.entity.needsSync || ticking)
+                    if (preview.sectionChanged || entry.entity.needsSync
+                            || ((RegionalDistanceManagerAccess) mapAccess.phoenium$getDistanceManager())
+                                .phoenium$invokeInEntityTickingRange(preview.section.chunk().pack()))
                         tracker.phoenium$getServerEntity().sendChanges();
                     synchronized (this) { updates++; }
                 });
@@ -249,6 +257,7 @@ public final class RegionalTrackingService {
                         requirePlayer(player, connectionCut);
                         access(entry.tracker).phoenium$invokeUpdatePlayer(player.session.player());
                     }
+                    refreshProjection(entry);
                 });
             }
         } finally {
@@ -315,25 +324,7 @@ public final class RegionalTrackingService {
             List<Entry> currentEntries;
             synchronized (this) { currentEntries = index.values(); }
             for (Entry entry : currentEntries) {
-                int range = entry.effectiveRange;
-                if (range < 0) {
-                    if (OwnershipContext.current().isPresent()) {
-                        // An unobserved bootstrap tracker cannot be classified from an owner-held
-                        // producer. Retaining it in the footprint preserves the immediate original
-                        // call and fails if its owner is foreign instead of reading it unsafely.
-                        selectedTrackers.add(entry.tracker);
-                        footprint.add(entry.key);
-                        continue;
-                    }
-                    int[] captured = new int[1];
-                    dispatcher.executeAndDrain(entry.key, RegionalServiceKind.TRACKING_UPDATE, ignored -> {
-                        requireEntityOwner(entry.candidate, entry.key);
-                        requireEntry(entry, entry.candidate);
-                        captured[0] = access(entry.tracker).phoenium$invokeEffectiveRange();
-                    });
-                    range = entry.effectiveRange = captured[0];
-                }
-                if (candidateChunk(entry.key, range, sourceKey)) {
+                if (candidateChunk(entry.key, maximumTrackingRange, sourceKey)) {
                     selectedTrackers.add(entry.tracker);
                     footprint.add(entry.key);
                 }
@@ -382,6 +373,7 @@ public final class RegionalTrackingService {
         finishing.scoreboard.requireTrackingSession(plan.connections,
             plan.players.get(player).session);
         original.run();
+        refreshProjection(entry);
     }
 
     /** Prepares the exact immediate removal recipients before vanilla mutates the tracker map.
@@ -438,6 +430,7 @@ public final class RegionalTrackingService {
         requireEntry(entry, entry.candidate);
         finishing.scoreboard.requireTrackingSession(plan.connections, plan.players.get(player).session);
         original.run();
+        refreshProjection(entry);
     }
 
     /** Preserves ChunkMap.move's complete original suffix while replacing its world-wide tracker
@@ -466,15 +459,16 @@ public final class RegionalTrackingService {
                     index.update(entry.id, entry.key, entry.owner);
                 }
                 playerTracker = entry.tracker;
+                int currentRange = captureRange(entry.entity, moving.key);
                 for (ServerPlayer candidate : level.players()) {
                     PlayerReceipt receipt = requirePlayer(players, candidate);
                     if (entry.seenConnections.contains(receipt.session.listener())
-                            || candidateChunk(entry.key, Math.max(0, entry.effectiveRange), receipt.key)) {
+                            || candidateChunk(entry.key, currentRange, receipt.key)) {
                         selectedPlayers.add(candidate); footprint.add(receipt.key);
                     }
                 }
             } else if (entry.seenConnections.contains(moving.session.listener())
-                    || candidateChunk(entry.key, Math.max(0, entry.effectiveRange), moving.key)) {
+                    || candidateChunk(entry.key, maximumTrackingRange, moving.key)) {
                 selectedTrackers.add(entry.tracker); footprint.add(entry.key);
             }
         }
@@ -501,6 +495,11 @@ public final class RegionalTrackingService {
             requirePlayer(receipt, plan.connections);
             access(trackerIdentity).phoenium$invokeUpdatePlayer(player);
         }
+        List<Entry> entries;
+        synchronized (this) { entries = index.values(); }
+        Entry entry = entries.stream().filter(value -> value.tracker == trackerIdentity).findFirst()
+            .orElseThrow(() -> new IllegalStateException("move player tracker is not retained"));
+        refreshProjection(entry);
     }
 
     public void movedPlayerUpdate(Object trackerIdentity, ServerPlayer player, Runnable original) {
@@ -515,6 +514,7 @@ public final class RegionalTrackingService {
         requireEntry(entry, entry.candidate);
         finishing.scoreboard.requireTrackingSession(plan.connections, plan.players.get(player).session);
         original.run();
+        refreshProjection(entry);
     }
 
     public synchronized MigrationPlan planMigration(RegionDirectory.View proposed) {
@@ -561,6 +561,16 @@ public final class RegionalTrackingService {
             result.put(session.player(), new PlayerReceipt(session, candidate, key(candidate)));
         }
         return result;
+    }
+    private void refreshProjection(Entry entry) {
+        entry.effectiveRange = access(entry.tracker).phoenium$invokeEffectiveRange();
+        entry.seenConnections = Set.copyOf(access(entry.tracker).phoenium$getSeenBy());
+    }
+    private void reorderSource(Int2ObjectMap<Object> source) {
+        List<RegionalTrackingPartitions.Identity> order = new ArrayList<>(source.size());
+        for (Int2ObjectMap.Entry<Object> item : source.int2ObjectEntrySet())
+            order.add(new RegionalTrackingPartitions.Identity(item.getIntKey(), item.getValue()));
+        index.reorder(order);
     }
     private int captureRange(Entity entity, RoutingKey key) {
         int[] range = new int[1];

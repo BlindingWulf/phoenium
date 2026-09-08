@@ -29,9 +29,13 @@ final class RegionalTrackingPartitionsTest {
         index.replaceAll(List.of(item(3, trackerTwo, "two-retained", bKey, b), item(7, trackerOne, "one-retained", aKey, a)));
         assertEquals(List.of("two-retained", "one-retained"), index.values(),
             "the actual source iteration order is authoritative on every reconciliation");
+        index.reorder(List.of(new RegionalTrackingPartitions.Identity(7, trackerOne),
+            new RegionalTrackingPartitions.Identity(3, trackerTwo)));
+        assertEquals(List.of("one-retained", "two-retained"), index.values(),
+            "an exact structural source suffix republishes the source map's current iteration order");
         assertThrows(IllegalStateException.class, () -> index.replaceAll(List.of(
             item(3, new Object(), "replacement", bKey, b), item(7, trackerOne, "one", aKey, a))));
-        assertEquals(List.of("two-retained", "one-retained"), index.values(),
+        assertEquals(List.of("one-retained", "two-retained"), index.values(),
             "a rejected identity replacement must leave the retained source intact");
     }
 
