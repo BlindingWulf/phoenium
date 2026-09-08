@@ -85,7 +85,8 @@ the original write completion, pending=0, failedSettlements=1, stopped runtime a
 zero leases; RETURN still proves closure. Strict wait/write/cleanup order and
 cycle-safe exception traversal are covered by 29 focused tests, all PASS. Reviewed
 probe SHA-256 is `01F5B32A770196482058AC5977CFB9A2E89EFA19BEB46D3F954753783BE21B17`.
-Luna alone launches the installed run; Sol is idle for demonstrated repair needs.
+Luna alone launches the installed run. Sol now owns the bounded frozen/native
+movement source diagnosis described below; no second live campaign is running.
 
 Earlier preserved native failures: `transform-20260908-060338` first-tick consecutive
 coordinator phases, repaired `00ce944`; `transform-20260908-064318` superclass-close
@@ -118,9 +119,11 @@ ticket/teleport/client-state diagnostics. Flag-corrected frozen run
 lastSection=(0,4,0), tracking center=(7,0), FULL/ticket 33 but absent simulation
 demand. `awaitingTeleport=3` is a native ID counter; awaitingPositionFromClient=null
 means it is not currently waiting on that position. Pinned listener lines 527–544
-and 1236–1244 disprove the earlier unacknowledged-teleport inference. Diagnostic
-`27fe451` records exact acknowledgement and distance-source state; Luna follows
-native movement admission/section update to establish the cause. Positive live
+and 1236–1244 disprove the earlier unacknowledged-teleport inference. Frozen run
+`reference-telemetry-5-20260908-0806` preserves matching accepted IDs 1/2/3, the same
+B failure, dumps and a 134 KB real-client trace. Sol now traces frozen/pinned movement
+admission and section update; Luna holds further movement retries pending that
+specific boundary and runs the independent adverse/MCA harness work. Positive live
 readiness is still required. Closure H/I's distant-demand and old same-holder
 re-promotion boundaries remain explicit; no new reference scope is silently claimed.
 Do not increase timeouts, cap distances, substitute server-only receipts or weaken
