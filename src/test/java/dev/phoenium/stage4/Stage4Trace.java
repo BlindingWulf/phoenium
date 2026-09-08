@@ -44,6 +44,10 @@ public final class Stage4Trace {
     private static final Set<Integer> changeSeen = new HashSet<>();
     private static final Map<String, BlockPos> BLOCK_PROBES = new LinkedHashMap<>();
     private static final Map<String, Integer> BLOCK_PROBE_PACKETS = new LinkedHashMap<>();
+    private static final ThreadLocal<BlockBroadcast> ACTIVE_BLOCK_BROADCAST = new ThreadLocal<>();
+
+    private record BlockBroadcast(Player source, double x, double y, double z, double radius,
+                                   ResourceKey<Level> dimension) { }
     private Stage4Trace() { }
 
     public static void begin(ServerLevel level) {
@@ -202,6 +206,23 @@ public final class Stage4Trace {
             + " packet=" + packet.getClass().getName() + " center=" + x + "," + y + "," + z
             + " radius=" + radius + " dimension=" + dimension
             + " recipientState=connection-send");
+    }
+
+    /** Keeps the original broadcast arguments available while its wrapped send calls run. */
+    public static void beginBlockEventBroadcast(Player source, double x, double y, double z,
+                                                double radius, ResourceKey<Level> dimension) {
+        ACTIVE_BLOCK_BROADCAST.set(new BlockBroadcast(source, x, y, z, radius, dimension));
+    }
+
+    public static void endBlockEventBroadcast() {
+        ACTIVE_BLOCK_BROADCAST.remove();
+    }
+
+    public static void blockEventRecipient(ServerPlayer recipient, Packet<?> packet) {
+        BlockBroadcast broadcast = ACTIVE_BLOCK_BROADCAST.get();
+        if (broadcast != null)
+            blockEventRecipient(broadcast.source(), recipient, packet, broadcast.x(), broadcast.y(),
+                broadcast.z(), broadcast.radius(), broadcast.dimension());
     }
 
     public static void beginBlockProbe(String label, BlockPos pos) {

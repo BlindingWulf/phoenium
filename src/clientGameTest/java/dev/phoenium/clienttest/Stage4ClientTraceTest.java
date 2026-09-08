@@ -89,14 +89,14 @@ public final class Stage4ClientTraceTest implements FabricClientGameTest {
             command(server, "tp " + USER + " 120.5 65 8.5");
             command(server, "stage4trace barrier region-b");
             awaitLog(context, server, log, "STAGE4_TRACE_BARRIER label=region-b", START_TIMEOUT_TICKS);
-            dev.phoenium.clienttrace.ClientConnectionTraceMixin.clearReceived();
+            dev.phoenium.clienttrace.ClientTraceObservations.clear();
             command(server, "stage4trace block-probe-a");
             command(server, "stage4trace step far-block 10");
             awaitLog(context, server, log, "STAGE4_TRACE_CLOCK_STEP_REACHED label=far-block", START_TIMEOUT_TICKS);
             assertClientPacket(context, "ClientboundBlockEventPacket", false,
                 "b0=4", "b1=21", "pos=BlockPos{x=8, y=65, z=8}");
             command(server, "stage4trace block-probe-check-a");
-            dev.phoenium.clienttrace.ClientConnectionTraceMixin.clearReceived();
+            dev.phoenium.clienttrace.ClientTraceObservations.clear();
             command(server, "stage4trace block-probe-b");
             command(server, "stage4trace step moved-block 10");
             awaitLog(context, server, log, "STAGE4_TRACE_CLOCK_STEP_REACHED label=moved-block", START_TIMEOUT_TICKS);
@@ -144,7 +144,7 @@ public final class Stage4ClientTraceTest implements FabricClientGameTest {
             // Leave the original now+400 block obligation pending while allowing the migrated
             // far fluid/block (now+320) to execute under B after the split.  This is an exact
             // native frozen-clock step rather than a wall-clock/game-time deadline race.
-            dev.phoenium.clienttrace.ClientConnectionTraceMixin.clearReceived();
+            dev.phoenium.clienttrace.ClientTraceObservations.clear();
             command(server, "stage4trace step post-split 10");
             awaitLog(context, server, log, "STAGE4_TRACE_CLOCK_STEP_REACHED label=post-split", START_TIMEOUT_TICKS);
             assertClientPacket(context, "ClientboundBlockEventPacket", true,
@@ -206,7 +206,7 @@ public final class Stage4ClientTraceTest implements FabricClientGameTest {
                                            boolean present, String... payloadTokens) {
         for (int tick = 0; tick < 20; tick++) context.waitTick();
         boolean[] observed = {false};
-        context.runOnClient(client -> observed[0] = dev.phoenium.clienttrace.ClientConnectionTraceMixin
+        context.runOnClient(client -> observed[0] = dev.phoenium.clienttrace.ClientTraceObservations
             .receivedAll(packetName, payloadTokens));
         if (observed[0] != present)
             throw new AssertionError("client packet observation mismatch packet=" + packetName
@@ -269,6 +269,21 @@ public final class Stage4ClientTraceTest implements FabricClientGameTest {
     }
 
     private static void connectClient(ClientGameTestContext context) {
+        // The server's "Done" log line is emitted before the listen event is
+        // necessarily visible to a separately scheduled client task.  Wait for
+        // the actual TCP endpoint so ConnectScreen does not consume its one
+        // connection attempt during that short startup race.
+        boolean listening = false;
+        for (int tick = 0; tick < START_TIMEOUT_TICKS; tick++) {
+            try (java.net.Socket socket = new java.net.Socket()) {
+                socket.connect(new java.net.InetSocketAddress("127.0.0.1", PORT), 250);
+                listening = true;
+                break;
+            } catch (java.io.IOException ignored) {
+                context.waitTick();
+            }
+        }
+        if (!listening) throw new AssertionError("server TCP endpoint did not become ready");
         context.runOnClient(client -> {
             ServerData data = new ServerData("Phoenium Stage 4", "127.0.0.1:" + PORT, ServerData.Type.OTHER);
             ConnectScreen.startConnecting(client.gui.screen(), client, ServerAddress.parseString("127.0.0.1:" + PORT), data, false, null);

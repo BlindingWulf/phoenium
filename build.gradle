@@ -82,7 +82,12 @@ tasks.register('prepareStage4ClientServer', Sync) {
     description = 'Prepare a disposable installed Stage 4 server with the account-free trace probe.'
     group = 'verification'
     dependsOn tasks.named('prepareStage3ClientServer'), tasks.named('stage4AcceptanceHarness')
-    into layout.buildDirectory.dir('stage4-client-server')
+    def serverDirectory = providers.gradleProperty('stage4ServerDirectory')
+            .orElse(layout.buildDirectory.dir('stage4-client-server')
+            .map { it.asFile.absolutePath })
+    inputs.property('stage4ServerDirectory', serverDirectory)
+    inputs.property('stage4ReferenceProduction', providers.gradleProperty('stage4ReferenceProduction').orElse(''))
+    into serverDirectory.map { file(it) }
     from(tasks.named('prepareStage3ClientServer'))
     from(tasks.named('stage4AcceptanceHarness')) { into 'mods' }
 }
@@ -93,9 +98,12 @@ tasks.named('prepareStage4ClientServer') {
     doLast {
         def frozen = project.findProperty('stage4ReferenceProduction')
         if (frozen != null) {
+            def targetDirectory = project.providers.gradleProperty('stage4ServerDirectory')
+                    .orElse(project.layout.buildDirectory.dir('stage4-client-server')
+                    .map { it.asFile.absolutePath }).get()
             copy {
                 from(file(frozen.toString()))
-                into(layout.buildDirectory.dir('stage4-client-server').get().asFile.toPath().resolve('mods').toFile())
+                into(project.file(targetDirectory).toPath().resolve('mods').toFile())
                 rename { 'phoenium-0.2.0-stage2.jar' }
             }
         }
@@ -189,9 +197,11 @@ loom {
             def stage4EvidenceDir = providers.gradleProperty('stage4EvidenceDir')
                     .orElse(layout.buildDirectory.dir('stage4-client-gametest/evidence/' + stage4RunId)
                     .map { it.asFile.absolutePath }).get()
+            def stage4ServerDirectory = providers.gradleProperty('stage4ServerDirectory')
+                    .orElse(layout.buildDirectory.dir('stage4-client-server')
+                    .map { it.asFile.absolutePath }).get()
             property 'phoenium.stage4.runId', stage4RunId
-            property 'phoenium.test.serverDirectory',
-                    layout.buildDirectory.dir('stage4-client-server').get().asFile.absolutePath
+            property 'phoenium.test.serverDirectory', stage4ServerDirectory
             property 'phoenium.stage4.tracePath',
                     file(stage4EvidenceDir).toPath().resolve('STAGE4-CLIENT-trace.json').toFile().absolutePath
             property 'phoenium.client.gametest.evidence',

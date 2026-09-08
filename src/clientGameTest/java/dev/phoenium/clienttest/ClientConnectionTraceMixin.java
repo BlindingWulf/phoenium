@@ -11,17 +11,14 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import java.lang.reflect.Field;
 import java.lang.reflect.Modifier;
 import java.util.Arrays;
-import java.util.ArrayList;
-import java.util.List;
 import java.util.stream.Collectors;
 
 /** Client-only packet boundary trace for the disposable account-free acceptance harness. */
 @Mixin(Connection.class)
 public abstract class ClientConnectionTraceMixin {
-    private static final List<String> RECEIVED = new ArrayList<>();
     @Inject(method = "channelActive", at = @At("RETURN"))
     private void phoenium$channelActive(ChannelHandlerContext context, CallbackInfo callback) {
-        synchronized (RECEIVED) { RECEIVED.clear(); }
+        ClientTraceObservations.clear();
         trace("channel-active", null);
     }
 
@@ -47,28 +44,9 @@ public abstract class ClientConnectionTraceMixin {
         if (!address.contains(":25565") && !address.contains("/25565")) return;
         String packetName = packet == null ? "none" : packet.getClass().getName();
         String packetPayload = approved(packet) ? payload(packet) : "<omitted>";
-        if ("receive".equals(event)) synchronized (RECEIVED) {
-            RECEIVED.add(packetName + " " + packetPayload);
-        }
+        if ("receive".equals(event)) ClientTraceObservations.record(packetName + " " + packetPayload);
         System.out.println("PHOENIUM_FULL_CLIENT_TRACE event=" + event + " packet="
                 + packetName + " payload=" + packetPayload);
-    }
-
-    public static void clearReceived() { synchronized (RECEIVED) { RECEIVED.clear(); } }
-
-    public static boolean received(String packetSimpleName, String payloadToken) {
-        synchronized (RECEIVED) {
-            return RECEIVED.stream().anyMatch(value -> value.contains(packetSimpleName)
-                && (payloadToken == null || value.contains(payloadToken)));
-        }
-    }
-
-    /** Matches one approved packet containing every requested stable payload field. */
-    public static boolean receivedAll(String packetSimpleName, String... payloadTokens) {
-        synchronized (RECEIVED) {
-            return RECEIVED.stream().anyMatch(value -> value.contains(packetSimpleName)
-                && Arrays.stream(payloadTokens).allMatch(value::contains));
-        }
     }
 
     private static boolean approved(Packet<?> packet) {
