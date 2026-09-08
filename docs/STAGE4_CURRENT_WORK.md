@@ -51,11 +51,12 @@ subscriber stays invalid, and a new slot needs a distinct original-producer rece
 Baseline: 690 tests / 59 suites PASS and ten historical hashes verified;
 `Phoenium-stage4-luna/run/stage4/baseline-20260908-012726`. Frozen production
 rebuilt to the exact SHA above. Historical Stage 3 evidence/worlds remain immutable.
-The latest consolidated gate, at production `2d37d3a`, passes 769 tests / 72 suites
-with zero failures/errors/skips and a successful build. This gate predates the
-NaturalSpawner, phase-progress and failed-stop repairs; final verification is open.
+The latest consolidated gate, worker `32263af` integrating production `5d2efd5`,
+passes 784 tests / 77 suites with zero failures/errors/skips and a successful build.
+The subsequent installed transform gate fails before startup on a superclass-close
+receiver signature. Final installed verification is open.
 
-Integrated production is now `5d2efd5` (after `919e2ce`, `b5d75a8`, `2ba0e8a`,
+Integrated production is now `42bb344` (after `5d2efd5`, `919e2ce`, `b5d75a8`, `2ba0e8a`,
 `00ce944`, `f793e57`). Native scheduled
 register/unpack and current-cycle clear/copy oracles remain intact; the container
 monitor repair `2d37d3a` passed the merged 22-test scheduled/lifetime gate. Selected
@@ -71,7 +72,7 @@ pass in the 66-test published/initialized/authoritative gate. Four native negati
 reproductions remain under `run/stage4/same-holder-repromotion-negative-20260908.*`.
 Source lifecycle late-producer refusals (`c3cf005`) cannot reopen bootstrap.
 
-The last installed candidate is worker `9370007`, production SHA-256
+The prior installed candidate is worker `9370007`, production SHA-256
 `B582CCFC642FC0394027CDAAD404CDDDDD80EB9EDC92DED13E7A6CD82D8D811`.
 It passes the corrected exact NaturalSpawner overload transformation (`f793e57`),
 but `Phoenium-stage4-luna/run/full-production-integration/transform-20260908-060338`
@@ -98,6 +99,13 @@ players move or leave. Healthy native stop retains its original path. Sol is idl
 on clean `16873c5`, available for concrete production failures; lead owns review and
 integration. Luna owns the stable `5d2efd5` full/build and installed campaign.
 
+The newer installed JAR SHA-256 is
+`2563B8845A510E99ACE4E32F9CBE3748F2442105EA862B8FB6882757A8A9ECE7`.
+Its failed bundle `run/full-production-integration/transform-20260908-064318`
+retains the exact `FailedStopServerLevelMixin` receiver mismatch. `42bb344` repairs
+that and the matching ChunkMap superclass receiver, retaining both native finally
+sites; the 14-test target/cleanup/shutdown gate passes. Luna owns its installed rerun.
+
 Luna alone owns broad builds and the final live campaign. Current frozen-reference
 login evidence in `run/stage4/reference-network-exception-20260908-062250` verifies
 the exact frozen JAR and an accepted TCP connection that closes before any server
@@ -105,9 +113,14 @@ packet-decoder receive. Client Hello then times out; both process stacks and act
 TCP tuples/PIDs are preserved. Diagnostic test-only commit `5094ad4` records native
 listener/phase/counters, exceptions and TCP state; it is not yet integrated on main.
 The earlier preflight-removal/property-parity experiment did not resolve login.
-Luna is comparing the actual client connection setup with the working Stage 3 and
-pinned native path, then tracing the client-side close origin. No client/runtime PASS
-is inferred from startup, a listening endpoint, or a passing build.
+The test observation holder needed to move out of the entire protected Mixin package,
+not only its Mixin class. Worker `e2e6317` moves it to `clientobs`; actual login/game
+packets are present in `reference-client-classload-fixed-20260908-063750` and
+`reference-primed-playerfix-20260908-073000`. Their later fixture waits still fail.
+Worker `d67e477`/`e3a59ed` sequence real FULL client receipts at all four points,
+add identical landing pads, require real successful A/B event bodies, and disable
+wire dumps by default. These coherent harness commits await final integration.
+No client/runtime PASS is inferred from startup, login or a passing build.
 
 The shared acceptance harness is integrated through `08c3f0c` (failure thread dumps),
 `73095e7` (isolated launch/recipient/client observation repair), `b5cbea7` and `784c710`.
@@ -115,9 +128,13 @@ It uses identical native-clock inputs on reference/candidate, real A/B regions,
 actual coordinator merge/split, authentic FULL/readiness receipts, exact event
 packets, original serializer observations, immutable pre-restart MCA copies and a
 strict behavioral comparator. Candidate-only routing metadata is separate. Remaining
-harness repairs require successful actual A/B block-event effects and a startup
-freeze before a persisted deadline can pass; normal restart must reuse a completed
-shared-client world. Server-only smoke does not complete the client gates.
+harness repairs require removing temporary preparation tickets if they make the
+deferred event eligible early, plus a startup freeze before a persisted deadline
+can pass. The old NOTE_BLOCK-to-REDSTONE_BLOCK test injection bypassed the original
+scheduled callback; replace it with a real native block transition observed after
+the original callback, including actual pending MCA record and state on restart.
+Normal restart must reuse a completed shared-client world. Server-only smoke does
+not complete the client gates.
 
 Final candidate and reference 5/5 plus 8/8, ordered behavioral comparison, persisted
 MCA/restart effects, migration/lifecycle and affected FULL/packet/service/saved-vault
