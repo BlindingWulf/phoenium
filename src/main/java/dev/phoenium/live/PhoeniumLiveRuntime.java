@@ -422,6 +422,15 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
         if (regionalServices == null) throw new IllegalStateException("regional services unavailable before live start");
         return regionalServices;
     }
+    /** Called before original producer mutations, including container registration.
+     * Only an as-yet-unbound world may use its original bootstrap path. */
+    public void requireRegionalServiceLifetime() {
+        if (regionalServices != null) regionalServices.requireActiveLifetime();
+    }
+    private boolean regionalServiceBound() {
+        requireRegionalServiceLifetime();
+        return regionalServices != null;
+    }
     public RegionalServiceDispatcher regionalDispatcher() {
         if (regionalDispatcher == null) throw new IllegalStateException("regional dispatcher unavailable before live start");
         return regionalDispatcher;
@@ -444,71 +453,71 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
     }
 
     public <T> void regionalTickContainerAdded(LevelTicks<T> owner, ChunkPos pos, LevelChunkTicks<T> container) {
-        if (regionalServices != null) regionalServices.containerAdded(owner, pos, container);
+        if (regionalServiceBound()) regionalServices.containerAdded(owner, pos, container);
     }
     public <T> void regionalTickContainerRemoved(LevelTicks<T> owner, ChunkPos pos, LevelChunkTicks<T> container) {
-        if (regionalServices != null) regionalServices.containerRemoved(owner, pos, container);
+        if (regionalServiceBound()) regionalServices.containerRemoved(owner, pos, container);
     }
     public <T> void regionalTickScheduled(LevelTicks<T> owner, long chunkKey, LevelChunkTicks<T> container) {
-        if (regionalServices != null) regionalServices.scheduled(owner, chunkKey, container);
+        if (regionalServiceBound()) regionalServices.scheduled(owner, chunkKey, container);
     }
     public <T> boolean scheduleRegionalTick(LevelTicks<T> owner, net.minecraft.world.ticks.ScheduledTick<T> tick) {
-        return regionalServices != null && regionalServices.schedule(owner, tick);
+        return regionalServiceBound() && regionalServices.schedule(owner, tick);
     }
     public <T> boolean mutateRegionalTickArea(LevelTicks<T> owner, LevelTicks<T> source,
             net.minecraft.world.level.levelgen.structure.BoundingBox area, net.minecraft.core.Vec3i offset, Runnable original) {
-        return regionalServices != null && regionalServices.mutateTickArea(owner, source, area, offset, original);
+        return regionalServiceBound() && regionalServices.mutateTickArea(owner, source, area, offset, original);
     }
     public <T> Boolean regionalWillTickThisTick(LevelTicks<T> owner, BlockPos pos, T type) {
-        return regionalServices == null ? null : regionalServices.willTickThisTick(owner, pos, type);
+        return !regionalServiceBound() ? null : regionalServices.willTickThisTick(owner, pos, type);
     }
     public <T> boolean runRegionalScheduledTicks(LevelTicks<T> owner, long currentTick, int maxTicks, BiConsumer<BlockPos, T> output) {
-        return regionalServices != null && regionalServices.runScheduled(owner, currentTick, maxTicks, output);
+        return regionalServiceBound() && regionalServices.runScheduled(owner, currentTick, maxTicks, output);
     }
     public boolean enqueueRegionalBlockEvent(ServerLevel level, BlockEventData event) {
-        return regionalServices != null && regionalServices.enqueueBlockEvent(level, event);
+        return regionalServiceBound() && regionalServices.enqueueBlockEvent(level, event);
     }
     public boolean runRegionalBlockEvents(ServerLevel level) {
-        return regionalServices != null && regionalServices.runBlockEvents(level);
+        return regionalServiceBound() && regionalServices.runBlockEvents(level);
     }
     public boolean runRegionalTracking(net.minecraft.server.level.ChunkMap map) {
-        return regionalServices != null && regionalServices.runTracking(map);
+        return regionalServiceBound() && regionalServices.runTracking(map);
     }
     public boolean regionalTrackingAdd(net.minecraft.server.level.ChunkMap map, Entity entity, Runnable original) {
-        return regionalServices != null && regionalServices.addTrackingEntity(map, entity, original);
+        return regionalServiceBound() && regionalServices.addTrackingEntity(map, entity, original);
     }
     public boolean regionalTrackingAddPlayers(net.minecraft.server.level.ChunkMap map, Object tracker,
                                               java.util.List<ServerPlayer> players) {
-        return regionalServices != null && regionalServices.addTrackingPlayers(map, tracker, players);
+        return regionalServiceBound() && regionalServices.addTrackingPlayers(map, tracker, players);
     }
     public boolean regionalTrackingAddPlayer(net.minecraft.server.level.ChunkMap map, Object tracker,
                                              ServerPlayer player, Runnable original) {
-        return regionalServices != null && regionalServices.addTrackingPlayer(map, tracker, player, original);
+        return regionalServiceBound() && regionalServices.addTrackingPlayer(map, tracker, player, original);
     }
     public boolean regionalTrackingRemove(net.minecraft.server.level.ChunkMap map, Entity entity, Runnable original) {
-        return regionalServices != null && regionalServices.removeTrackingEntity(map, entity, original);
+        return regionalServiceBound() && regionalServices.removeTrackingEntity(map, entity, original);
     }
     public boolean regionalTrackingRemovePlayer(net.minecraft.server.level.ChunkMap map, Object tracker,
                                                 ServerPlayer player, Runnable original) {
-        return regionalServices != null && regionalServices.removeTrackingPlayer(map, tracker, player, original);
+        return regionalServiceBound() && regionalServices.removeTrackingPlayer(map, tracker, player, original);
     }
     public boolean regionalTrackingMove(net.minecraft.server.level.ChunkMap map, ServerPlayer player, Runnable original) {
-        return regionalServices != null && regionalServices.moveTrackingPlayer(map, player, original);
+        return regionalServiceBound() && regionalServices.moveTrackingPlayer(map, player, original);
     }
     public boolean regionalTrackingMovedPlayers(net.minecraft.server.level.ChunkMap map, Object tracker,
                                                 java.util.List<ServerPlayer> players) {
-        return regionalServices != null && regionalServices.movedTrackingPlayers(map, tracker, players);
+        return regionalServiceBound() && regionalServices.movedTrackingPlayers(map, tracker, players);
     }
     public boolean regionalTrackingMovedPlayer(net.minecraft.server.level.ChunkMap map, Object tracker,
                                                ServerPlayer player, Runnable original) {
-        return regionalServices != null && regionalServices.movedTrackingPlayer(map, tracker, player, original);
+        return regionalServiceBound() && regionalServices.movedTrackingPlayer(map, tracker, player, original);
     }
     public void regionalTrackingSourceAdded(net.minecraft.server.level.ChunkMap map, Entity entity) {
-        if (regionalServices != null) regionalServices.trackingSourceAdded(map, entity);
+        if (regionalServiceBound()) regionalServices.trackingSourceAdded(map, entity);
     }
 
     public void regionalTrackingSourceRemoved(net.minecraft.server.level.ChunkMap map, Entity entity) {
-        if (regionalServices != null) regionalServices.trackingSourceRemoved(map, entity);
+        if (regionalServiceBound()) regionalServices.trackingSourceRemoved(map, entity);
     }
     private final boolean authoritativeFull = Boolean.getBoolean("phoenium.full.authoritative");
     private final java.util.Map<ServerLevel, dev.phoenium.chunk.FullRegistrationRuntime> fullRegistrations = new java.util.concurrent.ConcurrentHashMap<>();

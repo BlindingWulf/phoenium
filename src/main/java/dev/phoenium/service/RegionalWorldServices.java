@@ -33,6 +33,7 @@ public final class RegionalWorldServices implements RegionalStateMigration {
     private final ObjectOwnershipRegistry objects;
     private final Map<ServerLevel, WorldServices> worlds = new IdentityHashMap<>();
     private final Map<LevelTicks<?>, TickBinding<?>> ticks = new IdentityHashMap<>();
+    private volatile boolean terminated;
 
     public RegionalWorldServices(RegionDirectory directory, RegionalServiceDispatcher dispatcher,
                                  ObjectOwnershipRegistry objects) {
@@ -43,6 +44,7 @@ public final class RegionalWorldServices implements RegionalStateMigration {
 
     @SuppressWarnings("unchecked")
     public synchronized void bind(ServerLevel level) {
+        requireActiveLifetime();
         if (worlds.containsKey(level)) return;
         WorldId world = new WorldId(level.dimension().identifier().toString());
         LevelTicks<Block> blockTicks = level.getBlockTicks();
@@ -73,6 +75,11 @@ public final class RegionalWorldServices implements RegionalStateMigration {
     }
 
     public synchronized RegionalServiceDispatcher dispatcher() { return dispatcher; }
+
+    /** An ended binding is not the pre-start vanilla bootstrap path. */
+    public void requireActiveLifetime() {
+        if (terminated) throw new IllegalStateException("regional world service requested after shutdown");
+    }
 
     public void initializeTracking() {
         List<WorldServices> snapshot;
@@ -332,6 +339,7 @@ public final class RegionalWorldServices implements RegionalStateMigration {
     }
 
     public synchronized void unbindAll() {
+        terminated = true;
         worlds.clear();
         ticks.clear();
     }

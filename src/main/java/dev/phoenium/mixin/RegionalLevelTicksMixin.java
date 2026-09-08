@@ -33,6 +33,11 @@ abstract class RegionalLevelTicksMixin<T> {
                 () -> original.call(source, area, offset))) original.call(source, area, offset);
     }
 
+    @Inject(method = "addContainer", at = @At("HEAD"))
+    private void phoenium$containerAdmission(ChunkPos pos, LevelChunkTicks<T> container, CallbackInfo ci) {
+        Phoenium.liveRuntime().requireRegionalServiceLifetime();
+    }
+
     @Inject(method = "addContainer", at = @At("TAIL"))
     private void phoenium$containerAdded(ChunkPos pos, LevelChunkTicks<T> container, CallbackInfo ci) {
         Phoenium.liveRuntime().regionalTickContainerAdded((LevelTicks<T>) (Object) this, pos, container);
@@ -40,6 +45,7 @@ abstract class RegionalLevelTicksMixin<T> {
 
     @Inject(method = "removeContainer", at = @At("HEAD"))
     private void phoenium$containerRemoved(ChunkPos pos, CallbackInfo ci) {
+        Phoenium.liveRuntime().requireRegionalServiceLifetime();
         var access = (RegionalLevelTicksAccess<T>) this;
         LevelChunkTicks<T> container = access.phoenium$getAllContainers().get(pos.pack());
         if (container != null) Phoenium.liveRuntime().regionalTickContainerRemoved((LevelTicks<T>) (Object) this, pos, container);
