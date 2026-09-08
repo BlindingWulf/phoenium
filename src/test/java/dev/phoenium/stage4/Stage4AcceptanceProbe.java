@@ -38,7 +38,13 @@ public final class Stage4AcceptanceProbe implements DedicatedServerModInitialize
                             return 1;
                         }))))
                 .then(Commands.literal("reload").executes(context -> {
-                    Stage4Trace.beginReload(context.getSource().getLevel());
+                    try {
+                        Stage4Trace.beginReload(context.getSource().getLevel());
+                    } catch (Throwable failure) {
+                        System.out.println("STAGE4_TRACE_RELOAD_ERROR " + failure);
+                        failure.printStackTrace(System.out);
+                        throw failure;
+                    }
                     return 1;
                 }))
                 .then(Commands.literal("finish").executes(context -> {
