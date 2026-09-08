@@ -12,6 +12,7 @@ import java.util.stream.Stream;
 import net.minecraft.SharedConstants;
 import net.minecraft.core.ClientAsset;
 import net.minecraft.core.Holder;
+import net.minecraft.core.HolderSet;
 import net.minecraft.core.MappedRegistry;
 import net.minecraft.core.RegistrationInfo;
 import net.minecraft.core.Registry;
@@ -22,7 +23,9 @@ import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.DoubleTag;
 import net.minecraft.nbt.ListTag;
 import net.minecraft.resources.Identifier;
+import net.minecraft.resources.ResourceKey;
 import net.minecraft.server.Bootstrap;
+import net.minecraft.server.ReloadableServerRegistries;
 import net.minecraft.server.level.*;
 import net.minecraft.sounds.SoundSource;
 import net.minecraft.util.RandomSource;
@@ -41,6 +44,9 @@ import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.chunk.*;
 import net.minecraft.world.level.chunk.status.*;
 import net.minecraft.world.level.biome.Biomes;
+import net.minecraft.advancements.predicates.LocationPredicate;
+import net.minecraft.world.level.storage.loot.predicates.LocationCheck;
+import net.minecraft.world.level.storage.loot.predicates.LootItemCondition;
 import net.minecraft.world.level.gamerules.GameRules;
 import net.minecraft.world.scores.Scoreboard;
 import net.minecraft.world.ticks.LevelTicks;
@@ -171,8 +177,9 @@ final class FullTadpoleDecisionTest {
         ChunkAccess input;
         final RandomSource random = RandomSource.create(73031L);
         final RandomSource soundRandom = RandomSource.create(9157L);
-        boolean admitted, detectCycle, failSound, failRootInsertion, nullQuery, duplicateDelivery;
-        int difficultyQueries, localReads, sounds, executions, cycleDetections, moonReads, nextId;
+        final AtomicReference<ReloadableServerRegistries.Holder> reloadableRegistries = new AtomicReference<>();
+        boolean admitted, detectCycle, failSound, failRootInsertion, nullQuery, duplicateDelivery, indexLegacyRoots;
+        int difficultyQueries, localReads, sounds, executions, cycleDetections, moonReads, biomeReads, nextId;
 
         Fixture(int age) throws Exception { this(age, null); }
 
@@ -185,6 +192,14 @@ final class FullTadpoleDecisionTest {
             base.registries.registries().forEach(entry -> registries.add(entry.value())); registries.add(frogs);
             // Original moving-piston preparation validates the moved state's block in this lookup.
             registries.add(net.minecraft.core.registries.BuiltInRegistries.BLOCK);
+            var predicates = new MappedRegistry<LootItemCondition>(Registries.PREDICATE, Lifecycle.stable());
+            var plains = base.registries.lookupOrThrow(Registries.BIOME).getOrThrow(Biomes.PLAINS);
+            var location = new LocationPredicate(java.util.Optional.empty(), java.util.Optional.of(HolderSet.direct(plains)),
+                    java.util.Optional.empty(), java.util.Optional.empty(), java.util.Optional.empty(), java.util.Optional.empty(),
+                    java.util.Optional.empty(), java.util.Optional.empty(), java.util.Optional.empty());
+            predicates.register(ResourceKey.create(Registries.PREDICATE, Identifier.parse("phoenium:plains")),
+                    new LocationCheck(java.util.Optional.of(location), BlockPos.ZERO), RegistrationInfo.BUILT_IN);
+            registries.add(predicates);
             RegistryAccess.Frozen registry = registryOverride == null
                     ? new RegistryAccess.ImmutableRegistryAccess(registries).freeze() : registryOverride;
             holder = stub(ChunkHolder.class, List.of(
@@ -204,11 +219,13 @@ final class FullTadpoleDecisionTest {
             var players = stub(net.minecraft.server.players.PlayerList.class, List.of(new Answer(
                     net.minecraft.server.players.PlayerList.class.getMethod("getPlayerByName", String.class), args -> null)));
             set(players, net.minecraft.server.players.PlayerList.class, "players", List.of());
+            reloadableRegistries.set(new ReloadableServerRegistries.Holder(registry));
             var server = stub(net.minecraft.server.MinecraftServer.class, List.of(
                     new Answer(net.minecraft.server.MinecraftServer.class.getMethod("getPlayerList"), args -> players), new Answer(
                     net.minecraft.server.MinecraftServer.class.getMethod("debugSubscribers"),
                     args -> new net.minecraft.util.debug.ServerDebugSubscribers(null)), new Answer(
-                    net.minecraft.server.MinecraftServer.class.getMethod("registryAccess"), args -> registry)));
+                    net.minecraft.server.MinecraftServer.class.getMethod("registryAccess"), args -> registry), new Answer(
+                    net.minecraft.server.MinecraftServer.class.getMethod("reloadableRegistries"), args -> reloadableRegistries.get())));
             set(players, net.minecraft.server.players.PlayerList.class, "server", server);
             scoreboard = new net.minecraft.server.ServerScoreboard(server); scoreboard.addPlayerTeam("amber");
             var waypoints = new net.minecraft.server.waypoints.ServerWaypointManager();
@@ -226,7 +243,9 @@ final class FullTadpoleDecisionTest {
                     new Answer(ServerLevel.class.getMethod("getMoonBrightness", BlockPos.class), args -> { moonReads++; return 0.75F; }),
                     new Answer(ServerLevel.class.getMethod("getRandom"), args -> random),
                     new Answer(ServerLevel.class.getMethod("getGameRules"), args -> new GameRules(FeatureFlags.DEFAULT_FLAGS)),
-                    new Answer(ServerLevel.class.getMethod("getBiome", BlockPos.class), args -> registry.lookupOrThrow(Registries.BIOME).getOrThrow(Biomes.PLAINS)),
+                    new Answer(ServerLevel.class.getMethod("getBiome", BlockPos.class), args -> {
+                        biomeReads++; return registry.lookupOrThrow(Registries.BIOME).getOrThrow(Biomes.PLAINS);
+                    }),
                     new Answer(ServerLevel.class.getMethod("getScoreboard"), args -> scoreboard),
                     new Answer(ServerLevel.class.getMethod("getEntities", net.minecraft.world.level.entity.EntityTypeTest.class,
                             java.util.function.Predicate.class, List.class, int.class), args -> {
@@ -250,11 +269,14 @@ final class FullTadpoleDecisionTest {
                         return borrow(work, (int)args[0], (int)args[1]);
                     }),
                     new Answer(ServerLevel.class.getMethod("addWorldGenChunkEntities", Stream.class), args -> {
-                        ((Stream<?>)args[0]).forEach(entity -> { inserted.add((Entity)entity); events.add("loaded-root");
+                        ((Stream<?>)args[0]).forEach(value -> { Entity entity = (Entity) value;
+                            inserted.add(entity); events.add("loaded-root"); indexLoadedRoot(entity);
                             if (failRootInsertion) throw new IllegalStateException("controlled registration after prefix"); }); return null;
                     }),
                     new Answer(ServerLevel.class.getMethod("addLegacyChunkEntities", Stream.class), args -> {
-                        ((Stream<?>)args[0]).forEach(entity -> { inserted.add((Entity)entity); events.add("legacy-root");
+                        ((Stream<?>)args[0]).forEach(value -> { Entity entity = (Entity) value;
+                            inserted.add(entity); events.add("legacy-root");
+                            indexLoadedRoot(entity);
                             if (failRootInsertion) throw new IllegalStateException("controlled registration after prefix"); }); return null;
                     }),
                     new Answer(ServerLevel.class.getMethod("addFreshEntity", Entity.class), args -> {
@@ -289,6 +311,14 @@ final class FullTadpoleDecisionTest {
             for (ChunkStatus status : ChunkStatus.getStatusList()) futures.set(status.getIndex(), status == ChunkStatus.FULL ? fullSlot : CompletableFuture.completedFuture(ChunkResult.of(proto)));
             set(holder, GenerationChunkHolder.class, "futures", futures);
         }
+        @SuppressWarnings({"rawtypes", "unchecked"})
+        private void indexLoadedRoot(Entity entity) {
+            if (!indexLegacyRoots) return;
+            FullEntityFacts.inserted(entity);
+            FullEntityFacts.indexed(entity, entity.getId(), null);
+            selectorEntities.add(entity);
+        }
+
         @SuppressWarnings({"rawtypes", "unchecked"})
         private void collectSelector(net.minecraft.world.level.entity.EntityTypeTest type, net.minecraft.world.phys.AABB box,
                                      java.util.function.Predicate<Object> predicate, List<Object> output, int limit) {

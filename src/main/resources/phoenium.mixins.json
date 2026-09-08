@@ -42,6 +42,7 @@
     "FullSavedSelectorContentsMixin",
     "FullSavedScoreContentsMixin",
     "FullSavedNbtContentsMixin",
+    "FullSelectorPredicateMixin",
     "FullFinishingConnectionMixin",
     "FullFinishingScoreboardMixin",
     "FullFinishingScoreboardStateMixin",

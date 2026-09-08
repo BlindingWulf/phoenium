@@ -131,6 +131,10 @@ public final class FullInitializedInputs {
                 add(required, new ChunkPos(block.getX() >> 4, block.getZ() >> 4), Purpose.BLOCK_CONTEXT);
             for (ChunkPos position : plan.contexts.selectorChunks())
                 add(required, position, Purpose.ENTITY_CONTEXT);
+            for (ChunkPos position : plan.contexts.predicateBiomeChunks())
+                add(required, position, Purpose.ENVIRONMENT);
+            for (ChunkPos position : plan.contexts.predicateFullChunks())
+                add(required, position, Purpose.BLOCK_CONTEXT);
         }
         for (var fact : plan.saved.entities()) {
             if (!Double.isFinite(fact.x()) || !Double.isFinite(fact.y()) || !Double.isFinite(fact.z())) {
@@ -255,7 +259,8 @@ public final class FullInitializedInputs {
             return target(position, purposes, route == null ? Availability.UNROUTABLE : Availability.ROUTED,
                     null, null, null, route, ticket);
         }
-        if (purposes.equals(Set.of(Purpose.ENVIRONMENT))) {
+        if (purposes.contains(Purpose.ENVIRONMENT)
+                && purposes.stream().allMatch(purpose -> purpose == Purpose.ENVIRONMENT || purpose == Purpose.ENTITY_CONTEXT)) {
             if (holder == null || ticket > ChunkLevel.byStatus(ChunkStatus.BIOMES))
                 return target(position, purposes, Availability.ABSENT, holder, null, null, route, ticket);
             if (route == null) return target(position, purposes,

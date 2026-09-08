@@ -29,6 +29,8 @@ final class FullSavedTextInputTest {
     @Test void selectorOptionScanDoesNotTreatNestedNbtTextAsARegisteredPredicate() {
         assertTrue(FullSavedTextInputs.hasOption("@e[distance=..32,predicate=minecraft:ready]", "predicate"));
         assertFalse(FullSavedTextInputs.hasOption("@s[nbt={data:{text:\"x,predicate=minecraft:false\"}}]", "predicate"));
+        assertEquals(List.of("!minecraft:first", "phoenium:second"), FullSavedTextInputs.optionValues(
+                "@e[nbt={text:\"predicate=hidden\"},predicate=!minecraft:first,predicate=phoenium:second]", "predicate"));
     }
     @BeforeAll static void bootstrap() { FullSavedVillagerInputTest.bootstrap(); }
 

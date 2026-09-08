@@ -118,6 +118,8 @@ public final class FullRegistrationServerProbe implements DedicatedServerModInit
             contexts.absentBlockNbtKeepsTheOriginalIsLoadedEmptyBranchWithoutDemandingAChunk();
             contexts.sameWorldSelectorRunsOriginalPredicateOrderAndNameReadInsideTheConvergedRegion(false);
             contexts.sameWorldSelectorRunsOriginalPredicateOrderAndNameReadInsideTheConvergedRegion(true);
+            contexts.registeredBiomePredicateRunsItsOriginalLookupAndWorldReadOnce();
+            contexts.earlierSavedRootInsertionExtendsOnlyItsOwnActiveSelectorCut();
             contexts.retainedBlockNbtUsesTheOriginalImmediateLazyCreationAndSerializationSuffix();
             contexts.originalCaughtBlockSerializerFailureReleasesTheScopeForTheNextSavedEntity();
             contexts.directory = java.nio.file.Files.createTempDirectory("phoenium-full-pending-block-probe");
@@ -148,7 +150,7 @@ public final class FullRegistrationServerProbe implements DedicatedServerModInit
                     + "originalShulkerImmediate=true originalLaterRegistration=true originalMovingPiston=true "
                     + "savedVillagerOriginalBiomeCacheAlias=true originalCachedAbsentBiomeFallback=true originalReadyAbsent=true caughtQueryBarrier=true "
                     + "recursiveStorageContext=true retainedBlockNbt=true pendingBlockDependencies=true originalAbsentBlockBranch=true lazyBlockEntity=true "
-                    + "sameWorldSelector=true sameWorldEntityNbt=true filteredSelfSelector=true nestedSelector=true interpretedSavedCustomName=true "
+                    + "sameWorldSelector=true registeredSelectorPredicate=true earlierSavedRootSelector=true sameWorldEntityNbt=true filteredSelfSelector=true nestedSelector=true interpretedSavedCustomName=true "
                     + "noPrivateCacheEntries=true claimedOperationRequired=true controlledWorldEndpoints=true "
                     + "controlledLowerGenerationOutputs=true javaagent=false");
         } catch (Throwable failure) {

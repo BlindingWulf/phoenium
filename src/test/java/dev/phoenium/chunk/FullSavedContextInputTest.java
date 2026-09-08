@@ -5,6 +5,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
 import net.minecraft.nbt.CompoundTag;
+import net.minecraft.nbt.ListTag;
 import net.minecraft.world.level.storage.ValueOutput;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.world.entity.Display;
@@ -858,15 +859,120 @@ class FullSavedContextInputTest {
         assertCleanup(f);
     }
 
-    @Test void registeredSelectorPredicateRemainsUnresolvedBeforeItsOriginalBody() throws Exception {
+    @Test void missingRegisteredSelectorPredicateKeepsTheOriginalEmptyLookupBranch() throws Exception {
         var f = new FullRegistrationFixture(true); var selector = new CompoundTag();
         selector.putString("selector", "@e[distance=..32,predicate=minecraft:missing]");
         try {
             saved(f, ChunkPos.ZERO, false, text(selector));
             f.start(ChunkPos.ZERO, ChunkStatus.FULL); f.drain(); var graph = f.runtime.graph(f.holder(ChunkPos.ZERO));
-            assertEquals(FullInitializedInputs.State.UNRESOLVED, graph.inputEvaluation().state());
-            assertTrue(graph.inputEvaluation().obligation().contains("registered selector predicate context producer pending"));
-            assertNull(graph.inputReceipt()); assertFalse(graph.finishing.outcome().isDone()); assertFalse(f.barrier.tripped());
+            assertEquals(FullInitializedInputs.State.SATISFIED, graph.inputEvaluation().state(), graph.inputEvaluation().obligation());
+            FullAuthoritativeFinishingTest.context(f); f.runtime.inputs.changed(); f.drain();
+            assertInstanceOf(ChunkStageOutcome.Applied.class, graph.finishing.outcome().join());
+            assertEquals("", FullSavedContextTestHooks.text(
+                    assertInstanceOf(Display.TextDisplay.class, f.world.inserted.getFirst())).getString());
+            assertEquals(0, f.world.biomeReads); assertFalse(f.barrier.tripped());
+        } finally { f.stop(); FullFinishingServices.stopped(f.world.level.getServer()); }
+        assertCleanup(f);
+    }
+
+    @Test void registeredBiomePredicateRunsItsOriginalLookupAndWorldReadOnce() throws Exception {
+        var f = new FullRegistrationFixture(true); var lookup = new EntityLookup<Entity>();
+        var candidate = EntityTypes.TEXT_DISPLAY.create(f.world.level, EntitySpawnReason.LOAD); assertNotNull(candidate);
+        candidate.setId(731); candidate.setPos(8, 8, 8); candidate.setCustomName(Component.literal("plains candidate"));
+        lookup.add(candidate); f.world.selectorEntities.add(candidate);
+        var selector = new CompoundTag();
+        selector.putString("selector", "@e[type=minecraft:text_display,distance=..32,predicate=phoenium:plains,limit=1]");
+        try {
+            saved(f, ChunkPos.ZERO, false, text(selector));
+            f.start(ChunkPos.ZERO, ChunkStatus.FULL); f.drain(); var graph = f.runtime.graph(f.holder(ChunkPos.ZERO));
+            assertEquals(FullInitializedInputs.State.SATISFIED, graph.inputEvaluation().state(), graph.inputEvaluation().obligation());
+            assertTrue(graph.inputReceipt().targets().stream().anyMatch(target ->
+                    target.position().equals(ChunkPos.ZERO) && target.purposes().contains(FullInitializedInputs.Purpose.ENVIRONMENT)));
+            assertEquals(0, f.world.biomeReads, "registered predicate discovery must not perform the world read");
+
+            FullAuthoritativeFinishingTest.context(f); f.runtime.inputs.changed(); f.drain();
+            assertInstanceOf(ChunkStageOutcome.Applied.class, graph.finishing.outcome().join());
+            assertEquals("plains candidate", FullSavedContextTestHooks.text(
+                    assertInstanceOf(Display.TextDisplay.class, f.world.inserted.getFirst())).getString());
+            assertEquals(1, f.world.biomeReads); assertFalse(f.barrier.tripped());
+        } finally {
+            lookup.remove(candidate); f.stop(); FullFinishingServices.stopped(f.world.level.getServer());
+        }
+        assertCleanup(f);
+    }
+
+    @Test void reloadablePredicateRegistryReplacementStalesAndRebuildsTheExactPlan() throws Exception {
+        var f = new FullRegistrationFixture(true); var selector = new CompoundTag();
+        selector.putString("selector", "@e[distance=..32,predicate=minecraft:missing]");
+        try {
+            saved(f, ChunkPos.ZERO, false, text(selector));
+            f.start(ChunkPos.ZERO, ChunkStatus.FULL); f.drain(); var graph = f.runtime.graph(f.holder(ChunkPos.ZERO));
+            var first = graph.inputReceipt(); assertNotNull(first);
+
+            f.world.reloadableRegistries.set(new net.minecraft.server.ReloadableServerRegistries.Holder(
+                    f.world.level.registryAccess()));
+            assertEquals(FullInitializedInputs.State.STALE,
+                    graph.validateInputs(graph.finishing.stage(), first).state());
+            f.runtime.inputs.changed(); f.drain();
+            assertNotNull(graph.inputReceipt()); assertNotSame(first, graph.inputReceipt());
+            assertEquals(FullInitializedInputs.State.SATISFIED, graph.inputEvaluation().state());
+        } finally { f.stop(); FullFinishingServices.stopped(f.world.level.getServer()); }
+        assertCleanup(f);
+    }
+
+    @Test void foreignCandidateInsertionBeforeClaimStalesInsteadOfUsingTheActiveAppendAllowance() throws Exception {
+        var f = new FullRegistrationFixture(true); var lookup = new EntityLookup<Entity>();
+        var existing = EntityTypes.TEXT_DISPLAY.create(f.world.level, EntitySpawnReason.LOAD);
+        var foreign = EntityTypes.TEXT_DISPLAY.create(f.world.level, EntitySpawnReason.LOAD);
+        assertNotNull(existing); assertNotNull(foreign);
+        existing.setId(741); existing.setPos(8, 8, 8); foreign.setId(742); foreign.setPos(9, 8, 8);
+        lookup.add(existing); f.world.selectorEntities.add(existing);
+        var selector = new CompoundTag(); selector.putString("selector", "@e[distance=..32]");
+        try {
+            saved(f, ChunkPos.ZERO, false, text(selector));
+            f.start(ChunkPos.ZERO, ChunkStatus.FULL); f.drain(); var graph = f.runtime.graph(f.holder(ChunkPos.ZERO));
+            var first = graph.inputReceipt(); assertNotNull(first);
+
+            lookup.add(foreign); f.world.selectorEntities.add(foreign);
+            f.runtime.inputs.changed(); f.drain();
+            assertNotNull(graph.inputReceipt()); assertNotSame(first, graph.inputReceipt());
+            assertEquals(FullInitializedInputs.State.STALE,
+                    graph.validateInputs(graph.finishing.stage(), first).state());
+            assertEquals(FullInitializedInputs.State.SATISFIED, graph.inputEvaluation().state());
+        } finally {
+            lookup.remove(existing); lookup.remove(foreign); f.stop(); FullFinishingServices.stopped(f.world.level.getServer());
+        }
+        assertCleanup(f);
+    }
+
+    @Test void earlierSavedRootInsertionExtendsOnlyItsOwnActiveSelectorCut() throws Exception {
+        var f = new FullRegistrationFixture(true); var position = new BlockPos(8, 8, 8);
+        var state = Blocks.BEACON.defaultBlockState();
+        f.input(ChunkPos.ZERO).getSection(0).setBlockState(8, 8, 8, state);
+        var beacon = new BeaconBlockEntity(position, state); beacon.setCustomName(Component.literal("block "));
+        f.input(ChunkPos.ZERO).setBlockEntity(beacon);
+
+        var first = text(new CompoundTag()); first.putString("CustomName", "earlier saved root");
+        var selector = new CompoundTag();
+        selector.putString("selector", "@e[type=minecraft:text_display,distance=..32,limit=1]");
+        var laterText = new CompoundTag(); laterText.putString("translate", "%s%s");
+        var arguments = new ListTag(); arguments.add(blockText(position)); arguments.add(selector); laterText.put("with", arguments);
+        var second = text(laterText);
+        var selectorBodies = new AtomicInteger();
+        try (var ignored = FullSavedContextTestHooks.selectorPrefix(selectorBodies::incrementAndGet)) {
+            var proto = f.input(ChunkPos.ZERO); proto.getEntities().clear(); proto.addEntity(first); proto.addEntity(second);
+            f.world.indexLegacyRoots = true;
+            f.start(ChunkPos.ZERO, ChunkStatus.FULL); f.drain(); var graph = f.runtime.graph(f.holder(ChunkPos.ZERO));
+            assertEquals(FullInitializedInputs.State.SATISFIED, graph.inputEvaluation().state(), graph.inputEvaluation().obligation());
+
+            FullAuthoritativeFinishingTest.context(f); f.runtime.inputs.changed(); f.drain();
+            assertInstanceOf(ChunkStageOutcome.Applied.class, graph.finishing.outcome().join());
+            assertEquals(2, f.world.inserted.size());
+            assertEquals(1, selectorBodies.get());
+            assertEquals(2, f.world.selectorEntities.size());
+            assertEquals("block earlier saved root", FullSavedContextTestHooks.text(
+                    assertInstanceOf(Display.TextDisplay.class, f.world.inserted.get(1))).getString());
+            assertFalse(f.barrier.tripped());
         } finally { f.stop(); FullFinishingServices.stopped(f.world.level.getServer()); }
         assertCleanup(f);
     }

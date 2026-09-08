@@ -145,11 +145,17 @@ public final class FullEntityFacts {
         if (indexed) facts.service.changed(FullFinishingServices.Kind.ENTITY_REGISTRY);
     }
     public Cut cut(ServerLevel world) {
+        return cut(world, Integer.MAX_VALUE);
+    }
+    Cut cut(ServerLevel world, int maximumCandidates) {
         FullFinishingServices.requireWorld(world, FullFinishingServices.Kind.ENTITY_REGISTRY);
         candidateMetadata.lock();
         try {
-            var result = new ArrayList<Candidate>();
-            for (Entity entity : candidates.getOrDefault(world, new LinkedHashMap<>()).values()) {
+            var indexed = candidates.getOrDefault(world, new LinkedHashMap<>());
+            if (indexed.size() > maximumCandidates)
+                throw new ChunkProtocolException("selector candidate cut exceeds its admitted saved-input allowance");
+            var result = new ArrayList<Candidate>(indexed.size());
+            for (Entity entity : indexed.values()) {
                 Fact fact = entity instanceof Access access ? access.phoenium$referenceFact() : null;
                 Route route = routes.get(entity);
                 if (fact == null || fact.alias != entity || fact.world != world || route == null)
@@ -199,6 +205,32 @@ public final class FullEntityFacts {
             for (Candidate candidate : cut.candidates) {
                 if (!(candidate.alias instanceof Access access) || access.phoenium$referenceFact() != candidate.fact
                         || !Objects.equals(routes.get(candidate.alias), new Route(candidate.position, candidate.routingRevision))) return false;
+            }
+            return true;
+        } finally { candidateMetadata.unlock(); }
+    }
+    /** Earlier roots from this exact saved FULL may extend the directory while its original
+     * post-load stream is running. Existing entries remain an exact prefix, and every appended
+     * occurrence must belong to that reservation and one of its predeclared saved routes. */
+    boolean valid(Cut cut, FullFinishingServices.Reservation reservation, int maximumCandidates,
+                  Set<ChunkPos> declaredPositions) {
+        if (reservation == null) return valid(cut);
+        candidateMetadata.lock();
+        try {
+            var indexed = candidates.getOrDefault(cut.world, new LinkedHashMap<>());
+            if (indexed.size() > maximumCandidates || indexed.size() < cut.candidates.size()) return false;
+            var iterator = indexed.values().iterator();
+            for (Candidate expected : cut.candidates) {
+                if (!iterator.hasNext() || iterator.next() != expected.alias) return false;
+                if (!(expected.alias instanceof Access access) || access.phoenium$referenceFact() != expected.fact
+                        || !Objects.equals(routes.get(expected.alias), new Route(expected.position, expected.routingRevision))) return false;
+            }
+            while (iterator.hasNext()) {
+                Entity entity = iterator.next();
+                Fact fact = entity instanceof Access access ? access.phoenium$referenceFact() : null;
+                Route route = routes.get(entity);
+                if (fact == null || fact.alias != entity || fact.world != cut.world || route == null
+                        || !reservation.owns(entity) || !declaredPositions.contains(route.position)) return false;
             }
             return true;
         } finally { candidateMetadata.unlock(); }

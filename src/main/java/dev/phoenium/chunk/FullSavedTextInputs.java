@@ -60,9 +60,16 @@ final class FullSavedTextInputs {
 
     /** Reads only the already-validated selector syntax; it never resolves an option value. */
     static boolean hasOption(String source, String expected) {
+        return !optionValues(source, expected).isEmpty();
+    }
+
+    /** Values of exact top-level selector options. The selector was already parsed by vanilla;
+     * this scan does not compile or resolve any option value. */
+    static List<String> optionValues(String source, String expected) {
+        var values = new ArrayList<String>();
         int open = source.indexOf('[');
-        if (open < 0) return false;
-        int nested = 0, start = open + 1; char quote = 0; boolean escaped = false;
+        if (open < 0) return values;
+        int nested = 0, start = open + 1, equals = -1; char quote = 0; boolean escaped = false;
         for (int index = start; index < source.length(); index++) {
             char current = source.charAt(index);
             if (quote != 0) {
@@ -75,11 +82,15 @@ final class FullSavedTextInputs {
             if (current == '{' || current == '[' || current == '(') { nested++; continue; }
             if (current == '}' || current == ')' || (current == ']' && nested > 0)) { nested--; continue; }
             if (nested == 0 && current == '=') {
-                if (source.substring(start, index).trim().equals(expected)) return true;
-            } else if (nested == 0 && current == ',') start = index + 1;
-            else if (nested == 0 && current == ']') return false;
+                if (equals < 0) equals = index;
+            } else if (nested == 0 && (current == ',' || current == ']')) {
+                if (equals >= 0 && source.substring(start, equals).trim().equals(expected))
+                    values.add(source.substring(equals + 1, index).trim());
+                if (current == ']') return List.copyOf(values);
+                start = index + 1; equals = -1;
+            }
         }
-        return false;
+        return List.copyOf(values);
     }
 
     static Saved capture(CompoundTag entity, FullSavedInput custodian) {

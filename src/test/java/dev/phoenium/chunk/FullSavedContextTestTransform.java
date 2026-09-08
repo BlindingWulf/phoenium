@@ -10,11 +10,19 @@ public final class FullSavedContextTestTransform {
     private static final Set<String> TARGETS = Set.of("net/minecraft/world/entity/Display$TextDisplay",
             "net/minecraft/world/level/storage/CommandStorage", "net/minecraft/network/chat/contents/data/BlockDataSource",
             "net/minecraft/network/chat/contents/SelectorContents", "net/minecraft/network/chat/contents/ScoreContents",
-            "net/minecraft/network/chat/contents/NbtContents");
+            "net/minecraft/network/chat/contents/NbtContents",
+            "net/minecraft/world/level/storage/loot/predicates/CompositeLootItemCondition");
     public static boolean supports(String name) { return TARGETS.contains(name); }
     public static void install(ClassNode node) {
         if (!supports(node.name)) return;
-        if (node.name.endsWith("$TextDisplay")) {
+        if (node.name.endsWith("/CompositeLootItemCondition")) {
+            node.interfaces.add("dev/phoenium/chunk/FullSelectorPredicateInputs$CompositeAccess");
+            var method = new MethodNode(Opcodes.ACC_PUBLIC, "phoenium$predicateTerms", "()Ljava/util/List;", null, null);
+            method.instructions.add(new VarInsnNode(Opcodes.ALOAD, 0));
+            method.instructions.add(new FieldInsnNode(Opcodes.GETFIELD, node.name, "terms", "Ljava/util/List;"));
+            method.instructions.add(new InsnNode(Opcodes.ARETURN));
+            node.methods.add(method);
+        } else if (node.name.endsWith("$TextDisplay")) {
             wrap(node, "readAdditionalSaveData", "(Lnet/minecraft/world/level/storage/ValueInput;)V", "textReader");
         } else if (node.name.endsWith("/CommandStorage")) {
             wrap(node, "get", "(Lnet/minecraft/resources/Identifier;)Lnet/minecraft/nbt/CompoundTag;", "get");

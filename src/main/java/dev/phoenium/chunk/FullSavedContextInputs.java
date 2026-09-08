@@ -42,6 +42,7 @@ public final class FullSavedContextInputs {
     @FunctionalInterface public interface SelectorCall<T> { T call() throws CommandSyntaxException; }
 
     public static final class Plan implements AutoCloseable {
+        private static final long ENTITY_CANDIDATE_BYTES = 192L;
         private final ServerLevel world;
         private final WorldId worldId;
         private final RegionDirectory directory;
@@ -60,6 +61,11 @@ public final class FullSavedContextInputs {
         private final Runnable changed;
         private final java.util.function.LongPredicate capacity;
         private FullEntityFacts.Cut entityCut;
+        private Set<net.minecraft.world.level.ChunkPos> selectorChunks = Set.of();
+        private final Set<net.minecraft.world.level.ChunkPos> predicateBiomeChunks = new LinkedHashSet<>();
+        private final Set<net.minecraft.world.level.ChunkPos> predicateFullChunks = new LinkedHashSet<>();
+        private net.minecraft.server.ReloadableServerRegistries.Holder predicateRegistries;
+        private int maximumSelectorCandidates;
         private IdentityHashMap<Entity, FullEntityFacts.Fact> selectorCandidates;
         private String unmet;
         private long bytes;
@@ -82,12 +88,15 @@ public final class FullSavedContextInputs {
         boolean refinementCapacity() { return refinementCapacity; }
         boolean refinementRetry() { return refinementRetry; }
         public boolean valid(FullSavedInput.Snapshot current) {
+            var facts = FullFinishingServices.forServer(world.getServer()).entityFacts;
+            var reservation = claim == null ? null : FullFinishingServices.currentReservation(world.getServer());
             return !closed && current == saved && world.registryAccess() == registry
+                    && (predicateRegistries == null || world.getServer().reloadableRegistries() == predicateRegistries)
                     && storage.values().stream().allMatch(FullCommandStorageInputs.Capture::valid)
                     && blockTags.values().stream().allMatch(FullBlockEntityTagInputs.Capture::valid)
                     && blockMapAbsences.values().stream().allMatch(FullBlockEntityTagInputs.Absence::valid)
                     && blockReloadAbsences.values().stream().allMatch(FullBlockEntityTagInputs.Absence::valid)
-                    && (entityCut == null || FullFinishingServices.forServer(world.getServer()).entityFacts.valid(entityCut));
+                    && (entityCut == null || facts.valid(entityCut, reservation, maximumSelectorCandidates, selectorChunks));
         }
         List<FullSavedTextInputs.Requirements> requirements(String path) { return List.copyOf(texts.getOrDefault(path, List.of())); }
         Set<BlockPos> blocks() {
@@ -96,11 +105,10 @@ public final class FullSavedContextInputs {
             return Collections.unmodifiableSet(result);
         }
         Set<net.minecraft.world.level.ChunkPos> selectorChunks() {
-            if (entityCut == null) return Set.of();
-            var result = new LinkedHashSet<net.minecraft.world.level.ChunkPos>();
-            for (var candidate : entityCut.candidates()) result.add(candidate.position());
-            return Collections.unmodifiableSet(result);
+            return selectorChunks;
         }
+        Set<net.minecraft.world.level.ChunkPos> predicateBiomeChunks() { return Collections.unmodifiableSet(predicateBiomeChunks); }
+        Set<net.minecraft.world.level.ChunkPos> predicateFullChunks() { return Collections.unmodifiableSet(predicateFullChunks); }
         private void discover(FullSavedInput.EntityFact fact) {
             var queue = new ArrayDeque<Pending>();
             add(fact, FullSavedTextInputs.discover(fact, world.registryAccess()), queue);
@@ -226,9 +234,6 @@ public final class FullSavedContextInputs {
             texts.computeIfAbsent(fact.path(), ignored -> new ArrayList<>()).add(requirements);
             if (requirements.unmet() != null) { unmet = requirements.unmet(); return; }
             for (var selector : requirements.selectors()) {
-                if (FullSavedTextInputs.hasOption(selector.source(), "predicate")) {
-                    unmet = fact.path() + ": registered selector predicate context producer pending for " + selector.source(); return;
-                }
                 boolean ownedSelf = selector.self();
                 boolean identityScore = selector.use() == FullSavedTextInputs.Use.SCORE && !selector.source().startsWith("@");
                 if (!ownedSelf && !identityScore && !selector.worldLimited()) {
@@ -237,11 +242,48 @@ public final class FullSavedContextInputs {
                 if (!ownedSelf && !identityScore && entityCut == null) {
                     var facts = FullFinishingServices.forServer(world.getServer()).entityFacts;
                     var estimate = facts.estimate(world);
-                    long charge = Math.multiplyExact(64L, estimate.candidates());
+                    maximumSelectorCandidates = Math.addExact(estimate.candidates(), saved.entities().size());
+                    long charge = Math.multiplyExact(ENTITY_CANDIDATE_BYTES, maximumSelectorCandidates);
                     if (!reserve(charge)) { refinementCapacity = true; return; }
                     entityCut = facts.observe(world, estimate);
                     if (entityCut == null) { refinementRetry = true; return; }
+                    var chunks = new LinkedHashSet<net.minecraft.world.level.ChunkPos>();
+                    for (var candidate : entityCut.candidates()) chunks.add(candidate.position());
+                    for (var savedEntity : saved.entities()) {
+                        if (!Double.isFinite(savedEntity.x()) || !Double.isFinite(savedEntity.z())) {
+                            unmet = savedEntity.path() + ": invalid saved position retains original load failure; no input closure";
+                            return;
+                        }
+                        chunks.add(new net.minecraft.world.level.ChunkPos(
+                                ((int) Math.floor(savedEntity.x())) >> 4, ((int) Math.floor(savedEntity.z())) >> 4));
+                    }
+                    selectorChunks = Collections.unmodifiableSet(chunks);
                     bytes = Math.addExact(bytes, charge);
+                }
+                if (FullSavedTextInputs.hasOption(selector.source(), "predicate")) {
+                    Set<net.minecraft.world.level.ChunkPos> origins;
+                    if (ownedSelf) {
+                        if (!Double.isFinite(fact.x()) || !Double.isFinite(fact.z())) {
+                            unmet = fact.path() + ": invalid saved position retains original load failure; no input closure";
+                            return;
+                        }
+                        origins = Set.of(new net.minecraft.world.level.ChunkPos(
+                                ((int) Math.floor(fact.x())) >> 4, ((int) Math.floor(fact.z())) >> 4));
+                    }
+                    else if (entityCut != null) origins = selectorChunks;
+                    else origins = Set.of();
+                    var predicates = FullSelectorPredicateInputs.discover(world.getServer(), selector.source(), origins, this::reserve);
+                    if (predicateRegistries != null && predicateRegistries != predicates.registries()) {
+                        refinementRetry = true; return;
+                    }
+                    predicateRegistries = predicates.registries();
+                    if (predicates.capacity()) { refinementCapacity = true; return; }
+                    if (predicates.unmet() != null) {
+                        unmet = fact.path() + ": " + predicates.unmet() + " for " + selector.source(); return;
+                    }
+                    predicateBiomeChunks.addAll(predicates.biomes());
+                    predicateFullChunks.addAll(predicates.full());
+                    bytes = Math.addExact(bytes, predicates.bytes());
                 }
             }
             for (var read : requirements.nbtReads()) queue.add(new Pending(fact, read));
@@ -365,7 +407,8 @@ public final class FullSavedContextInputs {
         if (declared.self()) return original.call();
         if (!declared.worldLimited() || plan.entityCut == null)
             throw FullFinishingServices.failure(new ChunkProtocolException("selector requires unapproved cross-world authority " + source));
-        var current = FullFinishingServices.forServer(plan.world.getServer()).entityFacts.cut(plan.world);
+        var current = FullFinishingServices.forServer(plan.world.getServer()).entityFacts.cut(
+                plan.world, plan.maximumSelectorCandidates);
         var permitted = new IdentityHashMap<Entity, FullEntityFacts.Fact>();
         for (var candidate : current.candidates()) {
             var route = plan.directory.resolve(new RoutingKey(plan.worldId, candidate.position().x(), candidate.position().z())).orElse(null);
