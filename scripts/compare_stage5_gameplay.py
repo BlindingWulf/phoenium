@@ -30,6 +30,9 @@ def canonical(snapshot, origin):
         require(all(type(value) is int for value in row.values()), "nonintegral native furnace state")
     result = {"label": snapshot["label"], "layout": snapshot["layout"],
               "gameTime": snapshot["gameTime"] - origin, "furnaces": rows}
+    if snapshot["label"].startswith("churn-"):
+        require(snapshot["replacements"] > 0 and snapshot["staleReads"] == 2 * snapshot["replacements"], "missing native churn coverage")
+        result.update(replacements=snapshot["replacements"], staleReads=snapshot["staleReads"])
     if "ticks" in snapshot:
         require(len(snapshot["tickNanos"]) == snapshot["ticks"], "missing measured native ticks")
         require(snapshot["gameTime"] - snapshot["startGameTime"] == snapshot["ticks"], "changed native clock input")

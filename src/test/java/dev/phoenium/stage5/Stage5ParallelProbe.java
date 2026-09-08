@@ -32,9 +32,11 @@ public final class Stage5ParallelProbe implements DedicatedServerModInitializer 
         .split(",")).mapToInt(Integer::parseInt).toArray();
     private static final List<BlockPos> POSITIONS = new ArrayList<>();
     private static Measurement measurement;
+    private static Measurement nativeSprintFinishing;
     private static long tickStart;
     private static String layout = "distributed";
     private static boolean demandPending;
+    private static int churnRounds;
 
     @Override public void onInitializeServer() {
         if (!Boolean.getBoolean("phoenium.stage5.probe")) return;
@@ -42,6 +44,7 @@ public final class Stage5ParallelProbe implements DedicatedServerModInitializer 
             Commands.literal("stage5")
                 .then(Commands.literal("demand").executes(context -> { demand(context.getSource().getLevel()); return 1; }))
                 .then(Commands.literal("dirty").executes(context -> { dirty(context.getSource().getLevel()); return 1; }))
+                .then(Commands.literal("churn").executes(context -> { churn(context.getSource().getLevel()); return 1; }))
                 .then(Commands.literal("adverse").executes(context -> {
                     dev.phoenium.adversestop.AdverseStopProbe.armStage5(context.getSource().getServer()); return 1;
                 }))
@@ -108,6 +111,55 @@ public final class Stage5ParallelProbe implements DedicatedServerModInitializer 
         System.out.println("STAGE5_DIRTY nativeChunks=" + CENTERS.length);
     }
 
+    private static void churn(ServerLevel level) {
+        if (measurement != null || POSITIONS.isEmpty()) throw new IllegalStateException("churn requires a joined native tick cut");
+        if (++churnRounds > 6) throw new IllegalStateException("installed churn bound exceeded");
+        var live = Phoenium.liveRuntime();
+        RegionalServiceDispatcher dispatcher = field(live, "regionalDispatcher", RegionalServiceDispatcher.class);
+        RegionDirectory directory = field(live, "directory", RegionDirectory.class);
+        int replacements = 0, staleReads = 0;
+        for (boolean concentrated : new boolean[]{true, false}) {
+            List<RegionalServiceDispatcher.Handle> queued = new ArrayList<>();
+            long oldGeneration = directory.snapshot().generation().value();
+            java.util.concurrent.atomic.AtomicInteger applied = new java.util.concurrent.atomic.AtomicInteger();
+            for (int center : CENTERS) {
+                RoutingKey key = new RoutingKey(new WorldId("minecraft:overworld"), center, 0);
+                BlockPos pos = new BlockPos(center * 16, 65, 0);
+                queued.add(dispatcher.submit(key, RegionalServiceKind.BLOCK_ENTITY_TICK, ignored -> {
+                    if (directory.snapshot().generation().value() <= oldGeneration)
+                        throw new IllegalStateException("stale fixture input ran before topology publication");
+                    dispatcher.requireCurrentOwner(key);
+                    if (!(level.getBlockEntity(pos) instanceof FurnaceBlockEntity))
+                        throw new IllegalStateException("stale delivery lost current native incarnation");
+                    applied.incrementAndGet();
+                }));
+            }
+            split(level, concentrated);
+            queued.forEach(dispatcher::drain);
+            if (applied.get() != CENTERS.length) throw new IllegalStateException("stale native input was lost or duplicated");
+            staleReads += applied.get();
+            if (concentrated) for (int center : CENTERS) {
+                RoutingKey key = new RoutingKey(new WorldId("minecraft:overworld"), center, 0);
+                dispatcher.executeAndDrain(key, RegionalServiceKind.BLOCK_ENTITY_TICK, ignored -> {
+                    BlockPos pos = new BlockPos(center * 16, 65, 0);
+                    BlockEntity previous = Objects.requireNonNull(level.getBlockEntity(pos));
+                    var state = previous.getBlockState();
+                    var saved = previous.saveWithFullMetadata(level.registryAccess());
+                    BlockEntity replacement = BlockEntity.loadStatic(pos, state, saved, level.registryAccess());
+                    if (!(replacement instanceof FurnaceBlockEntity) || replacement == previous)
+                        throw new IllegalStateException("native replacement reader failed");
+                    level.removeBlockEntity(pos); level.setBlockEntity(replacement);
+                    if (!previous.isRemoved() || level.getBlockEntity(pos) != replacement
+                            || !saved.equals(replacement.saveWithFullMetadata(level.registryAccess())))
+                        throw new IllegalStateException("replacement lost incarnation or native saved state");
+                });
+                replacements++;
+            }
+        }
+        snapshot(level.getServer(), "churn-" + churnRounds, Map.of("replacements", replacements, "staleReads", staleReads));
+        System.out.println("STAGE5_CHURN round=" + churnRounds + " replacements=" + replacements + " staleReads=" + staleReads);
+    }
+
     private static void adopt(ServerLevel level, int count) {
         if (!POSITIONS.isEmpty()) throw new IllegalStateException("workload already retained");
         if (!LiveTickReadiness.await(level).current()) throw new IllegalStateException("reload FULL not current");
@@ -161,7 +213,7 @@ public final class Stage5ParallelProbe implements DedicatedServerModInitializer 
     }
 
     private static void measure(MinecraftServer server, String label, int ticks) {
-        if (measurement != null) throw new IllegalStateException("overlapping measurements");
+        if (measurement != null || nativeSprintFinishing != null) throw new IllegalStateException("overlapping measurements");
         if (POSITIONS.isEmpty()) throw new IllegalStateException("no actual furnace workload");
         measurement = new Measurement(label, server.overworld().getGameTime(), ticks, System.nanoTime());
         snapshot(server, label + "-before", Map.of());
@@ -169,6 +221,13 @@ public final class Stage5ParallelProbe implements DedicatedServerModInitializer 
         System.out.println("STAGE5_MEASURING label=" + label + " ticks=" + ticks);
     }
     private static void endTick(MinecraftServer server) {
+        Measurement finishing = nativeSprintFinishing;
+        if (finishing != null && !server.tickRateManager().isSprinting()) {
+            if (!server.tickRateManager().isFrozen() || server.overworld().getGameTime() != finishing.lastGameTime)
+                throw new IllegalStateException("native sprint changed the completed tick cut");
+            nativeSprintFinishing = null;
+            System.out.println("STAGE5_MEASURED label=" + finishing.label + " ticks=" + finishing.ticks + " nativeSprintFinished=true");
+        }
         if (demandPending) {
             boolean ready = true;
             for (int center : CENTERS) for (int x = center - 1; x <= center + 1; x++) for (int z = -1; z <= 1; z++) {
@@ -186,13 +245,15 @@ public final class Stage5ParallelProbe implements DedicatedServerModInitializer 
             current.tickNanos.add(System.nanoTime() - tickStart); current.lastGameTime = now;
         }
         if (current.tickNanos.size() == current.ticks) {
-            server.tickRateManager().setFrozen(true); measurement = null;
+            // Let the original sprint finalizer restore its saved frozen state. Freezing
+            // here can prevent that finalizer from running, so a later unfreeze command
+            // gets overwritten by an unfinished sprint. Publish completion only afterward.
+            measurement = null; nativeSprintFinishing = current;
             try (var turn = FullFinishingServices.forServer(server).serial(FullFinishingServices.Phase.SERVER_TASK)) {
                 snapshot(server, current.label, Map.of("tickNanos", current.tickNanos,
                     "startGameTime", current.startGameTime, "ticks", current.ticks,
                     "elapsedNanos", System.nanoTime() - current.started));
             }
-            System.out.println("STAGE5_MEASURED label=" + current.label + " ticks=" + current.ticks);
         }
     }
     private static void snapshot(MinecraftServer server, String label, Map<String, Object> measurementData) {

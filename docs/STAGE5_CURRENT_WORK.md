@@ -151,3 +151,13 @@ passes; next FULL run uses JAR 59BB31DC058351C7F4BC9DB572FEC1DE2B298FF623614FC4C
 The headless runner also strips unrelated prepared FULL probes from its disposable copy.
 The bounded sequential benchmark driver is `scripts/benchmark_stage5.py`; its report
 is evidence capture only and cannot mark Stage 5 complete.
+
+FULL `full-4-b` reaches all four native FULL publications and original disk writes
+with the repaired owner lookup, but the bed callbacks time out because the probe
+left Minecraft frozen. Read-only `tick query` confirms frozen while all scheduler
+health counters remain zero. Root cause: freezing at the measured tick's END leaves
+Minecraft's original sprint finalizer pending; a later unfreeze is overwritten by
+its saved frozen state. The probe now lets native finalization finish and only then
+publishes STAGE5_MEASURED. This is a harness repair, not a production clock change.
+The independent Sol High review of 5aeb2fe found no actionable issue; coordinator-only
+registration-before-route publication remains an explicit requirement.

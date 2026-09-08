@@ -14,6 +14,15 @@ CALLBACK = dict(x=0, y=65, z=0, events=[[101,"before",64,64,0,0,0,200],
     [101,"after",64,63,0,1600,1,200], [102,"before",64,63,0,1600,1,200], [102,"after",64,63,0,1599,2,200]])
 
 class NativeComparisonTest(unittest.TestCase):
+    def test_native_churn_requires_exact_replacement_and_stale_input_counts(self):
+        value = copy.deepcopy(BASE); value.update(label="churn-1", replacements=4, staleReads=8)
+        expected = canonical(value, 100)
+        for count in (0, 3, 5):
+            changed = copy.deepcopy(value); changed["replacements"] = count
+            with self.assertRaises(ValueError): canonical(changed, 100)
+        changed = copy.deepcopy(value); changed.update(replacements=2, staleReads=4)
+        self.assertNotEqual(expected, canonical(changed,100))
+
     def test_state_changes_and_row_order_are_not_normalized(self):
         baseline = canonical(BASE, 100)
         for field in ("ingredient", "fuel", "output", "lit", "cooking", "total", "x"):

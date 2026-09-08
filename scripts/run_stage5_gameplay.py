@@ -34,8 +34,11 @@ def main():
     parser.add_argument("--trace", action="store_true")
     parser.add_argument("--callback-trace", action="store_true")
     parser.add_argument("--adverse", action="store_true")
+    parser.add_argument("--churn", action="store_true", help="merge, replace actual native incarnations, split and reroute queued inputs before each sample")
     parser.add_argument("--port", type=int, default=25625)
     args = parser.parse_args()
+    if args.churn and (args.layout != "distributed" or args.samples > 6 or args.adverse):
+        raise SystemExit("churn requires distributed layout, at most six samples, and healthy mode")
     output = args.output.resolve()
     if output.exists():
         raise SystemExit(f"Refusing existing output: {output}")
@@ -155,6 +158,8 @@ def main():
             report["status"] = "PASS_ADVERSE_ONLY"
             return
         for sample in range(args.samples):
+            if args.churn:
+                send("stage5 churn"); wait("STAGE5_CHURN round=" + str(sample + 1))
             label = f"sample-{sample+1}"
             send(f"stage5 measure {label} {args.ticks}"); wait("STAGE5_MEASURED label=" + label, 240)
         send("stage5 dirty"); wait("STAGE5_DIRTY")

@@ -367,6 +367,7 @@ public final class AdverseStopProbe implements DedicatedServerModInitializer {
                 + " callbackFailures=" + CALLBACK_FAILURES.get()
                 + " originalWrites=" + WRITE_ENTRIES.get() + " writeOutcomes=" + WRITE_COMPLETIONS.get()
                 + " writeFailures=" + WRITE_FAILURES.get() + " pendingAtFailedStop=" + RUNTIME_STOP_WITNESSES.get()
+                + " pendingSavesAtNativeFailure=" + (STAGE5 ? NATIVE_FAILURE_PENDING.get() : 1)
                 + " pendingSaves=" + value(saves, "pending") + " failedSettlements=" + value(saves, "failedSettlements")
                 + " dispatcherPending=" + (runtime == null ? -1 : runtime.regionalDispatcher().pendingCount())
                 + " activeLeases=" + (runtime == null ? -1 : runtime.diagnostics().activeLeases())

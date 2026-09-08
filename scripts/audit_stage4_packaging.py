@@ -11,10 +11,10 @@ def audit(jar, root):
         metadata = json.loads(archive.read("fabric.mod.json"))
         forbidden = [name for name in names if any(part in name.lower() for part in
             ("org/junit/", "clienttest/", "clientobs/", "stage4probe/", "stage4-acceptance",
-             "testmixin/", "testharness/", "full-registration-probe", "adversestop/", "instrumentation/"))]
+             "stage5probe/", "testmixin/", "testharness/", "full-registration-probe", "adversestop/", "instrumentation/"))]
         forbidden_references = [name for name in names if name.endswith(".class") and any(
             marker in archive.read(name) for marker in
-            (b"org/junit/", b"dev/phoenium/clienttest/", b"dev/phoenium/stage4probe/", b"dev/phoenium/testmixin/"))]
+            (b"org/junit/", b"dev/phoenium/clienttest/", b"dev/phoenium/stage4probe/", b"dev/phoenium/stage5probe/", b"dev/phoenium/testmixin/"))]
         mixins = {name: json.loads(archive.read(name)) for name in metadata["mixins"]}
     props = dict(line.split("=", 1) for line in (root / "gradle.properties").read_text().splitlines() if "=" in line)
     pinned = {"minecraft_version": "26.2", "loader_version": "0.19.5", "fabric_version": "0.159.0+26.2", "loom_version": "1.17.20"}
