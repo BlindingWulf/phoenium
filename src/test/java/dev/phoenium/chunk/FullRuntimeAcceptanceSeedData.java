@@ -1,4 +1,4 @@
-package dev.phoenium.acceptance;
+package dev.phoenium.chunk;
 
 /** Test-only provenance retained on the original SerializableChunkData instance. */
 public interface FullRuntimeAcceptanceSeedData {

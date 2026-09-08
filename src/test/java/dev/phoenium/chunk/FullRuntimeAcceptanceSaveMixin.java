@@ -1,5 +1,6 @@
 package dev.phoenium.acceptance;
 import dev.phoenium.chunk.FullRuntimeAcceptanceProbe;
+import dev.phoenium.chunk.FullRuntimeAcceptanceSeedData;
 import com.llamalad7.mixinextras.injector.ModifyReturnValue;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.server.level.ServerLevel;
