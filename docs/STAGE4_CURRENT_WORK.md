@@ -65,12 +65,15 @@ rejects a different live world instance. The original unload callback therefore 
 not reclaim pending state. Native stop and FULL_SERVICES STOPPED PASS still occur;
 they do not erase the initiating test failure.
 
-Sol owns the approved test-only repair: exact synthetic ServerLevel/ChunkMap identity
-selects genuine isolated regional service/save/lifecycle authority at the existing
-unload seams. The original production unload body and all retention/reclamation
-assertions stay active. Production world identity stays strict. Scope must clear on
-failure and reject foreign identity/late reuse. Lead reviews before integration;
-Luna alone reruns the installed controlled fixture.
+Controlled fixture repair is integrated as `7b28af5` (Sol `92e3545`). Exact synthetic
+ServerLevel/ChunkMap identity selects genuine isolated regional save/lifecycle
+authority at the existing seams. Original production unload body and all existing
+retention/reclamation assertions remain active; production world identity stays
+strict. The 45-test focused gate passes, including foreign/post-stop rejection,
+throwing-scope cleanup, real save acknowledgement and named-service teardown. The
+probe JAR builds and production packaging excludes this adapter. Luna alone owns
+its installed rerun. Sol now prepares a separate test-only adverse pending-write /
+failed-stop probe through the actual native paths; Luna will launch that evidence.
 
 Earlier preserved native failures: `transform-20260908-060338` first-tick consecutive
 coordinator phases, repaired `00ce944`; `transform-20260908-064318` superclass-close
