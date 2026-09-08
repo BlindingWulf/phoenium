@@ -72,7 +72,12 @@ public final class FullSavedContextInputs {
         }
     }
     private record LiveObservation(List<LiveReceipt> receipts, List<LiveContribution> contributions,
-                                   long bytes, String unmet, boolean grew) { }
+                                   long bytes, String unmet, boolean grew, net.minecraft.util.EncoderCache waiting) {
+        private LiveObservation(List<LiveReceipt> receipts, List<LiveContribution> contributions,
+                                long bytes, String unmet, boolean grew) {
+            this(receipts, contributions, bytes, unmet, grew, null);
+        }
+    }
     @FunctionalInterface public interface SelectorCall<T> { T call() throws CommandSyntaxException; }
 
     public static final class Plan implements AutoCloseable {
@@ -96,6 +101,7 @@ public final class FullSavedContextInputs {
         private final Map<BlockPos, FullBlockEntityTagInputs.Absence> blockMapAbsences = new HashMap<>();
         private final Map<BlockPos, FullBlockEntityTagInputs.Absence> blockReloadAbsences = new HashMap<>();
         private final Map<BlockPos, AutoCloseable> blockWaiters = new HashMap<>();
+        private final IdentityHashMap<net.minecraft.util.EncoderCache, AutoCloseable> cacheWaiters = new IdentityHashMap<>();
         private final List<AutoCloseable> consumers = new ArrayList<>();
         private final Runnable changed;
         private final java.util.function.LongPredicate capacity;
@@ -359,6 +365,8 @@ public final class FullSavedContextInputs {
                 return true;
             }
             LiveObservation size = measured.value();
+            if (size.waiting() != null) { refinementWaiting = true; return true; }
+            if (size.grew()) { refinementRetry = true; return true; }
             if (size.unmet() != null) { unmet = size.unmet(); return true; }
             if (!reserve(size.bytes())) { refinementCapacity = true; return true; }
             var captured = FullContextRefinement.read(runtime, graph, expected, footprint,
@@ -369,6 +377,7 @@ public final class FullSavedContextInputs {
                 return true;
             }
             LiveObservation observation = captured.value();
+            if (observation.waiting() != null) { refinementWaiting = true; return true; }
             if (observation.grew()) { refinementRetry = true; return true; }
             if (observation.unmet() != null) { unmet = observation.unmet(); return true; }
             bytes = Math.addExact(bytes, size.bytes()); liveReceipts.addAll(observation.receipts());
@@ -434,6 +443,11 @@ public final class FullSavedContextInputs {
                 BlockEntity block = FullLiveComponentInputs.block(target.actual(), position);
                 if (FullCachedComponentInputs.selected(pending.read.path())) {
                     var measure = FullCachedComponentInputs.measure(block, pending.read.recursionDepth(), registry);
+                    if (measure.loading() != null) {
+                        if (!awaitCache(measure.loading()))
+                            return new LiveObservation(List.of(), List.of(), total, null, true);
+                        return new LiveObservation(List.of(), List.of(), total, null, false, measure.loading());
+                    }
                     if (measure.unmet() != null) return new LiveObservation(List.of(), List.of(), total,
                             pending.fact.path() + ": " + measure.unmet(), false);
                     total = Math.addExact(total, measure.bytes());
@@ -469,6 +483,13 @@ public final class FullSavedContextInputs {
                 }
             }
             return new LiveObservation(List.copyOf(receipts), List.copyOf(contributions), total, null, capture && total > allowance);
+        }
+
+        private boolean awaitCache(net.minecraft.util.EncoderCache cache) {
+            if (cacheWaiters.containsKey(cache)) return true;
+            AutoCloseable waiter = FullCachedComponentInputs.whenIdle(cache, changed);
+            if (waiter == null) return false;
+            cacheWaiters.put(cache, waiter); return true;
         }
 
         private static boolean validLiveTarget(FullRegistrationRuntime runtime, FullInitializedInputs.Target target) {
@@ -597,7 +618,8 @@ public final class FullSavedContextInputs {
             closed = true; texts.clear(); storage.clear(); pendingBlocks.clear(); refinedBlocks.clear();
             pendingEntities.clear(); pendingLiveBlocks.clear(); refinedEntities.clear(); refinedLiveBlocks.clear(); liveReceipts.clear();
             blockTags.clear(); blockMapAbsences.clear(); blockReloadAbsences.clear();
-            var waiters = List.copyOf(blockWaiters.values()); blockWaiters.clear();
+            var waiters = new ArrayList<AutoCloseable>(blockWaiters.values()); blockWaiters.clear();
+            waiters.addAll(cacheWaiters.values()); cacheWaiters.clear();
             Throwable failure = null;
             for (AutoCloseable waiter : waiters) try { waiter.close(); }
             catch (Throwable problem) {

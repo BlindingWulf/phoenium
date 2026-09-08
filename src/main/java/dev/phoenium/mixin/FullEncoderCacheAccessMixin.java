@@ -1,6 +1,7 @@
 package dev.phoenium.mixin;
 
 import com.google.common.cache.LoadingCache;
+import com.google.common.cache.PhoeniumCacheWitness;
 import com.mojang.serialization.Codec;
 import com.mojang.serialization.DataResult;
 import com.mojang.serialization.DynamicOps;
@@ -13,7 +14,8 @@ import org.spongepowered.asm.mixin.Shadow;
 @Mixin(EncoderCache.class)
 public abstract class FullEncoderCacheAccessMixin implements FullCachedComponentInputs.CacheAccess {
     @Shadow @Final private LoadingCache<Object, DataResult<?>> cache;
-    @Override public DataResult<?> phoenium$cached(Codec<?> codec, Object value, DynamicOps<?> ops) {
-        return cache.getIfPresent(FullEncoderCacheKeyInvoker.phoenium$create(codec, value, ops));
+    @Override public PhoeniumCacheWitness.Result<DataResult<?>> phoenium$cached(
+            Codec<?> codec, Object value, DynamicOps<?> ops) {
+        return PhoeniumCacheWitness.peek(cache, FullEncoderCacheKeyInvoker.phoenium$create(codec, value, ops));
     }
 }

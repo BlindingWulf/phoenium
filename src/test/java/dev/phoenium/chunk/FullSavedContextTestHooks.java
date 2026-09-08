@@ -2,6 +2,7 @@ package dev.phoenium.chunk;
 
 import java.lang.reflect.InvocationTargetException;
 import com.google.common.cache.LoadingCache;
+import com.google.common.cache.PhoeniumCacheWitness;
 import com.mojang.serialization.Codec;
 import com.mojang.serialization.DataResult;
 import com.mojang.serialization.DynamicOps;
@@ -35,14 +36,15 @@ public final class FullSavedContextTestHooks {
         LIVE_BLOCK_PREFIX.set(prefix); return () -> LIVE_BLOCK_PREFIX.remove();
     }
     @SuppressWarnings("unchecked")
-    public static DataResult<?> cached(EncoderCache encoder, Codec<?> codec, Object value, DynamicOps<?> ops) {
+    public static PhoeniumCacheWitness.Result<DataResult<?>> cached(
+            EncoderCache encoder, Codec<?> codec, Object value, DynamicOps<?> ops) {
         try {
             var cacheField = EncoderCache.class.getDeclaredField("cache"); cacheField.setAccessible(true);
             var cache = (LoadingCache<Object, DataResult<?>>) cacheField.get(encoder);
             var key = Class.forName("net.minecraft.util.EncoderCache$Key", false, EncoderCache.class.getClassLoader());
             var constructor = key.getDeclaredConstructor(Codec.class, Object.class, DynamicOps.class);
             constructor.setAccessible(true);
-            return cache.getIfPresent(constructor.newInstance(codec, value, ops));
+            return PhoeniumCacheWitness.peek(cache, constructor.newInstance(codec, value, ops));
         } catch (ReflectiveOperationException failure) { throw new AssertionError(failure); }
     }
     public static void clearCachedComponents() {
@@ -53,6 +55,19 @@ public final class FullSavedContextTestHooks {
             var cacheField = EncoderCache.class.getDeclaredField("cache"); cacheField.setAccessible(true);
             ((LoadingCache<?, ?>) cacheField.get(access.phoenium$encoderCache())).invalidateAll();
         } catch (ReflectiveOperationException failure) { throw new AssertionError(failure); }
+    }
+    public static <T> DataResult<T> cachedEncode(Object receiver, Object input, DynamicOps<T> ops, T prefix) {
+        var access = (FullCachedComponentInputs.WrappedCodecAccess) receiver;
+        var activity = FullCachedComponentInputs.encoding(access.phoenium$encoderCache()); Throwable primary = null;
+        try { return original(receiver.getClass(), receiver, "encode",
+                new Class<?>[]{Object.class, DynamicOps.class, Object.class}, input, ops, prefix); }
+        catch (RuntimeException | Error failure) { primary = failure; throw failure; }
+        finally {
+            try { activity.close(); }
+            catch (RuntimeException | Error cleanup) {
+                if (primary != null) primary.addSuppressed(cleanup); else throw cleanup;
+            }
+        }
     }
     /** Reads the vanilla private display payload in both transformed and installed probes. */
     public static Component text(Display.TextDisplay entity) {
@@ -69,7 +84,11 @@ public final class FullSavedContextTestHooks {
 
     @SuppressWarnings("unchecked")
     private static <T> T original(Class<?> owner, Object receiver, String method, Class<?>[] parameters, Object... arguments) {
-        try { return (T) owner.getMethod("phoenium$originalContext$" + method, parameters).invoke(receiver, arguments); }
+        try {
+            var original = owner.getMethod("phoenium$originalContext$" + method, parameters);
+            original.setAccessible(true);
+            return (T) original.invoke(receiver, arguments);
+        }
         catch (InvocationTargetException wrapped) {
             if (wrapped.getCause() instanceof RuntimeException runtime) throw runtime;
             if (wrapped.getCause() instanceof Error error) throw error;

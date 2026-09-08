@@ -44,14 +44,14 @@ public final class FullSavedContextTestTransform {
         } else if (node.name.equals("net/minecraft/util/EncoderCache")) {
             node.interfaces.add("dev/phoenium/chunk/FullCachedComponentInputs$CacheAccess");
             var method = new MethodNode(Opcodes.ACC_PUBLIC, "phoenium$cached",
-                    "(Lcom/mojang/serialization/Codec;Ljava/lang/Object;Lcom/mojang/serialization/DynamicOps;)Lcom/mojang/serialization/DataResult;",
+                    "(Lcom/mojang/serialization/Codec;Ljava/lang/Object;Lcom/mojang/serialization/DynamicOps;)Lcom/google/common/cache/PhoeniumCacheWitness$Result;",
                     null, null);
             method.instructions.add(new VarInsnNode(Opcodes.ALOAD, 0));
             method.instructions.add(new VarInsnNode(Opcodes.ALOAD, 1));
             method.instructions.add(new VarInsnNode(Opcodes.ALOAD, 2));
             method.instructions.add(new VarInsnNode(Opcodes.ALOAD, 3));
             method.instructions.add(new MethodInsnNode(Opcodes.INVOKESTATIC, HOOKS, "cached",
-                    "(Lnet/minecraft/util/EncoderCache;Lcom/mojang/serialization/Codec;Ljava/lang/Object;Lcom/mojang/serialization/DynamicOps;)Lcom/mojang/serialization/DataResult;", false));
+                    "(Lnet/minecraft/util/EncoderCache;Lcom/mojang/serialization/Codec;Ljava/lang/Object;Lcom/mojang/serialization/DynamicOps;)Lcom/google/common/cache/PhoeniumCacheWitness$Result;", false));
             method.instructions.add(new InsnNode(Opcodes.ARETURN)); node.methods.add(method);
         } else if (node.name.equals("net/minecraft/util/EncoderCache$2")) {
             node.interfaces.add("dev/phoenium/chunk/FullCachedComponentInputs$WrappedCodecAccess");
@@ -59,6 +59,9 @@ public final class FullSavedContextTestTransform {
                     "this$0", "Lnet/minecraft/util/EncoderCache;");
             fieldGetter(node, "phoenium$sourceCodec", "()Lcom/mojang/serialization/Codec;",
                     "val$codec", "Lcom/mojang/serialization/Codec;");
+            wrapObjectReceiver(node, "encode",
+                    "(Ljava/lang/Object;Lcom/mojang/serialization/DynamicOps;Ljava/lang/Object;)Lcom/mojang/serialization/DataResult;",
+                    "cachedEncode");
         } else if (node.name.endsWith("/Entity")) {
             node.interfaces.add("dev/phoenium/chunk/FullLiveComponentInputs$EntityAccess");
             var method = new MethodNode(Opcodes.ACC_PUBLIC, "phoenium$rawCustomName", "()Lnet/minecraft/network/chat/Component;", null, null);
@@ -176,5 +179,19 @@ public final class FullSavedContextTestTransform {
                 descriptor.replace("(", "(L" + node.name + ";"), false));
         wrapper.instructions.add(new InsnNode(Type.getReturnType(descriptor).getOpcode(Opcodes.IRETURN)));
         node.methods.add(wrapper);
+    }
+    private static void wrapObjectReceiver(ClassNode node, String name, String descriptor, String hook) {
+        var matches = node.methods.stream().filter(method -> method.name.equals(name) && method.desc.equals(descriptor)).toList();
+        if (matches.size() != 1) throw new AssertionError("saved-context selector changed: " + node.name + "." + name);
+        var original = matches.getFirst(); original.name = "phoenium$originalContext$" + name;
+        original.access = (original.access & ~(Opcodes.ACC_PRIVATE | Opcodes.ACC_PROTECTED)) | Opcodes.ACC_PUBLIC;
+        var wrapper = new MethodNode(original.access, name, descriptor, original.signature, original.exceptions.toArray(String[]::new));
+        wrapper.instructions.add(new VarInsnNode(Opcodes.ALOAD, 0));
+        wrapper.instructions.add(new VarInsnNode(Opcodes.ALOAD, 1));
+        wrapper.instructions.add(new VarInsnNode(Opcodes.ALOAD, 2));
+        wrapper.instructions.add(new VarInsnNode(Opcodes.ALOAD, 3));
+        wrapper.instructions.add(new MethodInsnNode(Opcodes.INVOKESTATIC, HOOKS, hook,
+                "(Ljava/lang/Object;Ljava/lang/Object;Lcom/mojang/serialization/DynamicOps;Ljava/lang/Object;)Lcom/mojang/serialization/DataResult;", false));
+        wrapper.instructions.add(new InsnNode(Opcodes.ARETURN)); node.methods.add(wrapper);
     }
 }
