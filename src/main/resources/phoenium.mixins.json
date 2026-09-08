@@ -13,6 +13,7 @@
     "RegionalServerChunkCacheAccess",
     "RegionalSpawnStateAccess",
     "RegionalChunkGameplayMixin",
+    "RegionalNaturalSpawnerMixin",
     "RegionalChunkMapTrackingMixin",
     "RegionalTrackedEntityAccess",
     "ServerGamePacketListenerMixin",

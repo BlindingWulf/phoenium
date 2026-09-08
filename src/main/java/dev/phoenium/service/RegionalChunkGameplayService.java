@@ -21,6 +21,7 @@ import net.minecraft.core.QuartPos;
 import net.minecraft.server.level.*;
 import net.minecraft.server.network.ServerGamePacketListenerImpl;
 import net.minecraft.world.entity.*;
+import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.level.*;
 import net.minecraft.world.level.biome.MobSpawnSettings;
 import net.minecraft.world.level.chunk.LevelChunk;
@@ -137,12 +138,34 @@ public final class RegionalChunkGameplayService {
         });
     }
 
-    public void spawningChunkCallback(LevelChunk chunk, Runnable original) { chunkCallback(chunk, 9, original); }
+    /** Radius eight is the pinned tickThunder lightning-rod POI query's 128-block terrain reach.
+     * NaturalSpawner's unbounded player-distance selection is handled from published positions. */
+    public void spawningChunkCallback(LevelChunk chunk, Runnable original) { chunkCallback(chunk, 8, original); }
     public void blockTickCallback(LevelChunk chunk, Runnable original) { chunkCallback(chunk, 1, original); }
     public void broadcastChunkCallback(LevelChunk chunk, Runnable original) { chunkCallback(chunk, 0, original); }
+    /** The pinned custom spawner set chooses terrain only relative to the current level-player
+     * cohort. Its widest path is wandering-trader meeting POI radius 48 followed by a radius-48
+     * spawn search; seven chunk keys cover that path and the final 2x3x2 space probe. */
+    public void customSpawnerCallback(Runnable original) {
+        requireCycle(); Objects.requireNonNull(original);
+        List<PlayerProjection> players = captureLevelPlayers(); cycle.levelPlayers = players;
+        LinkedHashSet<RoutingKey> footprint = new LinkedHashSet<>();
+        TopologyPlanner planner = new TopologyPlanner();
+        for (PlayerProjection player : players) footprint.addAll(planner.requiredClosure(Set.of(player.key), 7));
+        RoutingKey source = players.isEmpty() ? new RoutingKey(world, 0, 0) : players.get(0).key;
+        if (footprint.isEmpty()) footprint.add(source);
+        dispatcher.ensureClosure(Set.copyOf(footprint));
+        dispatcher.executeAndDrain(source, RegionalServiceKind.CHUNK_GAMEPLAY, ignored -> {
+            dispatcher.requireCurrentClosure(Set.copyOf(footprint));
+            for (PlayerProjection player : players) requireEntity(player.candidate, player.key);
+            original.run();
+        });
+        chunkCallbacks = Math.incrementExact(chunkCallbacks);
+    }
     private void chunkCallback(LevelChunk chunk, int terrainRadius, Runnable original) {
         requireCycle(); Objects.requireNonNull(chunk); Objects.requireNonNull(original);
         cycle.players = capturePlayers().players;
+        cycle.levelPlayers = captureLevelPlayers();
         RoutingKey source = new RoutingKey(world, chunk.getPos().x(), chunk.getPos().z());
         Set<RoutingKey> footprint = new LinkedHashSet<>(new TopologyPlanner().requiredClosure(Set.of(source), terrainRadius));
         for (PlayerProjection player : cycle.players)
@@ -155,13 +178,36 @@ public final class RegionalChunkGameplayService {
         chunkCallbacks = Math.incrementExact(chunkCallbacks);
     }
 
+    /** Pinned NaturalSpawner calls the boolean getNearestPlayer overload and immediately asks the
+     * selected alias for its squared distance. Preserve the level player-list order and strict tie
+     * behavior while reading only exact position/spectator publications. */
+    public Player nearestNaturalSpawnPlayer(double x, double y, double z) {
+        Cycle active = requireCycle();
+        PlayerProjection best = null; double bestDistance = -1.0;
+        for (PlayerProjection player : active.levelPlayers) {
+            if (player.spectator) continue;
+            double distance = player.position.distanceToSqr(x, y, z);
+            if (bestDistance == -1.0 || distance < bestDistance) { best = player; bestDistance = distance; }
+        }
+        active.nearestPlayer = best;
+        return best == null ? null : best.player;
+    }
+    public double naturalSpawnPlayerDistance(Player player, double x, double y, double z) {
+        Cycle active = requireCycle(); PlayerProjection selected = active.nearestPlayer;
+        if (selected == null || selected.player != player)
+            throw new IllegalStateException("natural spawn nearest-player observation changed");
+        return selected.position.distanceToSqr(x, y, z);
+    }
+
     public void entityTicks(EntityTickList entities, Consumer<Entity> output) {
         requireOwnerFree(); Objects.requireNonNull(entities); Objects.requireNonNull(output);
         entities.forEach(entity -> {
             FullEntityFacts.Candidate source = finishing.entityFacts.trackingCandidate(level, entity);
             List<FullEntityFacts.Candidate> passengers = finishing.entityFacts.trackingPassengers(source);
+            FullEntityFacts.VehicleRelation vehicle = finishing.entityFacts.trackingVehicle(source);
             RoutingKey key = key(source); LinkedHashSet<RoutingKey> footprint = new LinkedHashSet<>();
             footprint.add(key); passengers.forEach(passenger -> footprint.add(key(passenger)));
+            if (vehicle.vehicle() != null) footprint.add(key(vehicle.vehicle()));
             PlayerCut currentPlayers = capturePlayers();
             for (PlayerProjection player : currentPlayers.players)
                 if (Math.abs((long) player.key.x() - key.x()) <= recipientRadius
@@ -171,6 +217,8 @@ public final class RegionalChunkGameplayService {
                 requireEntity(source, key);
                 if (!finishing.entityFacts.validTrackingPassengers(source, passengers))
                     throw new IllegalStateException("entity tick passenger relation changed");
+                if (!finishing.entityFacts.validTrackingVehicle(vehicle))
+                    throw new IllegalStateException("entity tick vehicle relation changed");
                 output.accept(entity);
             });
         });
@@ -184,16 +232,25 @@ public final class RegionalChunkGameplayService {
         List<PlayerProjection> result = new ArrayList<>(order.size());
         for (ServerPlayer player : order) {
             var session = Objects.requireNonNull(sessions.get(player));
-            var candidate = finishing.entityFacts.trackingCandidate(level, player); RoutingKey key = key(candidate);
-            PlayerProjection[] captured = new PlayerProjection[1];
-            dispatcher.executeAndDrain(key, RegionalServiceKind.TRACKING_UPDATE, ignored -> {
-                requireEntity(candidate, key); finishing.scoreboard.requireTrackingSession(cut, session);
-                captured[0] = new PlayerProjection(player, session.listener(), candidate, key,
-                    player.position(), player.isSpectator());
-            });
-            result.add(Objects.requireNonNull(captured[0]));
+            FullEntityFacts.PublishedPosition published = finishing.entityFacts.publishedPosition(player);
+            FullEntityFacts.Candidate candidate = published.candidate();
+            if (candidate.fact().world() != level) throw new IllegalStateException("chunk gameplay player changed world");
+            finishing.scoreboard.requireTrackingSession(cut, session);
+            result.add(new PlayerProjection(player, session.listener(), candidate, key(candidate),
+                published.position(), candidate.fact().spectator()));
         }
         return new PlayerCut(cut, List.copyOf(result));
+    }
+    private List<PlayerProjection> captureLevelPlayers() {
+        List<PlayerProjection> result = new ArrayList<>();
+        for (ServerPlayer player : List.copyOf(level.players())) {
+            FullEntityFacts.PublishedPosition published = finishing.entityFacts.publishedPosition(player);
+            FullEntityFacts.Candidate candidate = published.candidate();
+            if (candidate.fact().world() != level) throw new IllegalStateException("natural spawn player changed world");
+            result.add(new PlayerProjection(player, player.connection, candidate, key(candidate),
+                published.position(), candidate.fact().spectator()));
+        }
+        return List.copyOf(result);
     }
     private void requireEntity(FullEntityFacts.Candidate candidate, RoutingKey key) {
         var binding = objects.current(candidate.fact().uuid().toString()).orElseThrow();
@@ -219,7 +276,10 @@ public final class RegionalChunkGameplayService {
 
     private static final class Cycle {
         final FullFinishingScoreboard.TrackingCut connectionCut;
-        List<PlayerProjection> players; NaturalSpawner.SpawnState spawnState;
+        List<PlayerProjection> players;
+        List<PlayerProjection> levelPlayers = List.of();
+        PlayerProjection nearestPlayer;
+        NaturalSpawner.SpawnState spawnState;
         Cycle(FullFinishingScoreboard.TrackingCut connectionCut, List<PlayerProjection> players) {
             this.connectionCut = connectionCut; this.players = players;
         }

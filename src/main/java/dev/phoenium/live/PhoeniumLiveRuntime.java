@@ -346,6 +346,9 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
     public void regionalBroadcastChunkCallback(ServerChunkCache cache, net.minecraft.world.level.chunk.LevelChunk chunk, Runnable original) {
         regionalServices.broadcastChunkCallback(cache, chunk, original);
     }
+    public void regionalCustomSpawnerCallback(ServerChunkCache cache, Runnable original) {
+        regionalServices.customSpawnerCallback(cache, original);
+    }
     public void regionalForEachBlockTickingChunk(ServerChunkCache cache, net.minecraft.server.level.ChunkMap map,
             java.util.function.Consumer<net.minecraft.world.level.chunk.LevelChunk> output) {
         regionalServices.forEachBlockTickingChunk(cache, map, output);
@@ -353,6 +356,13 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
     public void runRegionalEntityTicks(ServerLevel level, net.minecraft.world.level.entity.EntityTickList entities,
             java.util.function.Consumer<Entity> output) {
         regionalServices.runEntityTicks(level, entities, output);
+    }
+    public net.minecraft.world.entity.player.Player regionalNaturalSpawnPlayer(ServerLevel level, double x, double y, double z) {
+        return regionalServices.nearestNaturalSpawnPlayer(level, x, y, z);
+    }
+    public double regionalNaturalSpawnDistance(ServerLevel level, net.minecraft.world.entity.player.Player player,
+            double x, double y, double z) {
+        return regionalServices.naturalSpawnPlayerDistance(level, player, x, y, z);
     }
 
     private void queueTickPhase(PendingTick pending, LiveRegion live, PendingTick.Step step) {

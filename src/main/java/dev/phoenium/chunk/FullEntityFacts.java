@@ -25,6 +25,7 @@ public final class FullEntityFacts {
                        boolean enemy, boolean creative, boolean spectator) { }
     public record Candidate(Entity alias, Fact fact, ChunkPos position, long routingRevision) { }
     public record PublishedPosition(Candidate candidate, Vec3 position) { }
+    public record VehicleRelation(Candidate passenger, Candidate vehicle, long revision) { }
     public record Cut(ServerLevel world, long revision, List<Candidate> candidates) { }
     record Estimate(ServerLevel world, long revision, int candidates) { }
     private record Route(ChunkPos position, long revision) { }
@@ -37,6 +38,8 @@ public final class FullEntityFacts {
     private final IdentityHashMap<Entity, Route> routes = new IdentityHashMap<>();
     private final IdentityHashMap<Entity, Vec3> precisePositions = new IdentityHashMap<>();
     private final IdentityHashMap<Entity, List<Entity>> passengerRelations = new IdentityHashMap<>();
+    private final IdentityHashMap<Entity, Entity> passengerVehicles = new IdentityHashMap<>();
+    private final IdentityHashMap<Entity, Long> relationRevisions = new IdentityHashMap<>();
     private final java.util.concurrent.locks.ReentrantLock candidateMetadata = new java.util.concurrent.locks.ReentrantLock();
     private long routingSequence;
     private long published, insertions, removals;
@@ -94,13 +97,13 @@ public final class FullEntityFacts {
         Vec3 precise = entity.position();
         facts.candidateMetadata.lock();
         try {
+            if (displaced != null && displaced != entity) {
+                facts.routes.remove(displaced); facts.precisePositions.remove(displaced);
+                facts.removeRelationsLocked(displaced);
+            }
             long routeRevision = Math.incrementExact(facts.routingSequence);
             long worldRevision = facts.nextCandidateRevision(fact.world);
             facts.candidates.computeIfAbsent(fact.world, ignored -> new LinkedHashMap<>()).put(id, entity);
-            if (displaced != null && displaced != entity) {
-                facts.routes.remove(displaced); facts.precisePositions.remove(displaced);
-                facts.passengerRelations.remove(displaced);
-            }
             facts.routes.put(entity, new Route(position, routeRevision));
             facts.precisePositions.put(entity, precise);
             facts.routingSequence = routeRevision; facts.candidateRevisions.put(fact.world, worldRevision);
@@ -134,7 +137,7 @@ public final class FullEntityFacts {
             }
             facts.routes.remove(entity); facts.candidateRevisions.put(fact.world, worldRevision);
             facts.precisePositions.remove(entity);
-            facts.passengerRelations.remove(entity);
+            facts.removeRelationsLocked(entity);
         } finally { facts.candidateMetadata.unlock(); }
         facts.service.changed(FullFinishingServices.Kind.ENTITY_REGISTRY);
     }
@@ -192,7 +195,23 @@ public final class FullEntityFacts {
         List<Entity> passengers = List.copyOf(vehicle.getPassengers());
         var facts = FullFinishingServices.forServer(fact.server).entityFacts;
         facts.candidateMetadata.lock();
-        try { facts.passengerRelations.put(vehicle, passengers); }
+        try {
+            for (Entity passenger : passengers) {
+                Entity retainedVehicle = facts.passengerVehicles.get(passenger);
+                if (retainedVehicle != null && retainedVehicle != vehicle)
+                    throw new ChunkProtocolException("passenger relation has multiple retained vehicles");
+            }
+            List<Entity> previous = facts.passengerRelations.put(vehicle, passengers);
+            long revision = Math.incrementExact(facts.routingSequence); facts.routingSequence = revision;
+            if (previous != null) for (Entity passenger : previous) {
+                facts.passengerVehicles.remove(passenger, vehicle); facts.relationRevisions.put(passenger, revision);
+            }
+            for (Entity passenger : passengers) {
+                facts.passengerVehicles.put(passenger, vehicle);
+                facts.relationRevisions.put(passenger, revision);
+            }
+            facts.relationRevisions.put(vehicle, revision);
+        }
         finally { facts.candidateMetadata.unlock(); }
         facts.service.changed(FullFinishingServices.Kind.TRACKER);
     }
@@ -242,6 +261,54 @@ public final class FullEntityFacts {
                 throw new ChunkProtocolException("nearby recipient lacks its current published position");
             return new PublishedPosition(new Candidate(alias, fact, route.position, route.revision), precise);
         } finally { candidateMetadata.unlock(); }
+    }
+
+    /** Exact reverse edge used by ServerLevel's riding check. */
+    public VehicleRelation trackingVehicle(Candidate passenger) {
+        Objects.requireNonNull(passenger, "passenger");
+        FullFinishingServices.requireWorld(passenger.fact.world, FullFinishingServices.Kind.ENTITY_REGISTRY);
+        candidateMetadata.lock();
+        try {
+            if (!validCandidateLocked(passenger)) throw new ChunkProtocolException("tracking passenger source became stale");
+            Entity vehicleAlias = passengerVehicles.get(passenger.alias);
+            Candidate vehicle = vehicleAlias == null ? null : candidateLocked(passenger.fact.world, vehicleAlias, "tracking vehicle");
+            return new VehicleRelation(passenger, vehicle, relationRevisions.getOrDefault(passenger.alias, 0L));
+        } finally { candidateMetadata.unlock(); }
+    }
+    public boolean validTrackingVehicle(VehicleRelation retained) {
+        Objects.requireNonNull(retained, "retained");
+        FullFinishingServices.requireWorld(retained.passenger.fact.world, FullFinishingServices.Kind.ENTITY_REGISTRY);
+        candidateMetadata.lock();
+        try {
+            if (!validCandidateLocked(retained.passenger)
+                    || relationRevisions.getOrDefault(retained.passenger.alias, 0L) != retained.revision) return false;
+            Entity current = passengerVehicles.get(retained.passenger.alias);
+            if (retained.vehicle == null) return current == null;
+            return current == retained.vehicle.alias && validCandidateLocked(retained.vehicle);
+        } finally { candidateMetadata.unlock(); }
+    }
+    private Candidate candidateLocked(ServerLevel world, Entity alias, String role) {
+        Fact fact = alias instanceof Access access ? access.phoenium$referenceFact() : null;
+        Route route = routes.get(alias);
+        if (fact == null || fact.alias != alias || fact.world != world || route == null
+                || fact.incarnation != ((Access) alias).phoenium$entityIncarnation())
+            throw new ChunkProtocolException(role + " lacks current owner-published identity and route");
+        return new Candidate(alias, fact, route.position, route.revision);
+    }
+    private boolean validCandidateLocked(Candidate candidate) {
+        if (!(candidate.alias instanceof Access access) || access.phoenium$referenceFact() != candidate.fact
+                || access.phoenium$entityIncarnation() != candidate.fact.incarnation) return false;
+        return Objects.equals(routes.get(candidate.alias), new Route(candidate.position, candidate.routingRevision));
+    }
+    private void removeRelationsLocked(Entity entity) {
+        long revision = Math.incrementExact(routingSequence); routingSequence = revision;
+        List<Entity> children = passengerRelations.remove(entity);
+        if (children != null) for (Entity child : children) {
+            passengerVehicles.remove(child, entity); relationRevisions.put(child, revision);
+        }
+        Entity parent = passengerVehicles.remove(entity);
+        if (parent != null) relationRevisions.put(parent, revision);
+        relationRevisions.remove(entity);
     }
 
     public List<Candidate> trackingPassengers(Candidate vehicle) {
@@ -426,7 +493,8 @@ public final class FullEntityFacts {
     void close() {
         directories.clear();
         candidateMetadata.lock();
-        try { candidates.clear(); candidateRevisions.clear(); routes.clear(); precisePositions.clear(); passengerRelations.clear(); }
+        try { candidates.clear(); candidateRevisions.clear(); routes.clear(); precisePositions.clear(); passengerRelations.clear();
+            passengerVehicles.clear(); relationRevisions.clear(); }
         finally { candidateMetadata.unlock(); }
     }
 }
