@@ -20,8 +20,8 @@ in `Phoenium-stage4-luna` (harness and sole broad/live verification owner). Back
 runtime identity and task/worker token accounting are unavailable. No additional
 Astra, paid API, reset, account change, remote publication or personal client account.
 
-Account-wide Codex usage began at 35% used / 65% remaining; latest installed-evidence
-review reading is 87% used / 13% remaining. Reserve remained 7% used / 93%
+Account-wide Codex usage began at 35% used / 65% remaining; latest adverse-probe
+integration reading is 92% used / 8% remaining. Reserve remained 7% used / 93%
 remaining. Intermediate readings are preserved in this file's Git history; these
 are shared account windows, not task consumption.
 
@@ -86,8 +86,15 @@ proves pending=1/custody=3, enters a separate owner-free acknowledgement phase, 
 keeps pending=0/custody=0. Only published completions are pumped; unfinished native
 writes remain retained. `3f3ed40` requires the intermediate installed marker so the
 conditional path cannot silently be skipped. The 46-test focused gate passes and
-installed rerun is open. Sol resumes the separately packaged adverse native-write /
-failed-stop probe; Luna alone launches installed evidence.
+installed rerun is open. Separate adverse native-write / failed-stop probe is now
+integrated (`af02a04`, Sol `c1c7a24`): exact native IOWorker identity, position and
+first original write; one retained save during the actual regional callback failure;
+original outcome, exception identity, resource completion and zero terminal custody.
+Its 28-test focused gate passes; initial probe SHA-256 is
+`DD1DEF116838517F7BDE0A280A21F3A1BA0FE74D23B6C0F4487E38D842912BF9`.
+Lead review requires an additional resource-close entry witness proving the real
+write ACK precedes cleanup entry, not merely stop return. Sol implements this and
+cycle-safe exception traversal; Luna alone launches the resulting installed probe.
 
 Earlier preserved native failures: `transform-20260908-060338` first-tick consecutive
 coordinator phases, repaired `00ce944`; `transform-20260908-064318` superclass-close
@@ -115,7 +122,14 @@ and explicitTopology=true, whereas the earlier shared launcher omitted them. The
 source audit confirms explicitTopology is the established one-worker fixture;
 `stage4.candidate` alone gates new coordinator calls. Shared correction `8a2847a`
 restores both recorded FULL flags on reference/candidate and adds generic native
-ticket/teleport/client-state diagnostics. Its compilation passes; positive live
+ticket/teleport/client-state diagnostics. Flag-corrected frozen run
+`reference-diagnostic-5b-20260908-081000` still stalls at B: player=(120.5,65,8.5),
+lastSection=(0,4,0), tracking center=(7,0), FULL/ticket 33 but absent simulation
+demand. `awaitingTeleport=3` is a native ID counter; awaitingPositionFromClient=null
+means it is not currently waiting on that position. Pinned listener lines 527–544
+and 1236–1244 disprove the earlier unacknowledged-teleport inference. Diagnostic
+`27fe451` records exact acknowledgement and distance-source state; Luna follows
+native movement admission/section update to establish the cause. Positive live
 readiness is still required. Closure H/I's distant-demand and old same-holder
 re-promotion boundaries remain explicit; no new reference scope is silently claimed.
 Do not increase timeouts, cap distances, substitute server-only receipts or weaken
