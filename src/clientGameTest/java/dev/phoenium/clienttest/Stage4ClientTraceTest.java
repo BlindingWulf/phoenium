@@ -164,6 +164,11 @@ public final class Stage4ClientTraceTest implements FabricClientGameTest {
             waitForExit(context, server);
             writeEvidence(trace, log, worldName, runId, true, server.exitValue());
         } catch (Throwable failure) {
+            Path dumpDirectory = log.toAbsolutePath().getParent() == null
+                ? Path.of("run/stage4/diagnostics")
+                : log.toAbsolutePath().getParent().getParent().resolve("thread-dumps");
+            captureThreadDump(server, dumpDirectory.resolve("server-handshake-timeout.txt"));
+            captureCurrentThreadDump(dumpDirectory.resolve("client-handshake-timeout.txt"));
             if (connected) try { disconnectClient(context); } catch (Throwable ignored) { }
             if (server != null && server.isAlive()) {
                 try { command(server, "stop"); } catch (Throwable ignored) { server.destroy(); }
@@ -298,6 +303,37 @@ public final class Stage4ClientTraceTest implements FabricClientGameTest {
             client.disconnect(new TitleScreen(), false);
         });
         context.waitFor(client -> client.level == null, 600);
+    }
+
+    /** Preserve actionable stacks before the timeout cleanup tears down a stalled child. */
+    private static void captureThreadDump(Process process, Path output) {
+        if (process == null) return;
+        captureThreadDump(process.pid(), output);
+    }
+
+    private static void captureCurrentThreadDump(Path output) {
+        String runtimeName = java.lang.management.ManagementFactory.getRuntimeMXBean().getName();
+        int separator = runtimeName.indexOf('@');
+        if (separator <= 0) return;
+        try { captureThreadDump(Long.parseLong(runtimeName.substring(0, separator)), output); }
+        catch (NumberFormatException ignored) { }
+    }
+
+    private static void captureThreadDump(long pid, Path output) {
+        try {
+            Path parent = output.toAbsolutePath().getParent();
+            if (parent != null) Files.createDirectories(parent);
+            Path javaHome = Path.of(System.getProperty("java.home"));
+            String executable = System.getProperty("os.name", "").toLowerCase().contains("win")
+                ? "jcmd.exe" : "jcmd";
+            Process dump = new ProcessBuilder(javaHome.resolve("bin").resolve(executable).toString(),
+                Long.toString(pid), "Thread.print", "-l")
+                .redirectErrorStream(true).redirectOutput(output.toFile()).start();
+            if (!dump.waitFor(10, java.util.concurrent.TimeUnit.SECONDS)) dump.destroyForcibly();
+        } catch (Exception ignored) {
+            try { Files.writeString(output, "thread dump unavailable: " + ignored); }
+            catch (IOException ignoredAgain) { }
+        }
     }
 
     private static void writeEvidence(Path trace, Path log, String worldName, String runId,
