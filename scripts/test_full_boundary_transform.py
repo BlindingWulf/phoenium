@@ -247,6 +247,8 @@ with log.open("w") as output:
                       "chunkAdmissions=0", "chunkApplications=0", "chunkReroutes=0", "chunkRejections=0",
                       "chunkDuplicates=0", "producerChunkMutations=0"):
             assert field in stage2, "Stage 2 cleanup retained an unexpected value: " + stage2
+        workers = re.search(r"(?:^|[\s,{])workers=(\d+)(?:[\s,}]|$)", stage2)
+        assert workers and int(workers.group(1)) == 1, "Stage 4 requires exactly one gameplay worker: " + stage2
         executed = re.search(r"(?:^|[\s,{])executed=(\d+)(?:[\s,}]|$)", stage2)
         assert executed and int(executed.group(1)) > 0, (
             "Stage 2 shutdown did not record a positive executed-tick count: " + stage2
