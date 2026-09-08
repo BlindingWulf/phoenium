@@ -179,9 +179,11 @@ public final class RegionalWorldServices implements RegionalStateMigration {
         services.events().runCycle(event -> level.shouldTickBlocksAt(event.pos()), event -> {
             if (((RegionalServerLevelAccess) level).phoenium$invokeDoBlockEvent(event)) {
                 FullFinishingServices.requireServer(level.getServer(), FullFinishingServices.Kind.CONNECTIONS);
-                level.getServer().getPlayerList().broadcast(null, event.pos().getX(), event.pos().getY(),
-                    event.pos().getZ(), 64.0, level.dimension(),
-                    new ClientboundBlockEventPacket(event.pos(), event.block(), event.paramA(), event.paramB()));
+                try (var recipients = RegionalBlockEventBroadcast.open(level)) {
+                    level.getServer().getPlayerList().broadcast(null, event.pos().getX(), event.pos().getY(),
+                        event.pos().getZ(), 64.0, level.dimension(),
+                        new ClientboundBlockEventPacket(event.pos(), event.block(), event.paramA(), event.paramB()));
+                }
             }
         });
         return true;

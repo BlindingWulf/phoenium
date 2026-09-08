@@ -10,6 +10,7 @@ import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.entity.*;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.level.ChunkPos;
+import net.minecraft.world.phys.Vec3;
 
 /** D1-F owner-published scalars. An exact retained entity pointer remains only an alias. */
 public final class FullEntityFacts {
@@ -23,6 +24,7 @@ public final class FullEntityFacts {
                        UUID uuid, int runtimeId, EntityType<?> type, Class<?> dispatch, String scoreboardName, boolean removed,
                        boolean enemy, boolean creative, boolean spectator) { }
     public record Candidate(Entity alias, Fact fact, ChunkPos position, long routingRevision) { }
+    public record PublishedPosition(Candidate candidate, Vec3 position) { }
     public record Cut(ServerLevel world, long revision, List<Candidate> candidates) { }
     record Estimate(ServerLevel world, long revision, int candidates) { }
     private record Route(ChunkPos position, long revision) { }
@@ -33,6 +35,7 @@ public final class FullEntityFacts {
     private final IdentityHashMap<ServerLevel, LinkedHashMap<Integer, Entity>> candidates = new IdentityHashMap<>();
     private final IdentityHashMap<ServerLevel, Long> candidateRevisions = new IdentityHashMap<>();
     private final IdentityHashMap<Entity, Route> routes = new IdentityHashMap<>();
+    private final IdentityHashMap<Entity, Vec3> precisePositions = new IdentityHashMap<>();
     private final IdentityHashMap<Entity, List<Entity>> passengerRelations = new IdentityHashMap<>();
     private final java.util.concurrent.locks.ReentrantLock candidateMetadata = new java.util.concurrent.locks.ReentrantLock();
     private long routingSequence;
@@ -88,13 +91,18 @@ public final class FullEntityFacts {
         if (fact == null) return;
         var facts = FullFinishingServices.forServer(fact.server).entityFacts;
         ChunkPos position = entity.chunkPosition();
+        Vec3 precise = entity.position();
         facts.candidateMetadata.lock();
         try {
             long routeRevision = Math.incrementExact(facts.routingSequence);
             long worldRevision = facts.nextCandidateRevision(fact.world);
             facts.candidates.computeIfAbsent(fact.world, ignored -> new LinkedHashMap<>()).put(id, entity);
-            if (displaced != null && displaced != entity) facts.routes.remove(displaced);
+            if (displaced != null && displaced != entity) {
+                facts.routes.remove(displaced); facts.precisePositions.remove(displaced);
+                facts.passengerRelations.remove(displaced);
+            }
             facts.routes.put(entity, new Route(position, routeRevision));
+            facts.precisePositions.put(entity, precise);
             facts.routingSequence = routeRevision; facts.candidateRevisions.put(fact.world, worldRevision);
         } finally { facts.candidateMetadata.unlock(); }
         facts.service.changed(FullFinishingServices.Kind.ENTITY_REGISTRY);
@@ -125,6 +133,7 @@ public final class FullEntityFacts {
                 if (ordered.isEmpty()) facts.candidates.remove(fact.world);
             }
             facts.routes.remove(entity); facts.candidateRevisions.put(fact.world, worldRevision);
+            facts.precisePositions.remove(entity);
             facts.passengerRelations.remove(entity);
         } finally { facts.candidateMetadata.unlock(); }
         facts.service.changed(FullFinishingServices.Kind.ENTITY_REGISTRY);
@@ -135,6 +144,7 @@ public final class FullEntityFacts {
         if (fact == null) return;
         var facts = FullFinishingServices.forServer(fact.server).entityFacts;
         ChunkPos position = entity.chunkPosition();
+        Vec3 precise = entity.position();
         boolean indexed;
         facts.candidateMetadata.lock();
         try {
@@ -143,6 +153,7 @@ public final class FullEntityFacts {
                 long routeRevision = Math.incrementExact(facts.routingSequence);
                 long worldRevision = facts.nextCandidateRevision(fact.world);
                 facts.routes.put(entity, new Route(position, routeRevision));
+                facts.precisePositions.put(entity, precise);
                 facts.routingSequence = routeRevision; facts.candidateRevisions.put(fact.world, worldRevision);
             }
         } finally { facts.candidateMetadata.unlock(); }
@@ -212,6 +223,24 @@ public final class FullEntityFacts {
                     || access.phoenium$entityIncarnation() != candidate.fact.incarnation) return false;
             Route route = routes.get(candidate.alias);
             return Objects.equals(route, new Route(candidate.position, candidate.routingRevision));
+        } finally { candidateMetadata.unlock(); }
+    }
+
+    /** Exact immutable position from the same original insertion/movement edge as the
+     * routing receipt. Nearby packet selection can read this published value without
+     * acquiring or dereferencing another owner's live player. No entity scan is needed. */
+    public PublishedPosition publishedPosition(Entity alias) {
+        Objects.requireNonNull(alias, "alias");
+        FullFinishingServices.requireServer(service.server(), FullFinishingServices.Kind.ENTITY_REGISTRY);
+        candidateMetadata.lock();
+        try {
+            Fact fact = alias instanceof Access access ? access.phoenium$referenceFact() : null;
+            Route route = routes.get(alias);
+            Vec3 precise = precisePositions.get(alias);
+            if (fact == null || fact.alias != alias || fact.server != service.server() || route == null || precise == null
+                    || fact.incarnation != ((Access) alias).phoenium$entityIncarnation())
+                throw new ChunkProtocolException("nearby recipient lacks its current published position");
+            return new PublishedPosition(new Candidate(alias, fact, route.position, route.revision), precise);
         } finally { candidateMetadata.unlock(); }
     }
 
@@ -397,7 +426,7 @@ public final class FullEntityFacts {
     void close() {
         directories.clear();
         candidateMetadata.lock();
-        try { candidates.clear(); candidateRevisions.clear(); routes.clear(); passengerRelations.clear(); }
+        try { candidates.clear(); candidateRevisions.clear(); routes.clear(); precisePositions.clear(); passengerRelations.clear(); }
         finally { candidateMetadata.unlock(); }
     }
 }

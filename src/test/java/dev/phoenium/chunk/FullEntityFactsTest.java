@@ -141,6 +141,41 @@ final class FullEntityFactsTest {
         assertEquals(List.of(first, grandchild, second),
             FullEntityFacts.orderedDescendants(vehicle, node -> direct.getOrDefault(node, List.of())));
     }
+
+    @Test void committedPreciseMovementIsPublishedBeforeOriginalCallbackAndSurvivesItsFailure() throws Exception {
+        try (var f = new FullServiceOperationFixture()) {
+            ServerLevel world = f.world();
+            LivingEntity entity = target(world, UUID.randomUUID(), 111, new AtomicInteger());
+            set(entity, Entity.class, "position", net.minecraft.world.phys.Vec3.ZERO);
+            set(entity, Entity.class, "blockPosition", net.minecraft.core.BlockPos.ZERO);
+            set(entity, Entity.class, "chunkPosition", new net.minecraft.world.level.ChunkPos(0, 0));
+            set(entity, Entity.class, "firstTick", true);
+            var lookup = new EntityLookup<Entity>(); lookup.add(entity);
+            try (var turn = f.service.serial(FullFinishingServices.Phase.SERVER_TASK)) {
+                var before = f.service.entityFacts.publishedPosition(entity);
+                AtomicInteger callbacks = new AtomicInteger();
+                var failure = new IllegalStateException("original movement observer failed");
+                var destination = new net.minecraft.world.phys.Vec3(33.125, 65.75, -17.5);
+                set(entity, Entity.class, "levelCallback", new EntityInLevelCallback() {
+                    public void onMove() {
+                        callbacks.incrementAndGet();
+                        var reached = f.service.entityFacts.publishedPosition(entity);
+                        assertEquals(destination, reached.position());
+                        assertEquals(new net.minecraft.world.level.ChunkPos(2, -2), reached.candidate().position());
+                        assertFalse(f.service.entityFacts.validTrackingCandidate(before.candidate()));
+                        throw failure;
+                    }
+                    public void onRemove(Entity.RemovalReason reason) { }
+                });
+                assertSame(failure, assertThrows(IllegalStateException.class,
+                    () -> entity.setPosRaw(destination.x(), destination.y(), destination.z())));
+                assertEquals(1, callbacks.get());
+                assertEquals(destination, f.service.entityFacts.publishedPosition(entity).position());
+                lookup.remove(entity);
+                assertThrows(ChunkProtocolException.class, () -> f.service.entityFacts.publishedPosition(entity));
+            }
+        }
+    }
     @Test void malformedRetainedPassengerGraphFailsBeforeTrackingCallback() {
         Object vehicle = new Object(), passenger = new Object();
         Map<Object, List<Object>> direct = new IdentityHashMap<>();

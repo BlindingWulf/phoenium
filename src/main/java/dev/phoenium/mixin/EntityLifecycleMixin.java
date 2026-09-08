@@ -8,10 +8,12 @@ import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
-/** Derived target-index lifecycle only; no world entity-index lookup is performed here. */
+/** Publish committed routing/coordinates before original movement observers can use
+ * them or fail. No world entity-index lookup is performed at this source edge. */
 @Mixin(Entity.class)
 abstract class EntityLifecycleMixin {
-    @Inject(method = "setPosRaw(DDD)V", at = @At("TAIL"), require = 1)
+    @Inject(method = "setPosRaw(DDD)V", at = @At(value = "INVOKE",
+            target = "Lnet/minecraft/world/level/entity/EntityInLevelCallback;onMove()V"), require = 1)
     private void phoenium$routingObserved(double x, double y, double z, CallbackInfo ci) {
         Entity entity = (Entity) (Object) this;
         FullEntityFacts.routed(entity);

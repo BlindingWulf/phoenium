@@ -51,7 +51,8 @@ public final class FullFinishingServicesTestTransform {
                     }
                 }
                 if (body.name.equals("setPosRaw") && body.desc.equals("(DDD)V"))
-                    for (AbstractInsnNode at : body.instructions.toArray()) if (at.getOpcode() == Opcodes.RETURN)
+                    for (AbstractInsnNode at : body.instructions.toArray()) if (at instanceof MethodInsnNode call
+                            && call.owner.equals("net/minecraft/world/level/entity/EntityInLevelCallback") && call.name.equals("onMove"))
                         body.instructions.insertBefore(at, entityCall("routed"));
                 if (Set.of("getUUID", "getId", "isRemoved", "getScoreboardName", "typeHolder").contains(body.name)) wrap(node, body, body.name);
                 if (Set.of("setId", "setUUID", "setRemoved", "unsetRemoved", "setInvulnerable", "setLevel").contains(body.name)) wrap(node, body, body.name);

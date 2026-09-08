@@ -3,11 +3,13 @@ package dev.phoenium.mixin;
 import com.llamalad7.mixinextras.injector.wrapmethod.WrapMethod;
 import com.llamalad7.mixinextras.injector.wrapoperation.*;
 import dev.phoenium.chunk.*;
+import dev.phoenium.service.RegionalBlockEventBroadcast;
 import java.util.*;
 import net.minecraft.network.Connection;
 import net.minecraft.network.protocol.Packet;
 import net.minecraft.server.ServerScoreboard;
 import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.network.*;
 import net.minecraft.server.players.PlayerList;
 import org.spongepowered.asm.mixin.*;
@@ -81,5 +83,37 @@ abstract class FullFinishingPlayerListMixin {
             at = @At(value = "INVOKE", target = "Lnet/minecraft/server/network/ServerGamePacketListenerImpl;send(Lnet/minecraft/network/protocol/Packet;)V"), require = 1)
     private void phoenium$send(ServerGamePacketListenerImpl listener, Packet<?> packet, Operation<Void> original) {
         FullFinishingServices.forServer(getServer()).scoreboard.send(listener, () -> original.call(listener, packet));
+    }
+
+    @WrapOperation(method = "broadcast", at = @At(value = "INVOKE",
+            target = "Lnet/minecraft/server/level/ServerPlayer;level()Lnet/minecraft/server/level/ServerLevel;"), require = 1, expect = 1)
+    private ServerLevel phoenium$eventRecipientWorld(ServerPlayer player, Operation<ServerLevel> original) {
+        var scope = RegionalBlockEventBroadcast.current();
+        return scope == null ? original.call(player) : scope.level(player);
+    }
+    @WrapOperation(method = "broadcast", at = @At(value = "INVOKE",
+            target = "Lnet/minecraft/server/level/ServerPlayer;getX()D"), require = 1, expect = 1)
+    private double phoenium$eventRecipientX(ServerPlayer player, Operation<Double> original) {
+        var scope = RegionalBlockEventBroadcast.current();
+        return scope == null ? original.call(player) : scope.x(player);
+    }
+    @WrapOperation(method = "broadcast", at = @At(value = "INVOKE",
+            target = "Lnet/minecraft/server/level/ServerPlayer;getY()D"), require = 1, expect = 1)
+    private double phoenium$eventRecipientY(ServerPlayer player, Operation<Double> original) {
+        var scope = RegionalBlockEventBroadcast.current();
+        return scope == null ? original.call(player) : scope.y(player);
+    }
+    @WrapOperation(method = "broadcast", at = @At(value = "INVOKE",
+            target = "Lnet/minecraft/server/level/ServerPlayer;getZ()D"), require = 1, expect = 1)
+    private double phoenium$eventRecipientZ(ServerPlayer player, Operation<Double> original) {
+        var scope = RegionalBlockEventBroadcast.current();
+        return scope == null ? original.call(player) : scope.z(player);
+    }
+    @WrapOperation(method = "broadcast", at = @At(value = "INVOKE",
+            target = "Lnet/minecraft/server/network/ServerGamePacketListenerImpl;send(Lnet/minecraft/network/protocol/Packet;)V"), require = 1, expect = 1)
+    private void phoenium$eventRecipientSend(ServerGamePacketListenerImpl listener, Packet<?> packet, Operation<Void> original) {
+        var scope = RegionalBlockEventBroadcast.current();
+        if (scope == null) original.call(listener, packet);
+        else scope.send(listener, () -> original.call(listener, packet));
     }
 }
