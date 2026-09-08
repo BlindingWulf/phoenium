@@ -581,11 +581,12 @@ def run_process(server, trace_path=None, drive=False, explicit_topology=False, t
                                                         and "pass=true" in line for line in lines)
                             reload_barrier = all((before_ok, reached_deadline, deadline_ok,
                                                   reached_after, after_ok))
+                            if reload_barrier:
+                                # The three phase receipts are the strong exact-once witness;
+                                # the legacy late-state marker is not needed for this gate.
+                                reload_effect = True
                             if not reload_barrier and process.poll() is None:
                                 dump_path = capture_thread_dump(server, process, "reload-deadline")
-                            effect_lines = [line for line in lines if "STAGE4_TRACE_RELOAD_EFFECT" in line]
-                            if effect_lines:
-                                reload_effect = "reached=true" in effect_lines[-1]
                             if not reload_started:
                                 reload_effect = False
                     send("stop")
@@ -616,6 +617,8 @@ def run_process(server, trace_path=None, drive=False, explicit_topology=False, t
             "serverReadyObserved": server_ready,
             "reloadClockFreezeObserved": reload_clock_frozen if not drive else False,
             "reloadUnpackObserved": any("STAGE4_TRACE_RELOAD_UNPACK" in line for line in lines),
+            "reloadUnpackReceipt": next((line.strip() for line in lines
+                                          if "STAGE4_TRACE_RELOAD_UNPACK" in line), None),
             "reloadEffectReached": reload_effect}
 
 

@@ -40,6 +40,9 @@ public final class Stage4ClientTraceTest implements FabricClientGameTest {
         Path trace = Path.of(System.getProperty("phoenium.stage4.tracePath",
             directory.resolve("stage4-trace-" + runId + ".json").toString()));
         Path log = directory.resolve("stage4-client-server-" + runId + ".log");
+        Path restartTrace = trace.resolveSibling("STAGE4-CLIENT-reload-trace.json");
+        Path restartLog = directory.resolve("stage4-client-server-" + runId + "-restart.log");
+        Path mcaSnapshot = trace.resolveSibling("mca-before-restart");
         Process server = null;
         boolean connected = false;
         boolean candidate = !Boolean.getBoolean("phoenium.stage4.reference");
@@ -228,7 +231,54 @@ public final class Stage4ClientTraceTest implements FabricClientGameTest {
             awaitLog(context, server, log, "STAGE4_TRACE_RESULT", START_TIMEOUT_TICKS);
             command(server, "stop");
             waitForExit(context, server);
-            writeEvidence(trace, log, worldName, runId, true, server.exitValue());
+            copyMcaSnapshot(directory.resolve(worldName), mcaSnapshot);
+            Files.copy(trace, trace.resolveSibling("STAGE4-CLIENT-before-restart-trace.json"));
+
+            // Reopen the same saved client world. The child server starts with the test-only
+            // native clock frozen; reconnecting at the saved B cohort supplies real ticking
+            // demand before reload observes the persisted target chunk.
+            List<String> restartCommand = new ArrayList<>(command);
+            int jarIndex = restartCommand.indexOf("-jar");
+            restartCommand.add(jarIndex, "-Dphoenium.stage4.restartFreeze=true");
+            for (int index = 0; index < restartCommand.size(); index++)
+                if (restartCommand.get(index).startsWith("-Dphoenium.stage4.tracePath="))
+                    restartCommand.set(index, "-Dphoenium.stage4.tracePath=" + restartTrace.toAbsolutePath());
+            server = new ProcessBuilder(restartCommand).directory(directory.toFile()).redirectErrorStream(true)
+                .redirectOutput(ProcessBuilder.Redirect.appendTo(restartLog.toFile())).start();
+            waitForReady(context, server, restartLog);
+            awaitLog(context, server, restartLog, "STAGE4_TRACE_STARTUP_CLOCK_FROZEN", START_TIMEOUT_TICKS);
+            connectClient(context);
+            connected = true;
+            context.waitFor(client -> client.player != null, CONNECT_TIMEOUT_TICKS);
+            command(server, "tp " + USER + " 120.5 65 8.5");
+            nudgeAfterTeleport(context);
+            waitForClientChunks(context, new int[][] {{7, 0}}, START_TIMEOUT_TICKS);
+            command(server, "stage4trace reload");
+            awaitLog(context, server, restartLog, "STAGE4_TRACE_RELOAD_UNPACK", START_TIMEOUT_TICKS);
+            awaitLog(context, server, restartLog, "STAGE4_TRACE_RELOAD_CLOCK_FROZEN", START_TIMEOUT_TICKS);
+            awaitLog(context, server, restartLog, "STAGE4_TRACE_RELOAD_ELIGIBILITY", START_TIMEOUT_TICKS);
+            command(server, "stage4trace step-restored 450");
+            awaitLog(context, server, restartLog, "STAGE4_TRACE_RELOAD_STEP_SCHEDULED phase=before", 30);
+            awaitLog(context, server, restartLog,
+                "STAGE4_TRACE_CLOCK_STEP_REACHED label=restored-before-deadline", 180);
+            command(server, "stage4trace check-restored-before");
+            awaitLog(context, server, restartLog, "STAGE4_TRACE_RELOAD_PHASE phase=before", 30);
+            command(server, "stage4trace step restored-deadline 1");
+            awaitLog(context, server, restartLog,
+                "STAGE4_TRACE_CLOCK_STEP_REACHED label=restored-deadline", 30);
+            command(server, "stage4trace check-restored-deadline");
+            awaitLog(context, server, restartLog, "STAGE4_TRACE_RELOAD_PHASE phase=deadline", 30);
+            command(server, "stage4trace step restored-after-deadline 1");
+            awaitLog(context, server, restartLog,
+                "STAGE4_TRACE_CLOCK_STEP_REACHED label=restored-after-deadline", 30);
+            command(server, "stage4trace check-restored-after");
+            awaitLog(context, server, restartLog, "STAGE4_TRACE_RELOAD_PHASE phase=after", 30);
+            disconnectClient(context);
+            connected = false;
+            command(server, "stop");
+            waitForExit(context, server);
+            writeEvidence(trace, log, restartTrace, restartLog, mcaSnapshot,
+                worldName, runId, true, server.exitValue());
         } catch (Throwable failure) {
             Path dumpDirectory = log.toAbsolutePath().getParent() == null
                 ? Path.of("run/stage4/diagnostics")
@@ -479,7 +529,8 @@ public final class Stage4ClientTraceTest implements FabricClientGameTest {
         }
     }
 
-    private static void writeEvidence(Path trace, Path log, String worldName, String runId,
+    private static void writeEvidence(Path trace, Path log, Path restartTrace, Path restartLog,
+                                      Path mcaSnapshot, String worldName, String runId,
                                       boolean connected, int exitCode) throws IOException {
         Path evidence = Path.of(System.getProperty("phoenium.client.gametest.evidence",
             trace.resolveSibling("STAGE4-CLIENT.json").toString()));
@@ -498,7 +549,29 @@ public final class Stage4ClientTraceTest implements FabricClientGameTest {
             "  \"simulationDistance\": " + simulationDistance + ",\n" +
             "  \"serverExitCode\": " + exitCode + ",\n" +
             "  \"trace\": \"" + trace.toAbsolutePath().toString().replace("\\", "\\\\") + "\",\n" +
-            "  \"log\": \"" + log.toAbsolutePath().toString().replace("\\", "\\\\") + "\"\n}\n",
+            "  \"log\": \"" + log.toAbsolutePath().toString().replace("\\", "\\\\") + "\",\n" +
+            "  \"restartTrace\": \"" + restartTrace.toAbsolutePath().toString().replace("\\", "\\\\") + "\",\n" +
+            "  \"restartLog\": \"" + restartLog.toAbsolutePath().toString().replace("\\", "\\\\") + "\",\n" +
+            "  \"mcaSnapshot\": \"" + mcaSnapshot.toAbsolutePath().toString().replace("\\", "\\\\") + "\"\n}\n",
             StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING);
+    }
+
+    private static void copyMcaSnapshot(Path world, Path snapshot) throws IOException {
+        if (!Files.exists(world)) throw new IOException("saved world is missing: " + world);
+        if (Files.exists(snapshot)) throw new IOException("refusing to overwrite MCA snapshot: " + snapshot);
+        try (var paths = Files.walk(world)) {
+            paths.filter(path -> Files.isRegularFile(path) && path.getFileName().toString().endsWith(".mca"))
+                .forEach(path -> {
+                    try {
+                        Path target = snapshot.resolve(world.relativize(path));
+                        Files.createDirectories(target.getParent());
+                        Files.copy(path, target);
+                    } catch (IOException failure) {
+                        throw new java.io.UncheckedIOException(failure);
+                    }
+                });
+        } catch (java.io.UncheckedIOException failure) {
+            throw failure.getCause();
+        }
     }
 }

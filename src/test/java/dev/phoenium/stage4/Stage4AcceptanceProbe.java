@@ -300,18 +300,20 @@ public final class Stage4AcceptanceProbe implements DedicatedServerModInitialize
     private static void checkRestoredPhase(ServerLevel level, String phase,
                                             boolean powered, long callbackCount, long triggerOffset) {
         var state = level.getBlockState(REGION_B_FUTURE);
+        Boolean actualPowered = state.hasProperty(ButtonBlock.POWERED)
+            ? state.getValue(ButtonBlock.POWERED) : null;
         long observed = Stage4Trace.restoredCallbackCount();
         long trigger = Stage4Trace.restoredUnpackTrigger();
         long expectedGameTime = trigger + triggerOffset;
         boolean pass = state.is(Blocks.STONE_BUTTON)
-            && state.getValue(ButtonBlock.POWERED) == powered && observed == callbackCount
+            && Boolean.valueOf(powered).equals(actualPowered) && observed == callbackCount
             && trigger >= 0 && level.getGameTime() == expectedGameTime;
         Stage4Trace.event("reload.effect.phase", "phase=" + phase + " gameTime=" + level.getGameTime()
-            + " powered=" + state.getValue(ButtonBlock.POWERED) + " callbacks=" + observed
+            + " powered=" + actualPowered + " callbacks=" + observed
             + " expectedPowered=" + powered + " expectedCallbacks=" + callbackCount
             + " expectedGameTime=" + expectedGameTime + " pass=" + pass);
         System.out.println("STAGE4_TRACE_RELOAD_PHASE phase=" + phase + " gameTime=" + level.getGameTime()
-            + " powered=" + state.getValue(ButtonBlock.POWERED) + " callbacks=" + observed
+            + " powered=" + actualPowered + " callbacks=" + observed
             + " expectedGameTime=" + expectedGameTime + " pass=" + pass);
         if (!pass) throw new IllegalStateException("restored phase mismatch phase=" + phase
             + " state=" + state + " callbacks=" + observed);
