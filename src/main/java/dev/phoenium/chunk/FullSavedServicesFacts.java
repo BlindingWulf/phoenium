@@ -35,7 +35,8 @@ public record FullSavedServicesFacts(UUID entityId, String team, String legacyOw
                 legacy, owner, tag.read("angry_at", UUIDUtil.CODEC).orElse(null),
                 type.equals("minecraft:text_display") ? FullSavedTextInputs.capture(tag, custodian) : FullSavedTextInputs.Saved.EMPTY,
                 FullSavedTextInputs.captureComponent(tag, "CustomName", custodian),
-                type.equals("minecraft:mannequin") ? FullSavedTextInputs.captureComponent(tag, "description", custodian)
+                type.equals("minecraft:mannequin") && !tag.getBooleanOr("hide_description", false)
+                        ? FullSavedTextInputs.captureComponent(tag, "description", custodian)
                         : FullSavedTextInputs.Saved.EMPTY);
     }
     public long payloadBytes() {

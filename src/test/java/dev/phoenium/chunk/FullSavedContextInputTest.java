@@ -1261,6 +1261,26 @@ class FullSavedContextInputTest {
         assertCleanup(f);
     }
 
+    @Test void hiddenSavedMannequinKeepsTheOriginalAbsentDescriptionWithoutDemandingItsStoredSyntax() throws Exception {
+        var f = new FullRegistrationFixture(true); var unreachable = new BlockPos(1600, 8, 8);
+        var mannequin = tag(8, 8, 0); mannequin.putString("id", "minecraft:mannequin");
+        mannequin.putBoolean("hide_description", true); mannequin.put("description", blockText(unreachable));
+        var display = text(entityText("@e[type=minecraft:mannequin,distance=..32,limit=1]", "description", true));
+        var proto = f.input(ChunkPos.ZERO); proto.getEntities().clear(); proto.addEntity(mannequin); proto.addEntity(display);
+        f.world.indexLegacyRoots = true;
+        try {
+            f.start(ChunkPos.ZERO, ChunkStatus.FULL); f.drain(); var graph = f.runtime.graph(f.holder(ChunkPos.ZERO));
+            assertEquals(FullInitializedInputs.State.SATISFIED, graph.inputEvaluation().state(), graph.inputEvaluation().obligation());
+            assertFalse(graph.inputReceipt().targets().stream().anyMatch(target -> target.position().equals(new ChunkPos(100, 0))));
+            FullAuthoritativeFinishingTest.context(f); f.runtime.inputs.changed(); f.drain();
+            assertInstanceOf(ChunkStageOutcome.Applied.class, graph.finishing.outcome().join());
+            assertEquals("", FullSavedContextTestHooks.text(
+                    assertInstanceOf(Display.TextDisplay.class, f.world.inserted.get(1))).getString());
+            assertFalse(f.barrier.tripped());
+        } finally { f.stop(); FullFinishingServices.stopped(f.world.level.getServer()); }
+        assertCleanup(f);
+    }
+
     @Test void signDependencyCapacityIsCheckedBeforeAnyArrayOrComponentCopies() throws Exception {
         var f = new FullRegistrationFixture(true); var position = new BlockPos(8, 8, 8);
         var state = Blocks.OAK_SIGN.defaultBlockState(); var sign = new SignBlockEntity(position, state);
