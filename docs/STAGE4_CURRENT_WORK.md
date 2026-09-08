@@ -4,6 +4,23 @@ Stage 4 remains **PARTIAL**, Stage 5 OFF, one gameplay worker, parallel gameplay
 This section supersedes the historical worker assignments and next-step instructions below.
 The session began from clean `2b3080b`; all newer work is preserved. No agents are running.
 
+- Latest integration after595d18f: native visibility now admits the exact saved entity even when
+  its original reader discarded it before insertion. New actual-lookup/runtime regression PASS.
+  FULL fresh next reached all8 saved reader assertions, then native chunk post-processing between
+  server ticks exposed missing named TICK_LIST service scope. MainThreadExecutor.doRunTask now
+  uses the existing same-task service/queue boundary. Focused task/reader tests PASS, including
+  new Runnable executor boundary regression. Current production SHA256
+  **CDAF1C6FD29C6DF6333B6B874908E16878B69B95014B034A0FDB3404646EFAC1**.
+  FULL C (`live-1788887801868`) stopped normally, no production error, but its probe-only fixture
+  eligibility field was lost when Stage4 detached the immutable snapshot. A separate test-only
+  mixin now carries that exact receipt across detach; production still knows no probe metadata.
+  Original serializer/writer and exact8-root MCA assertions remain. FULL D currently running:
+  `run/stage4/final-full-fresh-reload-d.log`, `run/full-authoritative/live-1788887928204`.
+  Stage4 staging now excludes unrelated FULL probes; next reference8C, candidates5Y/8D.
+  Remaining same-JAR gates all require final CDAF... artifact. Previous 5X/J comparison remains
+  behavioral historical evidence only until candidate rerun. Full suite815/87 passed before the
+  chunk executor fix; final full suite/recount still required with new executor test.
+
 - Recovery parent **d82b594**, current production **3EF9B2ED...6F0B5F03**. Shared 5/5 candidate X
   and frozen reference J both PASS, strict MCA/restart PASS, comparison PASS
   (`run/stage4/final-comparison-5.json`, 123 canonical events, identical digest6CBE83B4...E375A).

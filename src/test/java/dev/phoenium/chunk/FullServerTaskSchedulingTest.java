@@ -47,6 +47,47 @@ final class FullServerTaskSchedulingTest {
         boolean pollOne() { return pollTask(); }
     }
 
+    @Test void nativeChunkExecutorHasItsOwnRunnableServiceBoundaryBetweenServerTicks() throws Exception {
+        var nativeType = Class.forName("net.minecraft.server.level.ServerChunkCache$MainThreadExecutor");
+        assertEquals(void.class, nativeType.getDeclaredMethod("doRunTask", Runnable.class).getReturnType());
+        assertEquals(net.minecraft.server.level.ServerChunkCache.class, nativeType.getDeclaredField("this$0").getType());
+        var mixin = Class.forName("dev.phoenium.mixin.ChunkStagePumpMixin");
+        var handler = mixin.getDeclaredMethod("phoenium$chunkTaskServices", Runnable.class,
+            com.llamalad7.mixinextras.injector.wrapoperation.Operation.class);
+        assertArrayEquals(new String[] {"doRunTask(Ljava/lang/Runnable;)V"},
+            handler.getAnnotation(com.llamalad7.mixinextras.injector.wrapmethod.WrapMethod.class).method());
+        try (var fixture = new FullServiceOperationFixture(server(new AtomicBoolean()))) {
+            var world = fixture.world();
+            var calls = new AtomicInteger();
+            class ChunkLoop extends BlockableEventLoop<Runnable> {
+                final Thread owner = Thread.currentThread();
+                Runnable executed;
+                ChunkLoop() { super("native chunk continuation", true); }
+                @Override public Runnable wrapRunnable(Runnable command) { return command; }
+                @Override protected boolean shouldRun(Runnable command) { return true; }
+                @Override protected Thread getRunningThread() { return owner; }
+                @Override protected boolean scheduleExecutables() { return true; }
+                @Override protected void doRunTask(Runnable command) {
+                    FullFinishingServices.runServerTask(fixture.server, () -> schedule(command), () -> {
+                        executed = command; super.doRunTask(command);
+                    });
+                }
+                boolean pollOne() { return pollTask(); }
+            }
+            var loop = new ChunkLoop();
+            Runnable continuation = () -> {
+                assertTrue(OwnershipContext.current().isEmpty());
+                FullFinishingServices.requireWorld(world, FullFinishingServices.Kind.TICK_LIST);
+                calls.incrementAndGet();
+            };
+            owned(() -> loop.execute(continuation));
+            assertEquals(0, calls.get());
+            assertTrue(loop.pollOne()); assertSame(continuation, loop.executed);
+            assertEquals(1, calls.get()); assertFalse(loop.pollOne());
+            assertEquals(0L, fixture.service.measurements().get("active"));
+        }
+    }
+
     @ParameterizedTest @ValueSource(booleans = {false, true})
     void originalAsyncDependentWaitsForOwnerExitThenRunsTheSameTaskExactlyOnce(boolean serialParent) throws Exception {
         MinecraftServer server = server(new AtomicBoolean());

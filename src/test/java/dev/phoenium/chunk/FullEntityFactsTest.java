@@ -176,6 +176,42 @@ final class FullEntityFactsTest {
             }
         }
     }
+    @Test void removedSavedReaderStillAcquiresOwnershipAtLaterNativeLookupInsertion() throws Exception {
+        try (var f = new FullServiceOperationFixture()) {
+            ServerLevel world = f.world();
+            Entity entity = stub(Entity.class, List.of(new Answer(Entity.class.getMethod("onRemoval", Entity.RemovalReason.class), args -> null)));
+            UUID id = UUID.randomUUID(); initialize(entity, world, id, 85, EntityTypes.TADPOLE);
+            set(entity, Entity.class, "chunkPosition", new net.minecraft.world.level.ChunkPos(32, 4));
+            set(entity, Entity.class, "position", new net.minecraft.world.phys.Vec3(520, 65, 72));
+            entity.setRemoved(Entity.RemovalReason.DISCARDED);
+            assertTrue(entity.isRemoved());
+            var lookup = new EntityLookup<Entity>(); lookup.add(entity);
+            assertSame(entity, lookup.getEntity(id), "native lookup admits a reader discarded before insertion");
+
+            var runtime = new dev.phoenium.live.PhoeniumLiveRuntime(org.slf4j.LoggerFactory.getLogger("removed-saved-reader"));
+            var directoryField = runtime.getClass().getDeclaredField("directory"); directoryField.setAccessible(true);
+            var directory = (dev.phoenium.topology.RegionDirectory) directoryField.get(runtime);
+            var worldId = new dev.phoenium.core.WorldId("minecraft:overworld");
+            var key = new dev.phoenium.topology.RoutingKey(worldId, 32, 4);
+            var region = new dev.phoenium.region.RegionId(worldId, "B");
+            var generation = new dev.phoenium.core.TopologyGeneration(1);
+            directory.publish(generation, Map.of(key, new dev.phoenium.topology.RegionRoute(region, generation,
+                new dev.phoenium.core.OwnerEpoch(0))));
+            var stateField = runtime.getClass().getDeclaredField("state"); stateField.setAccessible(true);
+            stateField.set(runtime, Arrays.stream(stateField.getType().getEnumConstants())
+                .filter(value -> value.toString().equals("RUNNING")).findFirst().orElseThrow());
+            set(runtime, runtime.getClass(), "scheduler", new dev.phoenium.scheduler.RegionScheduler(
+                Map.of(), directory, new dev.phoenium.failure.FailureBarrier()));
+            runtime.onEntityAddressable(entity);
+            var objectsField = runtime.getClass().getDeclaredField("objects"); objectsField.setAccessible(true);
+            var objects = (dev.phoenium.ownership.ObjectOwnershipRegistry) objectsField.get(runtime);
+            assertEquals(key, objects.current(id.toString()).orElseThrow().routingKey());
+            assertEquals(region, objects.current(id.toString()).orElseThrow().owner());
+            assertTrue(entity.isRemoved(), "ownership publication must not resurrect or mutate the reader");
+            lookup.remove(entity); runtime.onEntityRemoved(entity);
+            assertTrue(objects.current(id.toString()).isEmpty());
+        }
+    }
     @Test void trackerRefreshUsesCommittedMovementButCannotAdoptReplacementEntity() throws Exception {
         try (var f = new FullServiceOperationFixture()) {
             ServerLevel world = f.world();

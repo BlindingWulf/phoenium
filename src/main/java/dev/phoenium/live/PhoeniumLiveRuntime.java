@@ -987,9 +987,12 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
         runtime.transitionTo(RegionLifecycle.READY);
         return runtime;
     }
-    /** Lifecycle callback after vanilla has made an entity addressable; it never performs a world lookup. */
+    /** Lifecycle callback after vanilla has made an entity addressable; it never performs a world lookup.
+     * A saved reader can discard an entity before native storage inserts it. Native lookup and
+     * spawn enumeration still include that exact insertion, so removed status cannot erase its
+     * committed ownership lifetime. The later original removal callback retires the binding. */
     public void onEntityAddressable(Entity entity) {
-        if (!isRunning() || !(entity.level() instanceof ServerLevel level) || entity.isRemoved()) return;
+        if (!isRunning() || !(entity.level() instanceof ServerLevel level)) return;
         WorldId world = worldId(level);
         RoutingKey key = new RoutingKey(world, entity.chunkPosition().x(), entity.chunkPosition().z());
         try {
