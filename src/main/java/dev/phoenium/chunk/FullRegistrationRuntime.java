@@ -242,16 +242,18 @@ public final class FullRegistrationRuntime {
     public void shutdown() {
         List<Graph> snapshot;
         custody.gate().lock(); try { open = false; snapshot = List.copyOf(graphs); } finally { custody.gate().unlock(); }
-        snapshot.forEach(graph -> graph.stop(ChunkStageAdmission.Result.SHUTDOWN, null));
-        published.shutdown();
-        services.stopResidentHolders();
-        try { publishedSubscription.close(); } catch (Exception failure) { throw new ChunkProtocolException("publication subscription acknowledgement", failure); }
-        try { inputRouteSubscription.close(); } catch (Exception failure) { throw new ChunkProtocolException("input route acknowledgement", failure); }
-        if (inputViewSubscription != null) try { inputViewSubscription.close(); inputViewSubscription = null; }
-        catch (Exception failure) { throw new ChunkProtocolException("input directory acknowledgement", failure); }
-        pump.shutdown();
-        while (pumpOne()) { }
-        cleanupGenerations();
+        var failures = new FullInputNotifications.Failures();
+        for (Graph graph : snapshot) failures.run(() -> graph.stop(ChunkStageAdmission.Result.SHUTDOWN, null));
+        failures.run(published::shutdown);
+        failures.run(services::stopResidentHolders);
+        failures.run(publishedSubscription::close);
+        failures.run(inputRouteSubscription::close);
+        var viewSubscription = inputViewSubscription; inputViewSubscription = null;
+        if (viewSubscription != null) failures.run(viewSubscription::close);
+        failures.run(pump::shutdown);
+        failures.run(() -> { while (pumpOne()) { } });
+        failures.run(this::cleanupGenerations);
+        failures.rethrow();
     }
     public void retire(GenerationChunkHolder holder) {
         FullPublishedInputs.retired(holder);

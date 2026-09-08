@@ -104,7 +104,7 @@ public final class FullPublishedInputs {
             entry.settled = true; entry.returned = null; entry.producerMap = null;
             entry.value = null; entry.cache = null;
         } finally { custody.gate().unlock(); }
-        changes.published(); cleanup(entry);
+        notifyAndCleanup(entry);
     }
     private static FullPublishedInputs source(GeneratingChunkMap map) {
         if (map instanceof FullPublicationSource source) return source.phoenium$publishedInputs();
@@ -214,7 +214,7 @@ public final class FullPublishedInputs {
             entry.returned = null; entry.producerMap = null; entry.value = null; entry.cache = null;
             services.settleFinishedExecution(entry.work, entry.holder);
         } finally { custody.gate().unlock(); }
-        changes.published(); cleanup(entry);
+        notifyAndCleanup(entry);
     }
     private void requireThread() {
         if (Thread.currentThread() != observationThread) throw new ChunkProtocolException("published input acquisition outside original holder observation thread");
@@ -261,15 +261,18 @@ public final class FullPublishedInputs {
                 requireThread();
                 custody.gate().lock(); try { if (closed) return; closed = true; entry.uses--; acknowledgements++; }
                 finally { custody.gate().unlock(); }
-                entry.holder.decreaseGenerationRefCount();
-                cleanup(entry); changes.published();
+                var failures = new FullInputNotifications.Failures();
+                failures.run(entry.holder::decreaseGenerationRefCount);
+                failures.run(() -> cleanup(entry));
+                failures.run(changes::published);
+                failures.rethrow();
             }
         };
         // increaseGenerationRefCount commits the reference before its addSaveDependency callback.
         // Receipt ownership already exists, including when that original callback reenters or fails.
         try { entry.holder.increaseGenerationRefCount(); }
         catch (Throwable failure) {
-            try { use.close(); } catch (Exception cleanup) { failure.addSuppressed(cleanup); }
+            try { use.close(); } catch (Throwable cleanup) { if (failure != cleanup) failure.addSuppressed(cleanup); }
             throw failure;
         }
         if (!validates(evidence)) { try { use.close(); } catch (Exception impossible) { throw new AssertionError(impossible); } return null; }
@@ -304,7 +307,13 @@ public final class FullPublishedInputs {
             entry.retired = true; entry.invalid = true;
             services.lifecycles().retireHolder(entry.work.lifecycle(), entry.holder);
         } finally { custody.gate().unlock(); }
-        changes.published(); cleanup(entry);
+        notifyAndCleanup(entry);
+    }
+    private void notifyAndCleanup(Entry entry) {
+        var failures = new FullInputNotifications.Failures();
+        failures.run(changes::published);
+        failures.run(() -> cleanup(entry));
+        failures.rethrow();
     }
     private void cleanup(Entry entry) {
         custody.gate().lock(); try {
@@ -319,11 +328,13 @@ public final class FullPublishedInputs {
     /** Called after original serial visible-map publication; scans only this finite derived index. */
     public void visiblePublished() {
         requireThread();
-        visitCurrentEntries(entry -> {
+        var failures = new FullInputNotifications.Failures();
+        failures.run(() -> visitCurrentEntries(entry -> {
             var visible = ((FullInputView) level.getChunkSource().chunkMap).phoenium$visibleInput(entry.holder.getPos().pack());
             if (visible != null && visible != entry.holder) retire(entry);
-        });
-        changes.published();
+        }));
+        failures.run(changes::published);
+        failures.rethrow();
     }
     /** Constant transient scan space, including across reentrant removal/replacement.
      * A monotonically ordered index avoids copying every resident holder on publication.
@@ -332,20 +343,23 @@ public final class FullPublishedInputs {
         long boundary;
         custody.gate().lock(); try { boundary = nextEntry; } finally { custody.gate().unlock(); }
         long cursor = 0;
+        var failures = new FullInputNotifications.Failures();
         for (;;) {
             Entry entry;
             custody.gate().lock();
             try {
                 var next = entries.higherEntry(cursor);
-                if (next == null || next.getKey() > boundary) return;
+                if (next == null || next.getKey() > boundary) break;
                 cursor = next.getKey(); entry = next.getValue();
             } finally { custody.gate().unlock(); }
-            visitor.accept(entry);
+            failures.run(() -> visitor.accept(entry));
         }
+        failures.rethrow();
     }
     public void shutdown() {
-        open = false; visitCurrentEntries(this::retire);
-        ((FullInputView) level.getChunkSource().chunkMap).phoenium$inputChanges().publicationObserver(null);
+        open = false;
+        try { visitCurrentEntries(this::retire); }
+        finally { ((FullInputView) level.getChunkSource().chunkMap).phoenium$inputChanges().publicationObserver(null); }
     }
     public Map<String, Long> measurements() {
         custody.gate().lock(); try {

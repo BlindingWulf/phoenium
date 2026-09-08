@@ -14,6 +14,50 @@ import static org.junit.jupiter.api.Assertions.*;
 final class FullInputAcknowledgementTest {
     @BeforeAll static void bootstrap() { FullProductionRegistrationTest.bootstrap(); }
 
+    @Test void publicationListenersAreIndependentAndKeepTheFirstFailure() throws Exception {
+        var changes = new FullInputNotifications();
+        var calls = new java.util.ArrayList<String>();
+        var first = new IllegalStateException("first listener failed");
+        var second = new AssertionError("second listener failed");
+        try (var a = changes.subscribe(() -> { calls.add("a"); throw first; });
+             var b = changes.subscribe(() -> { calls.add("b"); throw second; });
+             var c = changes.subscribe(() -> calls.add("c"))) {
+            assertSame(first, assertThrows(IllegalStateException.class, changes::published));
+            assertEquals(List.of("a", "b", "c"), calls);
+            assertArrayEquals(new Throwable[] {second}, first.getSuppressed());
+        }
+        assertEquals(0, changes.retainedListeners());
+    }
+
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(booleans = {false, true})
+    void publicationRetirementFailureStillReleasesEveryResidentRecord(boolean reentrant) throws Exception {
+        var f = new FullRegistrationFixture(true);
+        AutoCloseable listener = null;
+        try {
+            var positions = List.of(new ChunkPos(1, 0), new ChunkPos(0, 1), new ChunkPos(1, 1));
+            for (var position : positions) { f.startBaseline(position); f.runGenerationTasks(); }
+            assertEquals(3L, f.runtime.published.measurements().get("records"));
+            var first = new IllegalStateException("first resident retirement notification failed");
+            var calls = new AtomicInteger();
+            listener = f.runtime.published.changes().subscribe(() -> {
+                if (calls.incrementAndGet() == 1) {
+                    if (reentrant) f.runtime.shutdown();
+                    throw first;
+                }
+            });
+            assertSame(first, assertThrows(IllegalStateException.class, f.runtime::shutdown));
+            assertEquals(3, calls.get(), "each independent resident retires despite the first failed notification");
+            assertEquals(0L, f.runtime.published.measurements().get("records"));
+            assertEquals(0, ((FullInputView) f.fixtureMap).phoenium$inputChanges().retainedListeners(),
+                    "runtime subscriptions detach even when publication retirement reports a failure");
+            for (var position : positions)
+                assertNull(((FullHolderEvidence) (Object) f.holder(position)).phoenium$publication());
+            assertCleanup(f);
+        } finally { if (listener != null) listener.close(); f.stop(); }
+        assertCleanup(f);
+    }
+
     @Test void failedPublicationNotificationCannotAbandonLaterOperationConsumers() throws Exception {
         var f = new FullRegistrationFixture(true);
         var neighbors = List.of(new ChunkPos(1, 0), new ChunkPos(0, 1), new ChunkPos(1, 1));
