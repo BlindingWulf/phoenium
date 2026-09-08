@@ -10,10 +10,54 @@ import java.util.concurrent.atomic.AtomicReference;
 public final class RegionDirectory {
     private final AtomicReference<View> view = new AtomicReference<>(new View(new TopologyGeneration(0), Map.of(), Map.of()));
     private final AtomicReference<PendingChange> pending = new AtomicReference<>();
+    private final Object publicationMetadata = new Object();
+    private volatile int retainedSaveCuts;
     private final java.util.concurrent.CopyOnWriteArraySet<Runnable> observations = new java.util.concurrent.CopyOnWriteArraySet<>();
     /** Change notices contain no route authority; listeners must reobserve the published view. */
     public AutoCloseable observeChanges(Runnable listener) { observations.add(listener); return () -> observations.remove(listener); }
-    private void changed() { observations.forEach(Runnable::run); }
+    private void changed() {
+        Throwable first = null;
+        for (Runnable observer : observations) {
+            try { observer.run(); }
+            catch (Throwable failure) {
+                if (first == null) first = failure;
+                else if (first != failure) first.addSuppressed(failure);
+            }
+        }
+        if (first instanceof RuntimeException runtime) throw runtime;
+        if (first instanceof Error error) throw error;
+    }
+
+    /** A save reservation retains the published topology, not an active region lease.
+     * Acquire only after original save readiness has settled, before the first snapshot.
+     * The metadata monitor is released before any callback, snapshot or storage work. */
+    public SaveCut tryRetainSaveCut() {
+        if (dev.phoenium.ownership.OwnershipContext.current().isPresent())
+            throw new IllegalStateException("save topology cut requested inside regional ownership");
+        synchronized (publicationMetadata) {
+            if (pending.get() != null) return null;
+            retainedSaveCuts = Math.incrementExact(retainedSaveCuts);
+            return new SaveCut(view.get());
+        }
+    }
+    public boolean hasRetainedSaveCuts() { return retainedSaveCuts != 0; }
+    public final class SaveCut implements AutoCloseable {
+        private final View captured;
+        private boolean closed;
+        private SaveCut(View captured) { this.captured = captured; }
+        public View view() {
+            if (closed) throw new IllegalStateException("expired save topology cut");
+            return captured;
+        }
+        @Override public void close() {
+            synchronized (publicationMetadata) {
+                if (closed) return;
+                closed = true;
+                retainedSaveCuts--;
+            }
+            changed();
+        }
+    }
 
     /** Evidence of a real coordinator proposal, never authority to execute in its future route. */
     public static final class PendingChange {
@@ -27,13 +71,17 @@ public final class RegionDirectory {
     }
 
     PendingChange beginChange(java.util.Set<RoutingKey> keys, java.util.Set<dev.phoenium.region.RegionId> participants) {
+        PendingChange change;
+        synchronized (publicationMetadata) {
+        if (retainedSaveCuts != 0) return null;
         View before = view.get();
         java.util.Set<RoutingKey> affected = new java.util.HashSet<>(keys);
         java.util.Set<dev.phoenium.core.WorldId> defaultWorlds = new java.util.HashSet<>();
         before.routes().forEach((key, route) -> { if (participants.contains(route.region())) affected.add(key); });
         before.worldDefaults().forEach((world, route) -> { if (participants.contains(route.region())) defaultWorlds.add(world); });
-        PendingChange change = new PendingChange(affected, defaultWorlds);
+        change = new PendingChange(affected, defaultWorlds);
         if (!pending.compareAndSet(null, change)) throw new IllegalStateException("directory change already pending");
+        }
         changed();
         return change;
     }
@@ -68,8 +116,6 @@ public final class RegionDirectory {
     /** A world default represents a deliberate temporary whole-world region, never an implicit thread fallback. */
     public void publish(TopologyGeneration generation, Map<RoutingKey, RegionRoute> routes, Map<dev.phoenium.core.WorldId, RegionRoute> worldDefaults) {
         Objects.requireNonNull(generation, "generation");
-        View previous = view.get();
-        if (generation.value() <= previous.generation().value()) throw new IllegalStateException("directory generations must increase");
         routes.forEach((key, route) -> {
             if (!key.world().equals(route.region().world())) throw new IllegalArgumentException("route crosses world identity");
             if (!route.generation().equals(generation)) throw new IllegalArgumentException("route generation differs from view");
@@ -78,7 +124,12 @@ public final class RegionDirectory {
             if (!world.equals(route.region().world())) throw new IllegalArgumentException("default route crosses world identity");
             if (!route.generation().equals(generation)) throw new IllegalArgumentException("default route generation differs from view");
         });
-        view.set(new View(generation, Map.copyOf(routes), Map.copyOf(worldDefaults)));
+        View replacement = new View(generation, Map.copyOf(routes), Map.copyOf(worldDefaults));
+        synchronized (publicationMetadata) {
+            if (retainedSaveCuts != 0) throw new IllegalStateException("topology publication overlaps a retained save cut");
+            if (generation.value() <= view.get().generation().value()) throw new IllegalStateException("directory generations must increase");
+            view.set(replacement);
+        }
         changed();
     }
     public record View(TopologyGeneration generation, Map<RoutingKey, RegionRoute> routes, Map<dev.phoenium.core.WorldId, RegionRoute> worldDefaults) {

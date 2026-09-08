@@ -62,6 +62,8 @@ public final class RegionalSaveCoordinator {
         owned(key, RegionalServiceKind.SAVE_ACKNOWLEDGEMENT, () -> { original.run(); return null; });
     }
 
+    public RegionDirectory.SaveCut tryRetainTopologyCut() { return directory.tryRetainSaveCut(); }
+
     public final class Attempt {
         private final long id;
         private Source source;
