@@ -174,6 +174,13 @@ public final class Stage4AcceptanceProbe implements DedicatedServerModInitialize
                     scheduleFarEffects(context.getSource().getLevel());
                     return 1;
                 }))
+                .then(Commands.literal("release-deferred").executes(context -> {
+                    ServerLevel level = context.getSource().getLevel();
+                    level.setChunkForced(REGION_DEFERRED_EVENT.getX() >> 4, REGION_DEFERRED_EVENT.getZ() >> 4, false);
+                    Stage4Trace.event("fixture.deferred.released", "gameTime=" + level.getGameTime());
+                    System.out.println("STAGE4_TRACE_DEFERRED_RELEASED gameTime=" + level.getGameTime());
+                    return 1;
+                }))
                 .then(Commands.literal("step-restored").then(Commands.argument("maximumTicks",
                     IntegerArgumentType.integer(1, 2400)).executes(context -> {
                         scheduleRestoredBefore(context.getSource().getLevel(),
@@ -682,6 +689,27 @@ public final class Stage4AcceptanceProbe implements DedicatedServerModInitialize
         Stage4Trace.event("fixture.temporary.released", "far=(32,0) deferred=(32,12) gameTime="
             + level.getGameTime());
         System.out.println("STAGE4_TRACE_TEMPORARY_RELEASED gameTime=" + level.getGameTime());
+        pendingFarUnload = level;
+        farUnloadDeadline = System.nanoTime() + 60_000_000_000L;
+    }
+
+    private static ServerLevel pendingFarUnload;
+    private static long farUnloadDeadline;
+    public static void observeFarUnload() {
+        ServerLevel level = pendingFarUnload;
+        if (level == null) return;
+        long key = centerKey(REGION_B_FAR.getX() >> 4, REGION_B_FAR.getZ() >> 4);
+        var map = level.getChunkSource().chunkMap;
+        if (map.getUpdatingChunkIfPresent(key) == null
+                && ((dev.phoenium.chunk.FullInputView) map).phoenium$visibleInput(key) == null
+                && Stage4Trace.farPendingSaved()) {
+            pendingFarUnload = null;
+            Stage4Trace.event("fixture.temporary.unloaded", "gameTime=" + level.getGameTime());
+            System.out.println("STAGE4_TRACE_TEMPORARY_UNLOADED gameTime=" + level.getGameTime());
+        } else if (System.nanoTime() > farUnloadDeadline) {
+            pendingFarUnload = null;
+            throw new IllegalStateException("original far unload did not settle at the frozen input boundary");
+        }
     }
 
     private static void probeBlockEvent(ServerLevel level, BlockPos pos, int paramA, int paramB, String label) {

@@ -16,6 +16,7 @@ import time
 import re
 
 ROOT = Path(__file__).resolve().parents[1]
+SERVER_PORT = int(os.environ.get("PHOENIUM_SAVED_VAULT_PORT", "25565"))
 PREPARED = ROOT / "build/stage3-client-server"
 PROBE = ROOT / "build/test-harness/full-live-probe.jar"
 PRESERVED_SERVER = ROOT.parent / "Phoenium" / "run/nonself-input-decision/ticking-20260905-122520/server"
@@ -55,7 +56,7 @@ assert digest(artifact) == digest(built), "prepared server has a stale productio
 (SERVER / "eula.txt").write_text("eula=true\n")
 (SERVER / "server.properties").write_text("\n".join([
     "level-name=" + WORLD_NAME, "level-seed=", "online-mode=false",
-    "enforce-secure-profile=false", "server-ip=127.0.0.1", "server-port=25565",
+    "enforce-secure-profile=false", "server-ip=127.0.0.1", f"server-port={SERVER_PORT}",
     "enable-rcon=false", "max-players=1", "difficulty=peaceful", "gamemode=creative",
     "view-distance=5", "simulation-distance=5", "spawn-protection=0",
     "sync-chunk-writes=true", "pause-when-empty-seconds=-1", "spawn-animals=false",
@@ -78,7 +79,7 @@ manifest = {
     "sourceInventory": str(SAVED_VAULT_INVENTORY),
     "sourceInventorySha256": digest(SAVED_VAULT_INVENTORY),
     "selectedOriginalVault": selected_vault,
-    "sourceWorldUntouched": True, "command": command,
+    "sourceWorldUntouched": True, "command": command, "serverPort": SERVER_PORT,
 }
 print(str(OUTPUT), flush=True)
 process = None

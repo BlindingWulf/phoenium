@@ -117,8 +117,8 @@ public final class Stage4ClientTraceTest implements FabricClientGameTest {
             // The far and deferred chunks were force retained only to obtain authentic FULL
             // receipts before arm. Release those temporary tickets before stepping the clock so
             // the deferred event still exercises native eligibility and later viewport admission.
-            command(server, "stage4trace release-temporary");
-            awaitLog(context, server, log, "STAGE4_TRACE_TEMPORARY_RELEASED", START_TIMEOUT_TICKS);
+            command(server, "stage4trace release-deferred");
+            awaitLog(context, server, log, "STAGE4_TRACE_DEFERRED_RELEASED", START_TIMEOUT_TICKS);
             // Prove the deferred event is rejected by the native distance predicate while its
             // far chunk is not in the player's viewport.  The later check is made only after
             // the real deferred viewport FULL receipt, so neither result is inferred from a
@@ -137,6 +137,12 @@ public final class Stage4ClientTraceTest implements FabricClientGameTest {
             }
             command(server, "stage4trace step initial 4");
             awaitLog(context, server, log, "STAGE4_TRACE_CLOCK_STEP_REACHED label=initial", START_TIMEOUT_TICKS);
+            // Native transient terrain tickets have expired during the shared four steps.
+            // Remove far force retention at this exact frozen time and observe actual unload
+            // and packed pending ticks before later travel. Both artifacts now receive the
+            // same saved delay instead of an I/O-dependent release during the clock step.
+            command(server, "stage4trace release-temporary");
+            awaitLog(context, server, log, "STAGE4_TRACE_TEMPORARY_UNLOADED", START_TIMEOUT_TICKS);
             assertClientEntity(context, ENTITY_A, 8, 8, true);
             topologyTeleport(context, server, log, 8, 65, 8, new int[][] {{0, 0}});
             command(server, "stage4trace barrier setup");
@@ -492,6 +498,9 @@ public final class Stage4ClientTraceTest implements FabricClientGameTest {
             if (!server.isAlive()) return;
             context.waitTick();
         }
+        Path stopDump = Path.of(System.getProperty("phoenium.stage4.serverDirectory", "run/stage4"))
+            .resolve("thread-dumps/server-before-stop-timeout-" + server.pid() + ".txt");
+        captureThreadDump(server, stopDump);
         server.destroyForcibly();
         throw new AssertionError("server did not stop normally");
     }

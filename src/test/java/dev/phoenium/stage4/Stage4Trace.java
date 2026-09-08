@@ -48,6 +48,8 @@ public final class Stage4Trace {
     private static volatile long restoredUnpackTrigger = -1;
     private static volatile int restoredUnpackMatches;
     private static final Set<Integer> changeSeen = new HashSet<>();
+    private static volatile boolean farPendingSaved;
+    public static boolean farPendingSaved() { return farPendingSaved; }
     private static final Map<String, BlockPos> BLOCK_PROBES = new LinkedHashMap<>();
     private static final Map<String, Integer> BLOCK_PROBE_A = new LinkedHashMap<>();
     private static final Map<String, Integer> BLOCK_PROBE_B = new LinkedHashMap<>();
@@ -425,6 +427,13 @@ public final class Stage4Trace {
     /** Record only the detached result returned by the original serialization callback. */
     public static void packedTicks(ChunkAccess chunk, long gameTime, ChunkAccess.PackedTicks packed) {
         if (!active || packed == null) return;
+        if (chunk.getPos().x() == 32 && chunk.getPos().z() == 0) {
+            long delay = startedAt + 320 - gameTime;
+            farPendingSaved = packed.blocks().stream().anyMatch(tick -> tick.pos().equals(Stage4AcceptanceProbe.REGION_B_FAR_BLOCK)
+                    && tick.type() == net.minecraft.world.level.block.Blocks.NOTE_BLOCK && tick.delay() == delay)
+                && packed.fluids().stream().anyMatch(tick -> tick.pos().equals(Stage4AcceptanceProbe.REGION_B_FAR_FLUID)
+                    && tick.type() == net.minecraft.world.level.material.Fluids.WATER && tick.delay() == delay);
+        }
         event("save.serialization.ticks", "chunk=" + chunk.getPos() + " gameTime=" + gameTime
             + " blocks=" + packed.blocks() + " fluids=" + packed.fluids()
             + " " + packedAuthority(chunk));

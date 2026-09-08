@@ -26,6 +26,7 @@ OBSERVABLE = {"tick.schedule", "tick.block.vanilla", "tick.fluid", "block.enqueu
               "block.dispatch", "block.dispatch.result", "block.nested.enqueue",
               "block.recipient.packet", "tracking.pair", "tracking.remove", "tracking.delivered"}
 CONTRACT = {"fixture.player.pads", "trace.armed", "tick.pending.input", "block.recipient.required",
+            "fixture.deferred.released", "fixture.temporary.unloaded",
             "fixture.temporary.released", "block.deferred.eligibility", "block.probe", "block.probe.input",
             "block.probe.result", "block.probe.support", "tick.migrated.result", "block.deferred.result",
             "save.server.begin", "save.server.end", "save.enter", "save.exit", "server.stop.begin", "server.stop"}
@@ -87,11 +88,11 @@ def load(path: Path):
         normalized = ROUTE_ASSIGNMENT.sub(r"\1=<route>", normalized)
         return normalized
 
-    ordered, contract, clocks, readiness, saves = [], [], [], [], {}
+    ordered, tracking, contract, clocks, readiness, saves = [], [], [], [], [], {}
     for item in events:
         kind = item.split(" ", 1)[0]
         if kind in OBSERVABLE:
-            ordered.append(normalize(item))
+            (tracking if kind.startswith("tracking.") else ordered).append(normalize(item))
         elif kind in CONTRACT:
             contract.append(normalize(item))
         elif kind in CLOCKS:
@@ -110,11 +111,12 @@ def load(path: Path):
             readiness.append(re.sub(r" target=\d+ candidates=\d+", "", item))
         elif kind not in INTERNAL and not kind.startswith("topology."):
             raise ValueError(f"unclassified trace event: {kind}")
-    if not any(item.startswith("tracking.delivered ") for item in ordered):
+    if not any(item.startswith("tracking.delivered ") for item in tracking):
         raise ValueError("trace lacks actual tracker connection.send evidence")
     if not any(item.startswith("tick.native.unpack ") for item in clocks):
         raise ValueError("trace lacks native fixture unpack evidence")
     behavioral = (["observable:" + item for item in ordered]
+        + ["tracking:" + item for item in tracking]
         + ["contract:" + item for item in contract]
         + ["clock:" + item for item in clocks]
         + ["readiness:" + item for item in readiness]

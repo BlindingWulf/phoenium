@@ -50,6 +50,27 @@ public final class Stage4TeleportTopology {
 
     private Stage4TeleportTopology() { }
 
+    public static void verifyTerminal() {
+        if (!Boolean.getBoolean("phoenium.stage4.candidate")) return;
+        var live = Phoenium.liveRuntime();
+        var enclosure = privateField(live, "fullEnclosure", FullRegionalEnclosure.class);
+        var coordinator = privateField(enclosure, "coordinator", TopologyCoordinator.class);
+        var runtimes = privateField(live, "runtimes", Map.class);
+        int queued = 0, transitioning = 0, leases = 0;
+        for (Object value : runtimes.values()) {
+            var runtime = (dev.phoenium.region.RegionRuntime) value;
+            queued += runtime.inboxSize() + runtime.transitionMailboxSize();
+            if (runtime.transitioning()) transitioning++;
+            if (runtime.leases().hasActiveLease()) leases++;
+        }
+        boolean pass = !coordinator.hasPendingTransition() && !coordinator.hasPendingConvergence()
+            && queued == 0 && transitioning == 0 && leases == 0;
+        System.out.println("STAGE4_TRACE_TERMINAL pass=" + pass + " pendingTransition=" + coordinator.hasPendingTransition()
+            + " pendingConvergence=" + coordinator.hasPendingConvergence() + " queued=" + queued
+            + " transitioning=" + transitioning + " leases=" + leases);
+        if (!pass) throw new IllegalStateException("terminal regional topology or ownership residue");
+    }
+
     public static Prepared prepare(ServerLevel level, ServerPlayer player, BlockPos destination) {
         Objects.requireNonNull(level, "level");
         Objects.requireNonNull(player, "player");

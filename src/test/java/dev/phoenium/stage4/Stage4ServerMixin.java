@@ -17,6 +17,7 @@ abstract class Stage4ServerMixin {
     private void phoenium$teleportReadiness(CallbackInfo ci) {
         dev.phoenium.stage4probe.Stage4AcceptanceProbe.observeTeleportReadiness();
         dev.phoenium.stage4probe.Stage4AcceptanceProbe.observeFullReadiness();
+        dev.phoenium.stage4probe.Stage4AcceptanceProbe.observeFarUnload();
     }
 
     @Inject(method = "saveAllChunks(ZZZ)Z", at = @At("HEAD"), require = 1)
@@ -33,7 +34,10 @@ abstract class Stage4ServerMixin {
             original.call();
             completed = true;
         } finally {
-            if (completed) Stage4Trace.serverStopCompleted();
+            if (completed) {
+                dev.phoenium.stage4probe.Stage4TeleportTopology.verifyTerminal();
+                Stage4Trace.serverStopCompleted();
+            }
         }
     }
 }

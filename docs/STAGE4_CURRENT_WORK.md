@@ -4,6 +4,34 @@ Stage 4 remains **PARTIAL**, Stage 5 OFF, one gameplay worker, parallel gameplay
 This section supersedes the historical worker assignments and next-step instructions below.
 The session began from clean `2b3080b`; all newer work is preserved. No agents are running.
 
+- Recovery parent **d82b594**, current production **3EF9B2ED...6F0B5F03**. Shared 5/5 candidate X
+  and frozen reference J both PASS, strict MCA/restart PASS, comparison PASS
+  (`run/stage4/final-comparison-5.json`, 123 canonical events, identical digest6CBE83B4...E375A).
+  Shared far force-load releases at simulation +4 after original transient tickets age; the probe
+  waits for original unload and exact saved far ticks. Saved delays remain strict. Gameplay and
+  native tracking deliveries compare in separate ordered channels because native ServerEntity
+  advances its packet counter independently of the frozen simulation clock. X explicitly verifies
+  zero pending topology/convergence/mailboxes/leases after both normal stops. Candidate W timed
+  out before native stop began; preserved, no PASS claimed. The harness now captures the child
+  thread dump BEFORE timeout termination to diagnose recurrence.
+- Saved vault PASS: `run/nonself-input-decision/saved-vault-20260908-120314`, 597 native ticks,
+  30 exact dirty/owner scopes,120 neighbor reads, zero cleanup/barrier residue. Packaging audit
+  PASS `run/stage4/final-packaging-audit.json`. Child elapsed/peak RSS measurements recorded for
+  both X/J lifecycle processes; no benchmark claim.
+- **First unresolved production failure:** authoritative FULL fresh at
+  `run/full-authoritative/live-1788887363273/fresh-server-process.log`,12:09:34: spawn-state
+  tadpole b1836af4-eb2d-36ff-ba02-11ac7528b522 lacks ownership. Saved input discards it DURING
+  load before EntityLookup insertion; native storage nevertheless later inserts/tracks it.
+  `onEntityAddressable` incorrectly rejects `isRemoved()` at that committed visibility edge,
+  although native spawn enumeration contains it. Correct that lifecycle without filtering native
+  gameplay or manufacturing a fallback owner. Add regression; rerun FULL first. A production
+  change invalidates the prior same-artifact installed gates.
+- Reference8B did not start: FULL added `full-live-probe.jar` to shared staging mods and Stage4
+  copied that unrelated probe. Repair Stage4 fixture isolation before next reference ID8C.
+  Resume FULL: `.\gradlew.bat runStage3FullAcceptance --no-daemon --console=plain`.
+  Remaining: production fix, FULL fresh/reload, final5/8 pairs, controlled/adverse/vault on final
+  bytes, full suite recount, packaging and consolidated all17 gates, then freeze only PASS.
+
 - Current production remains **3EF9B2ED302E6DEAC9B27526450BD3F8750A62BF4C98087E943934CD6F0B5F03**
   (source production finalized at 2bb1618). Candidate `finish-candidate-8-c` PASS, real client request8,
   native FULL cohorts plus first/restart normal stops with all terminal entity/service/save/lease
