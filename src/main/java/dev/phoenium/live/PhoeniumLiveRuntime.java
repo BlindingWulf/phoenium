@@ -65,13 +65,14 @@ import java.util.function.BiConsumer;
 import org.slf4j.Logger;
 
 /**
- * Stage 2's serial live binding. A Minecraft level is represented by one real
- * Phoenium region; this is deliberately not geographical regionalization.
+ * Serial live binding for regional gameplay, chunk lifecycles and world services.
+ * World service anchors coordinate native phases; each selected regional callback
+ * obtains current route and lease authority through the single gameplay worker.
  */
 public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecutor, ObjectOperationExecutor, ChunkBindingRuntime.Authority {
     private final Logger logger;
     private final Map<WorldId, LiveRegion> regions = new LinkedHashMap<>();
-    /** Per-world service lifetime only; no Minecraft chunk callback is bound to it in this pass. */
+    /** Per-world prerequisite service lifetime; original chunk producers retain exact work identities. */
     private final Map<WorldId, ChunkPrerequisiteServices> chunkPrerequisiteServices = new LinkedHashMap<>();
     private final Map<RegionId, RegionRuntime> runtimes = new LinkedHashMap<>();
     private final RegionDirectory directory = new RegionDirectory();

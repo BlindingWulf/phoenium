@@ -31,7 +31,7 @@ remaining. First dispatcher integration: Codex 38% used / 62% remaining, reserve
 | --- | --- | --- |
 | Scheduled ticks | Real per-owner persistent containers, due selection, typed collection/dispatch; native clear/copy share the original current-cycle fields and finite area cut | Installed deterministic two-owner migration, exact original register-then-unpack oracle and restored effects |
 | Block events | Per-owner ordered queues, original nested enqueue and dispatch, migration | Installed ordered comparator and pending-work merge/split |
-| Entity tracking | Actual tracker partitions, original pairing/removal/update, entity/session and exact passenger-edge receipts, source-map order | Owner-free outer chunk/entity producer cuts; actual clients, ordered packets and lifecycle migration |
+| Entity tracking | Actual tracker partitions, original pairing/removal/update, entity/session and exact passenger/vehicle-edge receipts, source-map order; native chunk/entity/block-entity callbacks dispatch by current owner | Actual clients, ordered packets and lifecycle migration |
 | Save cuts | Original selected-holder retention, batch/operation topology cuts, detached original snapshot, original I/O acknowledgement | Final-artifact disk records/restart, replacement/pressure and affected FULL lifecycle |
 | Shutdown | Admission close, leased admitted-work drain, independent failure settlement, terminal metadata acknowledgement | Clean final installed stop under normal and adverse pending work |
 | Global services | Established named services and explicit metadata/owner-free I/O protocols | Final integrated reached-path audit; see STAGE4_SERVICE_CONTRACT.md |
@@ -96,22 +96,29 @@ owner-free raw container diagnostics were rejected and were not integrated.
 Genuine pending fixture `5da8152` replaced an invalid duplicate B/type schedule;
 comparison must use identical corrected reference inputs.
 
-Sol owns the reached outer cache/entity producer gap: the old CACHE_OWNER phase
-ran all selected chunks under the world anchor owner. Actual callbacks need finite
-owner-free admission and current source/recipient closure, preserving original RNG,
-order and synchronous effects. Worker recovery `07bdc81` has the first cache split;
-it is not yet integrated or ready for a campaign. Recovery `c14eac5` adds final entity
-dispatch, published nearest-player observations, per-spawner conditional footprints,
-and removes the per-tick entity-binding scan. Original block-entity suffix and entity
-terrain closure are still under review. Lead owns save/stop, provenance and integration.
+Production recovery `0a14b8a` integrates Sol's complete native chunk/entity callback
+boundary. Selected chunks, entity/passenger/vehicle graphs, and block-entity tickers
+enter their current regional owner after finite admission. The native chunk shuffle,
+entity iteration, spawner order/counters, conditional final phase and ticker removal
+protocol are preserved. Original spawn-state entity iteration remains once; the extra
+per-tick entity-binding scan is removed. Native block-ticker unload removes before
+reading its now-cleared position. Lead's integrated phase/block-ticker/lifetime gate
+passes 10 tests (`run/stage4/final-callback-integration-20260908.log`).
+`ccc2f3b` moves native service bootstrap outside the registry monitor and refreshes
+natural-spawn player receipts after admission and before use; Sol's focused gate
+passes 23 tests. Sol is idle on clean `5a0dcaf`, available for concrete reached repairs.
+Lead owns save/stop, provenance and integration.
 Luna alone owns broad builds/live campaigns, exact native oracles, controlled real
 client comparison, immutable MCA/reload effects, real merge/split and lifecycle, 5/5
 and 8/8, affected foundation regressions, and comparable elapsed/RSS observations.
-Her installed topology fixture now requests actual coordinator merge/split (no direct
-directory publication); pending review corrections include cancellation-resistant
-trace hooks, separated behavioral/authority comparisons, transferred deferred-event
-and fluid effects, and genuinely distinct region geometry for tracking callbacks.
-The next stable campaign must include all production repairs.
+Her installed topology fixture requests actual coordinator merge/split (no direct
+directory publication). Harness checkpoint `cc8aec1` uses the same native-clock
+workload on the frozen and changed production JARs, real FULL receipts, original
+fluid-queue scheduling and an exact deferred callback. Remaining review corrections
+keep the migrated far ticks in the player's simulated viewport through their deadline,
+observe entity removal while it is visible, and check exact client event packets.
+The coherent final harness is pending integration; no final installed campaign has
+run. The next stable campaign must include all production repairs.
 Lead `c3cf005` rejects late producers after service termination before native mutation;
 its new focused lifetime regression passes. The genuine same-holder withdrawal /
 re-promotion repair preserves the original producer, revoked old subscriber, current
@@ -119,6 +126,7 @@ lower-input identity and new actual FULL slot/result. Four native negative repro
 are retained in `run/stage4/same-holder-repromotion-negative-20260908.*`. Fresh/reload
 before/after-completion cases and admitted FULL re-promotion plus subsequent input
 replacement pass in the 66-test published/initialized/authoritative focused gate.
-At this integration boundary account-wide Codex usage is 66% used / 34% remaining;
+At the re-promotion boundary account-wide Codex usage was 66% used / 34% remaining.
+At the final callback integration boundary it is 71% used / 29% remaining;
 reserve remains 7% used / 93% remaining. No per-task token total is exposed.
 Internal commits remain recovery points; continue until all required gates pass.
