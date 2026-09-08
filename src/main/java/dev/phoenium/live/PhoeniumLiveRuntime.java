@@ -175,7 +175,10 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
         state = State.RUNNING;
         ChunkRuntimeTrace.start();
         for (ServerLevel level : server.getAllLevels()) refreshEntityBindings(level);
-        regionalServices.initializeTracking();
+        try (var turn = dev.phoenium.chunk.FullFinishingServices.forServer(server)
+                .serial(dev.phoenium.chunk.FullFinishingServices.Phase.SERVER_TASK)) {
+            regionalServices.initializeTracking();
+        }
         lifecycleStarts++;
         logger.info("PHOENIUM_STAGE3 movement tickCount selector and interaction target selector loaded once; explicitFixture={}", explicitFixture);
         logStatus("started");
