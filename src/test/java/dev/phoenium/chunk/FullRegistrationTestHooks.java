@@ -42,14 +42,21 @@ public final class FullRegistrationTestHooks {
     }
     public static void savedAdd(net.minecraft.world.level.chunk.ProtoChunk proto, net.minecraft.nbt.CompoundTag tag) {
         FullSavedInput input = ((FullSavedInput.Access) proto).phoenium$savedInput();
-        Runnable notify;
+        Runnable notify = null; Throwable failure = null;
         input.beforeWrite();
         try {
             try { proto.getClass().getMethod("phoenium$originalAddEntity", net.minecraft.nbt.CompoundTag.class).invoke(proto, tag); }
-            catch (ReflectiveOperationException failure) { throw new AssertionError(failure); }
+            catch (ReflectiveOperationException reflectionFailure) { throw new AssertionError(reflectionFailure); }
             notify = input.written(proto.getEntities());
-        } finally { input.endWrite(); }
-        if (notify != null) notify.run();
+        } catch (Throwable problem) { failure = problem; }
+        Throwable wakeFailure = input.endWrite();
+        if (failure == null && notify != null) {
+            try { notify.run(); }
+            catch (Throwable problem) { failure = problem; }
+        }
+        if (failure == null) failure = wakeFailure;
+        else if (wakeFailure != null && wakeFailure != failure) failure.addSuppressed(wakeFailure);
+        FullSavedInput.rethrow(failure, "saved ProtoChunk entity publication failed");
     }
     public static CompletableFuture<ChunkAccess> applyWinning(GeneratingChunkMap map, GenerationChunkHolder holder,
             ChunkStep step, StaticCache2D<GenerationChunkHolder> cache) {

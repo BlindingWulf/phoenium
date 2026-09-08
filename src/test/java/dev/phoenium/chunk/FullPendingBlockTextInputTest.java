@@ -310,6 +310,15 @@ class FullPendingBlockTextInputTest {
             assertDoesNotThrow(() -> fresh.components("front_text.messages[]", ignored -> true, () -> { }));
             var source = FullSavedCollections.source(tag);
             source.beforeWrite();
+            var cancelledWakes = new AtomicInteger();
+            try {
+                var cancelled = assertThrows(FullBlockEntityTagInputs.Retry.class, () ->
+                        fresh.components("front_text.messages[]", ignored -> true, cancelledWakes::incrementAndGet));
+                cancelled.waiter.close();
+            } finally { source.endWrite(); }
+            assertEquals(0, cancelledWakes.get(), "closing the scheduler waiter unregisters its busy observation wake");
+
+            source.beforeWrite();
             var wakes = new AtomicInteger();
             FullBlockEntityTagInputs.Retry busy;
             try {
@@ -325,6 +334,45 @@ class FullPendingBlockTextInputTest {
             f.stop(); FullFinishingServices.stopped(f.world.level.getServer());
         }
         assertCleanup(f);
+    }
+
+    @Test void observationWakeFailuresNeverReplaceMutationFailureAndEveryWakeAndChangeRuns() {
+        var source = new FullSavedInput(); source.activate();
+        var primary = new IllegalStateException("primary mutation");
+        var wakeOne = new IllegalArgumentException("wake one");
+        var wakeTwo = new IllegalArgumentException("wake two");
+        var changedFailure = new IllegalStateException("changed");
+        var changed = new AtomicInteger();
+        source.subscribe(() -> { changed.incrementAndGet(); throw changedFailure; });
+
+        var thrown = assertThrows(IllegalStateException.class, () -> source.mutate(() -> {
+            var first = source.observeIfAvailable(() -> null, () -> { throw wakeOne; });
+            var second = source.observeIfAvailable(() -> null, () -> { throw wakeTwo; });
+            assertFalse(first.acquired()); assertFalse(second.acquired());
+            throw primary;
+        }));
+        assertSame(primary, thrown, "the original writer failure remains primary");
+        assertEquals(1, changed.get(), "normal changed notification still runs after wake failures");
+        assertEquals(1, thrown.getSuppressed().length);
+        var cleanup = thrown.getSuppressed()[0];
+        assertSame(wakeOne, cleanup);
+        assertEquals(2, cleanup.getSuppressed().length);
+        assertSame(wakeTwo, cleanup.getSuppressed()[0]);
+        assertSame(changedFailure, cleanup.getSuppressed()[1]);
+    }
+
+    @Test void cancelledBusyObservationRegistrationIsRemovedBeforeReleaseWake() throws Exception {
+        var source = new FullSavedInput(); source.activate(); source.beforeWrite();
+        var wakes = new AtomicInteger();
+        try {
+            var attempt = source.observeIfAvailable(() -> null, wakes::incrementAndGet);
+            assertFalse(attempt.acquired());
+            assertNotNull(attempt.busyRegistration());
+            attempt.busyRegistration().close();
+        } finally {
+            assertNull(source.endWrite(), "cancelled waiter leaves no wake failure");
+        }
+        assertEquals(0, wakes.get(), "a cancelled plan cannot be woken after acknowledgement");
     }
 
     private static CompoundTag text(CompoundTag contents) {

@@ -70,7 +70,7 @@ public final class FullBlockEntityTagInputs {
 
     public static final class Capture {
         private record ComponentMeasure(List<net.minecraft.nbt.Tag> tags, long bytes) { }
-        private record ComponentCopies(List<FullSavedTextInputs.Saved> values, long bytes) { }
+        private record ComponentCopies(List<FullSavedTextInputs.Saved> values, long bytes, boolean stale) { }
         private final Source source;
         private final Occurrence occurrence;
         private final Reload reload;
@@ -107,20 +107,41 @@ public final class FullBlockEntityTagInputs {
          * is deliberately conservative and does not evaluate an arbitrary NBT path. */
         List<FullSavedTextInputs.Saved> components(String path, LongPredicate reserve, Runnable changed) {
             var initial = source.custody.observeIfAvailable(() -> componentMeasure(path), changed);
-            if (!initial.acquired() || initial.value() == null) throw occurrence.retry(changed, reload, reloadRevision);
+            if (!initial.acquired() || initial.value() == null)
+                throw retry(changed, initial.busyRegistration());
             long admitted = initial.value().bytes();
             if (!reserve.test(admitted)) throw new Capacity();
             // The reservation callback may have run a writer or lifecycle transition. Refresh
             // the exact audited slots and scalar measure before any detached copy is made.
             var copies = source.custody.observeIfAvailable(() -> {
                 var refreshed = componentMeasure(path);
-                if (refreshed == null || refreshed.bytes() > admitted) return null;
+                if (refreshed == null) return new ComponentCopies(null, 0L, true);
+                if (refreshed.bytes() > admitted) return new ComponentCopies(null, refreshed.bytes(), false);
                 var result = new ArrayList<FullSavedTextInputs.Saved>(refreshed.tags().size());
                 for (var tag : refreshed.tags()) result.add(FullSavedTextInputs.captureTag(tag, source.custody));
-                return new ComponentCopies(List.copyOf(result), refreshed.bytes());
+                return new ComponentCopies(List.copyOf(result), refreshed.bytes(), false);
             }, changed);
-            if (!copies.acquired() || copies.value() == null) throw occurrence.retry(changed, reload, reloadRevision);
-            return copies.value().values();
+            if (!copies.acquired()) throw retry(changed, copies.busyRegistration());
+            var copy = copies.value();
+            if (copy == null) throw new Capacity();
+            if (copy.stale()) {
+                // A stale occurrence retains its normal source/reload wake waiter;
+                // post-reservation growth above is a capacity refusal instead.
+                throw retry(changed, copies.busyRegistration());
+            }
+            return copy.values();
+        }
+
+        private Retry retry(Runnable changed, AutoCloseable observation) {
+            try {
+                Retry base = occurrence.retry(changed, reload, reloadRevision);
+                if (observation == null) return base;
+                return new Retry(() -> close(List.of(base.waiter, observation), null));
+            } catch (Throwable failure) {
+                if (observation != null) try { observation.close(); }
+                catch (Throwable close) { if (close != failure) failure.addSuppressed(close); }
+                throw failure;
+            }
         }
         private ComponentMeasure componentMeasure(String path) {
             if (!validUnderObservation()) return null;

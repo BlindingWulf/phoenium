@@ -42,7 +42,7 @@ public final class FullSavedInput {
         try { return captureExclusive(roots); } finally { endWrite(); }
     }
     record CaptureAttempt(boolean acquired, boolean selected, boolean capacity, Snapshot snapshot) { }
-    record ObservationAttempt<T>(boolean acquired, T value) { }
+    record ObservationAttempt<T>(boolean acquired, T value, AutoCloseable busyRegistration) { }
     /** Runs a bounded saved-input read under the same nonblocking observation fence used by
      * original saved readers. A busy writer/observer returns acquired=false for retry. */
     <T> ObservationAttempt<T> observeIfAvailable(java.util.function.Supplier<T> action) {
@@ -51,16 +51,29 @@ public final class FullSavedInput {
     <T> ObservationAttempt<T> observeIfAvailable(java.util.function.Supplier<T> action, Runnable busyWake) {
         tracking = true;
         if (!observing.compareAndSet(false, true)) {
-            if (busyWake != null) {
-                busyWaiters.add(busyWake);
-                if (!observing.get() && busyWaiters.remove(busyWake)) busyWake.run();
-            }
-            return new ObservationAttempt<>(false, null);
+            return new ObservationAttempt<>(false, null, registerBusyWaiter(busyWake));
         }
-        try { return new ObservationAttempt<>(true, action.get()); }
-        finally { endWrite(); }
+        Throwable failure = null;
+        T value = null;
+        try { value = action.get(); }
+        catch (Throwable problem) { failure = problem; }
+        Throwable wakeFailure = endWrite();
+        if (failure != null) {
+            addSuppressed(failure, wakeFailure);
+            rethrow(failure, "saved input observation failed");
+        }
+        rethrow(wakeFailure, "saved input observation wake failed");
+        return new ObservationAttempt<>(true, value, null);
     }
     private final java.util.concurrent.CopyOnWriteArrayList<Runnable> busyWaiters = new java.util.concurrent.CopyOnWriteArrayList<>();
+    private AutoCloseable registerBusyWaiter(Runnable wake) {
+        if (wake == null) return null;
+        var open = new java.util.concurrent.atomic.AtomicBoolean(true);
+        Runnable registered = () -> { if (open.compareAndSet(true, false)) wake.run(); };
+        busyWaiters.add(registered);
+        if (!observing.get() && busyWaiters.remove(registered)) registered.run();
+        return () -> { if (open.compareAndSet(true, false)) busyWaiters.remove(registered); };
+    }
     /** Nonblocking producer observation used where an overlapping legitimate writer supplies a
      * completion notification. An unacquired attempt means retry after that producer releases its
      * turn. The current snapshot is reused under the observation fence so a read can never retain
@@ -138,7 +151,7 @@ public final class FullSavedInput {
         if (!observing.compareAndSet(false, true)) throw new ChunkProtocolException("saved input producer overlaps its exclusive observation turn");
         writer = Thread.currentThread();
     }
-    public void endWrite() {
+    public Throwable endWrite() {
         writer = null; observing.set(false);
         Throwable failure = null;
         for (Runnable waiter : busyWaiters) {
@@ -149,20 +162,40 @@ public final class FullSavedInput {
                 else if (failure != problem) failure.addSuppressed(problem);
             }
         }
-        if (failure instanceof Error error) throw error;
-        if (failure instanceof RuntimeException runtime) throw runtime;
-        if (failure != null) throw new ChunkProtocolException("saved input observation wake failed", failure);
+        return failure;
     }
     <T> T mutate(java.util.function.Supplier<T> action) {
         if (!tracking) return action.get();
         if (observing.get() && writer == Thread.currentThread()) return action.get();
         beforeWrite();
-        try { return action.get(); }
-        finally {
-            revision++; snapshot = null;
-            Runnable notify = changed.get(); endWrite();
-            if (notify != null) notify.run();
+        T value = null; Throwable failure = null;
+        try { value = action.get(); }
+        catch (Throwable problem) { failure = problem; }
+        revision++; snapshot = null;
+        Throwable wakeFailure = endWrite();
+        Runnable notify = changed.get();
+        if (notify != null) {
+            try { notify.run(); }
+            catch (Throwable problem) {
+                if (wakeFailure == null) wakeFailure = problem;
+                else addSuppressed(wakeFailure, problem);
+            }
         }
+        if (failure != null) {
+            addSuppressed(failure, wakeFailure);
+            rethrow(failure, "saved input mutation failed");
+        }
+        rethrow(wakeFailure, "saved input observation wake failed");
+        return value;
+    }
+
+    private static void addSuppressed(Throwable primary, Throwable secondary) {
+        if (secondary != null && secondary != primary) primary.addSuppressed(secondary);
+    }
+    public static void rethrow(Throwable failure, String message) {
+        if (failure instanceof Error error) throw error;
+        if (failure instanceof RuntimeException runtime) throw runtime;
+        if (failure != null) throw new ChunkProtocolException(message, failure);
     }
     /** Original addEntity publishes updated facts before releasing its exclusive input turn. */
     public Runnable written(List<CompoundTag> roots) {

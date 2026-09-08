@@ -25,12 +25,20 @@ abstract class FullSavedProtoMixin implements FullSavedInput.Access {
     }
     @WrapMethod(method = "addEntity(Lnet/minecraft/nbt/CompoundTag;)V")
     private void phoenium$savedWriter(CompoundTag tag, Operation<Void> original) {
-        Runnable notify;
+        Runnable notify = null;
+        Throwable failure = null;
         phoenium$saved.beforeWrite();
         try {
             original.call(tag);
             notify = phoenium$saved.written(((ProtoChunk) (Object) this).getEntities());
-        } finally { phoenium$saved.endWrite(); }
-        if (notify != null) notify.run();
+        } catch (Throwable problem) { failure = problem; }
+        Throwable wakeFailure = phoenium$saved.endWrite();
+        if (failure == null && notify != null) {
+            try { notify.run(); }
+            catch (Throwable problem) { failure = problem; }
+        }
+        if (failure == null) failure = wakeFailure;
+        else if (wakeFailure != null && wakeFailure != failure) failure.addSuppressed(wakeFailure);
+        FullSavedInput.rethrow(failure, "saved ProtoChunk entity publication failed");
     }
 }
