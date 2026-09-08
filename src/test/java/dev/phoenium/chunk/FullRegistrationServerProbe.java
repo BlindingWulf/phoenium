@@ -143,6 +143,7 @@ public final class FullRegistrationServerProbe implements DedicatedServerModInit
             contexts.directory = java.nio.file.Files.createTempDirectory("phoenium-full-invalid-name-probe");
             contexts.originalInvalidCustomNameDecodeDoesNotLeakIntoTheNextInterpretedEntityOccurrence();
             int registeredPredicateCases = FullRegisteredPredicateExecutionTest.runInstalled();
+            int entityPropertyCases = FullEntityPropertyExecutionTest.runInstalled();
             contexts.directory = java.nio.file.Files.createTempDirectory("phoenium-full-live-entity-probe");
             contexts.liveEntityCustomNamePublishesNestedStorageBeforeOriginalSerializationAndResolution();
             contexts.directory = java.nio.file.Files.createTempDirectory("phoenium-full-live-text-probe");
@@ -152,13 +153,18 @@ public final class FullRegistrationServerProbe implements DedicatedServerModInit
             var completion = new FullAuthoritativeFinishingTest();
             completion.originalFinishingAndSeparatePublicationCompleteExactlyOnce(false);
             completion.originalFinishingAndSeparatePublicationCompleteExactlyOnce(true);
-            System.out.println("PHOENIUM_FULL_FINISHING_PROBE PASS cases=54 queryCases=13 serviceCases=7 d1Cases=7 contextCases=26 publicationCases=2 "
+            structureProbe();
+            System.out.println("PHOENIUM_FULL_ENTITY_PROPERTY_PROBE PASS cases=" + entityPropertyCases
+                    + " entityPropertyExecution=true originalTypeAndNbt=true constructedPredicateSnapshot=true "
+                    + "absentTargetShortCircuit=true javaagent=false");
+            System.out.println("PHOENIUM_FULL_FINISHING_PROBE PASS cases=67 queryCases=13 serviceCases=7 d1Cases=7 contextCases=26 publicationCases=2 "
                     + "originalFinishing=true separatePublication=true cyclicPreparedPair=true bothPairOrders=true "
                     + "proto=true inMemoryImposter=true diskReload=false originalDifficulty=true originalCollision=true "
                     + "originalShulkerImmediate=true originalLaterRegistration=true originalMovingPiston=true "
                     + "savedVillagerOriginalBiomeCacheAlias=true originalCachedAbsentBiomeFallback=true originalReadyAbsent=true caughtQueryBarrier=true registeredBiomeOriginalRead=true predicateRegistryReplacement=true "
-                    + "recursiveStorageContext=true retainedBlockNbt=true pendingBlockDependencies=true originalAbsentBlockBranch=true lazyBlockEntity=true "
+                    + "recursiveStorageContext=true retainedBlockNbt=true pendingBlockDependencies=true pendingCases=6 originalAbsentBlockBranch=true lazyBlockEntity=true "
                     + "sameWorldSelector=true registeredSelectorPredicate=true earlierSavedRootSelector=true sameWorldEntityNbt=true filteredSelfSelector=true nestedSelector=true interpretedSavedCustomName=true liveEntityContext=true liveTextContext=true liveBlockContext=true "
+                    + "directSavedFields=true directCases=3 "
                     + "noPrivateCacheEntries=true claimedOperationRequired=true controlledWorldEndpoints=true "
                     + "controlledLowerGenerationOutputs=true javaagent=false");
             System.out.println("PHOENIUM_FULL_REGISTERED_PREDICATE_PROBE PASS cases=" + registeredPredicateCases
@@ -169,5 +175,24 @@ public final class FullRegistrationServerProbe implements DedicatedServerModInit
             System.err.println("PHOENIUM_FULL_FINISHING_PROBE FAIL " + failure);
             throw failure;
         }
+    }
+
+    private static void structureProbe() throws Exception {
+        var input = new FullStructureInputTest();
+        input.originalStructureQueryFollowsExactLowerStatusReferenceAndRebuildsChangedAliases(false);
+        input.originalStructureQueryFollowsExactLowerStatusReferenceAndRebuildsChangedAliases(true);
+        input.absentReferencedStartLoadsAtItsOriginalLowerStatusBeforeClaim();
+        var demand = new FullStructureDemandTest();
+        demand.independentConsumersHaveDistinctNonpersistentTicketsAndIndependentAcknowledgement();
+        demand.reentrantCloseDuringOriginalInsertionSkipsUnreachedDistanceWork();
+        demand.throwingOriginalInsertionListenerPreservesFailureAndRemovesCommittedTicket();
+        var generation = new FullStructureMutationTurnsTest();
+        generation.aReferencedStartEightChunksAwayDefersTheOriginalWriterUntilTheReadExits();
+        generation.stoppingRetainsTheAlreadyRegisteredOriginalContinuationUntilItsReadAcknowledgement();
+        generation.anObservationThreadCannotWaitForAReadItMustItselfAcknowledge();
+        generation.aDeferredOriginalSynchronousExceptionKeepsItsIdentityAndDoesNotBecomeAFutureFailure();
+        System.out.println("PHOENIUM_FULL_STRUCTURE_PROBE PASS cases=10 structureCases=3 demandCases=3 generationCases=4 "
+                + "structureInputs=true structureDemand=true generationExclusion=true originalReferences=true "
+                + "originalStarts=true distinctTickets=true demandCleanup=true javaagent=false");
     }
 }

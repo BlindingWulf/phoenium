@@ -150,7 +150,7 @@ with log.open("w") as output:
             finishing_probe = [line for line in text.splitlines() if "PHOENIUM_FULL_FINISHING_PROBE PASS" in line]
             assert len(finishing_probe) == 1, "installed FULL finishing fixture did not pass exactly once"
             required_finishing_fields = (
-                "cases=54", "queryCases=13", "serviceCases=7", "d1Cases=7", "contextCases=26", "publicationCases=2",
+                "cases=67", "queryCases=13", "serviceCases=7", "d1Cases=7", "contextCases=26", "publicationCases=2",
                 "originalFinishing=true", "separatePublication=true",
                 "cyclicPreparedPair=true", "bothPairOrders=true",
                 "proto=true", "inMemoryImposter=true", "diskReload=false",
@@ -159,10 +159,11 @@ with log.open("w") as output:
                 "originalMovingPiston=true", "savedVillagerOriginalBiomeCacheAlias=true",
                 "originalCachedAbsentBiomeFallback=true", "originalReadyAbsent=true",
                 "registeredBiomeOriginalRead=true", "predicateRegistryReplacement=true",
-                "recursiveStorageContext=true", "retainedBlockNbt=true", "pendingBlockDependencies=true", "originalAbsentBlockBranch=true",
-                "sameWorldSelector=true", "sameWorldEntityNbt=true", "lazyBlockEntity=true",
-                "filteredSelfSelector=true", "nestedSelector=true",
-                "interpretedSavedCustomName=true", "liveEntityContext=true", "liveTextContext=true", "liveBlockContext=true",
+                "recursiveStorageContext=true", "retainedBlockNbt=true", "pendingBlockDependencies=true", "pendingCases=6",
+                "originalAbsentBlockBranch=true", "sameWorldSelector=true", "registeredSelectorPredicate=true",
+                "earlierSavedRootSelector=true", "sameWorldEntityNbt=true", "lazyBlockEntity=true",
+                "filteredSelfSelector=true", "nestedSelector=true", "interpretedSavedCustomName=true",
+                "liveEntityContext=true", "liveTextContext=true", "liveBlockContext=true", "directSavedFields=true", "directCases=3",
                 "caughtQueryBarrier=true", "noPrivateCacheEntries=true",
                 "claimedOperationRequired=true", "controlledWorldEndpoints=true",
                 "controlledLowerGenerationOutputs=true", "javaagent=false",
@@ -171,6 +172,30 @@ with log.open("w") as output:
                 "installed FULL finishing probe omitted an expected branch/counter: " + finishing_probe[0]
             )
             manifest["finishingProbe"] = finishing_probe
+            entity_property_probe = [line for line in text.splitlines()
+                                     if "PHOENIUM_FULL_ENTITY_PROPERTY_PROBE PASS" in line]
+            assert len(entity_property_probe) == 1, "connected entity-property fixture did not pass exactly once"
+            required_entity_property_fields = (
+                "cases=3", "entityPropertyExecution=true", "originalTypeAndNbt=true",
+                "constructedPredicateSnapshot=true", "absentTargetShortCircuit=true", "javaagent=false",
+            )
+            assert all(field in entity_property_probe[0] for field in required_entity_property_fields), (
+                "installed entity-property probe omitted an expected branch/counter: " + entity_property_probe[0]
+            )
+            manifest["entityPropertyProbe"] = entity_property_probe
+            structure_probe = [line for line in text.splitlines()
+                               if "PHOENIUM_FULL_STRUCTURE_PROBE PASS" in line]
+            assert len(structure_probe) == 1, "connected structure/demand fixture did not pass exactly once"
+            required_structure_fields = (
+                "cases=10", "structureCases=3", "demandCases=3", "generationCases=4",
+                "structureInputs=true", "structureDemand=true", "generationExclusion=true",
+                "originalReferences=true", "originalStarts=true", "distinctTickets=true",
+                "demandCleanup=true", "javaagent=false",
+            )
+            assert all(field in structure_probe[0] for field in required_structure_fields), (
+                "installed structure/demand probe omitted an expected branch/counter: " + structure_probe[0]
+            )
+            manifest["structureProbe"] = structure_probe
             registered_predicate_probe = [line for line in text.splitlines()
                                           if "PHOENIUM_FULL_REGISTERED_PREDICATE_PROBE PASS" in line]
             assert len(registered_predicate_probe) == 1, (
@@ -207,9 +232,20 @@ with log.open("w") as output:
         stopped = [line for line in text.splitlines() if "PHOENIUM_CHUNK_BINDING STOPPED" in line]
         assert stopped, "missing real cleanup accounting"
         for line in stopped:
-            for name in ("retainedGraphs", "returnedIndex", "poiIndex", "custodyEntries", "workEntries", "lifecycleEntries"):
+            for name in ("barriers", "retainedGraphs", "returnedIndex", "poiIndex", "synchronousInvocations",
+                         "lightBatches", "lightOccurrences", "lightReceipts", "poiEntries", "metadataEntries",
+                         "custodyEntries", "workEntries", "lifecycleEntries"):
                 assert re.search(r"\b" + name + r"=0\b", line), line
+        stage2_stopped = [line for line in text.splitlines() if "PHOENIUM_STAGE2 stopped" in line]
+        assert len(stage2_stopped) == 1, "missing or duplicate Stage 2 cleanup accounting"
+        stage2 = stage2_stopped[0]
+        for field in ("lifecycle=STOPPED", "scheduler=STOPPING", "parallel=OFF", "leases=0", "fallback=0",
+                      "ownershipViolations=0", "unleased=0", "barriers=0", "duplicate=0", "bypass=0",
+                      "chunkAdmissions=0", "chunkApplications=0", "chunkReroutes=0", "chunkRejections=0",
+                      "chunkDuplicates=0", "producerChunkMutations=0"):
+            assert field in stage2, "Stage 2 cleanup retained an unexpected value: " + stage2
         manifest.update({"result": "PASS", "exitCode": process.returncode, "stopped": stopped,
+                         "stage2Stopped": stage2_stopped,
                          "seedLines": [line for line in text.splitlines() if "Seed:" in line],
                          "transformedClassSha256": digest(exported), "holderClassSha256": digest(holder_export),
                          "clockClassSha256": digest(clock_export)})
