@@ -1,6 +1,14 @@
-# Benchmark plan
+# Benchmark evidence and protocol
 
-There are **no Phoenium benchmark results** in Stage 0. No build or server was run.
+Stage 5 results are frozen in [STAGE5_CLOSURE_REPORT.md, section K](STAGE5_CLOSURE_REPORT.md#k-benchmark-results).
+The bounded campaign ran 24 sequential native processes: frozen Stage 4 plus candidate
+1/2/4 workers, distributed/concentrated layouts, three repeats, fixed workload and
+warmup. Four workers show modest distributed benefit and a concentrated regression.
+All raw tick/CPU/memory/GC/allocation/queue samples and strict correctness receipts
+are retained. No compatibility or Android performance claim follows.
+
+The historical Stage 0 plan below had no measured results. Future comparisons must
+retain the same correctness gates and report regressions and missing metrics openly.
 
 ## Required measurement protocol
 

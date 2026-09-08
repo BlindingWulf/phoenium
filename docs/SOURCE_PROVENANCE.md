@@ -95,3 +95,12 @@ and existing APIs; no upstream gameplay implementation was imported. Local extra
 reference sources and disposable evidence remain under ignored `run/stage5`, outside
 production and source artifacts. No Folia/Paper/Moonrise/Ruthenium/C2ME or compatibility
 implementation is copied or added in this stage.
+
+
+Stage 5 comparison-input repairs inspected the pinned native `ServerEntity`,
+`Entity.load`/`Entity.setId`, `ChunkMap`/pending unloads, `TicketStorage`,
+`DistanceManager`, native sprint finalization and `EntityStorage` reread boundaries.
+Only test fixtures control offered tracker calls, pre-publication IDs and save cuts;
+original packet iteration/output and production behavior remain intact. No upstream
+implementation was imported. The final benchmark and freeze are documented in
+`STAGE5_CLOSURE_REPORT.md`.

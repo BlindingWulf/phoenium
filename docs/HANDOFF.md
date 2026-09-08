@@ -1,16 +1,26 @@
 # Handoff
 
-Active 2026-09-08 bounded parallelism: [STAGE5_CURRENT_WORK.md](STAGE5_CURRENT_WORK.md).
-Stage 4 is frozen at [STAGE4_CLOSURE_REPORT.md](STAGE4_CLOSURE_REPORT.md).
-[Stage 3 is frozen](STAGE3_CLOSURE_REPORT.md) within its declared supported scope.
-Historical PARTIAL statements and open assignments below are superseded by that
-closure and the Stage 4 assignment; their evidence and accepted contracts remain.
+Stage 5 is **STAGE5_PARALLEL_SCALING_FROZEN**. Start with the self-contained
+[STAGE5_CLOSURE_REPORT.md](STAGE5_CLOSURE_REPORT.md) and the short
+[STAGE5_CURRENT_WORK.md](STAGE5_CURRENT_WORK.md). The local freeze tag identifies
+the final documentation/source commit; `run/stage5/final-artifacts/manifest.json`
+records its exact commit/tag IDs and artifact/evidence hashes. Production SHA-256:
+`59BB31DC058351C7F4BC9DB572FEC1DE2B298FF623614FC4CB3EAFAEB5A772D5`.
+
+Stage 6 has not started. It may rely on the frozen Stage 5 ownership, original-body,
+serial equivalence, native persistence and lifecycle guarantees; it must audit actual
+required-stack compatibility without weakening them. No new compatibility fork or
+optimization campaign is authorized by Stage 5's closure alone.
+
+[Stage 4](STAGE4_CLOSURE_REPORT.md) and [Stage 3](STAGE3_CLOSURE_REPORT.md) remain
+unchanged freezes. All older active/PARTIAL instructions below are historical and
+superseded by these closures and the current roadmap; their raw evidence is retained.
 
 > **BEFORE ANY LIVE MINECRAFT TEST: read [docs/AGENT_MINECRAFT_TESTING.md](AGENT_MINECRAFT_TESTING.md).**
 >
 > **FOR REMAINING STAGE 3 CHUNK WORK: read [docs/STAGE3_CHUNK_HANDOFF.md](STAGE3_CHUNK_HANDOFF.md).**
 
-## Latest resume point — Stage 3 real-client evidence
+## Historical resume point — Stage 3 real-client evidence
 
 On 2026-09-03, the permanent account-free command-line harness was completed and
 the real-client gates were exercised with no Microsoft account, launcher login, or

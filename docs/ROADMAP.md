@@ -88,7 +88,7 @@ Exit criteria: transfer, packet, stale-epoch, chunk completion, and dedicated bo
 **Status: complete — STAGE4_PARALLEL_CORRECTNESS_FROZEN.** All17 declared gates passed.
 See the [closure report and Stage5 handoff](STAGE4_CLOSURE_REPORT.md) and
 [current work](STAGE4_CURRENT_WORK.md). One gameplay worker; parallel gameplay
-remains OFF. Stage5 is ready but has not been started.
+remains OFF in this immutable reference. Stage 5 is now separately frozen below.
 
 Add per-region scheduled ticks, block events, entity tracking, save cut, shutdown coordination, and explicitly classified global services.
 
@@ -96,10 +96,14 @@ Exit criteria: save/shutdown stress; no raw unowned queue execution; migration p
 
 ## Stage 5 — bounded parallelism
 
-**Status: in progress.** Execution policy, comparison contract and evidence are in
-[STAGE5_CURRENT_WORK.md](STAGE5_CURRENT_WORK.md). The Stage 4 freeze remains the
-immutable one-worker reference. Development may enable bounded workers for race
-tests; acceptance requires the serial oracle comparisons and installed evidence.
+**Status: PASS — STAGE5_PARALLEL_SCALING_FROZEN.**
+See [STAGE5_CLOSURE_REPORT.md](STAGE5_CLOSURE_REPORT.md) for the exact artifact,
+834 tests / 88 suites, strict frozen/candidate 1/2/4 controls at 5/5 and 8/8,
+unrestricted clients, native FULL fresh/reload, churn/adverse/persistence, zero-residue
+receipts and the 24-run Phoenium-only benchmark. Natural original gameplay overlaps
+under current independent claims. Four workers provide modest distributed benefit;
+concentrated work regresses. Stage 4 remains the immutable serial reference.
+No Stage 6 compatibility work has begun.
 
 Exit criteria: deterministic serial-versus-parallel harness results, zero ownership violations, and benchmark evidence for Phoenium itself.
 
