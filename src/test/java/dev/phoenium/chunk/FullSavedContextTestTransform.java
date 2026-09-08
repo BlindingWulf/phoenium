@@ -22,6 +22,9 @@ public final class FullSavedContextTestTransform {
             "net/minecraft/world/level/block/entity/SignBlockEntity",
             "net/minecraft/world/level/block/entity/SignText",
             "net/minecraft/world/entity/decoration/Mannequin",
+            "net/minecraft/world/level/block/entity/BlockEntity",
+            "net/minecraft/util/EncoderCache",
+            "net/minecraft/util/EncoderCache$2",
             "net/minecraft/world/level/storage/loot/predicates/CompositeLootItemCondition",
             "net/minecraft/world/level/storage/loot/IntRange");
     public static boolean supports(String name) { return TARGETS.contains(name); }
@@ -34,6 +37,28 @@ public final class FullSavedContextTestTransform {
             method.instructions.add(new FieldInsnNode(Opcodes.GETFIELD, node.name, "terms", "Ljava/util/List;"));
             method.instructions.add(new InsnNode(Opcodes.ARETURN));
             node.methods.add(method);
+        } else if (node.name.equals("net/minecraft/world/level/block/entity/BlockEntity")) {
+            node.interfaces.add("dev/phoenium/chunk/FullCachedComponentInputs$BlockAccess");
+            fieldGetter(node, "phoenium$rawComponents", "()Lnet/minecraft/core/component/DataComponentMap;",
+                    "components", "Lnet/minecraft/core/component/DataComponentMap;");
+        } else if (node.name.equals("net/minecraft/util/EncoderCache")) {
+            node.interfaces.add("dev/phoenium/chunk/FullCachedComponentInputs$CacheAccess");
+            var method = new MethodNode(Opcodes.ACC_PUBLIC, "phoenium$cached",
+                    "(Lcom/mojang/serialization/Codec;Ljava/lang/Object;Lcom/mojang/serialization/DynamicOps;)Lcom/mojang/serialization/DataResult;",
+                    null, null);
+            method.instructions.add(new VarInsnNode(Opcodes.ALOAD, 0));
+            method.instructions.add(new VarInsnNode(Opcodes.ALOAD, 1));
+            method.instructions.add(new VarInsnNode(Opcodes.ALOAD, 2));
+            method.instructions.add(new VarInsnNode(Opcodes.ALOAD, 3));
+            method.instructions.add(new MethodInsnNode(Opcodes.INVOKESTATIC, HOOKS, "cached",
+                    "(Lnet/minecraft/util/EncoderCache;Lcom/mojang/serialization/Codec;Ljava/lang/Object;Lcom/mojang/serialization/DynamicOps;)Lcom/mojang/serialization/DataResult;", false));
+            method.instructions.add(new InsnNode(Opcodes.ARETURN)); node.methods.add(method);
+        } else if (node.name.equals("net/minecraft/util/EncoderCache$2")) {
+            node.interfaces.add("dev/phoenium/chunk/FullCachedComponentInputs$WrappedCodecAccess");
+            fieldGetter(node, "phoenium$encoderCache", "()Lnet/minecraft/util/EncoderCache;",
+                    "this$0", "Lnet/minecraft/util/EncoderCache;");
+            fieldGetter(node, "phoenium$sourceCodec", "()Lcom/mojang/serialization/Codec;",
+                    "val$codec", "Lcom/mojang/serialization/Codec;");
         } else if (node.name.endsWith("/Entity")) {
             node.interfaces.add("dev/phoenium/chunk/FullLiveComponentInputs$EntityAccess");
             var method = new MethodNode(Opcodes.ACC_PUBLIC, "phoenium$rawCustomName", "()Lnet/minecraft/network/chat/Component;", null, null);

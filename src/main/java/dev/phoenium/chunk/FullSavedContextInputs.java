@@ -41,7 +41,7 @@ public final class FullSavedContextInputs {
     }
     private record Pending(FullSavedInput.EntityFact fact, FullSavedTextInputs.NbtRead read) { }
     private record LiveContribution(Pending pending, FullSavedTextInputs.Requirements requirements) { }
-    private sealed interface LiveReceipt permits EntityLiveReceipt, BlockLiveReceipt {
+    private sealed interface LiveReceipt permits EntityLiveReceipt, BlockLiveReceipt, CachedBlockLiveReceipt {
         boolean valid(FullContextReadClaim claim, FullRegistrationRuntime.Graph graph);
     }
     private record EntityLiveReceipt(Entity alias, FullEntityFacts.Fact fact, RoutingKey position,
@@ -60,6 +60,15 @@ public final class FullSavedContextInputs {
             claim.require(graph, route);
             BlockEntity current = FullLiveComponentInputs.block(chunk, position);
             return current == block && snapshot.valid(current);
+        }
+    }
+    private record CachedBlockLiveReceipt(net.minecraft.world.level.chunk.ChunkAccess chunk, BlockPos position,
+                                          BlockEntity block, FullCachedComponentInputs.Snapshot snapshot,
+                                          RoutingKey route, net.minecraft.core.HolderLookup.Provider registries) implements LiveReceipt {
+        @Override public boolean valid(FullContextReadClaim claim, FullRegistrationRuntime.Graph graph) {
+            claim.require(graph, route);
+            BlockEntity current = FullLiveComponentInputs.block(chunk, position);
+            return current == block && snapshot.valid(current, registries);
         }
     }
     private record LiveObservation(List<LiveReceipt> receipts, List<LiveContribution> contributions,
@@ -162,37 +171,41 @@ public final class FullSavedContextInputs {
                     }
                     if (read.source() == FullSavedTextInputs.Source.ENTITY) {
                         var selector = declaredSelector(fact.path(), read.target(), FullSavedTextInputs.Use.NBT);
+                        var liveField = FullLiveComponentInputs.entityField(read.path());
                         if (selector != null && !read.interpreting() && (selector.self() || selector.worldLimited())) continue;
                         if (selector != null && selector.self() && read.interpreting() && read.recursionDepth() > 100)
                             continue;
                         if (selector != null && selector.worldLimited() && read.interpreting() && read.recursionDepth() > 100)
                             continue;
-                        if (selector != null && selector.self() && read.interpreting() && read.path().equals("CustomName")) {
+                        if (selector != null && selector.self() && read.interpreting()
+                                && liveField == FullLiveComponentInputs.Field.CUSTOM_NAME) {
                             FullSavedTextInputs.decode(fact.services().customName(), world.registryAccess()).ifPresent(component ->
                                     add(fact, FullSavedTextInputs.discoverInterpreted(fact, component, read.recursionDepth()), queue));
                             continue;
                         }
-                        if (selector != null && selector.self() && read.interpreting() && read.path().equals("text")
+                        if (selector != null && selector.self() && read.interpreting()
+                                && liveField == FullLiveComponentInputs.Field.DISPLAY_TEXT
                                 && fact.type().equals("minecraft:text_display")) {
                             FullSavedTextInputs.decode(fact.services().text(), world.registryAccess()).ifPresent(component ->
                                     add(fact, FullSavedTextInputs.discoverInterpreted(fact, component, read.recursionDepth()), queue));
                             continue;
                         }
-                        if (selector != null && selector.self() && read.interpreting() && read.path().equals("description")
+                        if (selector != null && selector.self() && read.interpreting()
+                                && liveField == FullLiveComponentInputs.Field.MANNEQUIN_DESCRIPTION
                                 && fact.type().equals("minecraft:mannequin")) {
                             FullSavedTextInputs.decode(fact.services().description(), world.registryAccess()).ifPresent(component ->
                                     add(fact, FullSavedTextInputs.discoverInterpreted(fact, component, read.recursionDepth()), queue));
                             continue;
                         }
-                        if (selector != null && selector.worldLimited() && read.interpreting()
-                                && (read.path().equals("CustomName") || read.path().equals("text")
-                                || read.path().equals("description"))) {
+                        if (selector != null && selector.worldLimited() && read.interpreting() && liveField != null) {
                             pendingEntities.add(next);
                             for (var savedCandidate : saved.entities()) {
-                                var source = read.path().equals("CustomName") ? savedCandidate.services().customName()
-                                        : read.path().equals("text") && savedCandidate.type().equals("minecraft:text_display") ? savedCandidate.services().text()
-                                        : read.path().equals("description") && savedCandidate.type().equals("minecraft:mannequin")
-                                        ? savedCandidate.services().description() : FullSavedTextInputs.Saved.EMPTY;
+                                var source = liveField == FullLiveComponentInputs.Field.CUSTOM_NAME ? savedCandidate.services().customName()
+                                        : liveField == FullLiveComponentInputs.Field.DISPLAY_TEXT
+                                        && savedCandidate.type().equals("minecraft:text_display") ? savedCandidate.services().text()
+                                        : liveField == FullLiveComponentInputs.Field.MANNEQUIN_DESCRIPTION
+                                        && savedCandidate.type().equals("minecraft:mannequin") ? savedCandidate.services().description()
+                                        : FullSavedTextInputs.Saved.EMPTY;
                                 FullSavedTextInputs.decode(source, world.registryAccess()).ifPresent(component ->
                                         add(fact, FullSavedTextInputs.discoverInterpreted(fact, component, read.recursionDepth()), queue));
                             }
@@ -282,7 +295,7 @@ public final class FullSavedContextInputs {
                     pendingLiveBlocks.add(pending);
                     continue;
                 }
-                if (!read.path().equals("CustomName")) {
+                if (FullLiveComponentInputs.blockField(read.path()) != FullLiveComponentInputs.BlockField.CUSTOM_NAME) {
                     // The serialized tag is only the discovery receipt.  For audited command
                     // and sign fields, the later live refinement must consume the original
                     // lazy block instance and its serializer.  Keep every other path an
@@ -377,10 +390,9 @@ public final class FullSavedContextInputs {
                     && !FullFinishingServices.forServer(world.getServer()).entityFacts.valid(entityCut))
                 return new LiveObservation(List.of(), List.of(), 0L, null, true);
             if (!entities.isEmpty() && entityCut != null) for (Pending pending : entities) {
-                FullLiveComponentInputs.Field field = pending.read.path().equals("text")
-                        ? FullLiveComponentInputs.Field.DISPLAY_TEXT
-                        : pending.read.path().equals("description") ? FullLiveComponentInputs.Field.MANNEQUIN_DESCRIPTION
-                        : FullLiveComponentInputs.Field.CUSTOM_NAME;
+                FullLiveComponentInputs.Field field = FullLiveComponentInputs.entityField(pending.read.path());
+                if (field == null) return new LiveObservation(List.of(), List.of(), total,
+                        pending.fact.path() + ": live entity interpreted path producer pending for " + pending.read.path(), false);
                 for (var candidate : entityCut.candidates()) {
                     if (field == FullLiveComponentInputs.Field.DISPLAY_TEXT
                             && candidate.fact().type() != net.minecraft.world.entity.EntityTypes.TEXT_DISPLAY) continue;
@@ -420,6 +432,23 @@ public final class FullSavedContextInputs {
                 if (!validLiveTarget(runtime, target))
                     return new LiveObservation(List.of(), List.of(), total, null, true);
                 BlockEntity block = FullLiveComponentInputs.block(target.actual(), position);
+                if (FullCachedComponentInputs.selected(pending.read.path())) {
+                    var measure = FullCachedComponentInputs.measure(block, pending.read.recursionDepth(), registry);
+                    if (measure.unmet() != null) return new LiveObservation(List.of(), List.of(), total,
+                            pending.fact.path() + ": " + measure.unmet(), false);
+                    total = Math.addExact(total, measure.bytes());
+                    if (capture) {
+                        var snapshot = FullCachedComponentInputs.capture(pending.fact, block, pending.read.recursionDepth(),
+                                Math.max(0L, Math.subtractExact(allowance, Math.subtractExact(total, measure.bytes()))), registry);
+                        if (snapshot.unmet() != null && snapshot.unmet().contains("grew after"))
+                            return new LiveObservation(List.of(), List.of(), total, null, true);
+                        if (snapshot.unmet() != null) return new LiveObservation(List.of(), List.of(), total,
+                                pending.fact.path() + ": " + snapshot.unmet(), false);
+                        receipts.add(new CachedBlockLiveReceipt(target.actual(), position, block, snapshot, key, registry));
+                        for (var requirement : snapshot.requirements()) contributions.add(new LiveContribution(pending, requirement));
+                    }
+                    continue;
+                }
                 FullLiveComponentInputs.BlockField field = FullLiveComponentInputs.blockField(pending.read.path());
                 if (field == null)
                     return new LiveObservation(List.of(), List.of(), total,

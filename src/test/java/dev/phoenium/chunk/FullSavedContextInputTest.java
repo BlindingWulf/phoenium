@@ -19,6 +19,10 @@ import net.minecraft.world.level.chunk.LevelChunk;
 import net.minecraft.world.level.storage.CommandStorage;
 import net.minecraft.world.level.storage.SavedDataStorage;
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.component.DataComponentMap;
+import net.minecraft.core.component.DataComponents;
+import net.minecraft.nbt.NbtOps;
+import net.minecraft.network.chat.contents.TranslatableContents;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.entity.BeaconBlockEntity;
 import net.minecraft.world.level.block.entity.BlockEntity;
@@ -1137,6 +1141,120 @@ class FullSavedContextInputTest {
         assertCleanup(f);
     }
 
+    @Test void cachedBlockComponentRetainsTheExactCommittedEncodingInsteadOfInferringItFromTheCurrentGraph() throws Exception {
+        var f = new FullRegistrationFixture(true); var position = new BlockPos(8, 8, 8);
+        var state = Blocks.BEACON.defaultBlockState(); f.input(ChunkPos.ZERO).getSection(0).setBlockState(8, 8, 8, state);
+        var component = Component.translatable("%s", "Aa");
+        var ops = f.world.level.registryAccess().createSerializationContext(NbtOps.INSTANCE);
+        var oldEncoding = DataComponents.CUSTOM_NAME.codecOrThrow().encodeStart(ops, component).result().orElseThrow();
+        var translated = assertInstanceOf(TranslatableContents.class, component.getContents());
+        int oldHash = component.hashCode(); translated.getArgs()[0] = "BB";
+        assertEquals(oldHash, component.hashCode(), "the fixture deliberately retains EncoderCache.Key's hash bucket");
+        var beacon = new BeaconBlockEntity(position, state);
+        beacon.setComponents(DataComponentMap.builder().set(DataComponents.CUSTOM_NAME, component).build());
+        f.input(ChunkPos.ZERO).setBlockEntity(beacon);
+        try {
+            saved(f, ChunkPos.ZERO, false, text(blockText(position, "\"components\".\"minecraft:custom_name\"", true)));
+            f.start(ChunkPos.ZERO, ChunkStatus.FULL); f.drain(); var graph = f.runtime.graph(f.holder(ChunkPos.ZERO));
+            assertEquals(FullInitializedInputs.State.SATISFIED, graph.inputEvaluation().state(), graph.inputEvaluation().obligation());
+            var plan = graph.inputReceipt().contexts();
+            assertTrue(plan.payloadBytes() >= oldEncoding.sizeInBytes(), "the retained cache tag is charged before it is copied");
+            FullAuthoritativeFinishingTest.context(f); f.runtime.inputs.changed(); f.drain();
+            assertInstanceOf(ChunkStageOutcome.Applied.class, graph.finishing.outcome().join());
+            assertEquals("Aa", FullSavedContextTestHooks.text(
+                    assertInstanceOf(Display.TextDisplay.class, f.world.inserted.getFirst())).getString(),
+                    "the original serializer must consume its already committed cache result");
+            assertFalse(f.barrier.tripped());
+        } finally { f.stop(); FullFinishingServices.stopped(f.world.level.getServer()); }
+        assertCleanup(f);
+    }
+
+    @Test void uncachedBlockComponentPublishesCurrentSyntaxBeforeTheOriginalCacheMissEncoding() throws Exception {
+        var f = new FullRegistrationFixture(true); var position = new BlockPos(8, 8, 8);
+        var data = new SavedDataStorage(directory, net.minecraft.util.datafix.DataFixers.getDataFixer(), f.world.level.registryAccess());
+        var storage = new CommandStorage(data); set(f.world.level.getServer(), MinecraftServer.class, "commandStorage", storage);
+        var value = new CompoundTag(); value.putString("message", "uncached live component"); storage.set(FIRST, value);
+        var state = Blocks.BEACON.defaultBlockState(); f.input(ChunkPos.ZERO).getSection(0).setBlockState(8, 8, 8, state);
+        var beacon = new BeaconBlockEntity(position, state);
+        beacon.setComponents(DataComponentMap.builder().set(DataComponents.CUSTOM_NAME, component(f, storageText(FIRST))).build());
+        f.input(ChunkPos.ZERO).setBlockEntity(beacon);
+        try {
+            FullSavedContextTestHooks.clearCachedComponents();
+            saved(f, ChunkPos.ZERO, false, text(blockText(position, "components.\"minecraft:custom_name\"", true)));
+            f.start(ChunkPos.ZERO, ChunkStatus.FULL); f.drain(); var graph = f.runtime.graph(f.holder(ChunkPos.ZERO));
+            assertEquals(FullInitializedInputs.State.SATISFIED, graph.inputEvaluation().state(), graph.inputEvaluation().obligation());
+            assertTrue(graph.inputReceipt().contexts().requirements("root[0]").size() >= 3);
+            FullAuthoritativeFinishingTest.context(f); f.runtime.inputs.changed(); f.drain();
+            assertInstanceOf(ChunkStageOutcome.Applied.class, graph.finishing.outcome().join());
+            assertEquals("uncached live component", FullSavedContextTestHooks.text(
+                    assertInstanceOf(Display.TextDisplay.class, f.world.inserted.getFirst())).getString());
+            assertFalse(f.barrier.tripped());
+        } finally { f.stop(); FullFinishingServices.stopped(f.world.level.getServer()); data.close(); }
+        assertCleanup(f);
+    }
+
+    @Test void changedCachedEncodingStalesTheFinalLeaseReceiptAndRebuildsBeforeTheOriginalSerializer() throws Exception {
+        var f = new FullRegistrationFixture(true); var position = new BlockPos(8, 8, 8);
+        var state = Blocks.BEACON.defaultBlockState(); f.input(ChunkPos.ZERO).getSection(0).setBlockState(8, 8, 8, state);
+        var component = Component.translatable("%s", "Aa");
+        var ops = f.world.level.registryAccess().createSerializationContext(NbtOps.INSTANCE);
+        DataComponents.CUSTOM_NAME.codecOrThrow().encodeStart(ops, component).result().orElseThrow();
+        var translated = assertInstanceOf(TranslatableContents.class, component.getContents());
+        translated.getArgs()[0] = "BB";
+        var beacon = new BeaconBlockEntity(position, state);
+        beacon.setComponents(DataComponentMap.builder().set(DataComponents.CUSTOM_NAME, component).build());
+        f.input(ChunkPos.ZERO).setBlockEntity(beacon);
+        try {
+            saved(f, ChunkPos.ZERO, false, text(blockText(position, "components.\"minecraft:custom_name\"", true)));
+            f.start(ChunkPos.ZERO, ChunkStatus.FULL); f.drain(); var graph = f.runtime.graph(f.holder(ChunkPos.ZERO));
+            var stale = graph.inputReceipt(); assertNotNull(stale);
+            FullSavedContextTestHooks.clearCachedComponents();
+            DataComponents.CUSTOM_NAME.codecOrThrow().encodeStart(ops, component).result().orElseThrow();
+            FullAuthoritativeFinishingTest.context(f); f.runtime.inputs.changed(); f.drain();
+            assertNotSame(stale, graph.inputReceipt(), "a different committed cache result must rebuild under the final lease");
+            assertInstanceOf(ChunkStageOutcome.Applied.class, graph.finishing.outcome().join());
+            assertEquals("BB", FullSavedContextTestHooks.text(
+                    assertInstanceOf(Display.TextDisplay.class, f.world.inserted.getFirst())).getString());
+            assertFalse(f.barrier.tripped());
+        } finally { f.stop(); FullFinishingServices.stopped(f.world.level.getServer()); }
+        assertCleanup(f);
+    }
+
+    @Test void cachedComponentCapacityIsRefusedBeforeCurrentGraphOrCachedTagCopies() throws Exception {
+        var f = new FullRegistrationFixture(true); var position = new BlockPos(8, 8, 8);
+        var state = Blocks.BEACON.defaultBlockState(); var beacon = new BeaconBlockEntity(position, state);
+        var component = Component.translatable("%s", "cached capacity");
+        var ops = f.world.level.registryAccess().createSerializationContext(NbtOps.INSTANCE);
+        DataComponents.CUSTOM_NAME.codecOrThrow().encodeStart(ops, component).result().orElseThrow();
+        beacon.setComponents(DataComponentMap.builder().set(DataComponents.CUSTOM_NAME, component).build());
+        var fact = new FullSavedInput.EntityFact("capacity", "minecraft:text_display", 8, 8, 8, 0, false);
+        try {
+            var measured = FullCachedComponentInputs.measure(beacon, 0, f.world.level.registryAccess());
+            assertNull(measured.unmet());
+            var refused = FullCachedComponentInputs.capture(fact, beacon, 0, measured.bytes() - 1,
+                    f.world.level.registryAccess());
+            assertTrue(refused.unmet().contains("grew after")); assertNull(refused.current()); assertNull(refused.cachedTag());
+
+            var captured = FullCachedComponentInputs.capture(fact, beacon, 0, measured.bytes(),
+                    f.world.level.registryAccess());
+            assertNull(captured.unmet()); assertNotNull(captured.current()); assertNotNull(captured.cachedTag());
+            assertTrue(captured.valid(beacon, f.world.level.registryAccess()));
+            beacon.setComponents(DataComponentMap.builder().set(DataComponents.CUSTOM_NAME, component).build());
+            assertFalse(captured.valid(beacon, f.world.level.registryAccess()),
+                    "the exact raw component-map occurrence is retained through original serialization");
+        } finally { f.stop(); FullFinishingServices.stopped(f.world.level.getServer()); }
+        assertCleanup(f);
+    }
+
+    @Test void dependencyPathClassifierUnderstandsVanillaQuotedNamesMatchesIndicesAndWildcardsWithoutSelectingData() {
+        assertEquals(List.of("front.text", "filtered_messages", "leaf"),
+                FullNbtPathInputs.leadingFields("{root:{nested:[1,2]}}.\"front.text\"[{kind:\"value\"}].filtered_messages[].leaf[3]", 8));
+        assertEquals(FullLiveComponentInputs.BlockField.SIGN_BACK_MESSAGES,
+                FullLiveComponentInputs.blockField("back_text.messages[2]"));
+        assertTrue(FullCachedComponentInputs.selected(
+                "components{\"minecraft:custom_name\":{}}.\"minecraft:custom_name\""));
+    }
+
     @Test void liveCommandBlockNameAndLastOutputPublishNestedStorageAtTheOriginalBlockSerializer() throws Exception {
         var f = new FullRegistrationFixture(true); var position = new BlockPos(8, 8, 8);
         var data = new SavedDataStorage(directory, net.minecraft.util.datafix.DataFixers.getDataFixer(), f.world.level.registryAccess());
@@ -1196,8 +1314,8 @@ class FullSavedContextInputTest {
         set(sign, SignBlockEntity.class, "frontText", front); set(sign, SignBlockEntity.class, "backText", back);
         f.input(ChunkPos.ZERO).setBlockEntity(sign);
         var root = new CompoundTag(); root.putString("text", ""); var extra = new ListTag();
-        extra.add(blockText(position, "front_text.filtered_messages[0]", true));
-        extra.add(blockText(position, "back_text.messages[1]", true)); root.put("extra", extra);
+        extra.add(blockText(position, "\"front_text\".\"filtered_messages\"[0]", true));
+        extra.add(blockText(position, "back_text.messages[]", true)); root.put("extra", extra);
         try {
             saved(f, ChunkPos.ZERO, false, text(root)); f.start(ChunkPos.ZERO, ChunkStatus.FULL); f.drain();
             var graph = f.runtime.graph(f.holder(ChunkPos.ZERO)); var firstReceipt = graph.inputReceipt(); assertNotNull(firstReceipt);
@@ -1206,7 +1324,7 @@ class FullSavedContextInputTest {
             FullAuthoritativeFinishingTest.context(f); f.runtime.inputs.changed(); f.drain();
             assertNotSame(firstReceipt, graph.inputReceipt(), "array-slot and side-field aliases must rebuild the dependency receipt");
             assertInstanceOf(ChunkStageOutcome.Applied.class, graph.finishing.outcome().join());
-            assertEquals("secondsecond", FullSavedContextTestHooks.text(
+            assertEquals("second, second, , ", FullSavedContextTestHooks.text(
                     assertInstanceOf(Display.TextDisplay.class, f.world.inserted.getFirst())).getString());
             assertFalse(f.barrier.tripped());
         } finally { f.stop(); FullFinishingServices.stopped(f.world.level.getServer()); data.close(); }
@@ -1223,7 +1341,7 @@ class FullSavedContextInputTest {
         mannequin.setId(759); mannequin.setPos(8, 8, 8); setMannequinDescription(mannequin, component(f, storageText(FIRST)));
         lookup.add(mannequin); f.world.selectorEntities.add(mannequin);
         try {
-            saved(f, ChunkPos.ZERO, false, text(entityText("@e[type=minecraft:mannequin,distance=..32,limit=1]", "description", true)));
+            saved(f, ChunkPos.ZERO, false, text(entityText("@e[type=minecraft:mannequin,distance=..32,limit=1]", "\"description\"", true)));
             f.start(ChunkPos.ZERO, ChunkStatus.FULL); f.drain(); var graph = f.runtime.graph(f.holder(ChunkPos.ZERO));
             var firstReceipt = graph.inputReceipt(); assertNotNull(firstReceipt);
             setMannequinDescription(mannequin, component(f, storageText(SECOND)));

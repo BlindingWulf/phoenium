@@ -1,6 +1,10 @@
 package dev.phoenium.chunk;
 
 import java.lang.reflect.InvocationTargetException;
+import com.google.common.cache.LoadingCache;
+import com.mojang.serialization.Codec;
+import com.mojang.serialization.DataResult;
+import com.mojang.serialization.DynamicOps;
 import com.mojang.brigadier.exceptions.CommandSyntaxException;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.network.chat.Component;
@@ -17,6 +21,7 @@ import net.minecraft.world.level.storage.ValueInput;
 import net.minecraft.core.BlockPos;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.level.block.entity.BlockEntity;
+import net.minecraft.util.EncoderCache;
 
 /** Test plumbing invokes the preserved original body exactly once through production guards. */
 public final class FullSavedContextTestHooks {
@@ -28,6 +33,26 @@ public final class FullSavedContextTestHooks {
     static AutoCloseable liveBlockPrefix(Runnable prefix) {
         if (LIVE_BLOCK_PREFIX.get() != null) throw new AssertionError("nested live block prefix");
         LIVE_BLOCK_PREFIX.set(prefix); return () -> LIVE_BLOCK_PREFIX.remove();
+    }
+    @SuppressWarnings("unchecked")
+    public static DataResult<?> cached(EncoderCache encoder, Codec<?> codec, Object value, DynamicOps<?> ops) {
+        try {
+            var cacheField = EncoderCache.class.getDeclaredField("cache"); cacheField.setAccessible(true);
+            var cache = (LoadingCache<Object, DataResult<?>>) cacheField.get(encoder);
+            var key = Class.forName("net.minecraft.util.EncoderCache$Key", false, EncoderCache.class.getClassLoader());
+            var constructor = key.getDeclaredConstructor(Codec.class, Object.class, DynamicOps.class);
+            constructor.setAccessible(true);
+            return cache.getIfPresent(constructor.newInstance(codec, value, ops));
+        } catch (ReflectiveOperationException failure) { throw new AssertionError(failure); }
+    }
+    public static void clearCachedComponents() {
+        Codec<Component> wrapped = net.minecraft.core.component.DataComponents.CUSTOM_NAME.codecOrThrow();
+        if (!(wrapped instanceof FullCachedComponentInputs.WrappedCodecAccess access))
+            throw new AssertionError("component codec was not transformed for cache evidence");
+        try {
+            var cacheField = EncoderCache.class.getDeclaredField("cache"); cacheField.setAccessible(true);
+            ((LoadingCache<?, ?>) cacheField.get(access.phoenium$encoderCache())).invalidateAll();
+        } catch (ReflectiveOperationException failure) { throw new AssertionError(failure); }
     }
     /** Reads the vanilla private display payload in both transformed and installed probes. */
     public static Component text(Display.TextDisplay entity) {

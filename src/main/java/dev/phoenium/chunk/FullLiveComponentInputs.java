@@ -136,6 +136,16 @@ public final class FullLiveComponentInputs {
                  SIGN_BACK_MESSAGES, SIGN_BACK_FILTERED_MESSAGES -> block instanceof SignAccess;
         };
     }
+    static Field entityField(String path) {
+        List<String> fields = FullNbtPathInputs.leadingFields(path, 1);
+        if (fields.isEmpty()) return null;
+        return switch (fields.getFirst()) {
+            case "CustomName" -> Field.CUSTOM_NAME;
+            case "text" -> Field.DISPLAY_TEXT;
+            case "description" -> Field.MANNEQUIN_DESCRIPTION;
+            default -> null;
+        };
+    }
 
     static BlockField blockField(String path) {
         List<String> fields = FullNbtPathInputs.leadingFields(path, 2);
