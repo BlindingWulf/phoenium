@@ -14,6 +14,7 @@ import java.util.function.Predicate;
 import java.util.function.Supplier;
 import java.util.stream.Stream;
 import net.minecraft.nbt.CompoundTag;
+import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ChunkHolder;
 import net.minecraft.server.level.ChunkMap;
 import net.minecraft.server.level.ServerLevel;
@@ -22,6 +23,7 @@ import net.minecraft.world.level.chunk.ChunkAccess;
 import net.minecraft.world.level.chunk.LevelChunk;
 import net.minecraft.world.level.chunk.status.ChunkStatus;
 import net.minecraft.world.level.chunk.storage.SerializableChunkData;
+import net.minecraft.world.level.chunk.storage.RegionStorageInfo;
 import net.minecraft.world.level.levelgen.structure.StructureStart;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Shadow;
@@ -136,6 +138,16 @@ abstract class RegionalChunkSaveMixin implements RegionalSaveBinding.MapAccess {
             Supplier<CompoundTag> encoded, Operation<CompletableFuture<Void>> original) {
         if (Phoenium.liveRuntime().regionalSaves() == null) return original.call(map, pos, encoded);
         return RegionalSaveBinding.write(map, pos, () -> original.call(map, pos, encoded));
+    }
+
+    @WrapOperation(method = "save(Lnet/minecraft/world/level/chunk/ChunkAccess;)Z",
+            at = @At(value = "INVOKE", target = "Lnet/minecraft/server/MinecraftServer;reportChunkSaveFailure(Ljava/lang/Throwable;Lnet/minecraft/world/level/chunk/storage/RegionStorageInfo;Lnet/minecraft/world/level/ChunkPos;)V"),
+            require = 1, expect = 1)
+    private void phoenium$reportedSaveFailure(MinecraftServer server, Throwable failure, RegionStorageInfo storage,
+                                              ChunkPos pos, Operation<Void> original) {
+        if (Phoenium.liveRuntime().regionalSaves() != null)
+            RegionalSaveBinding.reportedFailure((ChunkMap) (Object) this, pos, failure);
+        original.call(server, failure, storage, pos);
     }
 
     @WrapMethod(method = "lambda$scheduleUnload$0")

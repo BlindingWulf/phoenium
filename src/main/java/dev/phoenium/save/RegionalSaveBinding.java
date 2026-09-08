@@ -161,6 +161,16 @@ public final class RegionalSaveBinding {
         catch (RuntimeException | Error failure) { invocation.attempt.failed(failure); throw failure; }
     }
 
+    /** The original synchronous catch reports and returns false, so its failure would
+     * otherwise be invisible to the enclosing save invocation. Record it before the
+     * original reporting callback, without changing that callback or its exception. */
+    public static void reportedFailure(ChunkMap map, ChunkPos pos, Throwable failure) {
+        Invocation invocation = Objects.requireNonNull(CURRENT.get(), "reported failure outside original save");
+        if (invocation.map != map || !invocation.chunk.getPos().equals(pos))
+            throw new IllegalStateException("save failure changed its original source");
+        invocation.attempt.failed(failure);
+    }
+
     public static void unload(RegionalSaveCoordinator coordinator, ChunkMap map, ServerLevel level,
                               ChunkHolder holder, CompletableFuture<?> expectedSave, long position, Runnable original) {
         // These are original control-plane identities. A stale subscriber must retain the

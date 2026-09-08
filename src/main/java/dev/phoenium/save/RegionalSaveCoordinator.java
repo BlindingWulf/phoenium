@@ -89,10 +89,12 @@ public final class RegionalSaveCoordinator {
 
         public <T> T readSource(Supplier<T> original) {
             requireRetained();
-            return owned(source.key(), RegionalServiceKind.SAVE_CAPTURE, () -> {
-                requireCurrentSource();
-                return original.get();
-            });
+            try {
+                return owned(source.key(), RegionalServiceKind.SAVE_CAPTURE, () -> {
+                    requireCurrentSource();
+                    return original.get();
+                });
+            } catch (RuntimeException | Error problem) { failed(problem); throw problem; }
         }
 
         public <T> T capture(Supplier<T> original) {
@@ -115,8 +117,9 @@ public final class RegionalSaveCoordinator {
         public <T> CompletableFuture<T> submitted(CompletableFuture<T> original) {
             requireRetained();
             if (submitted || snapshot == null) throw new IllegalStateException("write without unique captured save data");
+            Objects.requireNonNull(original, "original save future");
             submitted = true;
-            Objects.requireNonNull(original).whenComplete((result, problem) -> {
+            original.whenComplete((result, problem) -> {
                 synchronized (this) {
                     if (problem != null) addFailure(problem);
                     writeFinished = true;

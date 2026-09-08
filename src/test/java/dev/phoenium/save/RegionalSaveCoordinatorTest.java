@@ -107,6 +107,24 @@ class RegionalSaveCoordinatorTest {
         assertEquals(1, calls[0]);
     }
 
+    @Test void aSourceFailureCaughtByVanillaStillRestoresTheDirtyClaimAndFailsFlush() {
+        Fixture f = new Fixture(); Source source = f.source(); var attempt = f.saves.begin(source);
+        assertTrue(attempt.markSaved(() -> true));
+        var calls = new int[1]; var failure = new IllegalArgumentException("original source predicate failed");
+        // ChunkMap.save catches this original exception and returns false. There is no
+        // serializer/write future and no exception escaping the enclosing save wrapper.
+        assertSame(failure, assertThrows(IllegalArgumentException.class,
+            () -> attempt.readSource(() -> { calls[0]++; throw failure; })));
+        assertFalse(f.barrier.tripped(), "a caught save exception is not a gameplay barrier");
+        attempt.finishBody();
+        assertTrue(f.saves.pumpOne());
+        assertEquals(1, source.restored);
+        assertEquals(f.a.id(), source.restoredBy);
+        assertEquals(1, source.releases); assertEquals(0, f.saves.pending());
+        assertSame(failure, assertThrows(IllegalArgumentException.class, f.saves::requireFlushed));
+        assertEquals(1, calls[0]);
+    }
+
     @Test void reentrantFailingReleaseCannotRetainCompletedRecordsOrSkipAnotherAcknowledgement() {
         Fixture f = new Fixture(); Source first = f.source(); Source second = f.source();
         var a = f.capture(first); var b = f.capture(second);
