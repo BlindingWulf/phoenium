@@ -138,6 +138,24 @@ final class FullSelectorPredicateInputsTest {
         assertNull(field(visitor, "unmet"));
     }
 
+    @Test void entityPredicateCapacityRefusalDoesNotRetainTheOriginalCombination() throws Exception {
+        var predicate = new net.minecraft.advancements.predicates.entity.EntityPredicate(Map.of());
+        Object visitor = visit(new LootItemEntityPropertyCondition(Optional.of(predicate), LootContext.EntityTarget.THIS), ignored -> false);
+        assertTrue((Boolean) field(visitor, "capacity"));
+        assertTrue(((Set<?>) field(visitor, "entityPredicates")).isEmpty());
+    }
+
+    @Test void unknownEntityPredicateIsExplicitlyUnmetWithoutEvaluatingIt() throws Exception {
+        var calls = new AtomicInteger();
+        net.minecraft.advancements.predicates.entity.EntitySubPredicate unknown = (entity, level, position) -> {
+            calls.incrementAndGet(); return true;
+        };
+        var predicate = new net.minecraft.advancements.predicates.entity.EntityPredicate(Map.of(
+                com.mojang.serialization.Codec.STRING.xmap(ignored -> unknown, ignored -> "unknown"), unknown));
+        Object visitor = visit(new LootItemEntityPropertyCondition(Optional.of(predicate), LootContext.EntityTarget.THIS));
+        assertTrue(((String) field(visitor, "unmet")).contains("unsupported")); assertEquals(0, calls.get());
+    }
+
     private static IntRange range(NumberProvider min, NumberProvider max) throws Exception {
         Constructor<IntRange> constructor = IntRange.class.getDeclaredConstructor(Optional.class, Optional.class);
         constructor.setAccessible(true);

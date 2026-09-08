@@ -2,6 +2,16 @@
 
 ## Scope and owners
 
+Latest user direction: **Stage 3 closure**, from attachment
+`C:/Users/Admin/.codex/attachments/7c97b080-1373-4f6c-84c0-07f0ea145144/pasted-text.txt`.
+Finish the active context/path/cache/pending-text/entity-predicate work, consolidate main,
+then run bounded focused validation, strict installed probe and the existing real offline
+fresh/disk/reload campaign on one final production SHA. Classify failures before fixing.
+Do not expand unsupported authority. Cross-world bundles, unknown implementations and
+unindexed fields remain explicit deferred scope. On all required gates passing, declare
+`STAGE3_SERIAL_CORRECTNESS_FROZEN`, stop work and produce the requested A–L closure report.
+No Stage4 implementation, public push/release or PASS tag is authorized.
+
 Finish authoritative original FULL finishing and separate publication through installed
 probes, actual fresh/disk/reload and offline-client acceptance. Stage3/R-CHUNK-01 PARTIAL;
 Stage4 NOT STARTED. Pinned Minecraft26.2 / Java25 / Loader0.19.5 / Fabric0.159.0+26.2 /
@@ -26,6 +36,23 @@ nickname-based identity claims, recursive agents, extra Astra, tier overrides or
 | Root | Phoenium / main | Structure binding review, registered entity-property predicate closure, integration |
 | /root/sol_services | ../Phoenium-full-sol / recovery/full-services-sol | Full NBT path syntax and exact EncoderCache/DataComponents result evidence; owns live/cache/path helpers and saved-context hooks |
 | /root/luna_harness | ../Phoenium-full-luna / recovery/full-harness-luna | Pending command/sign saved-tag correction; then early installed probe. Sole final build/installed/live/client/vault owner |
+
+Current closure checkpoint (source before this commit based on7030a33): root's original
+EntityPredicate combination witness and connected consumer pass28 tests in
+`run/full-resume/session-20260907/entity-predicate-connected-58.log` (+archived XML):
+producer4, entity execution3, location4, selector discovery12, registered execution5.
+Exact original sorted array/single/empty result is retained per predicate instance; mutable
+caller map replacement cannot substitute dependencies. Original same-world type/flags/NBT
+and candidate-location block/NBT calls run after convergence with separate publication.
+Unsupported relationship/support-position/player/partial-component predicate footprints
+remain explicit unmet before FULL, as do unknown implementations. No new authority model.
+
+Sol b312283 cache/path checkpoint148 focused PASS is HELD for the active cache-recency/
+producer correctness review. Do not expand to new component fields/maps. Luna pending stack
+769c7e8/fdf9e5e/da8d357/fbbe48e has9 pending+62 context PASS; last review is correcting
+new observation-release callback failure ordering and cancellation. Neither stack is in
+main yet; no final artifact campaign has begun. Latest account Codex weekly usage23% used;
+reserve7%; per-task/model tokens unknown, no reset redeemed or external spend.
 
 ## Current source and focused verification
 

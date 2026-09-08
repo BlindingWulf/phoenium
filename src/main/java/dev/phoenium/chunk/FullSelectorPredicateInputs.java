@@ -2,6 +2,7 @@ package dev.phoenium.chunk;
 
 import java.util.*;
 import net.minecraft.advancements.predicates.LocationPredicate;
+import net.minecraft.advancements.predicates.entity.*;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.resources.Identifier;
@@ -35,31 +36,31 @@ public final class FullSelectorPredicateInputs {
     }
     record Result(ReloadableServerRegistries.Holder registries, Set<ChunkPos> biomes,
                   Set<ChunkPos> full, Set<ChunkPos> structures, Set<Identifier> storageIds,
-                  long bytes, boolean capacity, String unmet) { }
+                  Set<EntityPredicate> entityPredicates, long bytes, boolean capacity, String unmet) { }
 
     private FullSelectorPredicateInputs() { }
 
     static Result discover(MinecraftServer server, String selector, Set<ChunkPos> candidateChunks,
                            java.util.function.LongPredicate capacity) {
         ReloadableServerRegistries.Holder holder = server.reloadableRegistries();
-        if (holder == null) return new Result(null, Set.of(), Set.of(), Set.of(), Set.of(), 0, false,
+        if (holder == null) return new Result(null, Set.of(), Set.of(), Set.of(), Set.of(), Set.of(), 0, false,
                 "registered selector predicate registry is unavailable");
         var lookup = holder.lookup().lookup(Registries.PREDICATE).orElse(null);
-        if (lookup == null) return new Result(holder, Set.of(), Set.of(), Set.of(), Set.of(), 0, false,
+        if (lookup == null) return new Result(holder, Set.of(), Set.of(), Set.of(), Set.of(), Set.of(), 0, false,
                 "registered selector predicate registry is unavailable");
         var visitor = new Visitor(lookup, candidateChunks, capacity);
         for (String value : FullSavedTextInputs.optionValues(selector, "predicate")) {
             String id = value.trim();
             if (id.startsWith("!")) id = id.substring(1).trim();
             Identifier location = Identifier.tryParse(id);
-            if (location == null) return new Result(holder, Set.of(), Set.of(), Set.of(), Set.of(), visitor.bytes, visitor.capacity,
+            if (location == null) return new Result(holder, Set.of(), Set.of(), Set.of(), Set.of(), Set.of(), visitor.bytes, visitor.capacity,
                     "registered selector predicate identifier changed after accepted parsing: " + value);
             visitor.reference(ResourceKey.create(Registries.PREDICATE, location));
             if (visitor.unmet != null) break;
         }
         return new Result(holder, Collections.unmodifiableSet(visitor.biomes),
                 Collections.unmodifiableSet(visitor.full), Collections.unmodifiableSet(visitor.structures), Collections.unmodifiableSet(visitor.storageIds),
-                visitor.bytes, visitor.capacity, visitor.unmet);
+                Collections.unmodifiableSet(visitor.entityPredicates), visitor.bytes, visitor.capacity, visitor.unmet);
     }
 
     private static final class Visitor {
@@ -70,6 +71,7 @@ public final class FullSelectorPredicateInputs {
         private final LinkedHashSet<ChunkPos> structures = new LinkedHashSet<>();
         private final LinkedHashSet<Identifier> storageIds = new LinkedHashSet<>();
         private final Set<NumberProvider> numberVisiting = Collections.newSetFromMap(new IdentityHashMap<>());
+        private final Set<EntityPredicate> entityPredicates = Collections.newSetFromMap(new IdentityHashMap<>());
         private final java.util.function.LongPredicate capacityCheck;
         private long bytes;
         private boolean capacity;
@@ -113,14 +115,48 @@ public final class FullSelectorPredicateInputs {
                     || condition instanceof DamageSourceCondition || condition instanceof BonusLevelTableCondition
                     || condition instanceof LootItemRandomChanceWithEnchantedBonusCondition
                     || condition instanceof EnchantmentActiveCheck) return;
-            if (condition instanceof LootItemEntityPropertyCondition)
-                unmet = "registered entity-property selector predicate dependency producer pending";
+            if (condition instanceof LootItemEntityPropertyCondition entity) {
+                // SELECTOR supplies THIS_ENTITY only. Preserve the original null/empty
+                // branches without inspecting a predicate that cannot be reached.
+                if (entity.entityTarget() == net.minecraft.world.level.storage.loot.LootContext.EntityTarget.THIS)
+                    entity.predicate().ifPresent(this::entity);
+            }
             else if (condition instanceof EnvironmentAttributeCheck<?> environment) {
                 if (environment.attribute().isPositional()) markBiomeCandidates();
             }
             else if (condition instanceof LootItemBlockStatePropertyCondition)
                 return; // No SELECTOR block-state parameter: vanilla's original test returns false.
             else unmet = "registered selector predicate dependency producer pending for " + condition.getClass().getName();
+        }
+        void entity(EntityPredicate predicate) {
+            if (unmet != null || capacity || entityPredicates.contains(predicate)) return;
+            long next = Math.addExact(bytes, 64L);
+            if (!capacityCheck.test(next)) { capacity = true; return; }
+            if (!((Object) predicate instanceof FullEntityPredicateInputs.Access access)
+                    || access.phoenium$entityPredicateInputs() == null) {
+                unmet = "registered entity predicate lacks its original combination producer"; return;
+            }
+            entityPredicates.add(predicate); bytes = next;
+            for (EntitySubPredicate part : access.phoenium$entityPredicateInputs().parts()) {
+                if (part == EntitySubPredicate.ALWAYS_TRUE || part instanceof EntityTypePredicate
+                        || part instanceof DistanceToPlayerPredicate || part instanceof MovementPredicate
+                        || part instanceof EntityEffectsPredicate || part instanceof EntityNbtPredicate
+                        || part instanceof EntityFlagsPredicate || part instanceof EntityEquipmentPredicate
+                        || part instanceof PeriodicEntityTickPredicate || part instanceof TeamPredicate
+                        || part instanceof EntitySlotsPredicate || part instanceof EntityExactDataComponentsPredicate
+                        || part instanceof EntityTagPredicate || part instanceof CubeMobPredicate
+                        || part instanceof RaiderPredicate || part instanceof SheepPredicate
+                        || part instanceof FishingHookPredicate) continue;
+                if (part instanceof EntityLocationPredicate location) {
+                    location(new LocationCheck(Optional.of(location.predicate()), BlockPos.ZERO));
+                    continue;
+                }
+                // These branches can follow an entity relationship/supporting position or
+                // invoke a player ray/partial component predicate. The current scalar and
+                // candidate-location receipt does not grant those additional authorities.
+                unmet = "registered entity-property dependency footprint is unsupported for " + part.getClass().getName();
+                return;
+            }
         }
         void number(NumberProvider provider) {
             if (unmet != null || capacity || provider == null) return;

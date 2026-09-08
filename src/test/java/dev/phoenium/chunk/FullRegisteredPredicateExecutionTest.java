@@ -132,7 +132,7 @@ final class FullRegisteredPredicateExecutionTest {
     }
 
     @FunctionalInterface
-    private interface Setup { void install(FullRegistrationFixture fixture, Entity candidate) throws Exception; }
+    interface Setup { void install(FullRegistrationFixture fixture, Entity candidate) throws Exception; }
 
     private CommandStorage storage(SavedDataStorage[] dataHolder, CountingCommandStorage[] storageHolder,
                                    FullRegistrationFixture fixture) {
@@ -180,17 +180,17 @@ final class FullRegisteredPredicateExecutionTest {
     }
 
     @FunctionalInterface
-    private interface Verify { void verify(FullRegistrationFixture fixture, Entity candidate) throws Exception; }
+    interface Verify { void verify(FullRegistrationFixture fixture, Entity candidate) throws Exception; }
 
-    private static void runRegistered(LootItemCondition condition, String name, Setup setup) throws Exception {
+    static void runRegistered(LootItemCondition condition, String name, Setup setup) throws Exception {
         runRegistered(condition, name, setup, (fixture, candidate) -> { });
     }
 
-    private static void runRegistered(LootItemCondition condition, String name, Setup setup, Verify verify) throws Exception {
+    static void runRegistered(LootItemCondition condition, String name, Setup setup, Verify verify) throws Exception {
         runRegistered(condition, name, setup, null, verify);
     }
 
-    private static void runRegistered(LootItemCondition condition, String name, Setup setup,
+    static void runRegistered(LootItemCondition condition, String name, Setup setup,
                                       Setup afterContext, Verify verify) throws Exception {
         var fixture = new FullRegistrationFixture(true);
         var lookup = new EntityLookup<Entity>();

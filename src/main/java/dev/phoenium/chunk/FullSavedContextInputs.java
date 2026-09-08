@@ -96,6 +96,8 @@ public final class FullSavedContextInputs {
         private final Set<net.minecraft.world.level.ChunkPos> predicateFullChunks = new LinkedHashSet<>();
         private final Set<net.minecraft.world.level.ChunkPos> predicateStructureChunks = new LinkedHashSet<>();
         private net.minecraft.server.ReloadableServerRegistries.Holder predicateRegistries;
+        private final Set<net.minecraft.advancements.predicates.entity.EntityPredicate> entityPredicates =
+                Collections.newSetFromMap(new IdentityHashMap<>());
         private int maximumSelectorCandidates;
         private IdentityHashMap<Entity, FullEntityFacts.Fact> selectorCandidates;
         private String unmet;
@@ -503,6 +505,7 @@ public final class FullSavedContextInputs {
                     predicateBiomeChunks.addAll(predicates.biomes());
                     predicateFullChunks.addAll(predicates.full());
                     predicateStructureChunks.addAll(predicates.structures());
+                    entityPredicates.addAll(predicates.entityPredicates());
                     bytes = Math.addExact(bytes, predicates.bytes());
                     if (!predicates.storageIds().isEmpty()) {
                         var reads = predicates.storageIds().stream().map(id -> new FullSavedTextInputs.NbtRead(
@@ -665,5 +668,22 @@ public final class FullSavedContextInputs {
         if (plan == null || plan.selectorCandidates == null) return false;
         FullEntityFacts.Fact expected = plan.selectorCandidates.get(entity);
         return expected != null && entity instanceof FullEntityFacts.Access access && access.phoenium$referenceFact() == expected;
+    }
+
+    /** Checks the exact original registered entity predicate before its original body. */
+    public static void requireEntityPredicate(net.minecraft.advancements.predicates.entity.EntityPredicate predicate,
+                                               ServerLevel world, Entity entity) {
+        if (!FullFinishingServices.finishing()) return;
+        Plan plan = ACTIVE.get();
+        // The vanilla null branch executes no sub-predicate and requires no entity authority.
+        if (entity == null) return;
+        if (plan == null || plan.currentText == null || plan.world != world
+                || !plan.entityPredicates.contains(predicate))
+            throw FullFinishingServices.failure(new ChunkProtocolException("unbound registered entity predicate occurrence"));
+        plan.claim.require(plan.stage);
+        var reservation = FullFinishingServices.currentReservation();
+        if (reservation == null || !reservation.owns(entity) && !ownsSelectorCandidate(entity)
+                || entity.level() != world)
+            throw FullFinishingServices.failure(new ChunkProtocolException("entity predicate target is outside its exact same-world authority"));
     }
 }

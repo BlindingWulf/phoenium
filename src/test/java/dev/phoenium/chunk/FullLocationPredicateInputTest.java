@@ -55,7 +55,14 @@ class FullLocationPredicateInputTest {
         run(false, true);
     }
 
+    @Test void registeredEntityLocationReadsTheSameOriginalPreparedBlockAndNbt() throws Exception {
+        run(true, false, true);
+    }
+
     private static void run(boolean blockNbt, boolean wrongDimension) throws Exception {
+        run(blockNbt, wrongDimension, false);
+    }
+    private static void run(boolean blockNbt, boolean wrongDimension, boolean entityProperty) throws Exception {
         var f = new FullRegistrationFixture(true);
         var lookup = new EntityLookup<Entity>();
         var neighbor = new ChunkPos(1, 0); var position = new BlockPos(24, 8, 8);
@@ -79,8 +86,12 @@ class FullLocationPredicateInputTest {
             if (wrongDimension) location.setDimension(Level.NETHER);
             var predicates = new MappedRegistry<LootItemCondition>(Registries.PREDICATE, Lifecycle.stable());
             var id = Identifier.parse("phoenium:prepared_block");
-            predicates.register(ResourceKey.create(Registries.PREDICATE, id),
-                    new LocationCheck(Optional.of(location.build()), BlockPos.ZERO), RegistrationInfo.BUILT_IN);
+            LootItemCondition condition = entityProperty
+                    ? new net.minecraft.world.level.storage.loot.predicates.LootItemEntityPropertyCondition(
+                            Optional.of(net.minecraft.advancements.predicates.entity.EntityPredicate.Builder.entity().located(location).build()),
+                            net.minecraft.world.level.storage.loot.LootContext.EntityTarget.THIS)
+                    : new LocationCheck(Optional.of(location.build()), BlockPos.ZERO);
+            predicates.register(ResourceKey.create(Registries.PREDICATE, id), condition, RegistrationInfo.BUILT_IN);
             f.world.reloadableRegistries.set(new ReloadableServerRegistries.Holder(
                     new RegistryAccess.ImmutableRegistryAccess(List.of(predicates)).freeze()));
 
