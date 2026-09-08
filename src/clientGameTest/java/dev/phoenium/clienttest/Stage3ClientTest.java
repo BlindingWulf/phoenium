@@ -43,6 +43,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
@@ -1826,7 +1827,9 @@ public final class Stage3ClientTest implements FabricClientGameTest {
                 }
                 require(received, "client never received exact target chunks/nonair fixture during " + phase);
                 evidence.put(phase + "RealTcpChunkReceipt", true);
-                evidence.put(phase + "Diagnostics", active.execute("phoenium diagnostics"));
+                String diagnostics = active.execute("phoenium diagnostics");
+                evidence.put(phase + "Diagnostics", diagnostics);
+                requireHealthyFullDiagnostics(phase, diagnostics);
                 // Vanilla handles this synchronously, including region-file I/O for the
                 // generated fixture.  Keep the short control-command timeout for the
                 // ordinary RCON traffic, but give this one required disk barrier its
@@ -1951,6 +1954,25 @@ public final class Stage3ClientTest implements FabricClientGameTest {
             && !log.contains("Exception stopping the server")
             && !log.contains("FULL_LIVE_FAIL")
             && !log.contains("FULL fixture failed");
+    }
+
+    /** Numeric cleanup counters cannot make an authoritative runtime failure acceptable. */
+    private static void requireHealthyFullDiagnostics(String phase, String raw) {
+        for (String field : new String[] { "failure", "failureDescription" }) {
+            String value = diagnosticTextField(raw, field);
+            require(value.isEmpty() || switch (value.toLowerCase(Locale.ROOT)) {
+                case "none", "null", "false" -> true;
+                default -> false;
+            }, "FULL " + phase + " diagnostics reported " + field + "=" + value + ": " + raw);
+        }
+    }
+
+    private static String diagnosticTextField(String raw, String field) {
+        if (raw == null || raw.isBlank()) return "";
+        Matcher matcher = Pattern.compile("(?:^|\\s)" + Pattern.quote(field)
+                + "=([^\\r\\n]*?)(?=\\s+[A-Za-z][A-Za-z0-9_.-]*=|\\s*$)")
+                .matcher(raw);
+        return matcher.find() ? matcher.group(1).trim() : "";
     }
 
     /**
