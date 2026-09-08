@@ -9,11 +9,11 @@ Loom1.17.20 / Gradle9.5.1; view/simulation5, one gameplay worker, parallel OFF. 
 PhoeniumTest0 only; no push, release, PASS tag, accounts, GUI or production worlds.
 
 Recovery39105d25 preserves the interrupted source. Historical a7b40743/419 tests are not
-current proof. Main committed HEAD before this note:0ea50a2. The final same-lease
+current proof. Main committed HEAD before this note:0adcd38. The final same-lease
 preclaim validation and original LocationPredicate block-query adapters now compile;
 live-context-integration-38 passed22 tests at a5e51c5. Retained live target refinement,
-exact busy-lease retry and structure generation exclusion are integrated; the structure
-status-input/consumer binding is still incomplete. No current installed proof exists.
+exact busy-lease retry and original structure reference/status query are integrated.
+Structure-integrated-54 passed183 tests/10suites. No current installed proof exists.
 Preserve newer source and unsuccessful evidence. No reset/stash/reconstruction.
 
 Lead retains user-selected Astra/Max and service_tier=default. Supported spawn controls
@@ -23,12 +23,41 @@ nickname-based identity claims, recursive agents, extra Astra, tier overrides or
 
 | Owner | Isolated checkout / branch | Current outcome |
 | --- | --- | --- |
-| Root | Phoenium / main | Structure status/reference inputs and original consumer; admission, custody and integration review |
-| /root/sol_services | ../Phoenium-full-sol / recovery/full-services-sol | Direct uncached command/sign/mannequin text fields; owns live helpers/mixins and related saved-context hooks/tests |
-| /root/luna_harness | ../Phoenium-full-luna / recovery/full-harness-luna | Correct original-cache BIOMES witness and metadata-monitor behavior tests; sole final build/installed/live/client/vault owner |
+| Root | Phoenium / main | Structure binding review, registered entity-property predicate closure, integration |
+| /root/sol_services | ../Phoenium-full-sol / recovery/full-services-sol | Full NBT path syntax and exact EncoderCache/DataComponents result evidence; owns live/cache/path helpers and saved-context hooks |
+| /root/luna_harness | ../Phoenium-full-luna / recovery/full-harness-luna | Pending command/sign saved-tag correction; then early installed probe. Sole final build/installed/live/client/vault owner |
 
 ## Current source and focused verification
 
+* 208c723 compiled structure closure;0adcd38 removes the temporary structure rejection and
+  binds original LocationPredicate -> StructureManager -> exact original REFERENCES/STARTS
+  cache/slot/result. Owner-read measure/capture retains source reference map/set aliases,
+  including exact original cache inputs, without evaluating the structure matcher or piece
+  test. Final same-R validation holds structure generation exclusion through original FULL.
+  A missing referenced start receives an operation-owned, nonpersistent loading-only ticket
+  before R and original distance-manager update/status generation; original UNKNOWN stays
+  at the reached query. Acknowledgement/reentrant-close/partial-failure cleanup is independent.
+  Requested-status records now expire on their actual producer or last input-plan release.
+  New structure consumer3 (including alias replacement and absent chunk20), demand3, and
+  generation exclusion4 PASS. Root -54:183 PASS/10suites (these10+queries13+savedContexts62+
+  initialized27+inputAck6+published27+services12+Core26). New metrics include structure holder/
+  reader/writer/waiter and demand tickets. Installed adapters/new distance-manager wiring
+  still need the installed probe; the controlled demand test uses a distance-update endpoint.
+* Soldf708ee ->6365969 + hidden-description delta1fc1c34 bind direct command CustomName/
+  LastOutput/TrackOutput, front/back sign raw/filtered arrays and mannequin description,
+  with capacity before copies and final-lease alias validation. Preserved main's existing
+  broad text selector support; did not restore the obsolete exact-type refusal/test.
+  Root direct-fields-structure-47:126 PASS/6suites, superseded for affected code by -54.
+* Lunaf7460d5/220f79b/cdac505 (8d181e7/fbc06e0/fef7d46 equivalents) now use actual original
+  EnvironmentAttributeSystem -> LevelReader -> ServerChunkCache(BIOMES,false), assert exact
+  retained result plus plains holder, and behavioral pending State/Source/storage monitor
+  tests. Core metadata exemption is now backed by those callbacks/cleanup tests. Numeric
+  installed marker/parser requires biomeRoute=true; final installed run is still pending.
+* Luna pending-tag d91d0d7 is HOLD, not main. Review found NbtPath.get before original and
+  values.getFirst() omitting wildcard roots, plus extra detached capture after reservation.
+  Requested fixed saved command/sign shape/all codec slots, TrackOutput absence, all nested
+  dependencies, scalar precharge and wildcard/growth tests. Five initial tests alone are
+  insufficient. Sol is coordinating shared path classification; do not cherry-pick yet.
 * 4df9ebe adds exact regional lease-release notifications. Pending live refinement wakes
   without polling/manual changed() after the occupying lease closes; integrated Sol
   e660d97 ->054430e exercises that connected path. Lease callbacks run after metadata
@@ -43,14 +72,10 @@ nickname-based identity claims, recursive agents, extra Astra, tier overrides or
   Original synchronous invocation/result/failure stays intact. New structure tests4 PASS,
   published binding27 PASS in structure-turns-44. Earlier -42 fixture failures preserved;
   original generation registration28/shutdown2 passed there. Final diagnostics-map addition
-  was committed after these checks and needs compilation. This primitive alone does not
-  authorize structure reads; exact status inputs and original consumer are root's next work.
+  was subsequently compiled/tested in -47/-54. Exact structure binding is described above.
 * ce69edc/0ea50a2 integrate numeric five-case and live-context installed probe calls.
-  Luna8d181e7/fbc06e0 are HOLD, not main: the BIOMES witness still bypassed the original
-  ServerChunkCache despite reaching LevelReader. Further correction requested. New actual
-  metadata State/Source/CommandStorage monitor behavior tests reviewed positively; root's
-  context-lease-release-39/-40 each53 PASS/1 Core source-scan FAIL are preserved until this
-  reviewed metadata exemption and behavioral tests integrate. No blanket PASS claimed.
+  Root context-lease-release-39/-40 each53 PASS/1 Core source-scan FAIL remain preserved;
+  reviewed metadata exemptions and behavioral tests subsequently passed -47/-54.
 * Recovery services/D1/D2, capacity-to-progress, saved roots, light/input lifetime and
   original worldgen/server-task ordering are integrated; see the prior versions of this
   note and STAGE3_FULL_APPROVED_IMPLEMENTATION.md for detailed historical evidence.
@@ -150,8 +175,8 @@ General new distant chunk demand during owned ordinary ticks remains a coverage 
    Target-retention and object-route review is fixed at685f0ad/dcd7e92 and verified above.
    Combined retained tadpole-to-frog then later selector growth still needs an actual
    positive original insertion witness. Direct legacy save roots are uncached, but cached DataComponents can
-   preserve old serialized output: not yet bound. Command/sign/other component fields
-   and arbitrary legitimate interpreted paths still incomplete.
+   preserve old serialized output: not yet bound. Command/sign/mannequin direct fields
+   are integrated; full path syntax, pending tag correction and cached output are active.
    Full pinned alias audit and exact source/bytecode hashes are in Luna
    run/full-resume/session-20260907/component-alias-audit-26.2.md.
 3. Luna5be36e1 ->a5e51c5 discovers dynamic numbers/ranges/score/storage syntax without
@@ -159,19 +184,19 @@ General new distant chunk demand during owned ordinary ticks remains a coverage 
    LocationPredicate.biomes to retain a3x3 BIOMES neighborhood independently of FULL
    clauses. Predicate9+location3 PASS in Luna checkout. Actual numeric consumer tests
    and installed probe/parser counts are Luna's next work; visitor-only proof is partial.
-   Structure location clauses explicitly unmet until data-dependent exact
-   STRUCTURE_REFERENCES/STRUCTURE_STARTS producer/consumer binding (root owns this next).
+   Structure location clauses are now bound through0adcd38 as described above.
    EntityPredicate heterogeneous/nested references/player-ray footprints remain.
 4. Cross-world saved-selector authority APPROVAL PENDING. Exact proposal:
    STAGE3_FULL_SELECTOR_CONTEXT_DECISION.md. Async question has no answer; D1-F forbids
    foreign virtual calls/cross-dimension same-world convergence. Do not enable proposed
    all-or-release bundle without an actual user answer. Continue independent work.
-5. At stable integrated bindings: Luna performs final clean build + installed probe +
+5. After pending-tag correction: Luna runs an early installed probe with current structure/
+   direct-text positives and strict metrics. At stable integrated bindings: Luna performs final clean build + installed probe +
    existing runStage3FullAcceptance fresh/actual-disk/reload/client + positive saved vault
    on one recorded production JAR. Root reviews current diff/manifests; update acceptance
    ledger and commit verified work. No competing root/live servers, no optimistic PASS.
 
-Latest exposed weekly Codex window:7% used after previously observed2%; reported resetsAt
+Latest exposed weekly Codex window:17% used after previously observed7%; reported resetsAt
 1789435538. Reserve7% used. These are account-wide readings, not per-task consumption;
 window change is not evidence of any agent-issued reset. No reset was requested or used.
 Per-task/worker tokens unknown. No purchases or extra spending.
