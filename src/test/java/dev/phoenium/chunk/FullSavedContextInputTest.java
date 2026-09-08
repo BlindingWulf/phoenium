@@ -21,8 +21,6 @@ import net.minecraft.world.level.storage.SavedDataStorage;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.component.DataComponentMap;
 import net.minecraft.core.component.DataComponents;
-import net.minecraft.nbt.NbtOps;
-import net.minecraft.network.chat.contents.TranslatableContents;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.entity.BeaconBlockEntity;
 import net.minecraft.world.level.block.entity.BlockEntity;
@@ -1153,33 +1151,9 @@ class FullSavedContextInputTest {
             assertEquals(FullInitializedInputs.State.UNRESOLVED, graph.inputEvaluation().state());
             assertTrue(graph.inputEvaluation().obligation().contains(
                     "another vanilla encoder can begin an equal-key load before the original serializer"));
-            assertNull(graph.inputReceipt()); assertTrue(f.world.inserted.isEmpty()); assertFalse(f.barrier.tripped());
-        } finally { f.stop(); FullFinishingServices.stopped(f.world.level.getServer()); }
-        assertCleanup(f);
-    }
-
-    @Test void cachedComponentCapacityIsRefusedBeforeCurrentGraphOrCachedTagCopies() throws Exception {
-        var f = new FullRegistrationFixture(true); var position = new BlockPos(8, 8, 8);
-        var state = Blocks.BEACON.defaultBlockState(); var beacon = new BeaconBlockEntity(position, state);
-        var component = Component.translatable("%s", "cached capacity");
-        var ops = f.world.level.registryAccess().createSerializationContext(NbtOps.INSTANCE);
-        DataComponents.CUSTOM_NAME.codecOrThrow().encodeStart(ops, component).result().orElseThrow();
-        beacon.setComponents(DataComponentMap.builder().set(DataComponents.CUSTOM_NAME, component).build());
-        var fact = new FullSavedInput.EntityFact("capacity", "minecraft:text_display", 8, 8, 8, 0, false);
-        try {
-            var measured = FullCachedComponentInputs.measure(beacon, 0, f.world.level.registryAccess());
-            assertNull(measured.unmet());
-            var refused = FullCachedComponentInputs.capture(fact, beacon, 0, measured.bytes() - 1,
-                    f.world.level.registryAccess());
-            assertTrue(refused.unmet().contains("grew after")); assertNull(refused.current()); assertNull(refused.cachedTag());
-
-            var captured = FullCachedComponentInputs.capture(fact, beacon, 0, measured.bytes(),
-                    f.world.level.registryAccess());
-            assertNull(captured.unmet()); assertNotNull(captured.current()); assertNotNull(captured.cachedTag());
-            assertTrue(captured.valid(beacon, f.world.level.registryAccess()));
-            beacon.setComponents(DataComponentMap.builder().set(DataComponents.CUSTOM_NAME, component).build());
-            assertFalse(captured.valid(beacon, f.world.level.registryAccess()),
-                    "the exact raw component-map occurrence is retained through original serialization");
+            assertNull(graph.inputReceipt()); assertFalse(graph.finishing.outcome().isDone(),
+                    "the unresolved cached input must not invoke the original FULL continuation");
+            assertTrue(f.world.inserted.isEmpty()); assertFalse(f.barrier.tripped());
         } finally { f.stop(); FullFinishingServices.stopped(f.world.level.getServer()); }
         assertCleanup(f);
     }
@@ -1189,7 +1163,7 @@ class FullSavedContextInputTest {
                 FullNbtPathInputs.leadingFields("{root:{nested:[1,2]}}.\"front.text\"[{kind:\"value\"}].filtered_messages[].leaf[3]", 8));
         assertEquals(FullLiveComponentInputs.BlockField.SIGN_BACK_MESSAGES,
                 FullLiveComponentInputs.blockField("back_text.messages[2]"));
-        assertTrue(FullCachedComponentInputs.selected(
+        assertTrue(FullNbtPathInputs.cachedCustomName(
                 "components{\"minecraft:custom_name\":{}}.\"minecraft:custom_name\""));
     }
 

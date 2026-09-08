@@ -424,7 +424,7 @@ public final class FullSavedContextInputs {
                 if (!validLiveTarget(runtime, target))
                     return new LiveObservation(List.of(), List.of(), total, null, true);
                 BlockEntity block = FullLiveComponentInputs.block(target.actual(), position);
-                if (FullCachedComponentInputs.selected(pending.read.path())) {
+                if (FullNbtPathInputs.cachedCustomName(pending.read.path())) {
                     // EncoderCache is process-global. Other original vanilla serializers can
                     // begin an equal-key load after same-lease validation and before this
                     // FULL's original getUnchecked call. Guava would then wait while R is held.

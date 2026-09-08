@@ -32,6 +32,14 @@ final class FullNbtPathInputs {
         return List.copyOf(fields);
     }
 
+    /** Exact finite classifier for the one vanilla cached component path considered by
+     * Stage 3. This reads syntax only; it never selects or serializes NBT. */
+    static boolean cachedCustomName(String source) {
+        List<String> fields = leadingFields(source, 2);
+        return fields.size() == 2 && fields.get(0).equals("components")
+                && fields.get(1).equals("minecraft:custom_name");
+    }
+
     private static String readField(StringReader reader) throws CommandSyntaxException {
         if (reader.peek() == '\'' || reader.peek() == '"') return reader.readString();
         int start = reader.getCursor();
