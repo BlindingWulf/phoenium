@@ -130,9 +130,15 @@ demand. `awaitingTeleport=3` is a native ID counter; awaitingPositionFromClient=
 means it is not currently waiting on that position. Pinned listener lines 527–544
 and 1236–1244 disprove the earlier unacknowledged-teleport inference. Frozen run
 `reference-telemetry-5-20260908-0806` preserves matching accepted IDs 1/2/3, the same
-B failure, dumps and a 134 KB real-client trace. Sol now traces frozen/pinned movement
-admission and section update; Luna holds further movement retries pending that
-specific boundary and runs the independent adverse/MCA harness work. Positive live
+B failure, dumps and a 134 KB real-client trace. Sol found the exact cause already
+logged 3,605 times: after cross-owner /tp, bindPlayer calls updateRoutingKey while
+the object ledger still owns A and native position is B. The refusal precedes native
+handleMovePlayer/ChunkMap.move, so lastSection and simulation demand never advance.
+No extra diagnostic launch is needed. Sol implements a separate shared test helper
+to unify source/destination demand under one owner through legitimate existing
+topology before each /tp; Luna owns call sites. Real ACK/movement/receipt must then
+precede the intended Stage4 split and genuine B execution. No forced object-owner
+refresh, unowned native move, reference modification or new teleport support. Positive live
 readiness is still required. Closure H/I's distant-demand and old same-holder
 re-promotion boundaries remain explicit; no new reference scope is silently claimed.
 Do not increase timeouts, cap distances, substitute server-only receipts or weaken
@@ -153,12 +159,12 @@ Lead review requires the following remaining corrections:
 - Positively observe deferred event eligibility false before migration and true later.
 - Inspect one exact native pending minecraft:stone_button record in its actual MCA
   chunk, saved powered=true state, priority and native relative delay at the snapshot.
-  Current parser's local/world coordinate alternatives and deadline guesses are invalid.
-  Luna `573ba9d` is committed in its worktree but not accepted/integrated: it invents
-  saved `o` order, expects the wrong ChunkPos string, and uses continuous rather than
-  native padded-per-long palette packing. Pinned SavedTick saves only i/x/y/z/t/p;
-  ChunkPos prints `[x, z]`. Correct to exactly one obligation with coherent dimension,
-  region/chunk identity and named powered state. Luna owns the source-based repair.
+  Luna `573ba9d`/`6584e3f` and lead review now use the pinned i/x/y/z/t/p codec,
+  `[x, z]` trace format and padded-per-long palette packing. The parser rejects
+  duplicate identity even with another delay, wrong dimension/region/native chunk,
+  wrong/unpowered block, expired expectation and decode errors. One real native MCA
+  chunk decodes; nine focused parser checks pass in main `run/stage4/parser-review`.
+  These are parser checks, not completed installed pending-tick/reload acceptance.
 - Freeze restart before a saved deadline can pass, activate observation, then step
   through actual restored execution exactly once; do not reschedule or extend it.
 - Reuse the completed real-client world and immutable pre-restart copy. The generic
