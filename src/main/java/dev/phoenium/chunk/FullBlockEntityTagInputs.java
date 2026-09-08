@@ -23,21 +23,29 @@ public final class FullBlockEntityTagInputs {
     public static final class Capture {
         private final Source source;
         private final Occurrence occurrence;
+        private final Reload reload;
+        private final long reloadRevision;
         private final FullSavedInput.Snapshot snapshot;
         private final FullSavedTextInputs.Saved customName;
         private final long bytes;
         private boolean consumed;
         private boolean consumptionHeld;
         private int retainers;
-        private Capture(Source source, Occurrence occurrence, FullSavedInput.Snapshot snapshot) {
-            this.source = source; this.occurrence = occurrence; this.snapshot = snapshot;
+        private Capture(Source source, Occurrence occurrence, Reload reload, long reloadRevision,
+                        FullSavedInput.Snapshot snapshot) {
+            this.source = source; this.occurrence = occurrence; this.reload = reload;
+            this.reloadRevision = reloadRevision; this.snapshot = snapshot;
             var fact = snapshot.entities().getFirst();
             customName = fact.services().customName(); bytes = snapshot.payloadBytes();
         }
-        synchronized boolean valid() { return source.valid(snapshot) && (consumed || occurrence.valid()); }
+        synchronized boolean valid() {
+            return source.valid(snapshot) && (consumed
+                    || occurrence.valid() && (reload == null || reload.valid(reloadRevision)));
+        }
         synchronized void consuming() {
             if (consumed) return;
-            if (!occurrence.valid() || !source.valid(snapshot))
+            if (!occurrence.valid() || !source.valid(snapshot)
+                    || reload != null && !reload.valid(reloadRevision))
                 throw new ChunkProtocolException("pending block-entity dependency fact changed before original promotion");
             if (retainers == 0)
                 throw new ChunkProtocolException("pending block-entity promotion lacks a retained dependency capture");
@@ -48,16 +56,17 @@ public final class FullBlockEntityTagInputs {
         long bytes() { return bytes; }
         AutoCloseable retain(Runnable changed) {
             synchronized (this) { retainers = Math.incrementExact(retainers); }
-            AutoCloseable sourceUse = null;
+            var acquired = new ArrayList<AutoCloseable>(3);
             try {
-                sourceUse = source.retain(snapshot, changed);
-                AutoCloseable occurrenceUse = occurrence.retain(changed);
-                AutoCloseable retainedSourceUse = sourceUse;
+                acquired.add(source.retain(snapshot, changed));
+                if (reload == null) acquired.add(occurrence.retain(changed));
+                else acquired.add(reload.retain(reloadRevision, changed));
+                List<AutoCloseable> uses = List.copyOf(acquired);
                 var open = new java.util.concurrent.atomic.AtomicBoolean(true);
                 return () -> {
                     if (!open.compareAndSet(true, false)) return;
                     Throwable failure = null;
-                    try { close(List.of(retainedSourceUse, occurrenceUse), null); }
+                    try { close(uses, null); }
                     catch (Throwable problem) { failure = problem; }
                     try { releaseRetention(); }
                     catch (Throwable problem) {
@@ -67,8 +76,8 @@ public final class FullBlockEntityTagInputs {
                     rethrow(failure, "pending block-entity dependency acknowledgement failed");
                 };
             } catch (RuntimeException | Error failure) {
-                try { if (sourceUse != null) sourceUse.close(); }
-                catch (Exception close) { if (close != failure) failure.addSuppressed(close); }
+                for (AutoCloseable use : acquired) try { use.close(); }
+                catch (Throwable close) { if (close != failure) failure.addSuppressed(close); }
                 try { releaseRetention(); } catch (Throwable close) { if (close != failure) failure.addSuppressed(close); }
                 throw failure;
             }
@@ -110,7 +119,7 @@ public final class FullBlockEntityTagInputs {
         synchronized (access.phoenium$blockEntityTags()) {
             occurrence = access.phoenium$blockEntityTags().sources.get(position);
         }
-        return occurrence == null ? null : occurrence.observe(registries, changed, reserve, () -> true);
+        return occurrence == null ? null : occurrence.observe(registries, changed, reserve, () -> true, null, 0L);
     }
 
     public static List<CompoundTag> reloadRoots(List<CompoundTag> original) {
@@ -136,35 +145,104 @@ public final class FullBlockEntityTagInputs {
 
     public static final class Reload implements AutoCloseable {
         private List<Occurrence> sources;
+        private final CopyOnWriteArrayList<Runnable> listeners = new CopyOnWriteArrayList<>();
+        private long revision;
         Reload(List<Occurrence> sources) { this.sources = sources; }
         Capture observe(ChunkPos chunk, BlockPos position, HolderLookup.Provider registries,
                         Runnable changed, LongPredicate reserve) {
-            List<Occurrence> current;
-            synchronized (this) { if (sources == null) return null; current = List.copyOf(sources); }
-            for (int index = current.size() - 1; index >= 0; index--) {
-                Occurrence occurrence = current.get(index); Source source = occurrence.source;
-                Capture capture = occurrence.observe(registries, changed, reserve,
-                        () -> retainedPosition(chunk, source.tag).equals(position));
-                if (capture != null) return capture;
+            final long observed; final int size;
+            synchronized (this) {
+                if (sources == null) return null;
+                observed = revision; size = sources.size();
             }
+            for (int index = size - 1; index >= 0; index--) {
+                Occurrence occurrence;
+                synchronized (this) {
+                    if (sources == null || revision != observed) throw retry(observed, changed);
+                    occurrence = sources.get(index);
+                }
+                Source source = occurrence.source;
+                Capture capture = occurrence.observe(registries, changed, reserve,
+                        () -> retainedPosition(chunk, source.tag).equals(position), this, observed);
+                if (capture != null) {
+                    if (!valid(observed)) throw retry(observed, changed);
+                    return capture;
+                }
+            }
+            if (!valid(observed)) throw retry(observed, changed);
             return null;
         }
-        synchronized Occurrence replace(int index, Occurrence next) {
-            if (sources == null) { next.retire(); return null; }
-            return sources.set(index, next);
+        synchronized boolean valid(long expected) { return sources != null && revision == expected; }
+        AutoCloseable retain(long expected, Runnable changed) {
+            var use = new ReloadUse(this, changed); listeners.add(changed);
+            try { if (!valid(expected)) changed.run(); }
+            catch (Throwable failure) { use.close(); throw failure; }
+            return use;
         }
-        synchronized void add(int index, Occurrence next) {
-            if (sources == null) next.retire(); else sources.add(index, next);
+        Retry retry(long expected, Runnable changed) {
+            AutoCloseable waiter = retain(expected, changed);
+            return new Retry(waiter);
         }
-        synchronized Occurrence remove(int index) { return sources == null ? null : sources.remove(index); }
-        synchronized List<Occurrence> clearOccurrences() {
-            if (sources == null) return List.of();
-            var removed = List.copyOf(sources); sources.clear(); return removed;
+        void replace(int index, Occurrence next) {
+            Occurrence old;
+            synchronized (this) {
+                if (sources == null) { old = next; }
+                else { old = sources.set(index, next); revision = Math.incrementExact(revision); }
+            }
+            if (old == next) { next.retire(); return; }
+            notifyAndRetire(List.of(old), "parsed block-entity list replacement failed");
+        }
+        void add(int index, Occurrence next) {
+            boolean closed;
+            synchronized (this) {
+                closed = sources == null;
+                if (!closed) { sources.add(index, next); revision = Math.incrementExact(revision); }
+            }
+            if (closed) { next.retire(); return; }
+            notifyAndRetire(List.of(), "parsed block-entity list insertion notification failed");
+        }
+        void remove(int index) {
+            Occurrence old;
+            synchronized (this) {
+                if (sources == null) return;
+                old = sources.remove(index); revision = Math.incrementExact(revision);
+            }
+            notifyAndRetire(List.of(old), "parsed block-entity list removal failed");
+        }
+        void clearOccurrences() {
+            List<Occurrence> removed;
+            synchronized (this) {
+                if (sources == null || sources.isEmpty()) return;
+                removed = List.copyOf(sources); sources.clear(); revision = Math.incrementExact(revision);
+            }
+            notifyAndRetire(removed, "parsed block-entity list clear failed");
+        }
+        private void notifyAndRetire(List<Occurrence> retiring, String message) {
+            Throwable failure = notifyListeners();
+            for (Occurrence occurrence : retiring) try { occurrence.retire(); }
+            catch (Throwable problem) {
+                if (failure == null) failure = problem;
+                else if (failure != problem) failure.addSuppressed(problem);
+            }
+            rethrow(failure, message);
+        }
+        private Throwable notifyListeners() {
+            Throwable failure = null;
+            for (Runnable listener : listeners) try { listener.run(); }
+            catch (Throwable problem) {
+                if (failure == null) failure = problem;
+                else if (failure != problem) failure.addSuppressed(problem);
+            }
+            return failure;
         }
         @Override public void close() {
             List<Occurrence> retiring;
-            synchronized (this) { if (sources == null) return; retiring = List.copyOf(sources); sources = null; }
-            FullBlockEntityTagInputs.close(retiring, null);
+            synchronized (this) {
+                if (sources == null) return;
+                retiring = List.copyOf(sources); sources = null; revision = Math.incrementExact(revision);
+            }
+            try { notifyAndRetire(retiring, "parsed block-entity tag acknowledgement failed"); }
+            finally { listeners.clear(); }
         }
     }
     private static final class ReloadList extends AbstractList<CompoundTag> {
@@ -176,7 +254,7 @@ public final class FullBlockEntityTagInputs {
             Occurrence next = new Occurrence(source(value)); CompoundTag previous;
             try { previous = delegate.set(index, value); }
             catch (RuntimeException | Error failure) { next.retire(); throw failure; }
-            Occurrence old = reload.replace(index, next); if (old != null) old.retire(); return previous;
+            reload.replace(index, next); return previous;
         }
         @Override public void add(int index, CompoundTag value) {
             Occurrence next = new Occurrence(source(value));
@@ -185,11 +263,10 @@ public final class FullBlockEntityTagInputs {
             reload.add(index, next);
         }
         @Override public CompoundTag remove(int index) {
-            CompoundTag removed = delegate.remove(index); Occurrence old = reload.remove(index);
-            if (old != null) old.retire(); return removed;
+            CompoundTag removed = delegate.remove(index); reload.remove(index); return removed;
         }
         @Override public void clear() {
-            delegate.clear(); FullBlockEntityTagInputs.close(reload.clearOccurrences(), null);
+            delegate.clear(); reload.clearOccurrences();
         }
     }
 
@@ -213,17 +290,18 @@ public final class FullBlockEntityTagInputs {
             if (last) custody.discardSnapshot();
         }
         Capture observe(Occurrence occurrence, HolderLookup.Provider registries, Runnable changed,
-                        LongPredicate reserve, java.util.function.BooleanSupplier selected) {
+                        LongPredicate reserve, java.util.function.BooleanSupplier selected,
+                        Reload reload, long reloadRevision) {
             synchronized (this) { if (owners == 0) return null; }
             var attempt = custody.captureIfAvailable(List.of(tag), this::estimate, reserve, selected);
-            if (!attempt.acquired()) throw occurrence.retry(changed);
+            if (!attempt.acquired()) throw occurrence.retry(changed, reload, reloadRevision);
             if (!attempt.selected()) return null;
             if (!attempt.capacity()) throw new Capacity();
             var snapshot = attempt.snapshot();
             if (snapshot.unmet() != null || snapshot.entities().isEmpty())
                 throw new ChunkProtocolException("pending block-entity dependency fact unavailable: " + snapshot.unmet());
             // Decode is deliberately deferred to the context plan; observation only snapshots syntax.
-            return new Capture(this, occurrence, snapshot);
+            return new Capture(this, occurrence, reload, reloadRevision, snapshot);
         }
         private long estimate() {
             long[] budget = {0, 0};
@@ -260,9 +338,9 @@ public final class FullBlockEntityTagInputs {
         private boolean active = true;
         Occurrence(Source source) { this.source = source; source.acquire(); }
         Capture observe(HolderLookup.Provider registries, Runnable changed, LongPredicate reserve,
-                        java.util.function.BooleanSupplier selected) {
+                        java.util.function.BooleanSupplier selected, Reload reload, long reloadRevision) {
             synchronized (this) { if (!active) return null; }
-            return source.observe(this, registries, changed, reserve, selected);
+            return source.observe(this, registries, changed, reserve, selected, reload, reloadRevision);
         }
         synchronized boolean valid() { return active; }
         AutoCloseable retain(Runnable changed) {
@@ -271,16 +349,23 @@ public final class FullBlockEntityTagInputs {
             catch (Throwable failure) { use.close(); throw failure; }
             return use;
         }
-        Retry retry(Runnable changed) {
-            var sourceUse = new Use(source, changed); source.listeners.add(changed);
-            var occurrenceUse = new OccurrenceUse(this, changed); listeners.add(changed);
-            AutoCloseable waiter = () -> FullBlockEntityTagInputs.close(List.of(sourceUse, occurrenceUse), null);
-            try { if (source.custody.available() || !valid()) changed.run(); }
+        Retry retry(Runnable changed, Reload reload, long reloadRevision) {
+            var acquired = new ArrayList<AutoCloseable>(3);
+            try {
+                var sourceUse = new Use(source, changed); source.listeners.add(changed); acquired.add(sourceUse);
+                if (reload == null) {
+                    var occurrenceUse = new OccurrenceUse(this, changed); listeners.add(changed); acquired.add(occurrenceUse);
+                } else acquired.add(reload.retain(reloadRevision, changed));
+                List<AutoCloseable> uses = List.copyOf(acquired);
+                AutoCloseable waiter = () -> FullBlockEntityTagInputs.close(uses, null);
+                if (source.custody.available() || !valid()) changed.run();
+                return new Retry(waiter);
+            }
             catch (Throwable failure) {
-                try { waiter.close(); } catch (Exception close) { if (close != failure) failure.addSuppressed(close); }
+                for (AutoCloseable use : acquired) try { use.close(); }
+                catch (Throwable close) { if (close != failure) failure.addSuppressed(close); }
                 throw failure;
             }
-            return new Retry(waiter);
         }
         void retire() {
             synchronized (this) { if (!active) return; active = false; }
@@ -314,6 +399,14 @@ public final class FullBlockEntityTagInputs {
         @Override public synchronized void close() {
             if (occurrence == null) return;
             occurrence.listeners.remove(changed); occurrence = null; changed = null;
+        }
+    }
+    private static final class ReloadUse implements AutoCloseable {
+        private Reload reload; private Runnable changed;
+        ReloadUse(Reload reload, Runnable changed) { this.reload = reload; this.changed = changed; }
+        @Override public synchronized void close() {
+            if (reload == null) return;
+            reload.listeners.remove(changed); reload = null; changed = null;
         }
     }
 

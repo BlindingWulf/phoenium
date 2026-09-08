@@ -170,7 +170,6 @@ public final class FullSavedContextInputs {
                                     world.registryAccess(), changed, this::reserve);
                     } catch (FullBlockEntityTagInputs.Retry retry) {
                         AutoCloseable prior = blockWaiters.put(read.block(), retry.waiter);
-                        consumers.add(retry.waiter);
                         if (prior != null) close(prior, "replaced pending block dependency waiter");
                         refinementWaiting = true; changedPlan = true;
                         continue;
@@ -246,8 +245,13 @@ public final class FullSavedContextInputs {
             if (closed) return;
             if (claim != null) throw new ChunkProtocolException("saved contexts released before original reader exit");
             closed = true; texts.clear(); storage.clear(); pendingBlocks.clear(); refinedBlocks.clear();
-            blockTags.clear(); blockWaiters.clear();
+            blockTags.clear(); var waiters = List.copyOf(blockWaiters.values()); blockWaiters.clear();
             Throwable failure = null;
+            for (AutoCloseable waiter : waiters) try { waiter.close(); }
+            catch (Throwable problem) {
+                if (failure == null) failure = problem;
+                else if (failure != problem) failure.addSuppressed(problem);
+            }
             for (AutoCloseable consumer : consumers) try { consumer.close(); }
             catch (Throwable problem) {
                 if (failure == null) failure = problem;

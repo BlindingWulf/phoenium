@@ -314,6 +314,54 @@ class FullSavedContextInputTest {
         assertCleanup(f);
     }
 
+    @Test void repeatedBusyOccurrenceReplacementRetainsOnlyItsCurrentPlanWaiter() throws Exception {
+        var f = new FullRegistrationFixture(true); var position = new BlockPos(8, 8, 8);
+        f.input(ChunkPos.ZERO).getSection(0).setBlockState(8, 8, 8, Blocks.BEACON.defaultBlockState());
+        CompoundTag currentTag = pendingBeacon(position, net.minecraft.nbt.StringTag.valueOf("initial"));
+        f.input(ChunkPos.ZERO).setBlockEntityNbt(currentTag);
+        FullSavedInput currentSource = FullSavedCollections.source(currentTag); currentSource.beforeWrite();
+        boolean producerActive = true;
+        try {
+            saved(f, ChunkPos.ZERO, false, text(blockText(position)));
+            f.start(ChunkPos.ZERO, ChunkStatus.FULL); f.drain(); var graph = f.runtime.graph(f.holder(ChunkPos.ZERO));
+            @SuppressWarnings("unchecked") var plans = (Map<Object, Object>) field(
+                    f.runtime.inputs, FullInitializedInputs.class, "plans");
+            Object inputPlan = plans.get(graph); var contexts = (FullSavedContextInputs.Plan) field(
+                    inputPlan, inputPlan.getClass(), "contexts");
+            @SuppressWarnings("unchecked") var consumers = (List<AutoCloseable>) field(
+                    contexts, FullSavedContextInputs.Plan.class, "consumers");
+            @SuppressWarnings("unchecked") var waiters = (Map<BlockPos, AutoCloseable>) field(
+                    contexts, FullSavedContextInputs.Plan.class, "blockWaiters");
+            int retainedConsumers = consumers.size(); assertEquals(1, waiters.size());
+            LevelChunk actual = graph.inputTargets().stream().map(FullInitializedInputs.Target::actual)
+                    .filter(java.util.Objects::nonNull).findFirst().orElseThrow();
+            for (int replacement = 0; replacement < 4; replacement++) {
+                CompoundTag nextTag = pendingBeacon(position,
+                        net.minecraft.nbt.StringTag.valueOf("replacement " + replacement));
+                actual.setBlockEntityNbt(nextTag); FullSavedInput nextSource = FullSavedCollections.source(nextTag);
+                nextSource.beforeWrite();
+                Runnable notify = currentSource.written(List.of(currentTag)); currentSource.endWrite();
+                if (notify != null) notify.run();
+                currentTag = nextTag; currentSource = nextSource; f.drain();
+                assertEquals(1, waiters.size(), "only the currently observed occurrence retains a retry waiter");
+                assertEquals(retainedConsumers, consumers.size(), "closed retry waiters do not accumulate as consumers");
+            }
+            Runnable notify = currentSource.written(List.of(currentTag)); currentSource.endWrite(); producerActive = false;
+            if (notify != null) notify.run();
+            f.drain(); assertEquals(FullInitializedInputs.State.SATISFIED,
+                    graph.inputEvaluation().state(), graph.inputEvaluation().obligation());
+            assertTrue(waiters.isEmpty()); assertEquals(retainedConsumers + 1, consumers.size(),
+                    "the completed retry is replaced by the one live captured dependency");
+        } finally {
+            if (producerActive) {
+                Runnable notify = currentSource.written(List.of(currentTag)); currentSource.endWrite();
+                if (notify != null) notify.run();
+            }
+            f.stop(); FullFinishingServices.stopped(f.world.level.getServer());
+        }
+        assertCleanup(f);
+    }
+
     @Test void pendingTagCapacityIsReservedBeforeDetachedCaptureAndOnlyOneExpandedPlanCopiesAtATime() throws Exception {
         var f = new FullRegistrationFixture(true, new FullInitializedInputs.Limits(4, 8, 32, 32, 1024 * 1024));
         var x = ChunkPos.ZERO; var y = new ChunkPos(1, 0); var xBlock = new BlockPos(8, 8, 8); var yBlock = new BlockPos(24, 8, 8);
@@ -396,6 +444,33 @@ class FullSavedContextInputTest {
             assertFalse(capture.valid(), "parsed-list custody retires despite the original post-load failure");
         } finally {
             use.close(); f.stop(); FullFinishingServices.stopped(f.world.level.getServer());
+        }
+        assertCleanup(f);
+    }
+
+    @Test void parsedBlockListObservationKeepsDuplicateLastOrderAndVersionsRealListMutations() throws Exception {
+        var f = new FullRegistrationFixture(true); var position = new BlockPos(8, 8, 8);
+        var first = pendingBeacon(position, net.minecraft.nbt.StringTag.valueOf("first"));
+        var second = pendingBeacon(position, net.minecraft.nbt.StringTag.valueOf("second"));
+        var roots = FullBlockEntityTagInputs.reloadRoots(new java.util.ArrayList<>(List.of(first, second)));
+        var reload = FullBlockEntityTagInputs.reload(roots); var changed = new AtomicInteger();
+        AutoCloseable use = null;
+        try {
+            var capture = reload.observe(ChunkPos.ZERO, position, f.world.level.registryAccess(), () -> { }, ignored -> true);
+            assertEquals("second", FullSavedTextInputs.decode(capture.customName(), f.world.level.registryAccess()).orElseThrow().getString());
+            use = capture.retain(changed::incrementAndGet);
+            var third = pendingBeacon(position, net.minecraft.nbt.StringTag.valueOf("third")); roots.add(third);
+            assertFalse(capture.valid()); assertEquals(1, changed.get()); use.close(); use = null;
+
+            capture = reload.observe(ChunkPos.ZERO, position, f.world.level.registryAccess(), () -> { }, ignored -> true);
+            assertEquals("third", FullSavedTextInputs.decode(capture.customName(), f.world.level.registryAccess()).orElseThrow().getString());
+            use = capture.retain(changed::incrementAndGet); assertSame(third, roots.remove(2));
+            assertFalse(capture.valid()); assertEquals(2, changed.get()); use.close(); use = null;
+
+            var restored = reload.observe(ChunkPos.ZERO, position, f.world.level.registryAccess(), () -> { }, ignored -> true);
+            assertEquals("second", FullSavedTextInputs.decode(restored.customName(), f.world.level.registryAccess()).orElseThrow().getString());
+        } finally {
+            if (use != null) use.close(); reload.close(); f.stop(); FullFinishingServices.stopped(f.world.level.getServer());
         }
         assertCleanup(f);
     }
