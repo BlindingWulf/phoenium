@@ -46,6 +46,13 @@ single-worker protocol is conservative and is not permission to enable paralleli
 | Spawning, weather and dragon fight | The original built-in custom-spawner order and countdowns remain world-service state in `SERVER_TICK`; a branch that can reach terrain enters a finite player-relative regional closure. Natural spawning uses current immutable player positions in original player order. Original weather conditions select the necessary callback closure and are reused by that callback. The actual dragon-fight prelude has its own finite arena/player closure. These classifications do not authorize foreign raw gameplay reads or unknown mod spawners. |
 | World-service binding | A short registry section reserves or publishes the binding and checks its lifetime. Original tick-container, event, tracker and ticker bootstrap observations execute outside that monitor. A duplicate in-progress binding fails explicitly; ending the lifetime prevents publication and any later fallback to bootstrap. |
 
+The native village-siege service retains its original spawn coordinates across
+ticks. Its callback therefore encloses that stored origin even after current
+players move or leave. The pinned routine also reads difficulty at a newly created
+zombie's initial origin before placement; that original read is included in the
+finite cut. Neither the player cohort nor a timer-only observation replaces the
+stored source, and admission revalidates the same siege state before the callback.
+
 ## Saves, migration, and terminal acknowledgement
 
 Save-all preflights the original selected holders' save readiness before retaining
@@ -69,13 +76,6 @@ cut. A replacement holder cannot inherit the older source's dirty restoration.
 Admission of another snapshot waits at the owner-free event loop at 128 outstanding
 records. Completion and release remove protocol state; no completed-save history is
 kept. This bound is not a claim about total heap use or platform capacity.
-
-The native village-siege service retains its original spawn coordinates across
-ticks. Its callback therefore encloses that stored origin even after current
-players move or leave. The pinned routine also reads difficulty at a newly created
-zombie's initial origin before placement; that original read is included in the
-finite cut. Neither the player cohort nor a timer-only observation replaces the
-stored source, and admission revalidates the same siege state before the callback.
 
 Normal flush requires zero pending writes/acknowledgements and preserves original
 storage errors. Disk inspection and restart are required evidence of saved state.
