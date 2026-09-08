@@ -286,7 +286,8 @@ class CoreAcceptanceTest {
         var boundedMetadata = java.util.Set.of(
                 "PoiLoadBookkeeping.java", "FullBlockEntityTagInputs.java", "FullCommandStorageInputs.java",
                 "RegionalScheduledTickService.java", "RegionalBlockEventService.java", "RegionalWorldServices.java",
-                "RegionalSaveCoordinator.java", "RegionDirectory.java", "FullServerShutdown.java");
+                "RegionalSaveCoordinator.java", "RegionalTrackingService.java", "RegionDirectory.java",
+                "FullServerShutdown.java");
         String otherCore = Files.walk(Path.of("src/main/java/dev/phoenium"))
             .filter(path -> path.toString().endsWith(".java"))
             .filter(path -> !boundedMetadata.contains(path.getFileName().toString()))
