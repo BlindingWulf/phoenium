@@ -386,12 +386,38 @@ public final class Stage4AcceptanceProbe implements DedicatedServerModInitialize
             + " tickingFuture=" + futureState(holder.getTickingChunkFuture())
             + " entityTickingFuture=" + futureState(holder.getEntityTickingChunkFuture());
         String ticketState = "tickets=" + ticketSummary(map, key);
+        String distanceSources = "playersPerChunk=" + playersPerChunk(distance, key)
+            + " loadingTracker=" + trackerLevel(distance, "loadingChunkTracker", key)
+            + " simulationTracker=" + trackerLevel(distance, "simulationChunkTracker", key)
+            + " postTeleport=" + ticketState;
         System.out.println("STAGE4_TRACE_DEMAND_DIAGNOSTIC chunk=" + chunkX + "," + chunkZ + " " + playerState
             + " " + connectionState + " tracked=" + (player != null && map.isChunkTracked(player, chunkX, chunkZ))
             + " chunkLevel=" + distance.getChunkLevel(key, true)
             + " blockRange=" + distance.inBlockTickingRange(key)
             + " entityRange=" + distance.inEntityTickingRange(key)
-            + " nearby=" + distance.hasPlayersNearby(key) + " " + ticketState + " " + holderState);
+            + " nearby=" + distance.hasPlayersNearby(key) + " " + distanceSources + " " + holderState);
+    }
+
+    private static String playersPerChunk(Object distance, long key) {
+        try {
+            Object value = ((it.unimi.dsi.fastutil.longs.Long2ObjectMap<?>)
+                fieldValue(distance, "playersPerChunk")).get(key);
+            return value == null ? "[]" : value.toString();
+        } catch (Throwable failure) {
+            return "<unavailable:" + failure.getClass().getSimpleName() + ">";
+        }
+    }
+
+    private static String trackerLevel(Object distance, String fieldName, long key) {
+        try {
+            Object tracker = fieldValue(distance, fieldName);
+            Object chunks = fieldValue(tracker, "chunks");
+            if (chunks instanceof it.unimi.dsi.fastutil.longs.Long2ByteMap levels)
+                return levels.containsKey(key) ? Byte.toString(levels.get(key)) : "absent";
+            return "<unexpected:" + chunks.getClass().getSimpleName() + ">";
+        } catch (Throwable failure) {
+            return "<unavailable:" + failure.getClass().getSimpleName() + ">";
+        }
     }
 
     private static String ticketSummary(net.minecraft.server.level.ChunkMap map, long key) {

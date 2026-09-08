@@ -119,6 +119,7 @@ public abstract class ClientConnectionTraceMixin {
         String name = packet.getClass().getSimpleName();
         return name.equals("ClientboundBlockEventPacket")
             || name.equals("ClientboundLevelChunkWithLightPacket")
+            || name.equals("ServerboundAcceptTeleportationPacket")
             || name.equals("ClientboundAddEntityPacket")
             || name.equals("ClientboundRemoveEntitiesPacket")
             || name.startsWith("ClientboundMoveEntityPacket")
