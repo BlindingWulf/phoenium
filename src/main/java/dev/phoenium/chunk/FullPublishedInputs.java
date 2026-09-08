@@ -92,8 +92,12 @@ public final class FullPublishedInputs {
     void admittedPublishing(Entry entry, ChunkAccess value, ChunkStageClaim claim) {
         claim.require(new ChunkCustodyModel.StageId(entry.work, ChunkStageKind.STATUS_PUBLISH, "FULL", 0));
         custody.gate().lock(); try {
-            if (entry.owner != this || entry.settled || entry.retired || entry.invalid)
+            if (entry.owner != this || entry.settled || entry.retired)
                 throw new ChunkProtocolException("obsolete admitted publication");
+            // Ticket demotion can fail and clear a pending FULL subscriber while this
+            // exact generation work still owns its original adjacent completion. That
+            // invalidates dependency evidence, not the claimed producer's execution.
+            // Keep invalid set: proposing/matches must never resurrect that evidence.
             entry.attached = true; entry.value = value;
         } finally { custody.gate().unlock(); }
     }

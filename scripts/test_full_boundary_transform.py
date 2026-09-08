@@ -150,8 +150,9 @@ with log.open("w") as output:
             finishing_probe = [line for line in text.splitlines() if "PHOENIUM_FULL_FINISHING_PROBE PASS" in line]
             assert len(finishing_probe) == 1, "installed FULL finishing fixture did not pass exactly once"
             required_finishing_fields = (
-                "cases=65", "queryCases=14", "serviceCases=7", "d1Cases=7", "contextCases=35", "publicationCases=2",
+                "cases=67", "queryCases=14", "serviceCases=7", "d1Cases=7", "contextCases=35", "publicationCases=4",
                 "originalFinishing=true", "separatePublication=true",
+                "withdrawnSubscriberOriginalCompletion=true", "invalidEvidenceRejected=true",
                 "cyclicPreparedPair=true", "bothPairOrders=true",
                 "proto=true", "inMemoryImposter=true", "diskReload=false",
                 "originalDifficulty=true", "originalCollision=true",

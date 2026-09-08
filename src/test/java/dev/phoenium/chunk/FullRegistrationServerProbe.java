@@ -170,12 +170,14 @@ public final class FullRegistrationServerProbe implements DedicatedServerModInit
             var completion = new FullAuthoritativeFinishingTest();
             completion.originalFinishingAndSeparatePublicationCompleteExactlyOnce(false);
             completion.originalFinishingAndSeparatePublicationCompleteExactlyOnce(true);
+            completion.withdrawnFullSubscriberDoesNotCancelTheOwnedOriginalPublication(false);
+            completion.withdrawnFullSubscriberDoesNotCancelTheOwnedOriginalPublication(true);
             structureProbe();
             System.out.println("PHOENIUM_FULL_ENTITY_PROPERTY_PROBE PASS cases=" + entityPropertyCases
                     + " entityPropertyExecution=true originalTypeAndNbt=true constructedPredicateSnapshot=true "
                     + "absentTargetShortCircuit=true javaagent=false");
-            System.out.println("PHOENIUM_FULL_FINISHING_PROBE PASS cases=65 queryCases=14 serviceCases=7 d1Cases=7 contextCases=35 publicationCases=2 "
-                    + "originalFinishing=true separatePublication=true cyclicPreparedPair=true bothPairOrders=true "
+            System.out.println("PHOENIUM_FULL_FINISHING_PROBE PASS cases=67 queryCases=14 serviceCases=7 d1Cases=7 contextCases=35 publicationCases=4 "
+                    + "originalFinishing=true separatePublication=true withdrawnSubscriberOriginalCompletion=true invalidEvidenceRejected=true cyclicPreparedPair=true bothPairOrders=true "
                     + "proto=true inMemoryImposter=true diskReload=false originalDifficulty=true originalCollision=true "
                     + "originalShulkerImmediate=true originalLaterRegistration=true originalMovingPiston=true "
                     + "savedVillagerOriginalBiomeCacheAlias=true originalCachedAbsentBiomeFallback=true originalReadyAbsent=true caughtQueryBarrier=true registeredBiomeOriginalRead=true predicateRegistryReplacement=true "

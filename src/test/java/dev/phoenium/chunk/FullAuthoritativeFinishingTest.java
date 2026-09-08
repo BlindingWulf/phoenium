@@ -83,6 +83,41 @@ class FullAuthoritativeFinishingTest {
         FullInitializedInputBindingTest.assertCleanup(fixture);
     }
 
+    @ParameterizedTest @ValueSource(booleans = {false, true})
+    void withdrawnFullSubscriberDoesNotCancelTheOwnedOriginalPublication(boolean reload) throws Exception {
+        var f = new FullRegistrationFixture(true);
+        try {
+            FullInitializedInputBindingTest.saved(f, ChunkPos.ZERO, reload, FullInitializedInputBindingTest.tag(8, 8, 1));
+            f.start(ChunkPos.ZERO, ChunkStatus.FULL); f.drain();
+            var holder = f.holder(ChunkPos.ZERO); var graph = f.runtime.graph(holder);
+            var actual = graph.prepared().orElseThrow().actual();
+            var subscriber = holder.scheduleChunkGenerationTask(ChunkStatus.FULL, f.fixtureMap);
+            assertFalse(subscriber.isDone());
+            holder.eligibility(34, f.fixtureMap);
+            assertSame(net.minecraft.server.level.GenerationChunkHolder.UNLOADED_CHUNK, subscriber.join());
+            assertNull(((FullHolderEvidence) (Object) holder).phoenium$futures().get(ChunkStatus.FULL.getIndex()));
+            assertNull(f.runtime.published.observe(holder));
+            var entry = ((FullHolderEvidence) (Object) holder).phoenium$publication();
+            assertTrue(entry.invalid); assertFalse(entry.retired); assertFalse(entry.settled);
+
+            context(f); f.runtime.inputs.changed(); f.drain();
+            assertFalse(f.barrier.tripped(), () -> graph.publication.outcome().getNow(null).toString());
+            assertInstanceOf(ChunkStageOutcome.Applied.class, graph.finishing.outcome().join());
+            assertInstanceOf(ChunkStageOutcome.Applied.class, graph.publication.outcome().join());
+            assertSame(actual, graph.conversion().join());
+            assertSame(actual, graph.adjacent().join().orElse(null));
+            assertSame(actual, holder.getChunkIfPresentUnchecked(ChunkStatus.FULL));
+            assertSame(net.minecraft.server.level.GenerationChunkHolder.UNLOADED_CHUNK, subscriber.join(),
+                    "the original withdrawn subscriber cannot be rewritten by later publication");
+            assertNull(f.runtime.published.observe(holder), "withdrawn evidence grants no dependency authority");
+            assertEquals(0L, f.runtime.published.measurements().get("publications"));
+            assertEquals(1L, f.runtime.measurements().get("finishingCalls"));
+            assertEquals(1L, f.runtime.measurements().get("publicationCalls"));
+            f.runGenerationTasks(); f.drain();
+        } finally { f.stop(); FullFinishingServices.stopped(f.world.level.getServer()); }
+        FullInitializedInputBindingTest.assertCleanup(f);
+    }
+
     @Test void failedOriginalPostLoadKeepsItsPrefixAndIndependentPreparedUseWithoutReplay() throws Exception {
         var f = new FullRegistrationFixture(true);
         var delayed = net.minecraft.util.thread.BlockableEventLoop.class.getDeclaredField("delayedCrash"); delayed.setAccessible(true);
