@@ -150,6 +150,12 @@ public final class Stage4AcceptanceProbe implements DedicatedServerModInitialize
                                 throw new IllegalStateException("native tick step rejected while not frozen");
                             return 1;
                         }))))
+                .then(Commands.literal("step-restored").then(Commands.argument("maximumTicks",
+                    IntegerArgumentType.integer(1, 2400)).executes(context -> {
+                        stepRestored(context.getSource().getLevel(),
+                            IntegerArgumentType.getInteger(context, "maximumTicks"));
+                        return 1;
+                    })))
                 .then(Commands.literal("require-block-recipient").executes(context -> {
                     Stage4Trace.requestBlockRecipient();
                     Stage4Trace.event("block.recipient.required");
@@ -211,6 +217,13 @@ public final class Stage4AcceptanceProbe implements DedicatedServerModInitialize
                         if (Boolean.getBoolean("phoenium.stage4.restartFreeze")) {
                             context.getSource().getServer().tickRateManager().setFrozen(true);
                         }
+                        // Force the real saved target chunk through the normal ServerChunkCache
+                        // load path before arming the observer.  The LevelChunkTicks mixin records
+                        // the native unpack currentTick and restored trigger; it does not inject
+                        // or retime a pending obligation.
+                        context.getSource().getLevel().getChunkSource().getChunk(
+                            REGION_B_FUTURE.getX() >> 4, REGION_B_FUTURE.getZ() >> 4,
+                            ChunkStatus.FULL, false);
                         Stage4Trace.beginReload(context.getSource().getLevel());
                         if (context.getSource().getServer().tickRateManager().isFrozen())
                             Stage4Trace.reloadClockFrozen(context.getSource().getLevel());
@@ -242,6 +255,56 @@ public final class Stage4AcceptanceProbe implements DedicatedServerModInitialize
                     System.out.println("STAGE4_TRACE_RELOAD_EFFECT reached=" + reached + " gameTime=" + level.getGameTime());
                     return 1;
                 }))));
+    }
+
+    /**
+     * Advances the frozen native clock from the restored unpacked deadline.  The deadline is
+     * read from the actual ScheduledTick produced by LevelChunkTicks.unpack, so save latency or
+     * restart timing cannot turn a fixed wall-clock wait into a false callback assertion.
+     */
+    private static void stepRestored(ServerLevel level, int maximumTicks) {
+        if (!level.getServer().tickRateManager().isFrozen())
+            throw new IllegalStateException("restored deadline requires the native clock to be frozen");
+        long current = level.getGameTime();
+        long trigger = Stage4Trace.restoredUnpackTrigger();
+        int matches = Stage4Trace.restoredUnpackMatches();
+        if (trigger < 0 || matches != 1)
+            throw new IllegalStateException("restored target unpack was not exact: current="
+                + Stage4Trace.restoredUnpackCurrent() + " trigger=" + trigger + " matches=" + matches);
+        var initial = level.getBlockState(REGION_B_FUTURE);
+        if (!initial.is(Blocks.STONE_BUTTON) || !initial.getValue(ButtonBlock.POWERED))
+            throw new IllegalStateException("restored button was not powered before deadline: " + initial);
+        long before = trigger - current - 1;
+        if (before < 0 || before + 2 > maximumTicks)
+            throw new IllegalStateException("restored deadline outside bounded step: now=" + current
+                + " trigger=" + trigger + " before=" + before + " maximum=" + maximumTicks);
+        if (before > 0) stepNative(level, "restored-before-deadline", before);
+        var beforeState = level.getBlockState(REGION_B_FUTURE);
+        if (!beforeState.is(Blocks.STONE_BUTTON) || !beforeState.getValue(ButtonBlock.POWERED)
+            || Stage4Trace.restoredCallbackObserved())
+            throw new IllegalStateException("restored callback reached before its native deadline: gameTime="
+                + level.getGameTime() + " state=" + beforeState);
+        stepNative(level, "restored-deadline", 1);
+        var deadlineState = level.getBlockState(REGION_B_FUTURE);
+        if (!Stage4Trace.restoredCallbackObserved() || !deadlineState.is(Blocks.STONE_BUTTON)
+            || deadlineState.getValue(ButtonBlock.POWERED))
+            throw new IllegalStateException("restored callback did not reach exactly at deadline: gameTime="
+                + level.getGameTime() + " state=" + deadlineState);
+        stepNative(level, "restored-after-deadline", 1);
+        if (Stage4Trace.snapshot().stream().filter(item -> item.startsWith("effect.tick.reached ")).count() != 1)
+            throw new IllegalStateException("restored callback was not exactly once after deadline");
+        Stage4Trace.event("reload.effect.deadline", "currentTick=" + current + " trigger=" + trigger
+            + " delay=" + (trigger - current) + " gameTime=" + level.getGameTime() + " callbackCount=1");
+        System.out.println("STAGE4_TRACE_RELOAD_STEP_EFFECT_REACHED currentTick=" + current
+            + " trigger=" + trigger + " gameTime=" + level.getGameTime() + " callbackCount=1");
+    }
+
+    private static void stepNative(ServerLevel level, String label, long ticks) {
+        if (ticks < 1 || ticks > 2400) throw new IllegalArgumentException("invalid native step " + ticks);
+        if (ticks > Integer.MAX_VALUE) throw new IllegalArgumentException("native step overflow");
+        Stage4Trace.clockStep(level, label, (int) ticks);
+        if (!level.getServer().tickRateManager().stepGameIfPaused((int) ticks))
+            throw new IllegalStateException("native restored step rejected while frozen: " + label);
     }
 
     private static void arm(ServerLevel level) {

@@ -541,23 +541,27 @@ def run_process(server, trace_path=None, drive=False, explicit_topology=False, t
                         runner_error = "reload did not report frozen native clock"
                         dump_path = capture_thread_dump(server, process, "reload-clock-freeze")
                     else:
-                        send("stage4trace await effect 450")
+                        # The probe derives the restored ScheduledTick trigger from the native
+                        # LevelChunkTicks.unpack receipt and performs deadline-1, deadline, and
+                        # one post-deadline native steps while the server remains frozen.
+                        send("stage4trace step-restored 450")
                         reload_barrier = read_until(process, read_line, log, lines,
-                                                    "STAGE4_TRACE_BARRIER label=effect", 180)
+                                                    "STAGE4_TRACE_RELOAD_STEP_EFFECT_REACHED", 180)
                         if not reload_barrier and process.poll() is None:
-                            dump_path = capture_thread_dump(server, process, "reload-barrier")
+                            dump_path = capture_thread_dump(server, process, "reload-deadline")
                         else:
                             dump_path = None
-                        send("stage4trace verify")
-                        effect_observed = read_until(process, read_line, log, lines,
-                                                     "STAGE4_TRACE_RELOAD_EFFECT", 30)
-                        effect_lines = [line for line in lines if "STAGE4_TRACE_RELOAD_EFFECT" in line]
-                        if effect_lines:
-                            reload_effect = "reached=true" in effect_lines[-1]
-                        if not reload_started:
-                            reload_effect = False
-                        if not effect_observed and process.poll() is None:
-                            dump_path = capture_thread_dump(server, process, "reload-effect")
+                        if reload_barrier:
+                            send("stage4trace verify")
+                            effect_observed = read_until(process, read_line, log, lines,
+                                                         "STAGE4_TRACE_RELOAD_EFFECT", 30)
+                            effect_lines = [line for line in lines if "STAGE4_TRACE_RELOAD_EFFECT" in line]
+                            if effect_lines:
+                                reload_effect = "reached=true" in effect_lines[-1]
+                            if not reload_started:
+                                reload_effect = False
+                            if not effect_observed and process.poll() is None:
+                                dump_path = capture_thread_dump(server, process, "reload-effect")
                     send("stop")
             except OSError:
                 runner_error = "restart command pipe closed"
@@ -584,6 +588,7 @@ def run_process(server, trace_path=None, drive=False, explicit_topology=False, t
             "reloadBarrierObserved": reload_barrier,
             "reloadStartupFreezeObserved": startup_frozen,
             "reloadClockFreezeObserved": reload_clock_frozen if not drive else False,
+            "reloadUnpackObserved": any("STAGE4_TRACE_RELOAD_UNPACK" in line for line in lines),
             "reloadEffectReached": reload_effect}
 
 
@@ -686,12 +691,16 @@ def main():
                                     and pending.get("poweredState", False),
                  "restartClockGate": second.get("reloadStartupFreezeObserved", False) is True
                                      and second.get("reloadClockFreezeObserved", False) is True,
+                 "restoredDeadlineGate": second.get("reloadUnpackObserved", False) is True
+                                         and second.get("reloadBarrierObserved", False) is True
+                                         and second.get("reloadEffectReached", False) is True,
                  "reloadEffectGate": second.get("reloadEffectReached", False) is True,
                  "trace": str(trace)}
     (args.output / "acceptance-manifest.json").write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
     print(json.dumps(manifest, indent=2))
     return 0 if (first["exitCode"] == 0 and second["exitCode"] == 0
                  and manifest["pendingTickGate"] and manifest["restartClockGate"]
+                 and manifest["restoredDeadlineGate"]
                  and manifest["reloadEffectGate"]) else 1
 
 

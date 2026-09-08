@@ -44,6 +44,9 @@ public final class Stage4Trace {
     private static volatile boolean deferredEligibilityRequested;
     private static volatile boolean deferredIneligibleObserved;
     private static volatile boolean deferredEligibleObserved;
+    private static volatile long restoredUnpackCurrent = -1;
+    private static volatile long restoredUnpackTrigger = -1;
+    private static volatile int restoredUnpackMatches;
     private static final Set<Integer> changeSeen = new HashSet<>();
     private static final Map<String, BlockPos> BLOCK_PROBES = new LinkedHashMap<>();
     private static final Map<String, Integer> BLOCK_PROBE_A = new LinkedHashMap<>();
@@ -89,8 +92,40 @@ public final class Stage4Trace {
     public static void beginReload(ServerLevel level) {
         begin(level);
         reloadMode = true;
+        if (restoredUnpackMatches > 0)
+            event("tick.unpack.target", "currentTick=" + restoredUnpackCurrent
+                + " trigger=" + restoredUnpackTrigger + " delay="
+                + (restoredUnpackTrigger - restoredUnpackCurrent) + " matches=" + restoredUnpackMatches);
+        if (restoredUnpackMatches > 0)
+            System.out.println("STAGE4_TRACE_RELOAD_UNPACK currentTick=" + restoredUnpackCurrent
+                + " trigger=" + restoredUnpackTrigger + " delay="
+                + (restoredUnpackTrigger - restoredUnpackCurrent) + " matches=" + restoredUnpackMatches);
         event("trace.reload", "gameTime=" + level.getGameTime());
         System.out.println("STAGE4_TRACE_RELOAD gameTime=" + level.getGameTime());
+    }
+
+    /** Records the native LevelChunkTicks unpack edge, including the restored relative delay. */
+    public static void observeUnpack(net.minecraft.world.ticks.LevelChunkTicks<?> container,
+                                     long currentTick) {
+        List<? extends net.minecraft.world.ticks.ScheduledTick<?>> matches = container.getAll()
+            .filter(tick -> tick.pos().equals(Stage4AcceptanceProbe.REGION_B_FUTURE)
+                && tick.type() == net.minecraft.world.level.block.Blocks.STONE_BUTTON)
+            .toList();
+        if (matches.isEmpty()) return;
+        restoredUnpackCurrent = currentTick;
+        restoredUnpackTrigger = matches.get(0).triggerTick();
+        restoredUnpackMatches = matches.size();
+        if (active) event("tick.unpack.target", "currentTick=" + currentTick
+            + " trigger=" + restoredUnpackTrigger + " delay="
+            + (restoredUnpackTrigger - currentTick) + " matches=" + matches.size());
+    }
+
+    public static long restoredUnpackCurrent() { return restoredUnpackCurrent; }
+    public static long restoredUnpackTrigger() { return restoredUnpackTrigger; }
+    public static int restoredUnpackMatches() { return restoredUnpackMatches; }
+
+    public static boolean restoredCallbackObserved() {
+        return snapshot().stream().anyMatch(item -> item.startsWith("effect.tick.reached "));
     }
 
     public static void barrier(ServerLevel level, String label) {
