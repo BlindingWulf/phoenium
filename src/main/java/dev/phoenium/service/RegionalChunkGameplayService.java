@@ -8,6 +8,8 @@ import dev.phoenium.mixin.RegionalChunkMapAccess;
 import dev.phoenium.mixin.RegionalServerChunkCacheAccess;
 import dev.phoenium.mixin.RegionalSpawnStateAccess;
 import dev.phoenium.mixin.RegionalVisibleChunkAccess;
+import dev.phoenium.mixin.RegionalTimedCustomSpawnerAccess;
+import dev.phoenium.mixin.RegionalTraderSpawnerAccess;
 import dev.phoenium.ownership.ObjectOwnershipRegistry;
 import dev.phoenium.ownership.OwnershipContext;
 import dev.phoenium.topology.RegionDirectory;
@@ -146,12 +148,14 @@ public final class RegionalChunkGameplayService {
     /** The pinned custom spawner set chooses terrain only relative to the current level-player
      * cohort. Its widest path is wandering-trader meeting POI radius 48 followed by a radius-48
      * spawn search; seven chunk keys cover that path and the final 2x3x2 space probe. */
-    public void customSpawnerCallback(Runnable original) {
+    public void customSpawnerCallback(CustomSpawner spawner, boolean spawnEnemies, Runnable original) {
         requireCycle(); Objects.requireNonNull(original);
+        int radius = customSpawnerRadius(spawner, spawnEnemies);
+        if (radius < 0) { original.run(); return; }
         List<PlayerProjection> players = captureLevelPlayers(); cycle.levelPlayers = players;
         LinkedHashSet<RoutingKey> footprint = new LinkedHashSet<>();
         TopologyPlanner planner = new TopologyPlanner();
-        for (PlayerProjection player : players) footprint.addAll(planner.requiredClosure(Set.of(player.key), 7));
+        for (PlayerProjection player : players) footprint.addAll(planner.requiredClosure(Set.of(player.key), radius));
         RoutingKey source = players.isEmpty() ? new RoutingKey(world, 0, 0) : players.get(0).key;
         if (footprint.isEmpty()) footprint.add(source);
         dispatcher.ensureClosure(Set.copyOf(footprint));
@@ -161,6 +165,27 @@ public final class RegionalChunkGameplayService {
             original.run();
         });
         chunkCallbacks = Math.incrementExact(chunkCallbacks);
+    }
+    static int customSpawnerRadius(CustomSpawner spawner, boolean spawnEnemies) {
+        if (spawner instanceof net.minecraft.world.level.levelgen.PhantomSpawner)
+            return customSpawnerRadius(spawner.getClass(), ((RegionalTimedCustomSpawnerAccess) spawner).phoenium$nextTick(), spawnEnemies);
+        if (spawner instanceof net.minecraft.world.level.levelgen.PatrolSpawner)
+            return customSpawnerRadius(spawner.getClass(), ((RegionalTimedCustomSpawnerAccess) spawner).phoenium$nextTick(), spawnEnemies);
+        if (spawner instanceof net.minecraft.world.entity.npc.CatSpawner)
+            return customSpawnerRadius(spawner.getClass(), ((RegionalTimedCustomSpawnerAccess) spawner).phoenium$nextTick(), spawnEnemies);
+        if (spawner instanceof net.minecraft.world.entity.ai.village.VillageSiege)
+            return customSpawnerRadius(spawner.getClass(), 0, spawnEnemies);
+        if (spawner instanceof net.minecraft.world.entity.npc.wanderingtrader.WanderingTraderSpawner)
+            return customSpawnerRadius(spawner.getClass(), ((RegionalTraderSpawnerAccess) spawner).phoenium$tickDelay(), spawnEnemies);
+        return customSpawnerRadius(spawner.getClass(), 0, spawnEnemies);
+    }
+    static int customSpawnerRadius(Class<?> type, int counter, boolean spawnEnemies) {
+        if (type == net.minecraft.world.level.levelgen.PhantomSpawner.class) return spawnEnemies && counter <= 1 ? 1 : -1;
+        if (type == net.minecraft.world.level.levelgen.PatrolSpawner.class) return spawnEnemies && counter <= 1 ? 4 : -1;
+        if (type == net.minecraft.world.entity.npc.CatSpawner.class) return counter <= 1 ? 5 : -1;
+        if (type == net.minecraft.world.entity.ai.village.VillageSiege.class) return spawnEnemies ? 3 : -1;
+        if (type == net.minecraft.world.entity.npc.wanderingtrader.WanderingTraderSpawner.class) return counter <= 1 ? 7 : -1;
+        throw new IllegalStateException("unreviewed custom spawner " + type.getName());
     }
     private void chunkCallback(LevelChunk chunk, int terrainRadius, Runnable original) {
         requireCycle(); Objects.requireNonNull(chunk); Objects.requireNonNull(original);
@@ -173,7 +198,9 @@ public final class RegionalChunkGameplayService {
                     && Math.abs((long) player.key.z() - source.z()) <= recipientRadius) footprint.add(player.key);
         dispatcher.ensureClosure(Set.copyOf(footprint));
         dispatcher.executeAndDrain(source, RegionalServiceKind.CHUNK_GAMEPLAY, ignored -> {
-            dispatcher.requireCurrentOwner(source); original.run();
+            dispatcher.requireCurrentOwner(source); cycle.callbackKey = source;
+            try { original.run(); }
+            finally { cycle.callbackKey = null; cycle.nearestPlayer = null; }
         });
         chunkCallbacks = Math.incrementExact(chunkCallbacks);
     }
@@ -182,7 +209,7 @@ public final class RegionalChunkGameplayService {
      * selected alias for its squared distance. Preserve the level player-list order and strict tie
      * behavior while reading only exact position/spectator publications. */
     public Player nearestNaturalSpawnPlayer(double x, double y, double z) {
-        Cycle active = requireCycle();
+        Cycle active = requireOwnedCycle();
         PlayerProjection best = null; double bestDistance = -1.0;
         for (PlayerProjection player : active.levelPlayers) {
             if (player.spectator) continue;
@@ -193,7 +220,7 @@ public final class RegionalChunkGameplayService {
         return best == null ? null : best.player;
     }
     public double naturalSpawnPlayerDistance(Player player, double x, double y, double z) {
-        Cycle active = requireCycle(); PlayerProjection selected = active.nearestPlayer;
+        Cycle active = requireOwnedCycle(); PlayerProjection selected = active.nearestPlayer;
         if (selected == null || selected.player != player)
             throw new IllegalStateException("natural spawn nearest-player observation changed");
         return selected.position.distanceToSqr(x, y, z);
@@ -272,6 +299,12 @@ public final class RegionalChunkGameplayService {
         if (OwnershipContext.current().isPresent()) throw new IllegalStateException("chunk gameplay coordinator retained owner authority");
     }
     private Cycle requireCycle() { requireOwnerFree(); return Objects.requireNonNull(cycle, "no regional chunk gameplay cycle"); }
+    private Cycle requireOwnedCycle() {
+        Cycle active = Objects.requireNonNull(cycle, "no regional chunk gameplay cycle");
+        RoutingKey callback = Objects.requireNonNull(active.callbackKey, "no active regional chunk callback");
+        dispatcher.requireCurrentOwner(callback); return active;
+    }
+    public boolean active() { return cycle != null; }
     private void requireMap(ChunkMap expected) { if (expected != map) throw new IllegalStateException("chunk gameplay map changed"); }
 
     private static final class Cycle {
@@ -279,6 +312,7 @@ public final class RegionalChunkGameplayService {
         List<PlayerProjection> players;
         List<PlayerProjection> levelPlayers = List.of();
         PlayerProjection nearestPlayer;
+        RoutingKey callbackKey;
         NaturalSpawner.SpawnState spawnState;
         Cycle(FullFinishingScoreboard.TrackingCut connectionCut, List<PlayerProjection> players) {
             this.connectionCut = connectionCut; this.players = players;

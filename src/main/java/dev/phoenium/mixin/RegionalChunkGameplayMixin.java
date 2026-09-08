@@ -48,14 +48,6 @@ abstract class RegionalChunkGameplayMixin {
         Phoenium.liveRuntime().regionalForEachBlockTickingChunk((ServerChunkCache) (Object) this, map, output);
     }
 
-    @WrapOperation(method = "tickChunks(Lnet/minecraft/util/profiling/ProfilerFiller;J)V", at = @At(value = "INVOKE",
-        target = "Lnet/minecraft/server/level/ServerLevel;tickCustomSpawners(Z)V"))
-    private void phoenium$customSpawners(net.minecraft.server.level.ServerLevel level, boolean spawnEnemies,
-            Operation<Void> original) {
-        ServerChunkCache cache = (ServerChunkCache) (Object) this;
-        Phoenium.liveRuntime().regionalCustomSpawnerCallback(cache, () -> original.call(level, spawnEnemies));
-    }
-
     @WrapOperation(method = "broadcastChangedChunks", at = @At(value = "INVOKE",
         target = "Lnet/minecraft/server/level/ChunkHolder;broadcastChanges(Lnet/minecraft/world/level/chunk/LevelChunk;)V"))
     private void phoenium$broadcastChunk(ChunkHolder holder, LevelChunk chunk, Operation<Void> original) {

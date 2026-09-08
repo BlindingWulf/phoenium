@@ -99,8 +99,9 @@ public final class RegionalWorldServices implements RegionalStateMigration {
     public void broadcastChunkCallback(ServerChunkCache cache, net.minecraft.world.level.chunk.LevelChunk chunk, Runnable original) {
         gameplay(cache).broadcastChunkCallback(chunk, original);
     }
-    public void customSpawnerCallback(ServerChunkCache cache, Runnable original) {
-        gameplay(cache).customSpawnerCallback(original);
+    public void customSpawnerCallback(ServerLevel level, net.minecraft.world.level.CustomSpawner spawner,
+            boolean spawnEnemies, Runnable original) {
+        gameplay(level.getChunkSource()).customSpawnerCallback(spawner, spawnEnemies, original);
     }
     public void forEachBlockTickingChunk(ServerChunkCache cache, ChunkMap map,
             java.util.function.Consumer<net.minecraft.world.level.chunk.LevelChunk> output) {
@@ -119,6 +120,11 @@ public final class RegionalWorldServices implements RegionalStateMigration {
     public double naturalSpawnPlayerDistance(ServerLevel level, net.minecraft.world.entity.player.Player player,
             double x, double y, double z) {
         return gameplay(level.getChunkSource()).naturalSpawnPlayerDistance(player, x, y, z);
+    }
+    public boolean activeNaturalSpawn(ServerLevel level) {
+        WorldServices services;
+        synchronized (this) { services = worlds.get(level); }
+        return services != null && services.gameplay().active();
     }
     private RegionalChunkGameplayService gameplay(ServerChunkCache cache) {
         WorldServices services;
