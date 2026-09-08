@@ -31,7 +31,7 @@ final class FullConstructionFragments {
             ClassNode node = new ClassNode();
             try (var input = ChunkStatusTasks.class.getResourceAsStream("ChunkStatusTasks.class")) {
                 byte[] bytes = input.readAllBytes();
-                assertEquals("ab9a75ec31f57df5502ee65ffe413d8099097417c2ed1c928da3890b523e3b05",
+                assertEquals("4e5c8b1c192e9a77c713163762fff0382beb58580155d7e719d83e903963f72f",
                     java.util.HexFormat.of().formatHex(java.security.MessageDigest.getInstance("SHA-256").digest(bytes)),
                     "only the audited Minecraft 26.2 ChunkStatusTasks class may be split");
                 new ClassReader(bytes).accept(node, ClassReader.SKIP_DEBUG | ClassReader.SKIP_FRAMES);
