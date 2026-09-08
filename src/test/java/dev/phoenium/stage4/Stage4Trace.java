@@ -13,6 +13,7 @@ import net.minecraft.server.level.ServerLevel;
 import net.minecraft.core.BlockPos;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.entity.Entity;
+import net.minecraft.world.level.chunk.ChunkAccess;
 
 /** Test-only ordered trace. It records original callbacks without changing their values. */
 public final class Stage4Trace {
@@ -107,6 +108,13 @@ public final class Stage4Trace {
     }
 
     public static void event(String kind) { event(kind, ""); }
+
+    /** Record only the detached result returned by the original serialization callback. */
+    public static void packedTicks(ChunkAccess chunk, long gameTime, ChunkAccess.PackedTicks packed) {
+        if (!active || packed == null) return;
+        event("save.serialization.ticks", "chunk=" + chunk.getPos() + " gameTime=" + gameTime
+            + " blocks=" + packed.blocks() + " fluids=" + packed.fluids());
+    }
 
     public static String block(Block block) {
         return net.minecraft.core.registries.BuiltInRegistries.BLOCK.getKey(block).toString();
