@@ -442,6 +442,7 @@ public final class FullRuntimeAcceptanceProbe implements DedicatedServerModIniti
             // exact prior reader/transfer witness and never count it as a surviving root.
             if (expectedDiscarded.contains(entity.getUUID())) {
                 require(entity instanceof Tadpole && DISCARDED_TADPOLES.contains(entity.getUUID())
+                        && entity.isRemoved() && entity.getRemovalReason() == Entity.RemovalReason.DISCARDED
                         && entity.getTeam() == null, "unexpected discarded saved entity alias: " + entity.getUUID()
                                 + " type=" + entity.getType() + " removed=" + entity.isRemoved()
                                 + " reason=" + entity.getRemovalReason() + " team="

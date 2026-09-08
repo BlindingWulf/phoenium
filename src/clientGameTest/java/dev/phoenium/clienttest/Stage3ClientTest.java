@@ -16,6 +16,8 @@ import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.ListTag;
 import net.minecraft.nbt.NbtAccounter;
 import net.minecraft.nbt.NbtIo;
+import net.minecraft.nbt.StringTag;
+import net.minecraft.core.UUIDUtil;
 import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.level.chunk.LevelChunk;
 import net.minecraft.world.level.chunk.status.ChunkStatus;
@@ -44,6 +46,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import java.util.UUID;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -1966,7 +1969,7 @@ public final class Stage3ClientTest implements FabricClientGameTest {
             byte[] bytes = Files.readAllBytes(region);
             List<String> chunks = new ArrayList<>();
             for (int x = 32; x <= 35; x++) {
-                int index = 2 + (x & 31) + 32 * 4;
+                int index = (x & 31) + 32 * 4;
                 int location = ((bytes[index * 4] & 0xff) << 16)
                         | ((bytes[index * 4 + 1] & 0xff) << 8) | (bytes[index * 4 + 2] & 0xff);
                 int sectors = bytes[index * 4 + 3] & 0xff;
@@ -1975,7 +1978,7 @@ public final class Stage3ClientTest implements FabricClientGameTest {
                 require(start + 5 <= bytes.length, "fresh FULL region record is truncated for chunk " + x + ",4");
                 int length = ((bytes[start] & 0xff) << 24) | ((bytes[start + 1] & 0xff) << 16)
                         | ((bytes[start + 2] & 0xff) << 8) | (bytes[start + 3] & 0xff);
-                require(length > 1 && length <= sectors * 4096 - 4,
+                require(length > 1 && length <= sectors * 4096 - 4 && start + 4 + length <= bytes.length,
                         "fresh FULL region record length is invalid for chunk " + x + ",4: " + length);
                 require((bytes[start + 4] & 0xff) == 2,
                         "fresh FULL region record is not zlib compressed for chunk " + x + ",4");
@@ -1987,11 +1990,34 @@ public final class Stage3ClientTest implements FabricClientGameTest {
                 String status = payload.getStringOr("Status", "");
                 require(status.equals("full") || status.equals("minecraft:full"),
                         "fresh FULL region record status was not full for chunk " + x + ",4: " + status);
+                require(payload.getIntOr("xPos", Integer.MIN_VALUE) == x
+                                && payload.getIntOr("zPos", Integer.MIN_VALUE) == 4,
+                        "fresh FULL region record coordinates were wrong for chunk " + x + ",4: xPos="
+                                + payload.getIntOr("xPos", Integer.MIN_VALUE) + " zPos="
+                                + payload.getIntOr("zPos", Integer.MIN_VALUE));
                 ListTag entities = payload.getListOrEmpty("entities");
-                String entityText = entities.toString();
-                require(entityText.contains("phoenium_full_reload_" + x + "_0")
-                                && entityText.contains("phoenium_full_reload_" + x + "_1"),
-                        "fresh FULL region record omitted both persisted reload roots for chunk " + x + ",4");
+                require(entities.size() == 2,
+                        "fresh FULL region record entity list size was not two for chunk " + x + ",4: "
+                                + entities.size());
+                for (int i = 0; i < 2; i++) {
+                    require(entities.get(i) instanceof CompoundTag,
+                            "fresh FULL region record entity " + i + " was not a compound for chunk " + x + ",4");
+                    CompoundTag entity = (CompoundTag) entities.get(i);
+                    String expectedTag = "phoenium_full_reload_" + x + "_" + i;
+                    ListTag tags = entity.getListOrEmpty("Tags");
+                    require(tags.size() == 2 && tags.get(0) instanceof StringTag && tags.get(1) instanceof StringTag
+                                    && ((((StringTag) tags.get(0)).value().equals("phoenium_full_reload"))
+                                    || ((StringTag) tags.get(1)).value().equals("phoenium_full_reload"))
+                                    && ((((StringTag) tags.get(0)).value().equals(expectedTag))
+                                    || ((StringTag) tags.get(1)).value().equals(expectedTag)),
+                            "fresh FULL region record entity tags were wrong for chunk " + x + ",4 entity " + i
+                                    + ": " + tags);
+                    UUID expectedUuid = UUID.nameUUIDFromBytes(("reload:" + new ChunkPos(x, 4) + ":" + i)
+                            .getBytes(StandardCharsets.UTF_8));
+                    UUID actualUuid = entity.read("UUID", UUIDUtil.CODEC).orElse(null);
+                    require(expectedUuid.equals(actualUuid), "fresh FULL region record entity UUID was wrong for chunk "
+                            + x + ",4 entity " + i + ": " + actualUuid + " expected=" + expectedUuid);
+                }
                 chunks.add("[" + x + ",4]:status=" + status + ",legacyEntities=" + entities.size());
             }
             return "path=" + region + " chunks=" + chunks + " roots=8";
