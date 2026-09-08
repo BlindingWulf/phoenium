@@ -80,6 +80,10 @@ final class FullRegistrationFixture implements GeneratingChunkMap, FullGeneratio
                 new Answer(ChunkMap.class.getMethod("runGenerationTasks"), args -> { runGenerationTasks(); return null; })));
         set(world.cache, ServerChunkCache.class, "chunkMap", map);
         set(map, ChunkMap.class, "phoenium$inputChanges", new FullInputNotifications());
+        // This controlled endpoint bypasses ChunkMap's constructor. Installed production
+        // Mixins still need the empty per-map custody ledger that constructor creates.
+        try { set(map, ChunkMap.class, "phoenium$visibleSaves", new IdentityHashMap<ChunkHolder, ChunkSaveRetention>()); }
+        catch (NoSuchFieldException junitWithoutSaveMixin) { /* The JUnit agent omits this native save Mixin. */ }
         fixtureMap = map; publishVisible();
         installedSaveBinding = FullRegistrationFixtureSaveBridge.register(
                 world.level, fixtureMap, authority, saveCoordinator, runtime);

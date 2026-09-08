@@ -4,6 +4,43 @@ Stage 4 remains **PARTIAL**, Stage 5 OFF, one gameplay worker, parallel gameplay
 This section supersedes the historical worker assignments and next-step instructions below.
 The session began from clean `2b3080b`; all newer work is preserved. No agents are running.
 
+- Current production remains **3EF9B2ED302E6DEAC9B27526450BD3F8750A62BF4C98087E943934CD6F0B5F03**
+  (source production finalized at 2bb1618). Candidate `finish-candidate-8-c` PASS, real client request8,
+  native FULL cohorts plus first/restart normal stops with all terminal entity/service/save/lease
+  ownership/fallback/barrier counts zero. Strict MCA/restart validator PASS. Frozen `finish-reference-8-a`
+  full campaign and restart validator PASS. Strict external comparison `final-comparison-8.json` PASS:
+  129 canonical events, digest D891EDB0E42B021CC6E4F3B34D3CFED698347A4A0D66835646D6D502A803624E.
+- Comparator now preserves joint ordered gameplay/actual delivered tracking effects and primitive
+  packet payloads, fixed explicit tick order, native tie differences, exact clock/unpack values,
+  and final per-chunk saved arrays. It strips owner metadata and runtime IDs only after UUID checks;
+  native automatic global suborders normalize within identical due/priority buckets; tracker network
+  emissions do not use the independently frozen simulation clock. Empty broadcasts/scans and
+  intermediate wall-clock eager saves remain raw diagnostic evidence. Eight negative-control tests
+  PASS, including order/duplicate/payload/priority/tie/saved-delay/native-unpack mutations.
+- Candidate `finish-candidate-5-t` failed a probe-only unchanged teleport receipt: FULL context at
+  (39,13) legitimately enclosed origin(0,0) and changed B owner during deferred client loading.
+  A receipt that changed no routes now validates actual current destination/incarnation and does
+  no restoration. Receipts that changed routes retain strict intervening-change/epoch rejection.
+  New meaningful regression passes. Deferred event is split through the coordinator after its
+  full viewport preparation settles. **finish-candidate-5-u** full campaign PASS on final production;
+  deadline910, before909 true/0, at910 false/1, after911 false/1, final normal stop.
+- Complete suite **813/87** passed (`final-consolidated-2bb1618-results.json`), then full suite passed
+  again with the new teleport test (`final-full-suite-harness-closure.log`), expected814/87; recount.
+  Installed controlled FULL PASS on final production at
+  `run/full-production-integration/transform-20260908-114433`, log digest
+  E36CC623BB5F79A43A0A83ACD1E589AB157865C44A012B8839AA459CCFC80038. The failed prior controlled
+  run114329 was a synthetic fixture skipping constructor initialization of the new visible-save map;
+  the fixture now initializes that empty field, with production unchanged.
+- Exact existing adverse probe PASS on final production in `run/stage4/adverse-final-20260908-114305`:
+  native pending write, expected primary failure identity, one outcome, zero residual resources,
+  all15 closures after acknowledgement; normal exit0. Probe hash remains01F5B32A...21B17. Log hash
+  0D1548EF04CCD2F226284720650F34F1D13D23C047259F9971F2ACAE5D4ABEEC.
+- Current frozen run `finish-reference-5-i` adds read-only Windows child process metrics (native
+  peak working set and elapsed time), no production effect. Next candidate5 measurement IDv.
+  Required remaining: final5 comparison/validator, affected installed FULL fresh/reload and saved-vault,
+  packaging, consolidated same-hash/terminal gate record, paired lightweight metrics, final freeze.
+  Do not claim Stage4 PASS until these finish; do not start Stage5.
+
 - Recovery parent `4660f7d`. Frozen `finish-reference-5-h` full campaign and strict restart/MCA
   validator PASS. Candidate `finish-candidate-5-s` full campaign and strict restart/MCA validator
   PASS on `54FC9B407CFAE89BA7A6E58D9F8A032092A065132DD54F0C4C7B674BB62F16D8`.

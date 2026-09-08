@@ -319,6 +319,16 @@ public final class Stage4TeleportTopology {
                 throw new IllegalStateException("teleport topology restored inside regional ownership");
             requireIdle(coordinator);
             ObjectOwnership player = requireIncarnation(objects, playerId, incarnation);
+            if (restoredOwners.isEmpty()) {
+                // This receipt changed no native topology. An independently completed FULL
+                // enclosure may legitimately move its owner while the client payload arrives;
+                // there is no temporary assignment to restore or overwrite in this case.
+                RegionId currentOwner = directory.resolve(destination).orElseThrow().region();
+                if (!player.routingKey().equals(destination) || !player.owner().equals(currentOwner))
+                    throw new IllegalStateException("teleport completion lacks its current native destination owner");
+                completed = true;
+                return;
+            }
             if (!player.routingKey().equals(destination) || !player.owner().equals(temporaryOwner))
                 throw new IllegalStateException("teleport completion lacks the prepared player route and owner");
             if (!player.objectEpoch().equals(objectEpoch))

@@ -45,6 +45,7 @@ public final class Stage4ClientTraceTest implements FabricClientGameTest {
         Path restartLog = directory.resolve("stage4-client-server-" + runId + "-restart.log");
         Path mcaSnapshot = trace.resolveSibling("mca-before-restart");
         Process server = null;
+        Stage4ProcessMetrics processMetrics = null;
         boolean connected = false;
         boolean candidate = !Boolean.getBoolean("phoenium.stage4.reference");
         try {
@@ -74,6 +75,7 @@ public final class Stage4ClientTraceTest implements FabricClientGameTest {
             verifyInstalledProduction(directory, trace, "first", candidate);
             server = new ProcessBuilder(command).directory(directory.toFile()).redirectErrorStream(true)
                 .redirectOutput(ProcessBuilder.Redirect.appendTo(log.toFile())).start();
+            processMetrics = new Stage4ProcessMetrics(server);
             waitForReady(context, server, log);
             connectClient(context);
             connected = true;
@@ -194,6 +196,15 @@ public final class Stage4ClientTraceTest implements FabricClientGameTest {
             awaitLog(context, server, log, "STAGE4_TRACE_BARRIER label=deferred-ready", START_TIMEOUT_TICKS);
             command(server, "stage4trace await-full-deferred");
             awaitLog(context, server, log, "STAGE4_TRACE_FULL_READY label=deferred", START_TIMEOUT_TICKS);
+            if (candidate) {
+                // A native FULL context preparation may legitimately converge a region while
+                // this viewport loads. Split the still-pending deferred event after that
+                // preparation has settled, through the same ordinary topology coordinator.
+                long splitOffset = logSize(log);
+                command(server, "stage4trace split-far");
+                awaitLogAfter(context, server, log, "STAGE4_TRACE_TOPOLOGY_SPLIT", splitOffset,
+                    START_TIMEOUT_TICKS, null);
+            }
             command(server, "stage4trace check-deferred-eligible");
             awaitLog(context, server, log,
                 "STAGE4_TRACE_DEFERRED_ELIGIBILITY phase=after-viewport", START_TIMEOUT_TICKS);
@@ -218,6 +229,8 @@ public final class Stage4ClientTraceTest implements FabricClientGameTest {
             awaitLog(context, server, log, "STAGE4_TRACE_RESULT", START_TIMEOUT_TICKS);
             command(server, "stop");
             waitForExit(context, server);
+            processMetrics.finish(trace.resolveSibling("process-metrics-first.json"));
+            processMetrics = null;
             copyMcaSnapshot(directory.resolve(worldName), mcaSnapshot);
             Files.copy(trace, trace.resolveSibling("STAGE4-CLIENT-before-restart-trace.json"));
 
@@ -233,6 +246,7 @@ public final class Stage4ClientTraceTest implements FabricClientGameTest {
             verifyInstalledProduction(directory, trace, "restart", candidate);
             server = new ProcessBuilder(restartCommand).directory(directory.toFile()).redirectErrorStream(true)
                 .redirectOutput(ProcessBuilder.Redirect.appendTo(restartLog.toFile())).start();
+            processMetrics = new Stage4ProcessMetrics(server);
             waitForReady(context, server, restartLog);
             awaitLog(context, server, restartLog, "STAGE4_TRACE_STARTUP_CLOCK_FROZEN", START_TIMEOUT_TICKS);
             connectClient(context);
@@ -277,6 +291,8 @@ public final class Stage4ClientTraceTest implements FabricClientGameTest {
             connected = false;
             command(server, "stop");
             waitForExit(context, server);
+            processMetrics.finish(trace.resolveSibling("process-metrics-restart.json"));
+            processMetrics = null;
             writeEvidence(trace, log, restartTrace, restartLog, mcaSnapshot,
                 worldName, runId, true, server.exitValue());
         } catch (Throwable failure) {
@@ -296,6 +312,7 @@ public final class Stage4ClientTraceTest implements FabricClientGameTest {
             }
             throw new AssertionError("Stage 4 account-free client trace failed", failure);
         } finally {
+            if (processMetrics != null) processMetrics.close();
             if (server != null && server.isAlive()) server.destroyForcibly();
         }
     }

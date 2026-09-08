@@ -205,6 +205,24 @@ final class Stage4TeleportTopologyTest {
         assertEquals(true, migrations.get() >= 6);
     }
 
+    @Test void unchangedReceiptAcceptsCurrentOwnerAfterIndependentLegitimateConvergence() {
+        Fixture f = new Fixture();
+        Map<RoutingKey, RegionId> unified = f.owners();
+        unified.replaceAll((key, owner) -> f.a);
+        transition(f, unified);
+        var enclosure = new FullRegionalEnclosure(f.directory, f.runtimes, f.gateway, f.objects, RegionalStateMigration.NONE);
+        var player = f.objects.admit("player", OwnedObjectKind.PLAYER, f.source);
+        var receipt = Stage4TeleportTopology.prepareTopology(enclosure, f.directory, f.objects,
+            player, f.destination, Set.of(f.source, f.destination, f.halo));
+        f.objects.updateRoutingKey("player", f.destination, player.objectEpoch());
+        unified.replaceAll((key, owner) -> f.b);
+        transition(f, unified);
+        receipt.complete("player", player.incarnation(), f.destination);
+        assertEquals(f.b, f.objects.current("player").orElseThrow().owner());
+        assertEquals(f.b, f.owner(f.halo));
+        assertThrows(IllegalStateException.class, () -> receipt.complete("player", player.incarnation(), f.destination));
+    }
+
     private static RoutingKey scopedMove(FullRegionalEnclosure enclosure, RegionDirectory directory,
                                          ObjectOwnershipRegistry objects, String playerId,
                                          RoutingKey source, RoutingKey destination, int radius) {
