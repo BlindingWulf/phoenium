@@ -30,8 +30,10 @@ for name in ("fabric-server-launch.jar", ".fabric", "libraries", "versions", "mo
         shutil.copy2(source, TARGET / name)
 artifact = next((TARGET / "mods").glob("phoenium-*.jar"))
 controlled = os.environ.get("PHOENIUM_FULL_REGISTRATION_PROBE") == "1"
+controlled_source = ROOT / "build/test-harness/full-registration-probe.jar"
 if controlled:
-    shutil.copy2(ROOT / "build/test-harness/full-registration-probe.jar", TARGET / "mods/full-registration-probe.jar")
+    assert controlled_source.exists(), "build fullRegistrationHarness before running the controlled probe"
+    shutil.copy2(controlled_source, TARGET / "mods/full-registration-probe.jar")
 built = ROOT / "build/libs" / artifact.name
 digest = lambda path: hashlib.sha256(path.read_bytes()).hexdigest().upper()
 assert digest(artifact) == digest(built), "prepared server has a stale production artifact"
@@ -53,6 +55,7 @@ manifest = {"kind": "transformed boundary; baseline mode", "productionFullEnable
 if controlled:
     manifest["kind"] = "installed production registrar; finite controlled world/generation fixtures"
     manifest["testScopedHarness"] = True
+    manifest["controlledProbeSourceSha256"] = digest(controlled_source)
 print(str(TARGET), flush=True)
 with log.open("w") as output:
     process = subprocess.Popen(command, cwd=TARGET, stdin=subprocess.PIPE, stdout=output,

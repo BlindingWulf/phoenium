@@ -278,6 +278,12 @@ tasks.register('fullRegistrationHarness', Jar) {
     }.collect { zipTree(it) } }) { exclude 'META-INF/**', 'module-info.class' }
 }
 
+// The controlled installed probe is copied from the prepared server tree by
+// test_full_boundary_transform.py. Build it whenever that tree is prepared so
+// a source change cannot leave an older probe beside the current production JAR.
+tasks.named('prepareStage3ClientServer') {
+    dependsOn tasks.named('fullRegistrationHarness')
+}
 tasks.register('fullAcceptanceHarness', Jar) {
     description = 'Build disposable saved-input fixtures for real generation and on-disk reload acceptance.'
     dependsOn tasks.named('compileTestJava')
