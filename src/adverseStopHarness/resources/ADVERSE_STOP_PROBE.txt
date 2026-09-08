@@ -1,0 +1,12 @@
+Launch in a fresh disposable dedicated-server directory containing the production Phoenium JAR,
+the normal Fabric dependencies, and only this test probe:
+
+  java -jar fabric-server-launch.jar nogui
+
+The server intentionally terminates after the injected regional callback failure. A process
+failure alone is not acceptance. The inherited process output must contain exactly one:
+
+  PHOENIUM_ADVERSE_SAVE_SHUTDOWN PASS
+
+Any PHOENIUM_ADVERSE_SAVE_SHUTDOWN FAIL, missing PASS marker, timeout, or extra probe artifact
+is a failed run. This witness makes no durable-persistence claim.

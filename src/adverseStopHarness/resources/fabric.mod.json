@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  "id": "phoenium-adverse-stop-probe",
+  "version": "1.0.0",
+  "name": "Disposable Phoenium adverse save and shutdown probe",
+  "environment": "server",
+  "entrypoints": { "server": ["dev.phoenium.adversestop.AdverseStopProbe"] },
+  "mixins": ["phoenium-adverse-stop.mixins.json"],
+  "depends": { "phoenium": "*", "fabric-lifecycle-events-v1": "*" }
+}

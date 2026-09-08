@@ -1,0 +1,18 @@
+{
+  "required": true,
+  "package": "dev.phoenium.adversestop.mixin",
+  "compatibilityLevel": "JAVA_25",
+  "mixins": [
+    "AdverseChunkMapMixin",
+    "AdverseFullServerShutdownMixin",
+    "AdverseIOWorkerMixin",
+    "AdverseLevelStorageAccessMixin",
+    "AdverseLiveRuntimeMixin",
+    "AdverseMinecraftServerMixin",
+    "AdverseReloadableResourcesMixin",
+    "AdverseSavedDataStorageMixin",
+    "AdverseServerChunkCacheMixin",
+    "AdverseServerLevelMixin"
+  ],
+  "injectors": { "defaultRequire": 1 }
+}
