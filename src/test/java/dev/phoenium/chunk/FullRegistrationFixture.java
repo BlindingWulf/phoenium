@@ -146,6 +146,14 @@ final class FullRegistrationFixture implements GeneratingChunkMap, FullGeneratio
         var task = scheduleGenerationTask(status, pos); resume(task); return task;
     }
     void drain() { while (!registrations.isEmpty()) registrations.remove().run(); while (runtime.pumpOne()) { } }
+    void acknowledgeCompletedSaves() {
+        FullFinishingServices finishing = Objects.requireNonNull(installedSaveBinding.finishing(),
+                "controlled unload did not install its named service");
+        try (var turn = finishing.serial(FullFinishingServices.Phase.SERVER_TASK)) {
+            FullRegistrationFixtureSaveBridge.acknowledgeCompleted(installedSaveBinding);
+        }
+    }
+    boolean controlledSaveInstalled() { return installedSaveBinding.finishing() != null; }
     void stop() {
         var failures = new FullInputNotifications.Failures();
         failures.run(runtime::shutdown);

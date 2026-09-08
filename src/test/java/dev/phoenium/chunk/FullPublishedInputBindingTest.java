@@ -390,6 +390,16 @@ final class FullPublishedInputBindingTest {
             assertTrue(f.world.events.contains("controlled-world-unload"));
             assertEquals(false, FullDecisionWitnessSupport.field(evidence.actual(), LevelChunk.class, "loaded"));
             assertEquals(0L, f.runtime.published.measurements().get("records"));
+            // The disposable installed Mixin is deliberately absent from the JUnit agent.
+            // When installed, prove the exact intermediate source custody before its separate ACK.
+            if (f.controlledSaveInstalled()) {
+                assertEquals(1, f.saveCoordinator.pending(), "completed original save remains retained until owner ACK");
+                assertEquals(3, f.services.custody().retainedEntries(),
+                        "the retained save source accounts for lifecycle, work and custody records");
+                System.out.println("PHOENIUM_FULL_CONTROLLED_SAVE_ACK pendingBefore=1 custodyBefore=3");
+                f.acknowledgeCompletedSaves();
+                assertEquals(0, f.saveCoordinator.pending());
+            }
             assertEquals(0, f.services.custody().retainedEntries());
         } finally { f.stop(); }
         assertCleanup(f);

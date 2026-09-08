@@ -75,23 +75,16 @@ public final class FullRegistrationFixtureSaveBridge {
     /**
      * The controlled unload is an owner-free synchronous boundary. Settle only save attempts
      * whose real body/write completion is already published; an asynchronous write remains
-     * retained for normal later pumping. A failure from the unchanged unload body stays primary.
+     * retained for normal later pumping. The fixture calls this only after the native callback
+     * has returned and while holding its separate named owner-free acknowledgement turn.
      */
-    public static void acknowledgeCompleted(Binding binding, Throwable originalFailure) {
+    public static void acknowledgeCompleted(Binding binding) {
         Objects.requireNonNull(binding);
-        try {
-            while (binding.coordinator.hasAcknowledgement()) {
-                if (!binding.coordinator.pumpOne())
-                    throw new IllegalStateException("completed controlled save acknowledgement made no progress");
-            }
-            if (binding.coordinator.pending() == 0) binding.coordinator.requireFlushed();
-        } catch (RuntimeException | Error acknowledgementFailure) {
-            if (originalFailure != null) {
-                if (originalFailure != acknowledgementFailure) originalFailure.addSuppressed(acknowledgementFailure);
-                return;
-            }
-            throw acknowledgementFailure;
+        while (binding.coordinator.hasAcknowledgement()) {
+            if (!binding.coordinator.pumpOne())
+                throw new IllegalStateException("completed controlled save acknowledgement made no progress");
         }
+        if (binding.coordinator.pending() == 0) binding.coordinator.requireFlushed();
     }
 
     public static final class Binding implements AutoCloseable {
