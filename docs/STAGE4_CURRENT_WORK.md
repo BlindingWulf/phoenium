@@ -21,7 +21,7 @@ runtime identity and task/worker token accounting are unavailable. No additional
 Astra, paid API, reset, account change, remote publication or personal client account.
 
 Account-wide Codex usage began at 35% used / 65% remaining; latest installed-evidence
-review reading is 85% used / 15% remaining. Reserve remained 7% used / 93%
+review reading is 87% used / 13% remaining. Reserve remained 7% used / 93%
 remaining. Intermediate readings are preserved in this file's Git history; these
 are shared account windows, not task consumption.
 
@@ -48,15 +48,17 @@ negative cases are preserved. Final installed lifecycle coverage is still requir
 Fresh baseline: 690 tests / 59 suites PASS, ten historical hashes verified, frozen
 production rebuilt to its exact hash; `run/stage4/baseline-20260908-012726` in Luna.
 Latest consolidated candidate build and acceptance-probe build pass. Lead recounted
-785 tests / 77 suites, zero failures/errors/skips, from Luna's actual XML reports.
+789 tests / 79 suites, zero failures/errors/skips, from Luna's actual XML reports.
 
-Candidate installed `run/full-production-integration/transform-20260908-065406`
-executes six live intercepts/dispatches/executions, zero barriers/violations/fallback,
-one worker, parallel OFF. Normal stop records admissionClosed=true, queuedServices=0,
+Candidate installed `run/full-production-integration/transform-20260908-073804`
+passes the corrected baseline marker-applicability gate (Luna `9d13b49`). Nine live
+intercepts/dispatches/executions, zero barriers/violations/fallback, one worker,
+parallel OFF. Normal stop records admissionClosed=true, queuedServices=0,
 pendingSaves=0, 528 captures and 529 protocol acknowledgements (not 529 durable writes).
-Its runner reports FAIL solely because it wrongly requires a FULL_SERVICES marker
-without installing that probe; Luna is correcting that applicability check. This is
-positive baseline installed health, not complete Stage 4 acceptance.
+All save failure/residual counters are zero. The earlier `transform-20260908-065406`
+false-negative marker bundle remains immutable. This is baseline installed health,
+not complete Stage 4 acceptance. Luna is making the candidate Stage4 shutdown marker
+and positive execution fields mandatory in the runner too.
 
 Controlled FULL `transform-20260908-065445` reaches the native hooks, then fails
 `FullPublishedInputBindingTest.originalUnloadWaitsForRetainedUseThenReclaimsTheActualHolder`:
@@ -71,9 +73,14 @@ authority at the existing seams. Original production unload body and all existin
 retention/reclamation assertions remain active; production world identity stays
 strict. The 45-test focused gate passes, including foreign/post-stop rejection,
 throwing-scope cleanup, real save acknowledgement and named-service teardown. The
-probe JAR builds and production packaging excludes this adapter. Luna alone owns
-its installed rerun. Sol now prepares a separate test-only adverse pending-write /
-failed-stop probe through the actual native paths; Luna will launch that evidence.
+probe JAR builds and production packaging excludes this adapter. Installed rerun
+`transform-20260908-073703` reaches the original unload and reclamation but fails
+the unchanged final zero-custody assertion at FullPublishedInputBindingTest:393:
+three entries remain. Probe SHA-256 is
+`A7D06C6F853840E32F8C811F539B5B65EC579A76350F905B20B50917BF6886F8`.
+Sol owns that exact installed-only lifetime/ACK repair first. Its separate test-only
+adverse pending-write/failed-stop probe is recoverable WIP, to resume afterward;
+Luna alone launches installed evidence.
 
 Earlier preserved native failures: `transform-20260908-060338` first-tick consecutive
 coordinator phases, repaired `00ce944`; `transform-20260908-064318` superclass-close
@@ -92,11 +99,15 @@ genuine ticks, center (32,0) has ticket 33, FULL/latest full and successful full
 but tickingFuture=Unloaded. All eight halo holders have ticket 34, INACCESSIBLE,
 unloaded FULL/ticking futures; native block/entity-range and nearby checks are false.
 No current client chunk payload arrives. Both process dumps and packet/server logs
-are preserved. Luna now traces the actual ticket producer/player movement continuation
-and exact native send predicate upstream. Do not increase timeouts, cap 5/5 or 8/8,
-substitute server-only receipts or silently widen the frozen supported topology.
+are preserved. Luna traced the missing native movement input after /tp: ChunkMap.move
+does the remove/add player transition that supplies PLAYER_SIMULATION; a self-camera
+player tick does not provide it. Shared input correction `e2b88a4` is integrated as
+`b6db927`, using a brief actual client nudge after each teleport. The next run must
+prove lastSection/player simulation/ticking changed and the actual client received
+and applied its chunk; the nudge alone is not readiness evidence. Do not increase
+timeouts, cap 5/5 or 8/8, substitute server-only receipts or silently widen scope.
 
-Main harness now integrates Luna's coherent test-only work through `b558c68`,
+Main harness now integrates Luna's coherent test-only work through `e2b88a4`,
 including `dec8c48`, diagnostic `2a6c0f0` / `0f57111` and the first observation
 contract corrections. These fix protected Mixin-package helper loading, sequence actual
 preparation receipts, add landing pads, release temporary force tickets, and replace
