@@ -68,7 +68,7 @@ events, save and clean stop, but restart reports a foreign closure owner. Preser
 both bundles. Root repaired the nested producer overclaim: enqueue requires only the destination owner; the future callback halo is admitted when due. A regression crosses that same boundary and later executes after genuine convergence. Do not widen a valid fixture boundary simply to hide that production
 failure. No integrated Stage 4 installed PASS exists.
 
-Integrated production recovery: `f36fcb1`, including native tick eligibility/index
+Integrated production recovery: `b2ab914` (test-oracle recovery `bf250f1`), including native tick eligibility/index
 `952ce13`/`34b2d0f`, nested block-event boundary `b4d23e9`, exact tracker accessors
 `1db10ad`, named tracking startup `3a36d24`, passenger relations `4cd836f`/`f36fcb1`,
 and original final phase RETURN repair `b7d0051`. `545b793` preserves a source/save
@@ -76,6 +76,13 @@ exception caught by vanilla after its dirty claim, restores dirty state through 
 current owner ACK, and retains the exact failure at flush. The new negative first
 failure and repaired focused evidence are under `run/stage4/caught-save-*`.
 Save/facts/accessor integration: 21 tests PASS; final phase/stop/facts/accessor: 20 PASS.
+`b2ab914` keeps original nearby block-event broadcast conditions/order/sends while
+reading only precise owner-published recipient coordinates and current live-session
+receipts. Routing now publishes after position fields commit and before original
+`onMove`; a throwing native callback test proves the moved receipt survives and is
+withdrawn at actual unindex. Facts/event/phase focused evidence: 20 tests PASS.
+`bf250f1` integrates Luna's stronger native register-then-unpack/index oracle and
+retains direct original LevelTicks ordering/eligibility comparisons.
 
 Latest installed checkpoint `integrated-installed-stable-034415` starts and executes
 scheduled services/save/stop but has no final PASS: tracking and block.enqueue proof
@@ -91,9 +98,16 @@ comparison must use identical corrected reference inputs.
 Sol owns the reached outer cache/entity producer gap: the old CACHE_OWNER phase
 ran all selected chunks under the world anchor owner. Actual callbacks need finite
 owner-free admission and current source/recipient closure, preserving original RNG,
-order and synchronous effects. Lead owns save/stop, persistence review and integration.
+order and synchronous effects. Worker recovery `07bdc81` has the first cache split;
+it is not yet integrated or ready for a campaign: final entity/custom spawner coverage,
+exact lazy mob-cap semantics and narrower genuine callback footprints remain under
+review. Lead owns save/stop, persistence review and integration.
 Luna alone owns broad builds/live campaigns, exact native oracles, controlled real
 client comparison, immutable MCA/reload effects, real merge/split and lifecycle, 5/5
 and 8/8, affected foundation regressions, and comparable elapsed/RSS observations.
+Her installed topology fixture now requests actual coordinator merge/split (no direct
+directory publication); pending review corrections include cancellation-resistant
+trace hooks, separated behavioral/authority comparisons, transferred deferred-event
+and fluid effects, and genuinely distinct region geometry for tracking callbacks.
 The next stable campaign must include all production repairs.
 Internal commits remain recovery points; continue until all required gates pass.
