@@ -713,6 +713,10 @@ public final class Stage4AcceptanceProbe implements DedicatedServerModInitialize
         }
         if (level.getGameTime() >= farUnloadObservationTick && map.getUpdatingChunkIfPresent(key) == null
                 && ((dev.phoenium.chunk.FullInputView) map).phoenium$visibleInput(key) == null
+                // Removal from the published maps precedes the original unload body.
+                // A pending holder can still be resurrected by later native demand,
+                // preserving absolute deadlines instead of reading the saved delays.
+                && ((dev.phoenium.save.RegionalSaveBinding.MapAccess) map).phoenium$pendingUnload(key) == null
                 && Stage4Trace.farPendingSaved()) {
             pendingFarUnload = null;
             Stage4Trace.event("fixture.temporary.unloaded", "gameTime=" + level.getGameTime());

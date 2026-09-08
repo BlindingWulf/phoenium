@@ -227,3 +227,20 @@ Actual copied-JAR identity negatives: 18 checks PASS (`identity-final-b/report.j
 The benchmark recorder now includes shared-service entries, actual topology latency,
 native save/stop latency, JVM allocation/GC, process CPU/working set and host metadata.
 No benchmark measurements have been accepted yet.
+
+`full-4-f` / `run/full-authoritative/live-1788904763484` PASS: original fresh/reload
+FULL assertions, both TCP clients, MCA payloads and native exits pass. Separate strict
+original-body interval checks pass in both lifecycles: 512 furnaces, four regions,
+4,096 retained intervals each, natural maximum overlap 4 fresh / 2 reload.
+
+`controls-client5-b` FAIL was correctly rejected for saved delay 186 versus 369.
+The prior claim that a fresh client fixture needs no native unpack was incorrect.
+Native ChunkMap removes a holder from updating/visible maps BEFORE scheduleUnload
+removes it from pendingUnloads. New demand can resurrect that exact pending holder,
+keeping its absolute trigger; completed unload instead rereads delay=316 at +187.
+The probe's old 'unloaded' receipt checked only the first two maps. It now additionally
+requires the original pending-unload holder to be absent at the same frozen +6 cut.
+This strengthens the native lifecycle gate and makes the offered reload input exact.
+The Stage 4 comparator is restored byte-for-byte to its original unpack requirement;
+the Stage 5 client wrapper now requires BOTH that original path and restart validation.
+Missing original unpack remains a negative test. No production code changed.

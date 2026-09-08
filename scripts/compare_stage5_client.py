@@ -1,8 +1,7 @@
 """Stage 5 client contract: Stage 4's exact ordered effects plus mandatory native restart evidence.
 
-The fresh client fixture has no initial packed-tick unpack operation. That obligation
-is verified in its actual second lifecycle by the unchanged native MCA/deadline reader.
-No behavior normalization in the Stage 4 ordered-stream comparator is changed.
+The original temporary-unload/readback path and the actual second lifecycle both
+retain their native unpack requirements. No Stage 4 normalization is changed.
 """
 import argparse
 import hashlib
@@ -26,7 +25,7 @@ def compare(reference,candidate):
             require(identity['installedSha256']!='017EE8ED612D238894FFA5A1DC019BA8B0E31124B0B5171D08CC0D8993C1B534','Stage 3 is not a Stage 5 control')
         disk=restart(evidence/'STAGE4-CLIENT.json');require(disk['result']=='PASS','native saved tick/unpack/deadline failed')
         receipts.append(dict(viewDistance=client['viewDistance'],simulationDistance=client['simulationDistance'],savedDelay=disk['savedDelay']))
-        report,stream=load(evidence/'STAGE4-CLIENT-before-restart-trace.json',require_native_unpack=False)
+        report,stream=load(evidence/'STAGE4-CLIENT-before-restart-trace.json')
         require(report['result']=='PASS' and not report['missing'],'client trace lacks required original effects or ownership')
         for marker in ('topology.merge','topology.split','block.deferred'):
             require(any(e.startswith(marker+' ') for e in report['events']),'missing client lifecycle '+marker)

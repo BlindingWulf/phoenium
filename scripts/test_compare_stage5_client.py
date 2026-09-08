@@ -8,14 +8,13 @@ from compare_stage5_client import compare
 class ClientGateTest(unittest.TestCase):
     def inputs(self,root):
         report=copy.deepcopy(BASE);report['missing']=[]
-        report['events']=[e for e in report['events'] if not e.startswith('tick.native.unpack ')]
         report['events']+=['topology.merge current=true','topology.split current=true','block.deferred pending=true']
         report['events']+=[f'{kind} contextRegion=stage3-fixture-{owner}' for kind in ('topology.body','tracking.body') for owner in ('a','b')]
         for name in ('reference','candidate'):
             p=root/name/'evidence';p.mkdir(parents=True)
             (p/'STAGE4-CLIENT.json').write_text(json.dumps(dict(realTcpConnection=True,microsoftAuthentication=False,serverExitCode=0,
                 viewDistance=5,simulationDistance=5,probeSha256='B'*64,productionSha256='A'*64)))
-            for phase in ('first','restart'):(p/f'production-identity-{phase}.json').write_text(json.dumps(dict(pass_=True,**{'pass':True},expectedSha256='A'*64,installedSha256='A'*64)))
+            for phase in ('first','restart'):(p/f'production-identity-{phase}.json').write_text(json.dumps(dict(**{'pass':True},expectedSha256='A'*64,installedSha256='A'*64)))
             (p/'STAGE4-CLIENT-before-restart-trace.json').write_text(json.dumps(report))
         return root/'reference',root/'candidate'
 
@@ -35,7 +34,8 @@ class ClientGateTest(unittest.TestCase):
             paths=self.inputs(Path(temp));p=paths[1]/'evidence/STAGE4-CLIENT-before-restart-trace.json';base=json.loads(p.read_text())
             changes=[lambda d:d['events'].__setitem__(6,d['events'][6].replace('xa=1','xa=2')),
                 lambda d:d['events'].__setitem__(slice(5,7),list(reversed(d['events'][5:7]))),
-                lambda d:d['events'].pop(),lambda d:d.update(result='PARTIAL')]
+                lambda d:d['events'].pop(),lambda d:d.update(result='PARTIAL'),
+                lambda d:d.update(events=[e for e in d['events'] if not e.startswith('tick.native.unpack ')])]
             for change in changes:
                 d=copy.deepcopy(base);change(d);p.write_text(json.dumps(d))
                 with patch('compare_stage5_client.restart',return_value={'result':'PASS','savedDelay':369}):
