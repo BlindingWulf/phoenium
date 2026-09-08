@@ -214,6 +214,8 @@ final class FullPublishedInputBindingTest {
     @org.junit.jupiter.params.provider.ValueSource(strings = {"incomplete", "exceptional", "cancelled", "unloaded"})
     void actualOriginalProducerCannotSupplyEvidenceWithoutSuccessfulPublication(String disposition) throws Exception {
         var f = new FullRegistrationFixture(false); var y = new ChunkPos(1, 0);
+        var delayed = net.minecraft.util.thread.BlockableEventLoop.class.getDeclaredField("delayedCrash"); delayed.setAccessible(true);
+        Object previousDelayedCrash = delayed.get(null);
         try {
             f.startBaseline(y); Runnable delivery = f.registrations.removeFirst();
             var holder = f.holder(y); var hooks = (FullHolderEvidence) (Object) holder;
@@ -234,7 +236,7 @@ final class FullPublishedInputBindingTest {
                 delivery.run(); f.runGenerationTasks();
                 assertNull(f.runtime.published.observe(holder));
             } else { delivery.run(); f.runGenerationTasks(); assertNotNull(f.runtime.published.observe(holder)); }
-        } finally { f.stop(); }
+        } finally { f.stop(); delayed.set(null, previousDelayedCrash); }
         assertCleanup(f); assertEquals(0L, f.runtime.published.measurements().get("records"));
     }
     @org.junit.jupiter.params.ParameterizedTest
