@@ -80,11 +80,12 @@ Separate adverse native-write / failed-stop probe is now
 integrated (`af02a04`, Sol `c1c7a24`): exact native IOWorker identity, position and
 first original write; one retained save during the actual regional callback failure;
 original outcome, exception identity, resource completion and zero terminal custody.
-Its 28-test focused gate passes; initial probe SHA-256 is
-`DD1DEF116838517F7BDE0A280A21F3A1BA0FE74D23B6C0F4487E38D842912BF9`.
-Lead review requires an additional resource-close entry witness proving the real
-write ACK precedes cleanup entry, not merely stop return. Sol implements this and
-cycle-safe exception traversal; Luna alone launches the resulting installed probe.
+Follow-up `6aa10d7` (Sol `5ccfdb5`) requires each exact resource-close HEAD to observe
+the original write completion, pending=0, failedSettlements=1, stopped runtime and
+zero leases; RETURN still proves closure. Strict wait/write/cleanup order and
+cycle-safe exception traversal are covered by 29 focused tests, all PASS. Reviewed
+probe SHA-256 is `01F5B32A770196482058AC5977CFB9A2E89EFA19BEB46D3F954753783BE21B17`.
+Luna alone launches the installed run; Sol is idle for demonstrated repair needs.
 
 Earlier preserved native failures: `transform-20260908-060338` first-tick consecutive
 coordinator phases, repaired `00ce944`; `transform-20260908-064318` superclass-close
