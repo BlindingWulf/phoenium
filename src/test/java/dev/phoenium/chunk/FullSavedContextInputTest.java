@@ -1084,6 +1084,33 @@ class FullSavedContextInputTest {
         assertCleanup(f);
     }
 
+    @Test void busyRegionalLeaseReleaseAutomaticallyWakesLiveDependencyRefinement() throws Exception {
+        var f = new FullRegistrationFixture(true); var lookup = new EntityLookup<Entity>();
+        var candidate = EntityTypes.TEXT_DISPLAY.create(f.world.level, EntitySpawnReason.LOAD); assertNotNull(candidate);
+        candidate.setId(756); candidate.setPos(8, 8, 8); candidate.setCustomName(Component.literal("retained after busy owner"));
+        lookup.add(candidate); f.world.selectorEntities.add(candidate);
+        try {
+            saved(f, ChunkPos.ZERO, false, text(entityText("@e[type=minecraft:text_display,distance=..32,limit=1]", "CustomName", true)));
+            f.start(ChunkPos.ZERO, ChunkStatus.FULL);
+            assertTrue(f.runtime.pumpOne(), "the original FULL delivery binds its retained input before refinement");
+            try (var occupied = f.owner.leases().acquire()) {
+                while (f.runtime.inputs.pump()) { }
+                var graph = f.runtime.graph(f.holder(ChunkPos.ZERO));
+                assertNull(graph.inputReceipt()); assertEquals(FullInitializedInputs.State.PENDING, graph.inputEvaluation().state(),
+                        graph.inputEvaluation().obligation());
+                assertTrue(graph.inputEvaluation().obligation().contains("live component dependency refinement"));
+            }
+            while (f.runtime.inputs.pump()) { }
+            var graph = f.runtime.graph(f.holder(ChunkPos.ZERO));
+            assertNotNull(graph.inputReceipt(), "lease release notification retries without an immediate dirty spin");
+            assertEquals(FullInitializedInputs.State.SATISFIED, graph.inputEvaluation().state());
+            assertFalse(f.owner.leases().hasActiveLease());
+        } finally {
+            lookup.remove(candidate); f.stop(); FullFinishingServices.stopped(f.world.level.getServer());
+        }
+        assertCleanup(f);
+    }
+
     @Test void liveBeaconCustomNamePublishesNestedStorageBeforeOriginalImmediateGetter() throws Exception {
         var f = new FullRegistrationFixture(true); var position = new BlockPos(8, 8, 8);
         var data = new SavedDataStorage(directory, null, f.world.level.registryAccess());
