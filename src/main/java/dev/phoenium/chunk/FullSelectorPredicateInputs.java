@@ -113,8 +113,9 @@ public final class FullSelectorPredicateInputs {
                     || condition instanceof EnchantmentActiveCheck) return;
             if (condition instanceof LootItemEntityPropertyCondition)
                 unmet = "registered entity-property selector predicate dependency producer pending";
-            else if (condition instanceof EnvironmentAttributeCheck<?>)
-                unmet = "registered environment-attribute selector predicate dependency producer pending";
+            else if (condition instanceof EnvironmentAttributeCheck<?> environment) {
+                if (environment.attribute().isPositional()) markBiomeCandidates();
+            }
             else if (condition instanceof LootItemBlockStatePropertyCondition)
                 return; // No SELECTOR block-state parameter: vanilla's original test returns false.
             else unmet = "registered selector predicate dependency producer pending for " + condition.getClass().getName();
@@ -171,6 +172,14 @@ public final class FullSelectorPredicateInputs {
         void location(LocationCheck check) {
             LocationPredicate predicate = check.predicate().orElse(null);
             if (predicate == null) return;
+            // Structure lookup follows candidate STRUCTURE_REFERENCES into data-dependent
+            // STRUCTURE_STARTS chunks. A single candidate FULL receipt cannot authorize that
+            // graph, so retain the original query as an honest unmet dependency until its typed
+            // consumer is bound.
+            if (predicate.structures().isPresent()) {
+                unmet = "registered location structure predicate requires data-dependent STRUCTURE_REFERENCES/STRUCTURE_STARTS inputs";
+                return;
+            }
             boolean needsFull = predicate.structures().isPresent() || predicate.smokey().isPresent()
                     || predicate.light().isPresent() || predicate.block().isPresent()
                     || predicate.fluid().isPresent() || predicate.canSeeSky().isPresent();
@@ -178,14 +187,25 @@ public final class FullSelectorPredicateInputs {
             if (!needsFull && !needsBiomes) return;
             for (ChunkPos candidate : candidates) {
                 for (ChunkPos affected : affected(candidate, check.offset())) {
-                    var target = needsFull ? full : biomes;
-                    if (!target.contains(affected)) {
-                        long next = Math.addExact(bytes, 64L);
-                        if (!capacityCheck.test(next)) { capacity = true; return; }
-                        target.add(affected); bytes = next;
+                    if (needsFull && !add(full, affected)) return;
+                    if (needsBiomes) {
+                        // LocationPredicate.getBiome samples a fiddled position. Its ±2 block
+                        // corner can cross one additional chunk in either axis, including when a
+                        // separate FULL clause is present.
+                        for (int x = affected.x() - 1; x <= affected.x() + 1; x++) {
+                            for (int z = affected.z() - 1; z <= affected.z() + 1; z++) {
+                                if (!add(biomes, new ChunkPos(x, z))) return;
+                            }
+                        }
                     }
                 }
             }
+        }
+        private boolean add(Set<ChunkPos> target, ChunkPos position) {
+            if (target.contains(position)) return true;
+            long next = Math.addExact(bytes, 64L);
+            if (!capacityCheck.test(next)) { capacity = true; return false; }
+            target.add(position); bytes = next; return true;
         }
     }
 

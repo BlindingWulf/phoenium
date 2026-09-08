@@ -9,9 +9,13 @@ import java.lang.reflect.InvocationTargetException;
 import java.util.*;
 import java.util.concurrent.atomic.AtomicInteger;
 import net.minecraft.commands.arguments.NbtPathArgument;
+import net.minecraft.advancements.predicates.BlockPredicate;
+import net.minecraft.advancements.predicates.LocationPredicate;
+import net.minecraft.core.HolderSet;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.resources.Identifier;
 import net.minecraft.world.level.ChunkPos;
+import net.minecraft.world.level.biome.Biome;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.storage.loot.IntRange;
 import net.minecraft.world.level.storage.loot.LootContext;
@@ -68,6 +72,40 @@ final class FullSelectorPredicateInputsTest {
                 EnvironmentAttributeValue.forEnvironmentAttribute(attribute), IntRange.exact(1)));
         assertNull(field(visitor, "unmet"));
         assertEquals(Set.of(CANDIDATE), field(visitor, "biomes"));
+    }
+
+    @Test void positionalEnvironmentCheckUsesTheSameCandidateBiomeReceipt() throws Exception {
+        EnvironmentAttribute<?> attribute = BuiltInRegistries.ENVIRONMENT_ATTRIBUTE.stream()
+                .filter(EnvironmentAttribute::isPositional).findFirst().orElseThrow();
+        @SuppressWarnings({"rawtypes", "unchecked"})
+        EnvironmentAttributeCheck<?> condition = new EnvironmentAttributeCheck(
+                (EnvironmentAttribute) attribute, attribute.defaultValue());
+        Object visitor = visit(condition);
+        assertNull(field(visitor, "unmet"));
+        assertEquals(Set.of(CANDIDATE), field(visitor, "biomes"));
+    }
+
+    @Test void locationBiomeAndFullClausesDeclareBothFullAndBiomeBorderInputs() throws Exception {
+        var block = BlockPredicate.Builder.block().of(BuiltInRegistries.BLOCK, Blocks.STONE).build();
+        var location = new LocationPredicate(Optional.empty(), Optional.of(HolderSet.<Biome>empty()),
+                Optional.empty(), Optional.empty(), Optional.empty(), Optional.empty(), Optional.of(block),
+                Optional.empty(), Optional.empty());
+        Object visitor = visit(new LocationCheck(Optional.of(location), net.minecraft.core.BlockPos.ZERO));
+
+        assertNull(field(visitor, "unmet"));
+        assertEquals(Set.of(CANDIDATE), field(visitor, "full"));
+        Set<ChunkPos> expectedBiomes = new LinkedHashSet<>();
+        for (int x = CANDIDATE.x() - 1; x <= CANDIDATE.x() + 1; x++)
+            for (int z = CANDIDATE.z() - 1; z <= CANDIDATE.z() + 1; z++) expectedBiomes.add(new ChunkPos(x, z));
+        assertEquals(expectedBiomes, field(visitor, "biomes"));
+    }
+
+    @Test void locationStructureClauseRemainsUnmetUntilReferencedChunkInputsAreTyped() throws Exception {
+        var location = new LocationPredicate(Optional.empty(), Optional.empty(),
+                Optional.of(HolderSet.<net.minecraft.world.level.levelgen.structure.Structure>empty()),
+                Optional.empty(), Optional.empty(), Optional.empty(), Optional.empty(), Optional.empty(), Optional.empty());
+        Object visitor = visit(new LocationCheck(Optional.of(location), net.minecraft.core.BlockPos.ZERO));
+        assertTrue(((String) field(visitor, "unmet")).contains("STRUCTURE_REFERENCES/STRUCTURE_STARTS"));
     }
 
     @Test void unknownNumberProviderIsRejectedWithoutCallingItsOriginalMethod() throws Exception {
