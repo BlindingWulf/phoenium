@@ -1,6 +1,7 @@
 package dev.phoenium.chunk;
 
 import java.nio.file.Path;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import net.minecraft.core.BlockPos;
 import net.minecraft.nbt.CompoundTag;
@@ -273,9 +274,44 @@ class FullPendingBlockTextInputTest {
             var capture = FullBlockEntityTagInputs.observe(f.input(ChunkPos.ZERO), position,
                     f.world.level.registryAccess(), () -> { }, ignored -> true);
             assertThrows(FullBlockEntityTagInputs.Capacity.class,
-                    () -> capture.components("front_text.messages[]", ignored -> false));
+                    () -> capture.components("front_text.messages[]", ignored -> false, () -> { }));
             assertTrue(capture.valid(), "scalar refusal must leave the versioned capture available for retry");
         } finally { f.stop(); FullFinishingServices.stopped(f.world.level.getServer()); }
+        assertCleanup(f);
+    }
+
+    @Test void pendingFieldReservationMutationRetriesBeforeAnyStaleSlotCopy() throws Exception {
+        var f = new FullRegistrationFixture(true);
+        var position = new BlockPos(8, 8, 8);
+        var state = Blocks.OAK_SIGN.defaultBlockState();
+        var sign = new SignBlockEntity(position, state);
+        set(sign, SignBlockEntity.class, "frontText", new SignText().setMessage(0, Component.literal("before")));
+        var tag = sign.saveWithFullMetadata(f.world.level.registryAccess());
+        f.input(ChunkPos.ZERO).setBlockEntityNbt(tag);
+        AutoCloseable waiter = null;
+        try {
+            var capture = FullBlockEntityTagInputs.observe(f.input(ChunkPos.ZERO), position,
+                    f.world.level.registryAccess(), () -> { }, ignored -> true);
+            var mutated = new AtomicBoolean();
+            var retry = assertThrows(FullBlockEntityTagInputs.Retry.class, () -> capture.components(
+                    "front_text.messages[]", ignored -> {
+                        if (mutated.compareAndSet(false, true)) {
+                            var front = tag.getCompound("front_text").orElseThrow();
+                            front.getListOrEmpty("messages").set(0,
+                                    net.minecraft.nbt.StringTag.valueOf("grown during reservation"));
+                        }
+                        return true;
+                    }, () -> { }));
+            waiter = retry.waiter;
+            assertFalse(capture.valid(), "reservation mutation must stale the original occurrence");
+            var fresh = FullBlockEntityTagInputs.observe(f.input(ChunkPos.ZERO), position,
+                    f.world.level.registryAccess(), () -> { }, ignored -> true);
+            assertNotNull(fresh);
+            assertDoesNotThrow(() -> fresh.components("front_text.messages[]", ignored -> true, () -> { }));
+        } finally {
+            if (waiter != null) waiter.close();
+            f.stop(); FullFinishingServices.stopped(f.world.level.getServer());
+        }
         assertCleanup(f);
     }
 

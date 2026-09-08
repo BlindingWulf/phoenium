@@ -103,14 +103,22 @@ public final class FullBlockEntityTagInputs {
         FullSavedTextInputs.Saved customName() { return customName; }
         /** Returns every component-valued slot of the audited serialized field. Classification
          * is deliberately conservative and does not evaluate an arbitrary NBT path. */
-        List<FullSavedTextInputs.Saved> components(String path, LongPredicate reserve) {
+        List<FullSavedTextInputs.Saved> components(String path, LongPredicate reserve, Runnable changed) {
             synchronized (this) {
                 if (!valid()) throw new ChunkProtocolException("pending block-entity component source changed before field capture");
             }
             List<net.minecraft.nbt.Tag> tags = componentTags(path);
-            long bytes = 0L;
-            for (var tag : tags) bytes = Math.addExact(bytes, FullSavedTextInputs.measureTag(tag));
-            if (!reserve.test(bytes)) throw new Capacity();
+            long admitted = 0L;
+            for (var tag : tags) admitted = Math.addExact(admitted, FullSavedTextInputs.measureTag(tag));
+            if (!reserve.test(admitted)) throw new Capacity();
+            if (!valid()) throw occurrence.retry(changed, reload, reloadRevision);
+            // The reservation callback may have run a writer or lifecycle transition. Refresh
+            // the exact audited slots and scalar measure before any detached copy is made.
+            tags = componentTags(path);
+            long refreshed = 0L;
+            for (var tag : tags) refreshed = Math.addExact(refreshed, FullSavedTextInputs.measureTag(tag));
+            if (refreshed > admitted) throw new Capacity();
+            if (!valid()) throw occurrence.retry(changed, reload, reloadRevision);
             var result = new ArrayList<FullSavedTextInputs.Saved>(tags.size());
             for (var tag : tags) result.add(FullSavedTextInputs.captureTag(tag, source.custody));
             return List.copyOf(result);

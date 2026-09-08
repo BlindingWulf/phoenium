@@ -293,7 +293,7 @@ public final class FullSavedContextInputs {
                         break;
                     }
                     List<FullSavedTextInputs.Saved> components;
-                    try { components = capture.components(read.path(), this::reserve); }
+                    try { components = capture.components(read.path(), this::reserve, changed); }
                     catch (FullBlockEntityTagInputs.Capacity capacity) {
                         refinementCapacity = true; changedPlan = true; continue;
                     }
