@@ -57,8 +57,9 @@ parallel OFF. Normal stop records admissionClosed=true, queuedServices=0,
 pendingSaves=0, 528 captures and 529 protocol acknowledgements (not 529 durable writes).
 All save failure/residual counters are zero. The earlier `transform-20260908-065406`
 false-negative marker bundle remains immutable. This is baseline installed health,
-not complete Stage 4 acceptance. Luna is making the candidate Stage4 shutdown marker
-and positive execution fields mandatory in the runner too.
+not complete Stage 4 acceptance. The candidate Stage4 shutdown marker, zero residual
+fields, positive execution and exact workers=1 are now mandatory in the runner
+(`177a3dc`, `8934b05`); Luna revalidates the preserved log without another launch.
 
 Controlled FULL `transform-20260908-065445` reaches the native hooks, then fails
 `FullPublishedInputBindingTest.originalUnloadWaitsForRetainedUseThenReclaimsTheActualHolder`:
@@ -78,9 +79,13 @@ probe JAR builds and production packaging excludes this adapter. Installed rerun
 the unchanged final zero-custody assertion at FullPublishedInputBindingTest:393:
 three entries remain. Probe SHA-256 is
 `A7D06C6F853840E32F8C811F539B5B65EC579A76350F905B20B50917BF6886F8`.
-Sol owns that exact installed-only lifetime/ACK repair first. Its separate test-only
-adverse pending-write/failed-stop probe is recoverable WIP, to resume afterward;
-Luna alone launches installed evidence.
+The three entries are the original clean-save source fork's lifecycle/work/custody,
+retained after completion until its real ACK. Repair `c441e0b` (Sol `264d96a`) pumps
+only already-published ACKs after the original callback at the owner-free fixture
+boundary; unfinished native writes remain retained and original exceptions remain
+primary. The 46-test focused gate passes; the unchanged zero-custody assertion now
+awaits installed rerun. Sol resumes its separately packaged adverse native-write /
+failed-stop probe; Luna alone launches installed evidence.
 
 Earlier preserved native failures: `transform-20260908-060338` first-tick consecutive
 coordinator phases, repaired `00ce944`; `transform-20260908-064318` superclass-close
