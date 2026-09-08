@@ -76,15 +76,21 @@ public final class RegionalServiceDispatcher implements RegionalServiceExecutor 
             "regional service closure encloser is not installed");
         Set<RoutingKey> footprint = new dev.phoenium.topology.TopologyPlanner()
             .requiredClosure(Set.of(center), radius);
-        while (!encloser.test(footprint)) {
+        while (true) {
+            if (scheduler.failureBarrier().tripped())
+                throw new IllegalStateException("regional service closure failed at topology barrier");
+            // The enclosure itself may publish a completed convergence and return false so
+            // callers recapture routes. Count that publication as progress too: observing only
+            // the following boundary advance incorrectly rejects an already finished merge.
             long generation = directory.snapshot().generation().value();
             long attempts = scheduler.deliveryAttempts();
+            if (encloser.test(footprint)) break;
             boolean advanced = boundaryAdvancer.getAsBoolean();
+            if (scheduler.failureBarrier().tripped())
+                throw new IllegalStateException("regional service closure failed at topology barrier");
             if (directory.snapshot().generation().value() == generation
                     && scheduler.deliveryAttempts() == attempts && !advanced)
                 throw new IllegalStateException("regional service closure cannot progress for " + center);
-            if (scheduler.failureBarrier().tripped())
-                throw new IllegalStateException("regional service closure failed at topology barrier");
         }
         requireCommonOwner(center, footprint);
     }

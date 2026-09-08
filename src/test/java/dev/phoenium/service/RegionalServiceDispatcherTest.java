@@ -22,6 +22,50 @@ import org.junit.jupiter.api.Test;
 
 final class RegionalServiceDispatcherTest {
     @Test
+    void realEnclosurePublicationIsProgressBeforeTheFollowingBoundaryAdvance() {
+        Fixture f = new Fixture();
+        var dispatcher = f.dispatcher();
+        var routes = new LinkedHashMap<>(f.directory.snapshot().routes());
+        var generation = f.directory.snapshot().generation().next();
+        routes.replaceAll((key, route) -> new RegionRoute(route.region(), generation, route.ownerEpoch()));
+        for (int x = -1; x <= 1; x++) for (int z = -1; z <= 1; z++) {
+            var owner = x == 1 ? f.b : f.a;
+            routes.put(new RoutingKey(f.world, x, z), new RegionRoute(owner.id(), generation, owner.ownerEpoch()));
+        }
+        f.directory.publish(generation, routes);
+        var enclosure = new dev.phoenium.chunk.FullRegionalEnclosure(f.directory, f.runtimes, f.gateway, null);
+        dispatcher.installClosureEncloser(enclosure::enclose);
+        dispatcher.installBoundaryAdvancer(enclosure::advance);
+
+        dispatcher.ensureClosure(f.aKey, 1);
+
+        assertEquals(generation.next(), f.directory.snapshot().generation());
+        assertEquals(routes.keySet(), f.directory.snapshot().routes().keySet());
+        assertTrue(f.directory.snapshot().routes().values().stream().allMatch(route -> route.region().equals(f.aId)));
+        var executed = new java.util.ArrayList<RegionId>();
+        dispatcher.executeAndDrain(f.aKey, RegionalServiceKind.RUN_SCHEDULED_BLOCK_TICK,
+            execution -> { dispatcher.requireCurrentClosure(f.aKey, 1); executed.add(execution.runtime().id()); });
+        assertEquals(List.of(f.aId), executed);
+        assertFalse(f.barrier.tripped());
+        assertFalse(f.a.leases().hasActiveLease());
+        assertFalse(f.b.leases().hasActiveLease());
+    }
+
+    @Test
+    void unresolvedClosureStillFailsWithoutRunningTheCallbackOrPublishingRoutes() {
+        Fixture f = new Fixture();
+        var dispatcher = f.dispatcher();
+        var enclosure = new dev.phoenium.chunk.FullRegionalEnclosure(f.directory, f.runtimes, f.gateway, null);
+        dispatcher.installClosureEncloser(enclosure::enclose);
+        dispatcher.installBoundaryAdvancer(enclosure::advance);
+        var before = f.directory.snapshot();
+        var failure = assertThrows(IllegalStateException.class, () -> dispatcher.ensureClosure(f.aKey, 1));
+        assertTrue(failure.getMessage().contains("cannot progress"));
+        assertSame(before, f.directory.snapshot());
+        assertEquals(0, dispatcher.pendingCount());
+    }
+
+    @Test
     void exactTypedBodyExecutesOnlyUnderCurrentOwnerLease() {
         Fixture f = new Fixture();
         var dispatcher = f.dispatcher();
