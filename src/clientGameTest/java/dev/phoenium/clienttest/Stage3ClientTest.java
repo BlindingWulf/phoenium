@@ -1853,6 +1853,8 @@ public final class Stage3ClientTest implements FabricClientGameTest {
                         && healthyFullAcceptanceLog(lifecycleProcessLog),
                         active.serverFailure("FULL server health check failed"));
                 evidence.put(phase + "FullStopped", requireFullStoppedMetrics(lifecycleProcessLog));
+                evidence.put(phase + "ChunkBindingStopped", requireChunkBindingStopped(lifecycleProcessLog));
+                evidence.put(phase + "Stage2Stopped", requireStage2Stopped(lifecycleProcessLog));
                 Path savedLatestLog = directory.resolve(phase + "-latest.log");
                 Path savedProcessLog = directory.resolve(phase + "-server-process.log");
                 Files.copy(active.latestLog, savedLatestLog, StandardCopyOption.REPLACE_EXISTING);
@@ -1960,18 +1962,69 @@ public final class Stage3ClientTest implements FabricClientGameTest {
         String line = lines.get(0);
         String[] fields = {
                 "structureHolders", "structureReaders", "structureWriters", "structureWaitingWriters",
-                "structureDemandTickets", "generationHolders", "graphs", "returnedIndex",
-                "custodyEntries", "workEntries", "lifecycleEntries"
+                "structureDemandTickets", "generationHolders", "graphs", "returnedIndex", "deliveries",
+                "plans", "requestedPreparations", "consumers", "factBytes", "pendingNotifications",
+                "expandedOperations", "edges", "records", "uses", "transientExecutions", "chargedRecordBytes"
         };
         for (String field : fields) {
             Matcher metric = Pattern.compile("(?:^|[\\s,{])" + Pattern.quote(field)
                             + "=(-?\\d+)(?:\\s|[,}])")
                     .matcher(line);
-            require(metric.find(), "authoritative FULL teardown omitted cleanup metric " + field + ": " + line);
-            require(Long.parseLong(metric.group(1)) == 0L,
-                    "authoritative FULL teardown left " + field + " nonzero: " + line);
+            int occurrences = 0;
+            while (metric.find()) {
+                occurrences++;
+                require(Long.parseLong(metric.group(1)) == 0L,
+                        "authoritative FULL teardown left " + field + " nonzero: " + line);
+            }
+            require(occurrences > 0, "authoritative FULL teardown omitted cleanup metric " + field + ": " + line);
         }
         return line;
+    }
+
+    private static String requireChunkBindingStopped(String lifecycleProcessLog) {
+        List<String> lines = lifecycleProcessLog.lines()
+                .filter(line -> line.contains("PHOENIUM_CHUNK_BINDING STOPPED"))
+                .toList();
+        require(lines.size() == 1,
+                "authoritative FULL teardown must emit exactly one scoped CHUNK_BINDING snapshot: " + lines);
+        String line = lines.get(0);
+        String[] fields = {
+                "barriers", "retainedGraphs", "returnedIndex", "poiIndex", "synchronousInvocations",
+                "lightBatches", "lightOccurrences", "lightReceipts", "poiEntries", "metadataEntries",
+                "lifecycleEntries", "workEntries", "custodyEntries", "duplicateApplications"
+        };
+        for (String field : fields)
+            requireZeroMetric(line, field, "CHUNK_BINDING");
+        return line;
+    }
+
+    private static String requireStage2Stopped(String lifecycleProcessLog) {
+        List<String> lines = lifecycleProcessLog.lines()
+                .filter(line -> line.contains("PHOENIUM_STAGE2 stopped"))
+                .toList();
+        require(lines.size() == 1,
+                "authoritative FULL teardown must emit exactly one scoped STAGE2 snapshot: " + lines);
+        String line = lines.get(0);
+        for (String field : new String[] {
+                "lifecycle=STOPPED", "scheduler=STOPPING", "workers=1", "lifecycleStarts=1",
+                "lifecycleStops=1", "parallel=OFF", "leases=0", "fallback=0",
+                "ownershipViolations=0", "unleased=0", "barriers=0", "duplicate=0", "bypass=0"
+        })
+            require(line.contains(field), "STAGE2 teardown omitted or changed " + field + ": " + line);
+        return line;
+    }
+
+    private static void requireZeroMetric(String line, String field, String subsystem) {
+        Matcher metric = Pattern.compile("(?:^|[\\s,{])" + Pattern.quote(field)
+                        + "=(-?\\d+)(?:\\s|[,}])")
+                .matcher(line);
+        int occurrences = 0;
+        while (metric.find()) {
+            occurrences++;
+            require(Long.parseLong(metric.group(1)) == 0L,
+                    subsystem + " teardown left " + field + " nonzero: " + line);
+        }
+        require(occurrences > 0, subsystem + " teardown omitted cleanup metric " + field + ": " + line);
     }
 
     /** The two acceptance lifecycles append to one process log; scope route evidence to this boot. */
@@ -2028,6 +2081,7 @@ public final class Stage3ClientTest implements FabricClientGameTest {
                 require(entities.size() == 2,
                         "fresh FULL region record entity list size was not two for chunk " + x + ",4: "
                                 + entities.size());
+                List<String> entityPayloads = new ArrayList<>();
                 for (int i = 0; i < 2; i++) {
                     require(entities.get(i) instanceof CompoundTag,
                             "fresh FULL region record entity " + i + " was not a compound for chunk " + x + ",4");
@@ -2046,6 +2100,7 @@ public final class Stage3ClientTest implements FabricClientGameTest {
                     UUID actualUuid = entity.read("UUID", UUIDUtil.CODEC).orElse(null);
                     require(expectedUuid.equals(actualUuid), "fresh FULL region record entity UUID was wrong for chunk "
                             + x + ",4 entity " + i + ": " + actualUuid + " expected=" + expectedUuid);
+                    entityPayloads.add(entity.toString());
                 }
                 String recordHash = java.util.HexFormat.of().withUpperCase().formatHex(
                         sha256(bytes, start, 4 + length));
@@ -2058,7 +2113,7 @@ public final class Stage3ClientTest implements FabricClientGameTest {
                 chunks.add("[" + x + ",4]:status=" + status + ",offset=" + location
                         + ",sectors=" + sectors + ",recordBytes=" + (4 + length)
                         + ",recordSha256=" + recordHash + ",legacyEntities=" + entities.size()
-                        + ",uuids=" + uuids);
+                        + ",uuids=" + uuids + ",entityPayloads=" + entityPayloads);
             }
             return "path=" + region + " chunks=" + chunks + " roots=8";
         } catch (IOException failure) {
