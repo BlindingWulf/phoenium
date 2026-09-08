@@ -46,6 +46,7 @@ public final class RegionRuntime {
     public void enqueue(RegionTaskEnvelope envelope) { inbox.addLast(envelope); }
     public void requeueFirst(RegionTaskEnvelope envelope) { inbox.addFirst(envelope); }
     public void defer(RegionTaskEnvelope envelope) { transitionMailbox.addLast(envelope); }
+    public void deferFirst(RegionTaskEnvelope envelope) { transitionMailbox.addFirst(envelope); }
     public Optional<RegionTaskEnvelope> poll() { return Optional.ofNullable(inbox.pollFirst()); }
     public Optional<RegionTaskEnvelope> pollTransitionMailbox() { return Optional.ofNullable(transitionMailbox.pollFirst()); }
     public int transitionMailboxSize() { return transitionMailbox.size(); }

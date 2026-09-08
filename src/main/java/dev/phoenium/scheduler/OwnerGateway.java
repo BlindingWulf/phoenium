@@ -53,9 +53,22 @@ public final class OwnerGateway {
 
     /** A committed mailbox is always sent back through current directory resolution. */
     public void releaseTransitionMailbox(RegionRuntime runtime) {
-        RegionTaskEnvelope envelope;
-        while ((envelope = runtime.pollTransitionMailbox().orElse(null)) != null) {
-            submit(envelope);
+        // A concurrent next transition may defer an entry again. Visit only this release's
+        // original cohort, and never discard a retained claim because the common barrier
+        // closed admission before (or during) delivery.
+        int cohort = runtime.transitionMailboxSize();
+        for (int i = 0; i < cohort && scheduler.acceptsSimulationWork(); i++) {
+            RegionTaskEnvelope envelope = runtime.pollTransitionMailbox().orElse(null);
+            if (envelope == null) break;
+            try {
+                Delivery delivery = submit(envelope);
+                if (delivery == Delivery.REJECTED_SCHEDULER_STOPPED) { runtime.deferFirst(envelope); return; }
+                if (delivery == Delivery.REJECTED_STALE || delivery == Delivery.REJECTED_TRANSITION)
+                    throw new IllegalStateException("retained transition work lost valid delivery: " + delivery);
+            } catch (RuntimeException | Error failure) {
+                runtime.deferFirst(envelope);
+                throw failure;
+            }
         }
     }
 }

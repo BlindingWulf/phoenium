@@ -108,3 +108,19 @@ guard failure is preserved under `run/stage4/failed-core-gate-20260908`; its two
 metadata exemptions retain direct `Thread.holdsLock` callback assertions and the
 negative broad-gameplay-lock coverage. Repaired run:
 `run/stage4/live-retention-focused-repaired-20260908.log`.
+
+Integrated implementation/harness checkpoint `a1da48a` was dispatched to Luna for
+one consolidated affected build/transformed/installed campaign while Sol implements
+tracking. It includes corrected service/topology commit `2802d7f` and named save ACK
+commit `405d8e6`; Luna is also checking equal restored tick-order ties, eligibility
+observations and clear/copy-area semantics against actual pinned LevelTicks.
+
+Subsequent lead review reproduced three topology notification/barrier defects;
+failed logs/XML are preserved under `run/stage4/failed-topology-notification-20260908`.
+Repairs propagate start/completion notification failures through the shared barrier,
+retain mailbox envelopes on stopped or failed delivery, bound each release to its
+original cohort, prevent a pending migration from advancing after another service's
+barrier, and explicitly release only immutable queue metadata at terminal acknowledgement.
+Affected core/save/dispatcher/topology run: 52 tests / six suites PASS,
+`run/stage4/topology-terminal-ack-20260908.log`. No original queued mutation is invoked
+by terminal acknowledgement. This repair must be in the final stable installed artifact.

@@ -24,6 +24,70 @@ import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.Test;
 
 final class TopologyCoordinatorMigrationTest {
+    @Test void explicitTerminalAcknowledgementReleasesQueuedMetadataWithoutExecutingPayloads() {
+        Fixture f = new Fixture();
+        f.a.defer(f.append("never-execute-mailbox"));
+        f.gateway.submit(f.append("never-execute-inbox"));
+        assertThrows(IllegalStateException.class, f.scheduler::acknowledgeStoppedEnvelopes);
+        f.scheduler.stop();
+        assertEquals(2, f.scheduler.acknowledgeStoppedEnvelopes());
+        assertEquals(0, f.scheduler.acknowledgeStoppedEnvelopes());
+        assertTrue(f.a.immutableLog().isEmpty()); assertTrue(f.b.immutableLog().isEmpty());
+    }
+    @Test void aBarrierFromAnotherServiceStopsAnAlreadyPendingMigration() {
+        Fixture f = new Fixture();
+        var coordinator = new TopologyCoordinator(f.directory, f.runtimes, f.gateway);
+        coordinator.request(f.transition(f.bId));
+        var before = f.directory.snapshot();
+        f.barrier.trip(new IllegalStateException("save callback failed"), before.generation(), f.a.ownerEpoch(), null);
+        assertFalse(coordinator.advance());
+        assertSame(before, f.directory.snapshot());
+        assertTrue(coordinator.hasPendingTransition());
+    }
+    @Test void failedAdmissionNotificationRetainsTransitionAndTripsTheSharedBarrier() {
+        Fixture f = new Fixture();
+        var coordinator = new TopologyCoordinator(f.directory, f.runtimes, f.gateway);
+        var failure = new IllegalStateException("admission observer");
+        var later = new AtomicInteger();
+        f.directory.observeChanges(() -> { assertEquals(0, coordinator.metadataGateHoldCount()); throw failure; });
+        f.directory.observeChanges(later::incrementAndGet);
+        assertSame(failure, assertThrows(IllegalStateException.class, () -> coordinator.request(f.transition(f.bId))));
+        assertTrue(f.barrier.tripped()); assertEquals(1, later.get());
+        assertTrue(coordinator.hasPendingTransition());
+        assertTrue(f.a.transitioning()); assertTrue(f.b.transitioning());
+        assertFalse(coordinator.advance());
+    }
+
+    @Test void failedCompletionNotificationKeepsCommittedMigrationAndNotifiesIndependentWaiters() {
+        Fixture f = new Fixture(); var installs = new AtomicInteger();
+        var coordinator = new TopologyCoordinator(f.directory, f.runtimes, f.gateway, null,
+                proposed -> published -> installs.incrementAndGet());
+        var failure = new IllegalArgumentException("completion observer");
+        var completionNotices = new AtomicInteger();
+        f.directory.observeChanges(() -> {
+            assertEquals(0, coordinator.metadataGateHoldCount());
+            if (f.directory.snapshot().generation().value() > 1 && f.directory.pendingChange(f.aKey).isEmpty()) throw failure;
+        });
+        f.directory.observeChanges(() -> {
+            if (f.directory.snapshot().generation().value() > 1 && f.directory.pendingChange(f.aKey).isEmpty()) completionNotices.incrementAndGet();
+        });
+        coordinator.request(f.transition(f.bId));
+        assertSame(failure, assertThrows(IllegalArgumentException.class, coordinator::advance));
+        assertTrue(f.barrier.tripped()); assertEquals(1, completionNotices.get());
+        assertEquals(1, installs.get()); assertFalse(coordinator.hasPendingTransition());
+        assertEquals(f.bId, f.directory.resolve(f.aKey).orElseThrow().region());
+        assertFalse(coordinator.advance()); assertEquals(1, installs.get());
+    }
+
+    @Test void mailboxReleaseAfterTheSharedBarrierPreservesUnexecutedEnvelopes() {
+        Fixture f = new Fixture(); var queued = f.append("retained-for-terminal-ack");
+        f.a.defer(queued);
+        f.barrier.trip(new IllegalStateException("another service failed"), f.directory.snapshot().generation(), f.a.ownerEpoch(), null);
+        f.gateway.releaseTransitionMailbox(f.a);
+        assertEquals(1, f.a.transitionMailboxSize());
+        assertSame(queued, f.a.pollTransitionMailbox().orElseThrow());
+        assertTrue(f.a.immutableLog().isEmpty());
+    }
     @Test
     void lateInstalledMigrationRunsOutsideGateAcrossRepeatedSuccessfulTransitions() {
         Fixture f = new Fixture();

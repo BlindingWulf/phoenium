@@ -62,6 +62,19 @@ public final class RegionScheduler {
     public void quiesce() { if (lifecycle == SchedulerLifecycle.RUNNING) lifecycle = SchedulerLifecycle.QUIESCING; }
     /** Shutdown never drains envelopes on the caller thread; pending work stays unexecuted. */
     public void stop() { if (lifecycle != SchedulerLifecycle.FAILED) lifecycle = SchedulerLifecycle.STOPPING; }
+    /** Explicit terminal acknowledgement after retained service/packet claims settle. Only
+     * immutable envelopes leave here; no payload or original callback is ever executed. */
+    public int acknowledgeStoppedEnvelopes() {
+        if (lifecycle.acceptsSimulationWork() || OwnershipContext.current().isPresent()
+                || runtimes.values().stream().anyMatch(runtime -> runtime.leases().hasActiveLease()))
+            throw new IllegalStateException("queued work acknowledged before scheduler shutdown");
+        int acknowledged = 0;
+        for (RegionRuntime runtime : runtimes.values()) {
+            while (runtime.poll().isPresent()) acknowledged++;
+            while (runtime.pollTransitionMailbox().isPresent()) acknowledged++;
+        }
+        return acknowledged;
+    }
     public void advanceOne() {
         if (!acceptsSimulationWork()) return;
         runtimes.values().stream().filter(runtime -> runtime.lifecycle() == RegionLifecycle.READY && !runtime.transitioning() && runtime.inboxSize() > 0)

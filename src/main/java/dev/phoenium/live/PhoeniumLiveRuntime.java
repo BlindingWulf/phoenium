@@ -370,8 +370,10 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
                     chunkCustody.cancel(ChunkCustody.id(request));
                     chunkRequests.remove(request.correlationId());
                 }
-                if (abandoned != 0 || packetCount != 0)
-                    throw new IllegalStateException("shutdown acknowledged unexecuted work after failure: services=" + abandoned + " packets=" + packetCount);
+                int envelopes = scheduler == null ? 0 : scheduler.acknowledgeStoppedEnvelopes();
+                if (abandoned != 0 || packetCount != 0 || envelopes != 0)
+                    throw new IllegalStateException("shutdown acknowledged unexecuted work after failure: services=" + abandoned
+                            + " packets=" + packetCount + " envelopes=" + envelopes);
             });
             for (var services : java.util.List.copyOf(chunkPrerequisiteServices.values())) failures.run(services::shutdown);
             failures.run(() -> { if (regionalServices != null) regionalServices.unbindAll(); });

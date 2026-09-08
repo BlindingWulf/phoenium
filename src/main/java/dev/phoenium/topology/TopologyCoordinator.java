@@ -65,6 +65,8 @@ public final class TopologyCoordinator {
     public void request(Transition transition) {
         metadataGate.lock();
         try {
+            if (migrationFailed || gateway.scheduler().failureBarrier().tripped())
+                throw new IllegalStateException("topology admission closed by the shared failure barrier");
             if (pending != null) throw new IllegalStateException("topology transition already pending");
             if (pendingConvergence != null) throw new IllegalStateException("topology admission closed while convergence is pending: " + pendingConvergence.reason());
             pending = transition;
@@ -81,6 +83,8 @@ public final class TopologyCoordinator {
     public void recordConvergence(Set<RoutingKey> conflictedKeys, Transition proposal, String reason) {
         metadataGate.lock();
         try {
+            if (migrationFailed || gateway.scheduler().failureBarrier().tripped())
+                throw new IllegalStateException("topology admission closed by the shared failure barrier");
             if (pending != null) throw new IllegalStateException("topology transition already pending");
             if (pendingConvergence != null) throw new IllegalStateException("convergence already pending");
             pendingConvergence = new Convergence(conflictedKeys, proposal, Objects.requireNonNull(reason, "reason"));
@@ -89,6 +93,7 @@ public final class TopologyCoordinator {
     }
     /** Called by the scheduler's event loop. It never blocks on a region. */
     public boolean advance() {
+        if (gateway.scheduler().failureBarrier().tripped()) return false;
         if (!tryCloseAdmission()) return false;
         RegionDirectory.PendingChange completed = null;
         Transition transition;
@@ -170,8 +175,21 @@ public final class TopologyCoordinator {
         } finally {
             metadataGate.unlock();
         }
-        for (var id : transition.participants()) gateway.releaseTransitionMailbox(runtime(id));
-        directory.signalChange(completed);
+        Throwable notificationFailure = null;
+        for (var id : transition.participants()) {
+            try { gateway.releaseTransitionMailbox(runtime(id)); }
+            catch (RuntimeException | Error failure) {
+                notificationFailure = accumulate(notificationFailure, failure);
+                failMigration(notificationFailure, transition);
+            }
+        }
+        try { directory.signalChange(completed); }
+        catch (RuntimeException | Error failure) {
+            notificationFailure = accumulate(notificationFailure, failure);
+            failMigration(notificationFailure, transition);
+        }
+        if (notificationFailure instanceof RuntimeException runtime) throw runtime;
+        if (notificationFailure instanceof Error error) throw error;
         return true;
     }
     private boolean tryCloseAdmission() {
@@ -212,8 +230,14 @@ public final class TopologyCoordinator {
             directoryChange = change;
             admissionClosing = false;
         } finally { metadataGate.unlock(); }
-        directory.signalChangeStarted(change);
+        try { directory.signalChangeStarted(change); }
+        catch (RuntimeException | Error failure) { failMigration(failure, transition); throw failure; }
         return true;
+    }
+    private static Throwable accumulate(Throwable first, Throwable next) {
+        if (first == null) return next;
+        if (first != next) first.addSuppressed(next);
+        return first;
     }
     private void failMigration(Throwable failure, Transition transition) {
         metadataGate.lock();
