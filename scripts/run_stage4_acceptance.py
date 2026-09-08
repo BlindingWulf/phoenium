@@ -137,15 +137,21 @@ def expected_pending_tick(trace_path):
             priority = re.search(r"priority=([A-Z_]+)", event)
             order = re.search(r"order=(-?\d+)", event)
             if position and trigger and block and priority and order:
+                dimension = "minecraft:overworld"
+                for started in report.get("events", []):
+                    world = re.search(r"world=.*minecraft:([a-z0-9_./-]+)", started)
+                    if world:
+                        dimension = "minecraft:" + world.group(1).split("]", 1)[0]
+                        break
                 save_times = []
                 for saved in report.get("events", []):
                     saved_chunk = re.search(
-                        r"save\.serialization\.ticks chunk=ChunkPos\{x=(-?\d+), z=(-?\d+)\} gameTime=(-?\d+)",
+                        r"save\.serialization\.ticks chunk=\[(-?\d+), (-?\d+)\] gameTime=(-?\d+)",
                         saved)
                     if saved_chunk and (int(saved_chunk.group(1)), int(saved_chunk.group(2))) == (
                             int(position.group(1)) >> 4, int(position.group(3)) >> 4):
                         save_times.append(int(saved_chunk.group(3)))
-                priority_value = {"EXTREMELY_HIGH": -4, "VERY_HIGH": -3, "HIGH": -2,
+                priority_value = {"EXTREMELY_HIGH": -3, "VERY_HIGH": -2, "HIGH": -1,
                                   "NORMAL": 0, "LOW": 1, "VERY_LOW": 2,
                                   "EXTREMELY_LOW": 3}.get(priority.group(1))
                 if priority_value is None or not save_times:
@@ -155,6 +161,7 @@ def expected_pending_tick(trace_path):
                                       "z": int(position.group(3))},
                         "chunk": {"x": int(position.group(1)) >> 4,
                                   "z": int(position.group(3)) >> 4},
+                        "dimension": dimension,
                         "id": block.group(1), "priority": priority.group(1),
                         "priorityValue": priority_value, "order": int(order.group(1)),
                         "trigger": int(trigger.group(1)),
@@ -191,16 +198,22 @@ def block_state_at(decoded, position):
             if not isinstance(data, list):
                 return None
             bits = max(4, (len(palette) - 1).bit_length())
-            start = local_index * bits
-            word = start >> 6
-            shift = start & 63
+            values_per_long = 64 // bits
+            word = local_index // values_per_long
+            shift = (local_index % values_per_long) * bits
             if word >= len(data):
                 return None
             palette_index = (int(data[word]) >> shift) & ((1 << bits) - 1)
-            if shift + bits > 64 and word + 1 < len(data):
-                palette_index |= (int(data[word + 1]) << (64 - shift)) & ((1 << bits) - 1)
         return palette[palette_index] if palette_index < len(palette) else None
     return None
+
+
+def saved_chunk_position(decoded):
+    level = decoded.get("Level", decoded) if isinstance(decoded, dict) else None
+    if not isinstance(level, dict):
+        return None
+    x, z = level.get("xPos"), level.get("zPos")
+    return {"x": x, "z": z} if isinstance(x, int) and isinstance(z, int) else None
 
 
 def inspect_mca(world, state_positions=()):
@@ -245,6 +258,7 @@ def inspect_mca(world, state_positions=()):
             chunks.append({"index": index, "offset": offset, "sectors": sectors,
                            "compression": compression, "nbtSha256": digest,
                            "knownTickTags": [tag.decode() for tag in known],
+                           "chunkPos": saved_chunk_position(decoded),
                            "blockTicks": tick_records(decoded, "block_ticks"),
                            "fluidTicks": tick_records(decoded, "fluid_ticks"),
                            "blockStates": {f"{position['x']},{position['y']},{position['z']}": block_state_at(decoded, position)
@@ -275,11 +289,14 @@ def pending_tick_readback(records, expected):
         return result
     all_ticks = []
     for region in records:
+        if not region_is_dimension(region.get("path", ""), expected.get("dimension", "minecraft:overworld")):
+            continue
         for chunk in region.get("chunks", []):
             for tick in chunk.get("blockTicks", []):
                 if not isinstance(tick, dict):
                     continue
                 item = {"region": region["path"], "chunkIndex": chunk["index"],
+                        "chunkPos": chunk.get("chunkPos"),
                         "_state": chunk.get("blockStates", {}).get(
                             f"{expected['position']['x']},{expected['position']['y']},{expected['position']['z']}"),
                         **tick}
@@ -295,34 +312,44 @@ def pending_tick_readback(records, expected):
             continue
         if z != expected_position["z"] or y != expected_position["y"]:
             continue
+        if tick.get("chunkIndex") != chunk_index_for(expected_chunk) \
+                or tick.get("chunkPos") != expected_chunk:
+            continue
         if tick.get("i") != expected["id"] or tick.get("p") != expected["priorityValue"] \
-                or tick.get("o") != expected["order"]:
+                or not isinstance(tick.get("_state"), dict) \
+                or tick["_state"].get("Name") != expected["id"] \
+                or tick["_state"].get("Properties", {}).get("powered") != "true":
             continue
         deadline = tick.get("t")
         if deadline != expected["trigger"] - expected["saveGameTime"]:
             continue
         result["matches"].append(tick)
         tick["deadlineMatch"] = True
-        tick["chunkMatch"] = chunk_index_for(expected_chunk) == tick.get("chunkIndex")
+        tick["chunkMatch"] = True
         tick["powered"] = isinstance(tick.get("_state"), dict) and \
             tick["_state"].get("Properties", {}).get("powered") == "true"
     result["status"] = "PRESENT" if result["matches"] else "MISSING"
     result["deadlineMatch"] = any(item.get("deadlineMatch") for item in result["matches"])
     result["exactIdentity"] = any(item.get("i") == expected["id"] and
                                    item.get("p") == expected["priorityValue"] and
-                                   item.get("o") == expected["order"] and
                                    item.get("t") == expected["trigger"] - expected["saveGameTime"]
                                    for item in result["matches"])
-    state_key = f"{expected_position['x']},{expected_position['y']},{expected_position['z']}"
     result["poweredState"] = any(item.get("powered", False) for item in result["matches"])
-    result["chunkMatch"] = any(chunk.get("index") == chunk_index_for(expected_chunk)
-                               and state_key in chunk.get("blockStates", {})
-                               for region in records for chunk in region.get("chunks", []))
+    result["chunkMatch"] = any(item.get("chunkMatch", False) for item in result["matches"])
     return result
 
 
 def chunk_index_for(chunk):
     return (chunk["x"] & 31) + ((chunk["z"] & 31) * 32)
+
+
+def region_is_dimension(path, dimension):
+    normalized = str(path).replace("\\", "/").lower()
+    if dimension == "minecraft:overworld":
+        return "/dimensions/minecraft/overworld/" in normalized \
+            or ("/dimensions/" not in normalized and "/region/" in normalized)
+    namespace, name = dimension.split(":", 1)
+    return f"/dimensions/{namespace}/{name}/" in normalized
 
 
 def copy_server(source, target, production, probe, extras):
