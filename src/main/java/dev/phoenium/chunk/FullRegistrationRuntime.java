@@ -599,19 +599,48 @@ public final class FullRegistrationRuntime {
                     || !target.route().generation().equals(claim.frozenRoute().generation())))
                 throw new ChunkProtocolException("FULL input outside the claimed regional enclosure");
         }
+        Set<RoutingKey> contextFootprint(List<FullInitializedInputs.Target> targets) {
+            Set<RoutingKey> keys = new LinkedHashSet<>();
+            keys.add(lifecycle.chunkKey());
+            for (var target : targets) if ((target.holder() != null
+                    && target.availability() != FullInitializedInputs.Availability.ABSENT)
+                    || target.purposes().contains(FullInitializedInputs.Purpose.ENTITY_CONTEXT))
+                keys.add(new RoutingKey(authority.world(), target.position().x(), target.position().z()));
+            return Set.copyOf(keys);
+        }
+        /** Dependency refinement may converge prepared inputs before its final receipt exists.
+         * It never waits or proposes topology while retaining an owner. */
+        boolean encloseContextTargets(List<FullInitializedInputs.Target> targets) {
+            requireObservationThread();
+            if (dev.phoenium.ownership.OwnershipContext.current().isPresent() || FullFinishingServices.finishing())
+                throw new ChunkProtocolException("context enclosure requires an owner-free boundary");
+            if (!inputActive()) return false;
+            var keys = contextFootprint(targets);
+            if (enclosure != null && !enclosure.enclose(keys)) return false;
+            var route = authority.directory().resolve(lifecycle.chunkKey()).orElse(null);
+            if (route == null) return false;
+            for (var key : keys) if (!route.equals(authority.directory().resolve(key).orElse(null))
+                    || authority.directory().pendingChange(key).filter(change -> !change.completed()).isPresent()) return false;
+            return true;
+        }
+        /** Uses the eventual FULL lease but only its distinct dependency-read capability.
+         * False requests owner-free rediscovery before the original can be claimed. */
+        boolean validateContextInputs(FullContextReadClaim claim) {
+            requireObservationThread();
+            var receipt = claimedInputs;
+            if (receipt == null || receipt != inputReceipt()) return false;
+            for (var key : contextFootprint(receipt.targets())) claim.require(this, key);
+            boolean current = receipt.contexts() == null || receipt.contexts().validateLive(claim, this);
+            if (!current) inputs.changed();
+            return current;
+        }
         void prepareServices(ChunkStageKind kind) {
             if (kind != ChunkStageKind.FULL_FINISH || serviceReservation != null || !inputActive()
                     || inputEvaluation().state() != FullInitializedInputs.State.SATISFIED) return;
             // Actual context producer is mandatory. In-memory endpoints without a world context
             // continue to exercise the real missing-prerequisite branch.
             if (level.environmentAttributes() == null || level.getLevelData() == null) return;
-            Set<RoutingKey> keys = new LinkedHashSet<>();
-            keys.add(lifecycle.chunkKey());
-            for (var target : inputReceipt().targets()) if ((target.holder() != null
-                    && target.availability() != FullInitializedInputs.Availability.ABSENT)
-                    || target.purposes().contains(FullInitializedInputs.Purpose.ENTITY_CONTEXT))
-                keys.add(new RoutingKey(authority.world(), target.position().x(), target.position().z()));
-            if (enclosure != null && !enclosure.enclose(keys)) return;
+            if (!encloseContextTargets(inputReceipt().targets())) return;
             var shared = FullFinishingServices.forServer(server);
             if (legacyOwners != null && legacyOwners.ready() && !legacyOwners.valid(finishing.stage(), savedSnapshot())) {
                 legacyOwners.close(); legacyOwners = null;

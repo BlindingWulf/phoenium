@@ -61,6 +61,8 @@ public final class ChunkStageAdmission {
         final RegionRoute route;
         final RegionLease lease;
         final Object lightRegistration;
+        final FullRegistrationRuntime.Graph contextGraph;
+        final ChunkCustodyModel.ContextUse contextUse;
         custody.gate().lock();
         try {
             if (!pending.belongsTo(custody)) return breachLocked(stage, null, new ChunkProtocolException("foreign custody instance"));
@@ -106,12 +108,83 @@ public final class ChunkStageAdmission {
             if (!pending.reserveFullLocked()) return result(Result.NOT_READY);
             try { lease = manager.acquire(); }
             catch (Throwable failure) { pending.unreserveFullLocked(); return breachLocked(stage, route, failure); }
-            if (!custody.claimLocked(stage)) { lease.close(); pending.unreserveFullLocked(); return result(classify(stage)); }
+            contextGraph = pending.contextGraphLocked();
+            if (contextGraph != null) {
+                contextUse = custody.beginContextUseLocked(stage, contextGraph.holder);
+                if (contextUse == null) { lease.close(); pending.unreserveFullLocked(); return result(Result.NOT_READY); }
+            } else {
+                contextUse = null;
+                if (!custody.claimLocked(stage)) { lease.close(); pending.unreserveFullLocked(); return result(classify(stage)); }
+            }
         } finally { custody.gate().unlock(); }
 
+        Execution<O> execution;
         try (lease;
-             OwnershipContext.Scope ignored = OwnershipContext.enter(deliveredOwner, lease.epoch(), OperationCategory.OWNER_TASK);
-             ChunkStageClaim claim = new ChunkStageClaim(custody, stage, route, lease, lightRegistration);
+             OwnershipContext.Scope ignored = OwnershipContext.enter(deliveredOwner, lease.epoch(), OperationCategory.OWNER_TASK)) {
+            Result refused = null;
+            if (contextUse != null) {
+                final boolean current;
+                // Reading a mutable dependency is not a FULL claim. A stale observation
+                // leaves the queued original untouched; no claimed stage is rolled back.
+                try (var readClaim = new FullContextReadClaim(custody, contextUse, lease, route,
+                             contextGraph.contextFootprint(contextGraph.inputTargets()));
+                     var faults = ChunkSynchronousAccessGuard.forContextRead(readClaim)) {
+                    try { current = contextGraph.validateContextInputs(readClaim); }
+                    catch (Throwable failure) { faults.requireNoBreach(failure); throw failure; }
+                    faults.requireNoBreach(null);
+                }
+                custody.gate().lock();
+                try {
+                    if (!custody.admissionsOpenLocked()) refused = Result.SHUTDOWN;
+                    else if (!custody.isEligibleLocked(stage)) refused = classify(stage);
+                    else if (!current || pending.fullReadinessLocked() != LightInputService.Readiness.REGISTERED)
+                        refused = Result.NOT_READY;
+                    else {
+                        // Transfer custody inside one metadata fence while keeping the
+                        // exact same R lease. No writer can enter between validation and FULL.
+                        custody.endContextUseLocked(contextUse);
+                        if (!custody.claimLocked(stage)) throw new ChunkProtocolException("validated FULL context lost its exact queued stage");
+                    }
+                } finally { custody.gate().unlock(); }
+            }
+            execution = refused == null ? invokeClaimed(pending, route, lease, lightRegistration) : result(refused);
+        } catch (Throwable failure) {
+            custody.gate().lock();
+            try { execution = breachLocked(stage, route, failure); }
+            finally { custody.gate().unlock(); }
+        }
+
+        // Capability and R lease are already revoked. An abandoned read must release
+        // its inputs independently of terminal callbacks, even if a callback throws.
+        boolean readAbandoned;
+        var acknowledgements = new FullInputNotifications.Failures();
+        custody.gate().lock();
+        try {
+            readAbandoned = contextUse != null && custody.hasContextUseLocked(contextUse);
+            if (readAbandoned) {
+                acknowledgements.run(() -> custody.endContextUseLocked(contextUse));
+                acknowledgements.run(pending::unreserveFullLocked);
+            }
+            acknowledgements.run(() -> custody.releaseClaimLocked(stage));
+        } finally { custody.gate().unlock(); }
+        if (readAbandoned) acknowledgements.run(contextGraph::contextReadExited);
+        try { acknowledgements.rethrow(); }
+        catch (Throwable failure) {
+            if (execution.failure() != null) {
+                if (execution.failure() != failure) execution.failure().addSuppressed(failure);
+            } else {
+                custody.gate().lock();
+                try { execution = breachLocked(stage, route, failure); }
+                finally { custody.gate().unlock(); }
+            }
+        }
+        return execution;
+    }
+
+    private <I, O> Execution<O> invokeClaimed(PendingVanillaStage<I, O> pending, RegionRoute route,
+                                               RegionLease lease, Object lightRegistration) throws Throwable {
+        var stage = pending.stage();
+        try (ChunkStageClaim claim = new ChunkStageClaim(custody, stage, route, lease, lightRegistration);
              ChunkSynchronousAccessGuard.Invocation queryFaults = ChunkSynchronousAccessGuard.forClaim(claim)) {
             claim.require(stage);
             final O value;
@@ -128,14 +201,6 @@ public final class ChunkStageAdmission {
             try { custody.appliedLocked(stage); applications++; }
             finally { custody.gate().unlock(); }
             return new Execution<>(Result.APPLIED, value, null);
-        } catch (Throwable failure) {
-            custody.gate().lock();
-            try { return breachLocked(stage, route, failure); }
-            finally { custody.gate().unlock(); }
-        } finally {
-            custody.gate().lock();
-            try { custody.releaseClaimLocked(stage); }
-            finally { custody.gate().unlock(); }
         }
     }
 

@@ -47,6 +47,9 @@ public final class PendingVanillaStage<I, O> {
     void prepareFullServices() { if (full != null) full.prepareServices(kind); }
     boolean reserveFullLocked() { return full == null || full.reserveLocked(kind); }
     void unreserveFullLocked() { if (full != null) full.unreserveLocked(kind); }
+    FullRegistrationRuntime.Graph contextGraphLocked() {
+        return kind == ChunkStageKind.FULL_FINISH ? full : null;
+    }
     void awaitFullEvidence() { if (full != null) full.awaitEvidence(kind); }
     boolean contextInputReadyLocked(Object holder) {
         return full != null && kind == ChunkStageKind.FULL_FINISH && full.holder == holder
