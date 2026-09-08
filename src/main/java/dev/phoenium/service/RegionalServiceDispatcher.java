@@ -133,11 +133,14 @@ public final class RegionalServiceDispatcher implements RegionalServiceExecutor 
         return submit(key, kind, body, false);
     }
     private Handle submit(RoutingKey key, RegionalServiceKind kind, RegionalServiceWork body, boolean local) {
-        Handle handle = scheduler.admit(() -> submitAdmitted(key, kind, body, local), null);
+        return submit(key, kind, body, local, ignored -> true);
+    }
+    private Handle submit(RoutingKey key, RegionalServiceKind kind, RegionalServiceWork body, boolean local, LocalPreparation preparation) {
+        Handle handle = scheduler.admit(() -> submitAdmitted(key, kind, body, local, preparation), null);
         if (handle == null) throw new IllegalStateException("regional service admission after scheduler stop");
         return handle;
     }
-    private Handle submitAdmitted(RoutingKey key, RegionalServiceKind kind, RegionalServiceWork body, boolean local) {
+    private Handle submitAdmitted(RoutingKey key, RegionalServiceKind kind, RegionalServiceWork body, boolean local, LocalPreparation preparation) {
         Objects.requireNonNull(key, "key");
         Objects.requireNonNull(kind, "kind");
         Objects.requireNonNull(body, "body");
@@ -147,7 +150,7 @@ public final class RegionalServiceDispatcher implements RegionalServiceExecutor 
         long operationId = nextOperation = Math.incrementExact(nextOperation);
         long sequence = nextSequence = Math.incrementExact(nextSequence);
         Handle handle = new Handle(serviceId, worldInstance, operationId, kind);
-        Pending retained = new Pending(key, kind, body, handle, local);
+        Pending retained = new Pending(key, kind, body, handle, local, System.nanoTime(), preparation);
         pending.put(operationId, retained);
         TaskPayload.RegionalService payload = new TaskPayload.RegionalService(serviceId, worldInstance, operationId, kind.name());
         RegionTaskEnvelope envelope = new RegionTaskEnvelope("regional-service:" + kind.name(), payload, key,
@@ -216,6 +219,9 @@ public final class RegionalServiceDispatcher implements RegionalServiceExecutor 
      * independence and phase ordering before submission; this API still resolves the
      * current owner at delivery. Same-owner work is grouped in original order. */
     void executeLocalBatch(java.util.List<LocalWork> cohort) {
+        if (!executePreparedLocalBatch(cohort)) throw new IllegalStateException("unconditional local work was declined");
+    }
+    boolean executePreparedLocalBatch(java.util.List<LocalWork> cohort) {
         if (OwnershipContext.current().isPresent()) throw new IllegalStateException("local batch holds owner authority");
         if (cohort.size() > scheduler.workerCount()) throw new IllegalArgumentException("local batch exceeds capacity");
         drainBeforeSelection();
@@ -225,18 +231,28 @@ public final class RegionalServiceDispatcher implements RegionalServiceExecutor 
             if (owners.putIfAbsent(owner, work) != null) throw new IllegalArgumentException("local cohort has conflicting owners");
         }
         java.util.List<Handle> handles = new java.util.ArrayList<>();
-        owners.values().forEach(work -> handles.add(submit(work.key(), RegionalServiceKind.LOCAL_BLOCK_ENTITY_TICK, work.body(), true)));
+        owners.values().forEach(work -> handles.add(submit(work.key(), RegionalServiceKind.LOCAL_BLOCK_ENTITY_TICK, work.body(), true, work.preparation())));
         try {
             while (handles.stream().anyMatch(handle -> !handle.completed())) {
                 var failure = scheduler.failureBarrier().record().orElse(null);
                 if (failure != null) rethrow(failure.cause());
+                // A topology publication may converge two formerly independent owners
+                // before selection. Cancel the whole unexecuted cohort and acknowledge
+                // its envelopes through ordinary delivery before choosing serial bodies.
+                if (cohort.stream().map(work -> directory.resolve(work.key()).orElseThrow().region()).distinct().count() != cohort.size()) {
+                    handles.forEach(handle -> handle.declined = true);
+                    handles.forEach(this::drain);
+                    return false;
+                }
                 java.util.Set<Long> operations = handles.stream().filter(handle -> !handle.completed())
                     .map(Handle::operationId).collect(java.util.stream.Collectors.toSet());
-                if (scheduler.advanceLocalOperations(serviceId, worldInstance, operations) == 0 && !boundaryAdvancer.getAsBoolean())
+                if (scheduler.advanceLocalOperations(serviceId, worldInstance, operations) == 0
+                        && !scheduler.advanceNonLocalOne() && !boundaryAdvancer.getAsBoolean())
                     throw new IllegalStateException("local batch has no progress at its current ownership boundary");
             }
             var failure = scheduler.failureBarrier().record().orElse(null);
             if (failure != null) rethrow(failure.cause());
+            return handles.stream().noneMatch(handle -> handle.declined);
         } finally {
             handles.stream().filter(Handle::failed).forEach(handle -> pending.remove(handle.operationId()));
         }
@@ -246,8 +262,10 @@ public final class RegionalServiceDispatcher implements RegionalServiceExecutor 
         if (failure instanceof Error error) throw error;
         throw new IllegalStateException("local gameplay cohort failed", failure);
     }
-    record LocalWork(RoutingKey key, RegionalServiceWork body) {
-        public LocalWork { Objects.requireNonNull(key); Objects.requireNonNull(body); }
+    @FunctionalInterface interface LocalPreparation { boolean prepare(Execution execution) throws Exception; }
+    record LocalWork(RoutingKey key, LocalPreparation preparation, RegionalServiceWork body) {
+        LocalWork(RoutingKey key, RegionalServiceWork body) { this(key, ignored -> true, body); }
+        public LocalWork { Objects.requireNonNull(key); Objects.requireNonNull(preparation); Objects.requireNonNull(body); }
     }
 
     /** Finish already accepted owner work before taking a native service's selection cut.
@@ -300,7 +318,8 @@ public final class RegionalServiceDispatcher implements RegionalServiceExecutor 
         if (!current.ownerEpoch().equals(runtime.ownerEpoch()))
             throw new IllegalStateException("regional service runtime owner epoch is stale");
         try {
-            retained.body().run(new Execution(serviceId, worldInstance, operation.operationId(), retained.kind(), retained.key(), runtime));
+            if (!retained.handle().declined)
+                retained.body().run(new Execution(serviceId, worldInstance, operation.operationId(), retained.kind(), retained.key(), runtime));
         } catch (Exception | Error failure) {
             retained.handle().failed(failure);
             throw failure;
@@ -341,7 +360,25 @@ public final class RegionalServiceDispatcher implements RegionalServiceExecutor 
         return operation.serviceId().equals(serviceId) && operation.worldInstance() == worldInstance
             && retained != null && retained.local() && retained.kind().name().equals(operation.operationKind());
     }
-    private record Pending(RoutingKey key, RegionalServiceKind kind, RegionalServiceWork body, Handle handle, boolean local) { }
+    @Override public long enqueuedNanos(TaskPayload.RegionalService operation) {
+        if (!locallyAdmitted(operation)) throw new IllegalStateException("invalid local enqueue receipt");
+        return pending.get(operation.operationId()).enqueuedNanos();
+    }
+    @Override public boolean prepareLocal(RegionRuntime runtime, TaskPayload.RegionalService operation) throws Exception {
+        if (!locallyAdmitted(operation)) throw new IllegalStateException("unretained local preflight");
+        Pending retained = pending.get(operation.operationId());
+        requireCurrentOwner(retained.key());
+        return !retained.handle().declined && retained.preparation().prepare(
+            new Execution(serviceId, worldInstance, operation.operationId(), retained.kind(), retained.key(), runtime));
+    }
+    @Override public void declineLocal(TaskPayload.RegionalService operation) {
+        if (!locallyAdmitted(operation)) throw new IllegalStateException("unretained local cancellation");
+        pending.get(operation.operationId()).handle().declined = true;
+    }
+    @Override public boolean localDeclined(TaskPayload.RegionalService operation) {
+        return locallyAdmitted(operation) && pending.get(operation.operationId()).handle().declined;
+    }
+    private record Pending(RoutingKey key, RegionalServiceKind kind, RegionalServiceWork body, Handle handle, boolean local, long enqueuedNanos, LocalPreparation preparation) { }
     public final class Handle {
         private final RegionalServiceDispatcher owner = RegionalServiceDispatcher.this;
         private final String serviceId;
@@ -349,6 +386,7 @@ public final class RegionalServiceDispatcher implements RegionalServiceExecutor 
         private final long operationId;
         private final RegionalServiceKind kind;
         private volatile Outcome state = Outcome.PENDING;
+        private volatile boolean declined;
         private Throwable failure;
         private Handle(String serviceId, long worldInstance, long operationId, RegionalServiceKind kind) {
             this.serviceId = serviceId; this.worldInstance = worldInstance; this.operationId = operationId; this.kind = kind;

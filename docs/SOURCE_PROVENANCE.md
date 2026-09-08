@@ -82,3 +82,16 @@ to establish Folia's actual entity movement/index behavior. Local disassemblies 
 reference patches remain in the parent workspace's `.audit` directory, outside this
 repository and its packaged artifacts. No runtime implementation is copied, adapted,
 or changed by this review; no compatibility-mod source was inspected.
+
+## Stage 5 implementation provenance
+
+The bounded worker pool, retained two-phase claims, native branch eligibility and
+test harnesses are independently authored. The pinned Minecraft 26.2 Loom sources
+were inspected locally for furnace/hopper tick effects, native wrapper identity,
+recipe matching/publication, crash reporting and dedicated-server executor shutdown.
+Original native bodies remain invoked through production Mixins. The direct holder
+membership publication and crash lookup/failed-stop hooks use the exact native data
+and existing APIs; no upstream gameplay implementation was imported. Local extracted
+reference sources and disposable evidence remain under ignored `run/stage5`, outside
+production and source artifacts. No Folia/Paper/Moonrise/Ruthenium/C2ME or compatibility
+implementation is copied or added in this stage.

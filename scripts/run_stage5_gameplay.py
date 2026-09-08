@@ -9,6 +9,7 @@ import shutil
 import subprocess
 import threading
 import time
+import psutil
 from run_stage4_acceptance import copy_server, sha256, capture_thread_dump, snapshot_mca
 
 FROZEN_STAGE4 = "43AAC30184E5C77784D7A56590AA23A87DC86438684EB2B2F2577A197F4DD81E"
@@ -22,6 +23,7 @@ def main():
     parser.add_argument("--prepared", type=Path, default=Path("build/stage3-client-server"))
     parser.add_argument("--probe", type=Path, default=Path("build/test-harness/stage4-acceptance-probe.jar"))
     parser.add_argument("--workers", type=int, choices=[1, 2, 4, 8], default=2)
+    parser.add_argument("--callbacks-per-region", type=int, choices=range(1, 257), default=64)
     parser.add_argument("--reference", action="store_true")
     parser.add_argument("--layout", choices=["distributed", "concentrated"], default="distributed")
     parser.add_argument("--furnaces-per-region", type=int, choices=range(1, 257), default=64)
@@ -30,6 +32,8 @@ def main():
     parser.add_argument("--ticks", type=int, default=80)
     parser.add_argument("--distance", type=int, choices=[5, 8], default=5)
     parser.add_argument("--trace", action="store_true")
+    parser.add_argument("--callback-trace", action="store_true")
+    parser.add_argument("--adverse", action="store_true")
     parser.add_argument("--port", type=int, default=25625)
     args = parser.parse_args()
     output = args.output.resolve()
@@ -44,6 +48,9 @@ def main():
     output.mkdir(parents=True)
     server = output / "server"
     copy_server(args.prepared, server, args.production, args.probe, [])
+    if args.adverse:
+        if args.reference or args.workers < 2: raise ValueError("adverse campaign requires parallel candidate")
+        shutil.copy2(Path("build/test-harness/stage4-adverse-stop-probe.jar"), server / "mods/stage4-adverse-stop-probe.jar")
     # Stage 4's copy helper preserves the prepared registration probe. This separate
     # workload uses only its explicitly selected probe and pinned Fabric libraries.
     for jar in (server / "mods").glob("full-registration*.jar"):
@@ -77,7 +84,10 @@ def main():
         "-Dphoenium.stage4.simulationDistance=" + str(args.distance),
         "-Dphoenium.stage5.probe=true", "-Dphoenium.stage5.evidence=" + str(evidence),
         "-Dphoenium.gameplay.workers=" + str(args.workers),
+        "-Dphoenium.gameplay.callbacksPerRegion=" + str(args.callbacks_per_region),
         "-Dphoenium.gameplay.trace=" + str(args.trace).lower(),
+        "-Dphoenium.stage5.callbackTrace=" + str(args.callback_trace).lower(),
+        "-Dphoenium.stage5.adverse=" + str(args.adverse).lower(),
         "-jar", "fabric-server-launch.jar", "nogui"]
     (output / "launch.json").write_text(json.dumps(command, indent=2))
     lines = queue.Queue()
@@ -87,6 +97,22 @@ def main():
         stderr=subprocess.STDOUT, text=True, encoding="utf-8", errors="replace", bufsize=1,
         creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
     log_path = output / "server.log"
+    metrics = []
+    metrics_done = threading.Event()
+    def sample_process():
+        actual = psutil.Process(process.pid)
+        while not metrics_done.is_set():
+            try:
+                memory = actual.memory_info()
+                cpu = actual.cpu_times()
+                metrics.append({"atSeconds": time.monotonic() - started, "rssBytes": memory.rss,
+                    "peakWorkingSetBytes": getattr(memory, "peak_wset", None),
+                    "cpuSeconds": cpu.user + cpu.system, "threads": actual.num_threads()})
+            except psutil.NoSuchProcess:
+                break
+            metrics_done.wait(0.1)
+    sampler = threading.Thread(target=sample_process, daemon=True)
+    sampler.start()
     def reader():
         with log_path.open("w", encoding="utf-8") as log:
             for line in process.stdout:
@@ -96,14 +122,14 @@ def main():
     def send(value):
         commands.append({"atSeconds": time.monotonic()-started, "command": value})
         process.stdin.write(value + "\n"); process.stdin.flush()
-    def wait(token, timeout=120):
+    def wait(token, timeout=120, expected_failure=False):
         deadline = time.monotonic() + timeout
         while time.monotonic() < deadline:
             try:
                 line = lines.get(timeout=0.2); seen.append(line)
                 if token in line:
                     print(line.strip(), flush=True); return
-                if "state=FAILED" in line or "scheduler=FAILED" in line or "Encountered an unexpected exception" in line:
+                if not expected_failure and ("state=FAILED" in line or "scheduler=FAILED" in line or "Encountered an unexpected exception" in line):
                     raise RuntimeError("Current artifact server failure: " + line.strip())
             except queue.Empty:
                 if process.poll() is not None:
@@ -116,9 +142,21 @@ def main():
         send("stage5 prepare " + str(args.furnaces_per_region)); wait("STAGE5_PREPARED")
         send("stage5 " + ("split" if args.layout == "distributed" else "merge")); wait("STAGE5_TOPOLOGY")
         send(f"stage5 measure warmup {args.warmup}"); wait("STAGE5_MEASURED label=warmup", 240)
+        if args.adverse:
+            send("stage5 adverse"); wait("PHOENIUM_ADVERSE_STOP ARMED")
+            send("stage5 measure expected-failure 10")
+            wait("PHOENIUM_ADVERSE_SAVE_SHUTDOWN PASS",90,True); process.wait(timeout=20)
+            native_log = log_path.read_text(encoding="utf-8")
+            if "Watching Server" in native_log or "server will forcibly shutdown" in native_log:
+                raise RuntimeError("adverse cleanup required a watchdog termination")
+            if native_log.count("STAGE5_ADVERSE_NATIVE_FAILURE") != 1 or native_log.count("STAGE5_ADVERSE_NATIVE_PEER_RETURN") != 1:
+                raise RuntimeError("adverse original-body overlap was incomplete")
+            report["status"] = "PASS_ADVERSE_ONLY"
+            return
         for sample in range(args.samples):
             label = f"sample-{sample+1}"
             send(f"stage5 measure {label} {args.ticks}"); wait("STAGE5_MEASURED label=" + label, 240)
+        send("stage5 dirty"); wait("STAGE5_DIRTY")
         send("save-all flush"); wait("Saved the game")
         send("stage5 snapshot final"); wait("STAGE5_SNAPSHOT label=final")
         send("stop"); process.wait(timeout=90)
@@ -141,11 +179,15 @@ def main():
                 process.kill(); process.wait(timeout=10)
                 report["forcedTermination"] = True
     finally:
+        metrics_done.set(); sampler.join(timeout=2)
+        (output / "process-metrics.json").write_text(json.dumps({"sampleIntervalMillis": 100,
+            "samples": metrics, "logicalCpuCount": psutil.cpu_count(), "physicalCpuCount": psutil.cpu_count(logical=False),
+            "hostPhysicalMemoryBytes": psutil.virtual_memory().total}, indent=2))
         report.update({"exitCode": process.returncode, "elapsedSeconds": time.monotonic()-started,
             "commands": commands, "serverLog": str(log_path)})
         (output / "report.json").write_text(json.dumps(report, indent=2))
         print(json.dumps({key: report.get(key) for key in ("status", "failure", "exitCode", "elapsedSeconds")}), flush=True)
-    if report["status"] != "PASS_NATIVE_WORKLOAD_ONLY":
+    if report["status"] not in ("PASS_NATIVE_WORKLOAD_ONLY", "PASS_ADVERSE_ONLY"):
         raise SystemExit(1)
 
 

@@ -114,9 +114,23 @@ public final class RegionScheduler {
         }
     }
     public boolean runOne(RegionRuntime runtime) {
+        var head = runtime.peek().orElse(null);
+        if (head != null && head.payload() instanceof TaskPayload.RegionalService service
+                && service.operationKind().equals(dev.phoenium.service.RegionalServiceKind.LOCAL_BLOCK_ENTITY_TICK.name())
+                && regionalServiceExecutor != null && !regionalServiceExecutor.localDeclined(service)) return false;
         Selected selected = select(runtime, false);
         if (selected == null) return false;
         selected.run(); return true;
+    }
+    public boolean advanceNonLocalOne() {
+        if (!acceptsSimulationWork()) return false;
+        for (RegionRuntime runtime : runtimes.values().stream().sorted(Comparator.comparing(RegionRuntime::id)).toList()) {
+            var head = runtime.peek().orElse(null);
+            if (head != null && !(head.payload() instanceof TaskPayload.RegionalService service
+                    && service.operationKind().equals(dev.phoenium.service.RegionalServiceKind.LOCAL_BLOCK_ENTITY_TICK.name()))
+                    && runOne(runtime)) return true;
+        }
+        return false;
     }
 
     /** Only the audited local block-entity operation is eligible for worker dispatch.
@@ -137,6 +151,14 @@ public final class RegionScheduler {
                 Selected next = select(runtime, true);
                 if (next != null) selected.add(next);
             }
+            if (selected.size() != cohort.size()) return 0;
+            boolean eligible = true;
+            for (Selected value : selected) {
+                if (!value.prepareLocal()) return selected.size(); // ordinary stale reroute, no body selected
+                eligible &= value.localEligible;
+            }
+            if (!eligible) for (Selected value : selected)
+                regionalServiceExecutor.declineLocal((TaskPayload.RegionalService) value.envelope.payload());
             workers.execute(selected.stream().<Runnable>map(value -> value).toList());
         } catch (Throwable failure) {
             fail(failure, selected.isEmpty() ? null : selected.getFirst().runtime,
@@ -156,12 +178,14 @@ public final class RegionScheduler {
     /** Follow physical queues as well as current routes. A delivery racing a topology
      * publication can reside in its former inbox and must reroute without being lost. */
     public int advanceLocalOperations(String serviceId, long worldInstance, java.util.Set<Long> operations) {
-        return advanceLocalBatch(runtimes.values().stream()
+        var cohort = runtimes.values().stream()
             .filter(runtime -> runtime.lifecycle() == RegionLifecycle.READY && !runtime.transitioning())
             .filter(runtime -> runtime.peek().map(envelope -> envelope.payload() instanceof TaskPayload.RegionalService service
                 && service.serviceId().equals(serviceId) && service.worldInstance() == worldInstance
                 && operations.contains(service.operationId())).orElse(false))
-            .sorted(Comparator.comparing(RegionRuntime::id)).limit(workerCount()).toList());
+            .sorted(Comparator.comparing(RegionRuntime::id)).limit(workerCount()).toList();
+        if (cohort.size() != operations.size()) return 0;
+        return advanceLocalBatch(cohort);
     }
 
     private Selected select(RegionRuntime runtime, boolean localOnly) {
@@ -188,40 +212,65 @@ public final class RegionScheduler {
         private final dev.phoenium.ownership.RegionLeaseManager.Selection selection;
         private final long selectedAt = System.nanoTime();
         private volatile boolean started;
+        private RegionLease preparedLease;
+        private long preparedClaimStart;
+        private boolean localEligible;
         private Selected(RegionRuntime runtime, RegionTaskEnvelope envelope, dev.phoenium.ownership.RegionLeaseManager.Selection selection) {
             this.runtime = runtime; this.envelope = envelope; this.selection = selection;
+        }
+        private boolean prepareLocal() throws Exception {
+            deliveryAttempts.incrementAndGet();
+            if (locationValidator == null || !locationValidator.revalidateLocationForExecution(runtime, envelope)) {
+                started = true; selection.close(); return false;
+            }
+            preparedClaimStart = System.nanoTime(); preparedLease = selection.promote();
+            try (var owner = OwnershipContext.enter(runtime.id(), preparedLease.epoch(), OperationCategory.OWNER_TASK)) {
+                preparedLease.requireCurrent();
+                localEligible = regionalServiceExecutor.prepareLocal(runtime, (TaskPayload.RegionalService) envelope.payload());
+            }
+            return true;
         }
         @Override public void run() {
             started = true;
             GameplayMeasurements.Claim measured = null;
             try (selection) {
                 if (!acceptsSimulationWork()) { runtime.requeueFirst(envelope); return; }
-                deliveryAttempts.incrementAndGet();
+                if (preparedLease == null) deliveryAttempts.incrementAndGet();
                 // Current claim fences topology publication through validation AND body.
-                boolean valid = envelope.payload() instanceof TaskPayload.OwnedObjectOperation
+                boolean valid = preparedLease != null || (envelope.payload() instanceof TaskPayload.OwnedObjectOperation
                     ? objectDeliveryValidator != null && objectDeliveryValidator.revalidateForExecution(runtime, envelope)
-                    : locationValidator != null && locationValidator.revalidateLocationForExecution(runtime, envelope);
+                    : locationValidator != null && locationValidator.revalidateLocationForExecution(runtime, envelope));
                 if (!valid) return;
                 if (!acceptsSimulationWork()) { runtime.requeueFirst(envelope); return; }
-                long claimStart = System.nanoTime();
-                try (RegionLease lease = selection.promote();
+                long claimStart = preparedLease == null ? System.nanoTime() : preparedClaimStart;
+                RegionLease executing = preparedLease == null ? selection.promote() : preparedLease;
+                preparedLease = null;
+                try (RegionLease lease = executing;
                      OwnershipContext.Scope ignored = OwnershipContext.enter(runtime.id(), lease.epoch(), OperationCategory.OWNER_TASK)) {
                     runtime.transitionTo(RegionLifecycle.TICKING);
                     try {
                         lease.requireCurrent();
                         if (envelope.payload() instanceof TaskPayload.RegionalService service
                                 && service.operationKind().equals(dev.phoenium.service.RegionalServiceKind.LOCAL_BLOCK_ENTITY_TICK.name()))
-                            measured = measurements.enter(selectedAt, claimStart, directory.snapshot().generation().value(), service.operationId());
+                            measured = measurements.enter(regionalServiceExecutor.enqueuedNanos(service), selectedAt, claimStart,
+                                directory.snapshot().generation().value(), service.operationId());
                         apply(runtime, envelope.payload());
                         advances.incrementAndGet();
                     } catch (Throwable failure) { fail(failure, runtime, envelope); }
                     finally { measurements.leaveBody(); runtime.transitionTo(RegionLifecycle.READY); }
                 }
             } catch (Throwable failure) { fail(failure, runtime, envelope); }
-            finally { measurements.released(measured); }
+            finally {
+                if (preparedLease != null) { preparedLease.close(); preparedLease = null; }
+                measurements.released(measured);
+            }
         }
         private void releaseUnstarted() {
-            if (!started) { runtime.requeueFirst(envelope); selection.close(); started = true; }
+            if (!started) {
+                runtime.requeueFirst(envelope);
+                if (preparedLease != null) { preparedLease.close(); preparedLease = null; }
+                selection.close(); started = true;
+            }
         }
     }
 

@@ -28,7 +28,8 @@ import net.minecraft.world.level.block.entity.*;
 /** Disposable native furnace workload. No production instrumentation or authority
  * is installed by this probe; all placement/readback uses the existing owner gateway. */
 public final class Stage5ParallelProbe implements DedicatedServerModInitializer {
-    private static final int[] CENTERS = {0, 10, 20, 32};
+    private static final int[] CENTERS = Arrays.stream(System.getProperty("phoenium.stage5.centers", "0,10,20,32")
+        .split(",")).mapToInt(Integer::parseInt).toArray();
     private static final List<BlockPos> POSITIONS = new ArrayList<>();
     private static Measurement measurement;
     private static long tickStart;
@@ -40,8 +41,14 @@ public final class Stage5ParallelProbe implements DedicatedServerModInitializer 
         CommandRegistrationCallback.EVENT.register((dispatcher, registries, environment) -> dispatcher.register(
             Commands.literal("stage5")
                 .then(Commands.literal("demand").executes(context -> { demand(context.getSource().getLevel()); return 1; }))
+                .then(Commands.literal("dirty").executes(context -> { dirty(context.getSource().getLevel()); return 1; }))
+                .then(Commands.literal("adverse").executes(context -> {
+                    dev.phoenium.adversestop.AdverseStopProbe.armStage5(context.getSource().getServer()); return 1;
+                }))
                 .then(Commands.literal("prepare").then(Commands.argument("perRegion", IntegerArgumentType.integer(1, 256))
                     .executes(context -> { prepare(context.getSource().getLevel(), IntegerArgumentType.getInteger(context, "perRegion")); return 1; })))
+                .then(Commands.literal("adopt").then(Commands.argument("perRegion", IntegerArgumentType.integer(1, 256))
+                    .executes(context -> { adopt(context.getSource().getLevel(), IntegerArgumentType.getInteger(context, "perRegion")); return 1; })))
                 .then(Commands.literal("split").executes(context -> { split(context.getSource().getLevel(), false); return 1; }))
                 .then(Commands.literal("merge").executes(context -> { split(context.getSource().getLevel(), true); return 1; }))
                 .then(Commands.literal("measure").then(Commands.argument("label", StringArgumentType.word())
@@ -64,7 +71,7 @@ public final class Stage5ParallelProbe implements DedicatedServerModInitializer 
             // before preparation can read or place anything in these chunks.
             level.getChunkSource().updateChunkForced(new net.minecraft.world.level.ChunkPos(x, z), true);
         demandPending = true;
-        System.out.println("STAGE5_DEMANDED nativeForcedChunks=36");
+        System.out.println("STAGE5_DEMANDED nativeForcedChunks=" + CENTERS.length * 9);
     }
     private static void prepare(ServerLevel level, int count) {
         if (!POSITIONS.isEmpty()) throw new IllegalStateException("workload already prepared");
@@ -86,7 +93,39 @@ public final class Stage5ParallelProbe implements DedicatedServerModInitializer 
                 }
             });
         }
+        Stage5FurnaceObservations.register(POSITIONS);
         System.out.println("STAGE5_PREPARED furnaces=" + POSITIONS.size());
+    }
+
+    private static void dirty(ServerLevel level) {
+        RegionalServiceDispatcher dispatcher = field(Phoenium.liveRuntime(), "regionalDispatcher", RegionalServiceDispatcher.class);
+        for (int center : CENTERS) dispatcher.executeAndDrain(new RoutingKey(new WorldId("minecraft:overworld"), center, 0),
+            RegionalServiceKind.CHUNK_GAMEPLAY, ignored -> {
+                var chunk = level.getChunkSource().getChunkNow(center, 0);
+                if (chunk == null) throw new IllegalStateException("native dirty input has no current chunk");
+                chunk.markUnsaved();
+            });
+        System.out.println("STAGE5_DIRTY nativeChunks=" + CENTERS.length);
+    }
+
+    private static void adopt(ServerLevel level, int count) {
+        if (!POSITIONS.isEmpty()) throw new IllegalStateException("workload already retained");
+        if (!LiveTickReadiness.await(level).current()) throw new IllegalStateException("reload FULL not current");
+        RegionalServiceDispatcher dispatcher = field(Phoenium.liveRuntime(), "regionalDispatcher", RegionalServiceDispatcher.class);
+        for (int center : CENTERS) {
+            RoutingKey key = new RoutingKey(new WorldId("minecraft:overworld"), center, 0);
+            dispatcher.ensureClosure(key, 1);
+            dispatcher.executeAndDrain(key, RegionalServiceKind.SAVE_CAPTURE, ignored -> {
+                for (int index = 0; index < count; index++) {
+                    BlockPos pos = new BlockPos(center * 16 + index % 16, 65, index / 16);
+                    if (!(level.getBlockEntity(pos) instanceof FurnaceBlockEntity))
+                        throw new IllegalStateException("native saved reader did not restore furnace " + pos);
+                    POSITIONS.add(pos);
+                }
+            });
+        }
+        Stage5FurnaceObservations.register(POSITIONS);
+        System.out.println("STAGE5_ADOPTED nativeSavedFurnaces=" + POSITIONS.size());
     }
 
     @SuppressWarnings("unchecked") private static void split(ServerLevel level, boolean concentrated) {
@@ -137,7 +176,7 @@ public final class Stage5ParallelProbe implements DedicatedServerModInitializer 
                 ready &= chunk != null && chunk.getFullStatus().isOrAfter(net.minecraft.server.level.FullChunkStatus.BLOCK_TICKING)
                     && server.overworld().areEntitiesLoaded(net.minecraft.world.level.ChunkPos.pack(x, z));
             }
-            if (ready) { demandPending = false; System.out.println("STAGE5_READY nativeFullAndEntityLoaded=36"); }
+            if (ready) { demandPending = false; System.out.println("STAGE5_READY nativeFullAndEntityLoaded=" + CENTERS.length * 9); }
         }
         Measurement current = measurement;
         if (current == null) return;
@@ -176,6 +215,8 @@ public final class Stage5ParallelProbe implements DedicatedServerModInitializer 
             Map<String, Object> report = new LinkedHashMap<>(measurementData);
             report.put("label", label); report.put("layout", layout); report.put("gameTime", level.getGameTime());
             report.put("furnaces", furnaces); report.put("health", Phoenium.liveRuntime().diagnostics());
+            report.put("resources", Stage5ResourceMeasurements.snapshot());
+            if (label.equals("final")) report.put("nativeCallbacks", Stage5FurnaceObservations.snapshot());
             try { report.put("gameplay", Phoenium.liveRuntime().getClass().getMethod("gameplayMeasurements").invoke(Phoenium.liveRuntime())); }
             catch (NoSuchMethodException frozenStage4) { report.put("gameplay", "unavailable in frozen Stage 4"); }
             Path directory = Path.of(System.getProperty("phoenium.stage5.evidence")); Files.createDirectories(directory);

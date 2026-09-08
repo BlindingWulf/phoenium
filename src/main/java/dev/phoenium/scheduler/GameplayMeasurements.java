@@ -13,16 +13,20 @@ public final class GameplayMeasurements {
     private final boolean trace = Boolean.getBoolean("phoenium.gameplay.trace");
     private final ArrayDeque<BodyInterval> history = new ArrayDeque<>();
     private final LongAdder bodies = new LongAdder(), failedBodies = new LongAdder(), bodyNanos = new LongAdder();
-    private final LongAdder claims = new LongAdder(), queueNanos = new LongAdder();
+    private final LongAdder claims = new LongAdder(), queueNanos = new LongAdder(), dispatchNanos = new LongAdder();
+    private final AtomicLong maxQueueNanos = new AtomicLong();
     private final AtomicInteger activeBodies = new AtomicInteger(), maxBodies = new AtomicInteger();
     private final AtomicLong sequence = new AtomicLong();
     private final ThreadLocal<Claim> current = new ThreadLocal<>();
 
-    Claim enter(long selectedAt, long claimStart, long generation, long operation) {
+    Claim enter(long enqueuedAt, long selectedAt, long claimStart, long generation, long operation) {
         var active = OwnershipContext.current().orElseThrow();
         if (current.get() != null) throw new IllegalStateException("nested measured gameplay claim");
         Claim claim = new Claim(selectedAt, claimStart, generation, operation, active.region().toString(), active.lease().value());
-        current.set(claim); claims.increment(); queueNanos.add(System.nanoTime() - selectedAt);
+        current.set(claim); claims.increment();
+        long workerStart = System.nanoTime(); long delay = workerStart - enqueuedAt;
+        queueNanos.add(delay); maxQueueNanos.accumulateAndGet(delay, Math::max);
+        dispatchNanos.add(workerStart - selectedAt);
         return claim;
     }
 
@@ -63,7 +67,7 @@ public final class GameplayMeasurements {
     }
     public Snapshot snapshot() {
         synchronized (history) {
-            return new Snapshot(bodies.sum(), failedBodies.sum(), bodyNanos.sum(), claims.sum(), queueNanos.sum(),
+            return new Snapshot(bodies.sum(), failedBodies.sum(), bodyNanos.sum(), claims.sum(), queueNanos.sum(), dispatchNanos.sum(), maxQueueNanos.get(),
                 activeBodies.get(), maxBodies.get(), HISTORY_CAPACITY, List.copyOf(history));
         }
     }
@@ -76,7 +80,7 @@ public final class GameplayMeasurements {
             this.operation = operation; this.region = region; this.lease = lease;
         }
     }
-    public record Snapshot(long bodies, long failedBodies, long bodyNanos, long claims, long queueNanos,
+    public record Snapshot(long bodies, long failedBodies, long bodyNanos, long claims, long queueNanos, long dispatchNanos, long maxQueueNanos,
                            int activeBodies, int maxSimultaneousBodies, int intervalCapacity, List<BodyInterval> intervals) { }
     public record BodyInterval(long sequence, String identity, String region, long lease, long generation, long operation,
                                long thread, long selectedAt, long claimStart, long bodyStart, long bodyEnd, long claimEnd,

@@ -9,4 +9,5 @@ import org.spongepowered.asm.mixin.gen.Accessor;
 @Mixin(targets = "net.minecraft.world.level.chunk.LevelChunk$BoundTickingBlockEntity")
 public interface LocalBoundBlockEntityTickerMixin extends LocalNativeTickerAccess {
     @Override @Accessor("blockEntity") BlockEntity phoenium$localBlockEntity();
+    @Override @Accessor("this$0") net.minecraft.world.level.chunk.LevelChunk phoenium$localChunk();
 }

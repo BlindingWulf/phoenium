@@ -83,11 +83,52 @@ public final class AdverseStopProbe implements DedicatedServerModInitializer {
     private static final Set<Object> CLOSED_STORAGE = identitySet();
     private static final Set<Object> CLOSED_RESOURCES = identitySet();
     private static volatile Thread releaseController;
+    private static final boolean STAGE5 = Boolean.getBoolean("phoenium.stage5.adverse");
+    private static volatile boolean nativeArmed;
+    private static final CountDownLatch PEER_ENTERED = new CountDownLatch(1), RELEASE_PEER = new CountDownLatch(1);
+    private static final AtomicInteger PEER_RETURNS = new AtomicInteger();
+    private static final AtomicBoolean LEGITIMATE_OVERLAP = new AtomicBoolean();
+    private static final AtomicInteger NATIVE_FAILURE_PENDING = new AtomicInteger();
+    private static int expectedSettlements() { return STAGE5 ? NATIVE_FAILURE_PENDING.get() : 1; }
 
     @Override public void onInitializeServer() {
         Runtime.getRuntime().addShutdownHook(new Thread(AdverseStopProbe::report,
                 "phoenium-adverse-stop-witness"));
-        ServerLifecycleEvents.SERVER_STARTED.register(server -> server.execute(() -> arm(server)));
+        if (!STAGE5) ServerLifecycleEvents.SERVER_STARTED.register(server -> server.execute(() -> arm(server)));
+    }
+
+    public static void armStage5(MinecraftServer server) {
+        require(STAGE5 && !nativeArmed, "Stage 5 adverse mode is not available/already armed");
+        arm(server);
+    }
+
+    public static void originalEnter(net.minecraft.core.BlockPos pos) {
+        if (!nativeArmed || pos.getY() != 65 || pos.getZ() != 0) return;
+        var owner = dev.phoenium.ownership.OwnershipContext.current().orElseThrow();
+        try {
+            if (pos.getX() == 160) {
+                System.out.println("STAGE5_ADVERSE_NATIVE_PEER_ENTER owner=" + owner.region() + " lease=" + owner.lease()
+                    + " thread=" + Thread.currentThread().threadId());
+                PEER_ENTERED.countDown();
+                require(RELEASE_PEER.await(10, TimeUnit.SECONDS), "native peer was not joined/released");
+            } else if (pos.getX() == 0 && CALLBACK_FAILURES.get() == 0) {
+                require(PEER_ENTERED.await(10, TimeUnit.SECONDS), "native independent peer never entered");
+                NATIVE_FAILURE_PENDING.set(RUNTIME.get().regionalSaves().pending());
+                LEGITIMATE_OVERLAP.set(RUNTIME.get().diagnostics().activeLeases() >= 2
+                    && NATIVE_FAILURE_PENDING.get() >= 1 && WRITE_COMPLETIONS.get() == 0 && PEER_RETURNS.get() == 0);
+                require(LEGITIMATE_OVERLAP.get(), "failure did not overlap a legitimate native claim and save");
+                CALLBACK_FAILURES.incrementAndGet();
+                System.out.println("STAGE5_ADVERSE_NATIVE_FAILURE owner=" + owner.region() + " lease=" + owner.lease()
+                    + " thread=" + Thread.currentThread().threadId() + " heldPeer=true retainedSave=true");
+                throw EXPECTED_FAILURE;
+            }
+        } catch (InterruptedException interrupted) { Thread.currentThread().interrupt(); throw new IllegalStateException(interrupted); }
+    }
+    public static void originalReturn(net.minecraft.core.BlockPos pos) {
+        if (nativeArmed && pos.getX() == 160 && pos.getY() == 65 && pos.getZ() == 0) {
+            PEER_RETURNS.incrementAndGet();
+            System.out.println("STAGE5_ADVERSE_NATIVE_PEER_RETURN original=true");
+        }
     }
 
     private static void arm(MinecraftServer server) {
@@ -134,6 +175,25 @@ public final class AdverseStopProbe implements DedicatedServerModInitializer {
             require(WRITE_ENTERED.await(10, TimeUnit.SECONDS), "native IOWorker did not reach its original write");
             require(WRITE_COMPLETIONS.get() == 0, "native write completed before the adverse callback");
             require(runtime.regionalSaves().pending() == 1, "original write lacks one retained save attempt");
+
+            if (STAGE5) {
+                nativeArmed = true;
+                releaseController = Thread.ofPlatform().daemon(true).name("stage5-native-failure-release").start(() -> {
+                    try {
+                        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
+                        while (!runtime.diagnostics().barrierTripped() && System.nanoTime() < deadline) Thread.sleep(1);
+                        require(runtime.diagnostics().barrierTripped(), "native callback never reached the failure barrier");
+                        require(PEER_RETURNS.get() == 0, "native peer returned before failure was acknowledged");
+                        RELEASE_PEER.countDown();
+                        require(FAILED_STOP_WAITING.await(15, TimeUnit.SECONDS), "failed stop never retained the native write");
+                        require(PEER_RETURNS.get() == 1, "native peer was not joined before failed stop");
+                    } catch (Throwable failure) { fail(failure); }
+                    finally { RELEASE_PEER.countDown(); RELEASE_WRITE.countDown(); }
+                });
+                System.out.println("PHOENIUM_ADVERSE_STOP ARMED originalSelected=1 pendingSaves=1 nativeWriteEntered=1"
+                    + " callbackFailure=pending-native-worker durablePersistenceClaim=false");
+                return;
+            }
 
             try {
                 runtime.regionalDispatcher().executeAndDrain(key, RegionalServiceKind.CHUNK_GAMEPLAY, execution -> {
@@ -208,8 +268,8 @@ public final class AdverseStopProbe implements DedicatedServerModInitializer {
         if (!FullServerShutdown.failedStop()) fail(new IllegalStateException("runtime stop lacked failed-stop scope"));
         if (WRITE_COMPLETIONS.get() != 0) fail(new IllegalStateException("write completed before runtime settlement waited"));
         RegionalSaveCoordinator saves = runtime.regionalSaves();
-        if (saves == null || saves.pending() != 1)
-            fail(new IllegalStateException("runtime settlement did not retain exactly one native write"));
+        if (saves == null || saves.pending() != expectedSettlements())
+            fail(new IllegalStateException("runtime settlement did not retain the exact native failure cut"));
         FAILED_STOP_WAITING.countDown();
     }
 
@@ -245,7 +305,7 @@ public final class AdverseStopProbe implements DedicatedServerModInitializer {
         RegionalSaveCoordinator saves = runtime == null ? null : runtime.regionalSaves();
         if (WRITE_COMPLETIONS.get() != 1 || WRITE_COMPLETE_ORDER.get() == 0)
             fail(new IllegalStateException("native resource cleanup entered before the original write outcome"));
-        if (saves == null || saves.pending() != 0 || value(saves.measurements(), "failedSettlements") != 1)
+        if (saves == null || saves.pending() != 0 || value(saves.measurements(), "failedSettlements") != expectedSettlements())
             fail(new IllegalStateException("native resource cleanup entered before terminal save acknowledgement"));
         if (runtime == null || !runtime.diagnostics().lifecycle().toString().equals("STOPPED")
                 || runtime.diagnostics().activeLeases() != 0)
@@ -289,7 +349,7 @@ public final class AdverseStopProbe implements DedicatedServerModInitializer {
         boolean clean = runtime != null && runtime.diagnostics().lifecycle().toString().equals("STOPPED")
                 && runtime.diagnostics().barrierTripped() && runtime.diagnostics().activeLeases() == 0
                 && runtime.regionalDispatcher().pendingCount() == 0
-                && value(saves, "pending") == 0 && value(saves, "failedSettlements") == 1
+                && value(saves, "pending") == 0 && value(saves, "failedSettlements") == expectedSettlements()
                 && chunks.contains("retainedGraphs=0") && chunks.contains("returnedIndex=0")
                 && chunks.contains("poiIndex=0") && chunks.contains("custodyEntries=0")
                 && runtime.diagnostics().ownedEntities() == 0 && runtime.diagnostics().ownedPlayers() == 0
@@ -301,6 +361,7 @@ public final class AdverseStopProbe implements DedicatedServerModInitializer {
                 CALLBACK_FAILURES.get(), WRITE_ENTRIES.get(), WRITE_COMPLETIONS.get(), WRITE_FAILURES.get(),
                 RUNTIME_STOP_WITNESSES.get(), SHUTDOWN_FAILURES.get(), EXPECTED_FAILURE_RETAINED.get(),
                 NATIVE_STOP_RETURNS.get(), cleanupAfterAcknowledgement, order, clean, resources));
+        if (STAGE5) pass &= LEGITIMATE_OVERLAP.get() && PEER_RETURNS.get() == 1 && NATIVE_FAILURE_PENDING.get() >= 1;
         String line = "PHOENIUM_ADVERSE_SAVE_SHUTDOWN " + (pass ? "PASS" : "FAIL")
                 + " expectedFailureIdentity=" + EXPECTED_FAILURE_RETAINED.get()
                 + " callbackFailures=" + CALLBACK_FAILURES.get()

@@ -13,4 +13,7 @@ abstract class LocalRebindableBlockEntityTickerMixin implements LocalNativeTicke
     @Override public BlockEntity phoenium$localBlockEntity() {
         return ticker instanceof LocalNativeTickerAccess access ? access.phoenium$localBlockEntity() : null;
     }
+    @Override public net.minecraft.world.level.chunk.LevelChunk phoenium$localChunk() {
+        return ticker instanceof LocalNativeTickerAccess access ? access.phoenium$localChunk() : null;
+    }
 }

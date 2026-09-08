@@ -1,4 +1,5 @@
 package dev.phoenium.clienttest;
+import java.util.HexFormat;
 
 import net.fabricmc.fabric.api.client.gametest.v1.FabricClientGameTest;
 import net.fabricmc.fabric.api.client.gametest.v1.TestInput;
@@ -1757,7 +1758,8 @@ public final class Stage3ClientTest implements FabricClientGameTest {
             }
             output = directory.resolve("full-acceptance.json");
             evidence.put("directory", directory.toString());
-            evidence.put("minecraft", "26.2"); evidence.put("workers", 1); evidence.put("parallelGameplay", false);
+            int workers = Boolean.getBoolean("phoenium.stage5") ? Integer.getInteger("phoenium.gameplay.workers",1) : 1;
+            evidence.put("minecraft", "26.2"); evidence.put("workers", workers); evidence.put("parallelGameplay", workers > 1);
             evidence.put("testUsername", TEST_USERNAME); evidence.put("personalAccount", false);
             evidence.put("viewDistance", 5); evidence.put("simulationDistance", 5);
             var modules = new LinkedHashMap<String, String>();
@@ -1774,6 +1776,17 @@ public final class Stage3ClientTest implements FabricClientGameTest {
                 active = ExternalServer.start(new ExternalServer(directory, lifecycle, world, null), false, false);
                 active.waitUntilReady(context);
                 evidence.put(phase + "Seed", active.worldSeed());
+                if (Boolean.getBoolean("phoenium.stage5")) {
+                    active.execute("stage5 demand");
+                    awaitStage5FullLog(context, active, "STAGE5_READY");
+                    active.execute(lifecycle == 1 ? "stage5 prepare 32" : "stage5 adopt 32");
+                    awaitStage5FullLog(context, active, lifecycle == 1 ? "STAGE5_PREPARED" : "STAGE5_ADOPTED");
+                    active.execute("stage5 split");
+                    awaitStage5FullLog(context, active, "STAGE5_TOPOLOGY");
+                    active.execute("stage5 measure full-warmup-" + phase + " 20");
+                    awaitStage5FullLog(context, active, "STAGE5_MEASURED label=full-warmup-" + phase);
+                    active.execute("tick unfreeze");
+                }
                 String bedSupport = active.execute(fullBedSupportCommand());
                 String bedSupportQuery = active.execute(fullBedSupportQueryCommand());
                 require(fullBedSupportSucceeded(phase, bedSupport, bedSupportQuery), active.serverFailure(
@@ -1830,6 +1843,11 @@ public final class Stage3ClientTest implements FabricClientGameTest {
                 String diagnostics = active.execute("phoenium diagnostics");
                 evidence.put(phase + "Diagnostics", diagnostics);
                 requireHealthyFullDiagnostics(phase, diagnostics);
+                if (Boolean.getBoolean("phoenium.stage5")) {
+                    active.execute("stage5 snapshot full-" + phase);
+                    awaitStage5FullLog(context, active, "STAGE5_SNAPSHOT label=full-" + phase);
+                    evidence.put(phase + "Gameplay", directory.resolve("stage5-gameplay/full-" + phase + ".json").toString());
+                }
                 // Vanilla handles this synchronously, including region-file I/O for the
                 // generated fixture.  Keep the short control-command timeout for the
                 // ordinary RCON traffic, but give this one required disk barrier its
@@ -1889,6 +1907,15 @@ public final class Stage3ClientTest implements FabricClientGameTest {
             if (output != null) try { Files.writeString(output, new com.google.gson.GsonBuilder().setPrettyPrinting().create().toJson(evidence)); }
             catch (IOException failure) { throw new IllegalStateException("could not preserve FULL acceptance evidence", failure); }
         }
+    }
+
+    private static void awaitStage5FullLog(ClientGameTestContext context, ExternalServer server, String receipt) throws IOException {
+        for (int tick = 0; tick < 2400; tick++) {
+            require(server.isAlive(), server.serverFailure("Stage 5 FULL workload stopped before " + receipt));
+            if (currentLifecycleProcessLog(server.readProcessLog()).contains(receipt)) return;
+            context.waitTick();
+        }
+        throw new IllegalStateException(server.serverFailure("Stage 5 FULL workload omitted " + receipt));
     }
 
     private static void preserveFullAcceptanceLogs(ExternalServer server, Map<String, Object> evidence) {
@@ -2033,8 +2060,8 @@ public final class Stage3ClientTest implements FabricClientGameTest {
                 "authoritative FULL teardown must emit exactly one scoped STAGE2 snapshot: " + lines);
         String line = lines.get(0);
         for (String field : new String[] {
-                "lifecycle=STOPPED", "scheduler=STOPPING", "workers=1", "lifecycleStarts=1",
-                "lifecycleStops=1", "parallel=OFF", "leases=0", "fallback=0",
+                "lifecycle=STOPPED", "scheduler=STOPPING", "workers=" + (Boolean.getBoolean("phoenium.stage5") ? Integer.getInteger("phoenium.gameplay.workers",1) : 1), "lifecycleStarts=1",
+                "lifecycleStops=1", "parallel=" + (Boolean.getBoolean("phoenium.stage5") && Integer.getInteger("phoenium.gameplay.workers",1)>1 ? "ON" : "OFF"), "leases=0", "fallback=0",
                 "ownershipViolations=0", "unleased=0", "barriers=0", "duplicate=0", "bypass=0"
         })
             require(line.contains(field), "STAGE2 teardown omitted or changed " + field + ": " + line);
@@ -2246,6 +2273,20 @@ public final class Stage3ClientTest implements FabricClientGameTest {
                 command.add("-Dphoenium.test.fullBedSupport=true");
                 command.add("-Dphoenium.test.fullFixturePhase=" + (server.lifecycle == 1 ? "fresh" : "reload"));
                 command.add("-Dphoenium.test.fullFixtureSeedDisk=" + (server.lifecycle == 1));
+                if (Boolean.getBoolean("phoenium.stage5")) {
+                    command.add("-Dphoenium.stage4.candidate=true");
+                    command.add("-Dphoenium.stage5.probe=true");
+                    command.add("-Dphoenium.stage5.centers=0,20");
+                    command.add("-Dphoenium.stage5.evidence=" + server.directory.resolve("stage5-gameplay").toAbsolutePath());
+                    command.add("-Dphoenium.gameplay.workers=" + Integer.getInteger("phoenium.gameplay.workers",1));
+                    command.add("-Dphoenium.gameplay.trace=true");
+                    Path production = server.directory.resolve("mods/phoenium-0.2.0-stage2.jar");
+                    String actual = HexFormat.of().withUpperCase().formatHex(sha256(Files.readAllBytes(production),0,Math.toIntExact(Files.size(production))));
+                    String expected = System.getProperty("phoenium.stage5.expectedProductionSha256", "");
+                    require(actual.equals(expected), "FULL installed production identity mismatch before lifecycle " + server.lifecycle);
+                    Files.writeString(server.directory.resolve("stage5-production-identity-" + server.lifecycle + ".json"),
+                        "{\"expectedSha256\":\"" + expected + "\",\"installedSha256\":\"" + actual + "\",\"pass\":true}", StandardOpenOption.CREATE_NEW);
+                }
             }
             if (chunkTrace) {
                 command.add("-Dphoenium.stage3.chunkTrace=true");

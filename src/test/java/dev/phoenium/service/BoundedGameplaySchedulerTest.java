@@ -13,6 +13,69 @@ import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.*;
 
 class BoundedGameplaySchedulerTest {
+    @Test void allPreflightsRetainTheSameClaimsThroughOriginalBodiesDespiteConcurrentIngress() {
+        try (Fixture f = new Fixture(2)) {
+            long[] leases = new long[2]; AtomicInteger state = new AtomicInteger();
+            var queued = new AtomicReference<RegionalServiceDispatcher.Handle>();
+            var first = new RegionalServiceDispatcher.LocalWork(f.keys.get(0), execution -> {
+                leases[0] = OwnershipContext.current().orElseThrow().lease().value(); return true;
+            }, execution -> { assertEquals(leases[0], OwnershipContext.current().orElseThrow().lease().value()); assertEquals(0,state.get()); });
+            var second = new RegionalServiceDispatcher.LocalWork(f.keys.get(1), execution -> {
+                leases[1] = OwnershipContext.current().orElseThrow().lease().value();
+                queued.set(f.dispatcher.submit(f.keys.get(0), RegionalServiceKind.BLOCK_ENTITY_TICK, ignored -> state.incrementAndGet()));
+                f.scheduler.advanceOne();
+                assertFalse(queued.get().completed()); assertTrue(f.regions.get(0).leases().hasActiveLease()); return true;
+            }, execution -> assertEquals(leases[1], OwnershipContext.current().orElseThrow().lease().value()));
+            assertTrue(f.dispatcher.executePreparedLocalBatch(List.of(first, second)));
+            assertEquals(0,state.get()); f.dispatcher.drain(queued.get()); assertEquals(1,state.get());
+            assertEquals(0,f.dispatcher.pendingCount()); assertFalse(f.barrier.tripped());
+        }
+    }
+
+    @Test void changedNativeEligibilityDeclinesEveryPeerBeforeAnyOriginalBody() {
+        try (Fixture f = new Fixture(2)) {
+            AtomicBoolean eligible = new AtomicBoolean(true);
+            f.dispatcher.submit(f.keys.get(0), RegionalServiceKind.BLOCK_ENTITY_TICK, ignored -> eligible.set(false));
+            var a = new RegionalServiceDispatcher.LocalWork(f.keys.get(0), ignored -> eligible.get(), ignored -> fail("stale native branch executed"));
+            var b = new RegionalServiceDispatcher.LocalWork(f.keys.get(1), ignored -> true, ignored -> fail("peer committed before common preflight"));
+            assertFalse(f.dispatcher.executePreparedLocalBatch(List.of(a,b)));
+            assertEquals(0,f.dispatcher.pendingCount()); assertFalse(f.barrier.tripped());
+            assertTrue(f.regions.stream().noneMatch(region -> region.leases().hasClaimOrSelection()));
+            AtomicInteger serial = new AtomicInteger();
+            f.dispatcher.executeAndDrain(f.keys.get(0), RegionalServiceKind.BLOCK_ENTITY_TICK, ignored -> serial.incrementAndGet());
+            assertEquals(1,serial.get());
+        }
+    }
+
+    @Test void preflightFailureReleasesClaimsButRetainsUnexecutedInputsUntilTerminalAcknowledgement() {
+        try (Fixture f = new Fixture(2)) {
+            var original = new IllegalArgumentException("retained preflight failed");
+            var a = new RegionalServiceDispatcher.LocalWork(f.keys.get(0), ignored -> true, ignored -> fail("body after failed preflight"));
+            var b = new RegionalServiceDispatcher.LocalWork(f.keys.get(1), ignored -> { throw original; }, ignored -> fail("body after failed preflight"));
+            assertSame(original, assertThrows(IllegalArgumentException.class, () -> f.dispatcher.executePreparedLocalBatch(List.of(a,b))));
+            assertTrue(f.regions.stream().noneMatch(region -> region.leases().hasClaimOrSelection()));
+            assertEquals(2,f.dispatcher.pendingCount()); f.scheduler.stop();
+            assertEquals(2,f.scheduler.acknowledgeStoppedEnvelopes()); assertEquals(2,f.dispatcher.abandonPending());
+        }
+    }
+
+    @Test void originalFailureDoesNotReleaseAnotherLegitimateSaveCut() throws Exception {
+        try (Fixture f = new Fixture(2); var saved = f.directory.tryRetainSaveCut()) {
+            CountDownLatch peer = new CountDownLatch(1), release = new CountDownLatch(1);
+            AtomicReference<Throwable> failure = new AtomicReference<>(); var original = new IllegalStateException("original failure with saved input");
+            Thread coordinator = launch(failure, () -> f.dispatcher.executeLocalBatch(List.of(
+                f.work(0, () -> { await(peer); throw original; }), f.work(1, () -> { peer.countDown(); await(release); }))));
+            try {
+                assertTrue(peer.await(5,TimeUnit.SECONDS)); assertTrue(f.directory.hasRetainedSaveCuts());
+                var next = f.directory.snapshot().generation().next(); Map<RoutingKey,RegionRoute> routes = new LinkedHashMap<>();
+                f.directory.snapshot().routes().forEach((key,route) -> routes.put(key,new RegionRoute(route.region(),next,route.ownerEpoch())));
+                assertThrows(IllegalStateException.class, () -> f.directory.publish(next,routes));
+                assertThrows(IllegalStateException.class, f.dispatcher::abandonPending);
+            } finally { release.countDown(); coordinator.join(5000); }
+            assertSame(original,failure.get()); assertTrue(f.directory.hasRetainedSaveCuts()); assertNotNull(saved.view());
+        }
+    }
+
     @Test void distinctOriginalBodiesOverlapWithCurrentClaims() throws Exception {
         try (Fixture f = new Fixture(2)) {
             CountDownLatch entered = new CountDownLatch(2), release = new CountDownLatch(1);

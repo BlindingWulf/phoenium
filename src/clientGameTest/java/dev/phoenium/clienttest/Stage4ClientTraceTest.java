@@ -47,7 +47,9 @@ public final class Stage4ClientTraceTest implements FabricClientGameTest {
         Process server = null;
         Stage4ProcessMetrics processMetrics = null;
         boolean connected = false;
-        boolean candidate = !Boolean.getBoolean("phoenium.stage4.reference");
+        boolean stage5 = Boolean.getBoolean("phoenium.stage5");
+        boolean candidateArtifact = !Boolean.getBoolean("phoenium.stage4.reference");
+        boolean candidate = candidateArtifact || stage5;
         try {
             Files.createDirectories(trace.toAbsolutePath().getParent());
             Files.createDirectories(log.toAbsolutePath().getParent());
@@ -69,10 +71,17 @@ public final class Stage4ClientTraceTest implements FabricClientGameTest {
             if (Boolean.getBoolean("phoenium.stage4.packetTrace"))
                 command.add("-Dphoenium.stage4.packetTracePath="
                     + trace.getParent().resolve("client-packets.log").toAbsolutePath());
+            if (stage5) {
+                command.add("-Dphoenium.stage5.probe=true");
+                command.add("-Dphoenium.stage5.centers=0,20");
+                command.add("-Dphoenium.stage5.evidence=" + trace.getParent().resolve("gameplay").toAbsolutePath());
+                command.add("-Dphoenium.gameplay.workers=" + System.getProperty("phoenium.gameplay.workers", "1"));
+                command.add("-Dphoenium.gameplay.trace=true");
+            }
             command.add("-jar");
             command.add("fabric-server-launch.jar");
             command.add("nogui");
-            verifyInstalledProduction(directory, trace, "first", candidate);
+            verifyInstalledProduction(directory, trace, "first", candidateArtifact);
             server = new ProcessBuilder(command).directory(directory.toFile()).redirectErrorStream(true)
                 .redirectOutput(ProcessBuilder.Redirect.appendTo(log.toFile())).start();
             processMetrics = new Stage4ProcessMetrics(server);
@@ -148,6 +157,12 @@ public final class Stage4ClientTraceTest implements FabricClientGameTest {
             command(server, "stage4trace step unload 2");
             awaitLog(context, server, log, "STAGE4_TRACE_CLOCK_STEP_REACHED label=unload", START_TIMEOUT_TICKS);
             awaitLog(context, server, log, "STAGE4_TRACE_TEMPORARY_UNLOADED", START_TIMEOUT_TICKS);
+            if (stage5) {
+                command(server, "stage5 demand");
+                awaitLog(context, server, log, "STAGE5_READY", START_TIMEOUT_TICKS);
+                command(server, "stage5 prepare 32");
+                awaitLog(context, server, log, "STAGE5_PREPARED", START_TIMEOUT_TICKS);
+            }
             assertClientEntity(context, ENTITY_A, 8, 8, true);
             topologyTeleport(context, server, log, 8, 65, 8, new int[][] {{0, 0}});
             command(server, "stage4trace barrier setup");
@@ -229,11 +244,19 @@ public final class Stage4ClientTraceTest implements FabricClientGameTest {
                 "b0=3", "b1=11", "pos=BlockPos{x=520, y=65, z=200}");
             command(server, "stage4trace check-deferred");
             awaitLog(context, server, log, "STAGE4_TRACE_DEFERRED_CHECK pass=true", START_TIMEOUT_TICKS);
+            if (stage5) {
+                command(server, "stage5 dirty");
+                awaitLog(context, server, log, "STAGE5_DIRTY", START_TIMEOUT_TICKS);
+            }
             command(server, "save-all flush");
             // save-all flush is a synchronous server command; use an immediate receipt because
             // the native clock is intentionally still frozen and cannot satisfy a tick deadline.
             command(server, "stage4trace barrier saved");
             awaitLog(context, server, log, "STAGE4_TRACE_BARRIER label=saved", START_TIMEOUT_TICKS);
+            if (stage5) {
+                command(server, "stage5 snapshot client-saved");
+                awaitLog(context, server, log, "STAGE5_SNAPSHOT label=client-saved", START_TIMEOUT_TICKS);
+            }
             disconnectClient(context);
             connected = false;
             command(server, "stage4trace finish");
@@ -254,7 +277,7 @@ public final class Stage4ClientTraceTest implements FabricClientGameTest {
             for (int index = 0; index < restartCommand.size(); index++)
                 if (restartCommand.get(index).startsWith("-Dphoenium.stage4.tracePath="))
                     restartCommand.set(index, "-Dphoenium.stage4.tracePath=" + restartTrace.toAbsolutePath());
-            verifyInstalledProduction(directory, trace, "restart", candidate);
+            verifyInstalledProduction(directory, trace, "restart", candidateArtifact);
             server = new ProcessBuilder(restartCommand).directory(directory.toFile()).redirectErrorStream(true)
                 .redirectOutput(ProcessBuilder.Redirect.appendTo(restartLog.toFile())).start();
             processMetrics = new Stage4ProcessMetrics(server);
@@ -264,6 +287,16 @@ public final class Stage4ClientTraceTest implements FabricClientGameTest {
             connected = true;
             context.waitFor(client -> client.player != null, CONNECT_TIMEOUT_TICKS);
             topologyTeleport(context, server, restartLog, 120, 65, 8, new int[][] {{7, 0}});
+            if (stage5) {
+                command(server, "stage5 demand");
+                awaitLog(context, server, restartLog, "STAGE5_READY", START_TIMEOUT_TICKS);
+                command(server, "stage5 adopt 32");
+                awaitLog(context, server, restartLog, "STAGE5_ADOPTED", START_TIMEOUT_TICKS);
+                command(server, "stage5 snapshot client-reloaded");
+                awaitLog(context, server, restartLog, "STAGE5_SNAPSHOT label=client-reloaded", START_TIMEOUT_TICKS);
+                command(server, "stage4trace split-far");
+                awaitLog(context, server, restartLog, "STAGE4_TRACE_TOPOLOGY_SPLIT", START_TIMEOUT_TICKS);
+            }
             long reloadOffset = logSize(restartLog);
             command(server, "stage4trace reload");
             awaitLogAfter(context, server, restartLog, "STAGE4_TRACE_RELOAD_UNPACK", reloadOffset,
@@ -298,6 +331,10 @@ public final class Stage4ClientTraceTest implements FabricClientGameTest {
             command(server, "stage4trace check-restored-after");
             awaitLogAfter(context, server, restartLog, "STAGE4_TRACE_RELOAD_PHASE phase=after",
                 afterPhaseOffset, 30, "pass=true");
+            if (stage5) {
+                command(server, "stage5 snapshot client-restored-after");
+                awaitLog(context, server, restartLog, "STAGE5_SNAPSHOT label=client-restored-after", START_TIMEOUT_TICKS);
+            }
             disconnectClient(context);
             connected = false;
             command(server, "stop");
@@ -330,7 +367,9 @@ public final class Stage4ClientTraceTest implements FabricClientGameTest {
 
     private static void verifyInstalledProduction(Path directory, Path trace, String phase,
                                                   boolean candidate) throws IOException {
-        String frozen = "017EE8ED612D238894FFA5A1DC019BA8B0E31124B0B5171D08CC0D8993C1B534";
+        String frozen = Boolean.getBoolean("phoenium.stage5")
+            ? "43AAC30184E5C77784D7A56590AA23A87DC86438684EB2B2F2577A197F4DD81E"
+            : "017EE8ED612D238894FFA5A1DC019BA8B0E31124B0B5171D08CC0D8993C1B534";
         String expected = System.getProperty("phoenium.stage4.expectedProductionSha256", "");
         Path installed = directory.resolve("mods/phoenium-0.2.0-stage2.jar");
         String actual = sha256(installed);

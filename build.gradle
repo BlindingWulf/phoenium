@@ -56,7 +56,10 @@ def stage3ServerBase = file('.stage2-server-live1').exists()
         ? file('.stage2-server-live1')
         : file('../Phoenium-full-luna/.stage2-server-live1')
 
-def stage4FrozenSha256 = '017EE8ED612D238894FFA5A1DC019BA8B0E31124B0B5171D08CC0D8993C1B534'
+def stage5Mode = providers.gradleProperty('stage5').orElse('false').get().toBoolean()
+def stage4FrozenSha256 = stage5Mode
+        ? '43AAC30184E5C77784D7A56590AA23A87DC86438684EB2B2F2577A197F4DD81E'
+        : '017EE8ED612D238894FFA5A1DC019BA8B0E31124B0B5171D08CC0D8993C1B534'
 def stage4Sha256 = { File source ->
     if (!source.isFile()) throw new GradleException("Missing production artifact: ${source}")
     def digest = java.security.MessageDigest.getInstance('SHA-256')
@@ -78,7 +81,7 @@ def stage4ExpectedSha256 = {
     def actual = stage4Sha256(stage4SelectedProduction.get())
     if (providers.gradleProperty('stage4Reference').orElse('false').get().toBoolean()
             && actual != stage4FrozenSha256)
-        throw new GradleException("Frozen Stage 3 source hash mismatch: expected ${stage4FrozenSha256}, got ${actual}")
+        throw new GradleException("Frozen Stage ${stage5Mode ? 4 : 3} source hash mismatch: expected ${stage4FrozenSha256}, got ${actual}")
     actual
 }
 
@@ -222,6 +225,8 @@ loom {
             // Explicitly select the frozen serial reference for comparator runs;
             // the child server receives this through the client JVM property.
             vmArg "-Dphoenium.stage4.reference=${providers.gradleProperty('stage4Reference').orElse('false').get()}"
+            vmArg "-Dphoenium.stage5=${stage5Mode}"
+            vmArg "-Dphoenium.gameplay.workers=${providers.gradleProperty('stage5Workers').orElse('1').get()}"
             vmArg "-Dphoenium.stage4.packetTrace=${providers.gradleProperty('stage4PacketTrace').orElse('false').get()}"
             def stage4RunId = providers.gradleProperty('stage4RunId').orElse('current').get()
             def stage4EvidenceDir = providers.gradleProperty('stage4EvidenceDir')
@@ -248,6 +253,8 @@ loom {
             vmArg '-Dfabric.client.gametest'
             vmArg '-Dfabric.client.gametest.modid=phoenium-client-tests'
             vmArg '-Dphoenium.test.mode=fullacceptance'
+            vmArg "-Dphoenium.stage5=${stage5Mode}"
+            vmArg "-Dphoenium.gameplay.workers=${providers.gradleProperty('stage5Workers').orElse('1').get()}"
             programArg '--username'
             programArg 'PhoeniumTest0'
             property 'phoenium.test.username', 'PhoeniumTest0'
@@ -440,9 +447,16 @@ tasks.register('stage4AcceptanceHarness', Jar) {
 tasks.register('prepareFullAcceptanceServer', Copy) {
     dependsOn tasks.named('prepareStage3ClientServer'), tasks.named('fullAcceptanceHarness')
     from(tasks.named('fullAcceptanceHarness'))
+    if (stage5Mode) {
+        dependsOn tasks.named('stage4AcceptanceHarness')
+        from(tasks.named('stage4AcceptanceHarness'))
+    }
     into layout.buildDirectory.dir('stage3-client-server/mods')
 }
-tasks.named('runStage3FullAcceptance') { dependsOn tasks.named('prepareFullAcceptanceServer') }
+tasks.named('runStage3FullAcceptance') {
+    dependsOn tasks.named('prepareFullAcceptanceServer')
+    doFirst { systemProperty 'phoenium.stage5.expectedProductionSha256', stage4ExpectedSha256() }
+}
 
 processResources {
     inputs.property 'version', project.version

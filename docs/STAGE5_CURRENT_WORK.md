@@ -36,7 +36,8 @@ bucket 7% used. Per-worker token attribution is unavailable. One helper was
 explicitly selected with `gpt-5.6-luna`, `low`, for the unchanged baseline only.
 It completed once: 818 tests / 87 suites, zero failures/errors/skips, Java
 Temurin 25.0.4.1, 18.793 seconds. Log:
-`run/stage5/baseline-20260908/test.log`. No live campaign has run yet.
+`run/stage5/baseline-20260908/test.log`. Latest account telemetry: 40% main used /
+60% remaining; reserve 7% used. No credits consumed; per-worker accounting unavailable.
 
 ## Comparison contract (before candidate results)
 
@@ -68,8 +69,7 @@ batch of one task per worker, 1..256 original callbacks per regional task (defau
 uses the same selection/body implementation inline. Original furnace cooking
 between completion/fuel boundaries and hopper cooldown/disabled branches are the
 first locally admitted bodies. All other original callbacks still execute in their
-ordered phases; no supported demand is refused or replayed. Installed verification
-of these branches is pending. Native source was read from the pinned local archive;
+ordered phases; no supported demand is refused or replayed. Native source was read from the pinned local archive;
 no external implementation was imported.
 
 Delivery selection is distinct from a gameplay lease: topology fences both, but
@@ -83,9 +83,54 @@ failure with a held peer claim, merge admission, stop joining, capacity, conflic
 owners, generic eligibility rejection and topology contention. These model probes
 do not substitute for installed original gameplay evidence.
 
-Next: run `scripts/run_stage5_gameplay.py` against the built installed candidate in
-a new `run/stage5/` directory, repair the first captured failure, then continue the
-serial/reference and installed client/persistence/adverse/benchmark gates below.
+Final eligibility now runs under all retained cohort claims, before any original body.
+Concurrent ingress cannot invalidate that cut. A declined preflight commits no body;
+the entire bounded segment is acknowledged and then invoked in original serial order.
+Native ticker windows retain at most workers * callbacksPerRegion references. The
+recipe map guard admits only exact vanilla cooking implementations. Native direct
+holder sets publish immutable membership before worker access. Crash reporting reads
+the exact bound native chunk; dedicated failed stop still terminates native executors
+and clears running state while preserving the initiating exception.
+
+Current validation: 833 tests / 88 suites pass (latest `failure-termination-build.log`).
+`frozen-control-1`, `serial-control-1`, `control-2`, `control-4` initially matched seven
+ordered state cuts and 384 smelts. `frozen-full-trace` and `retained-claim-trace-4`
+also match all 76,800 original furnace callbacks (HEAD/RETURN state, exact per-object
+clock/order), with natural distinct-worker overlap and no conflicting claims.
+These traces precede the final dedicated-stop repair and must be repeated on the
+final artifact. Negative comparator controls reject state, clock, order, duplicate,
+phase, ownership and lifetime defects; the Stage 4 comparator is unchanged.
+
+`client-2-5-a` passed real TCP, original tracking/merge/split/unload, native MCA button
+readback and restart: saved delay 186; no callback before deadline, exactly one at it,
+none afterward. Furnace save readback correctly rejected a stale native clean-chunk
+snapshot (5 ticks old). New identical `stage5 dirty` fixture input before frozen
+save makes the next campaign require exact timers, without changing native save rules.
+Client 8/8, frozen Stage 4 client pairs, candidate one-worker control and final repeat
+remain pending. Stage 5 mode is explicit `-Pstage5=true -Pstage5Workers=2|4`; reference
+mode then requires the exact Stage 4 path/hash, while old Stage 4 mode retains Stage 3.
+
+`native-adverse-2-d` passes on current built JAR
+`1AFE9225121A8B2CB760CFE8270535E4BA16E9D6EFF62A7CA80858A3352D5D62`:
+original worker failure overlaps another original live claim and retained native
+write; peer joined, all 41 native save records acknowledged, original failure retained,
+15/15 native closes, no residue, natural process exit in 6.30 s, no watchdog termination.
+Earlier `native-adverse-2-b` printed resource PASS but required watchdog termination
+and is NOT an accepted shutdown result. The runner now rejects that condition.
+
+Other preserved failed inputs: initial native demand used an eager synchronous native
+chunk request (fixed to native tickets plus actual readiness); a ticker interface in
+the Mixin-only package failed class loading (moved to service); callback observer and
+dedicated-stop hooks initially used wrong exact native descriptors (corrected). The
+all-or-nothing window eliminated overlap despite matching states, so was replaced by
+bounded segments and retained final preflight. No unchanged failure was rerun as PASS.
+
+Next: run the extended `runStage3FullAcceptance -Pstage5=true -Pstage5Workers=4` with
+seed `-5846470989536090341`; finish strict client/reference/persistence campaigns;
+then run isolated repeated distributed/concentrated benchmarks at 1/2/4 workers with
+identical offered work. The gameplay runner records native CPU/heap/GC/allocation cuts,
+100 ms process working-set samples, bounded original intervals, and actual enqueue
+to worker-start delay. Benchmark callback/body tracing is disabled. Final audit pending.
 
 Required remaining evidence: deterministic races and progress/capacity; original
 gameplay body/claim intervals with natural overlap at 2 and another bounded worker

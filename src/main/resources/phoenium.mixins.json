@@ -3,6 +3,9 @@
   "package": "dev.phoenium.mixin",
   "compatibilityLevel": "JAVA_25",
   "mixins": [
+    "LocalBlockEntityCrashMixin",
+    "LocalRecipeManagerAccess",
+    "FailedStopDedicatedServerMixin",
     "MinecraftServerMixin",
     "FailedStopMinecraftServerMixin",
     "FailedStopServerChunkCacheMixin",
