@@ -12,10 +12,20 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 abstract class Stage4TrackedEntityMixin {
     @org.spongepowered.asm.mixin.Shadow @org.spongepowered.asm.mixin.Final private net.minecraft.world.entity.Entity entity;
     @Inject(method = "updatePlayer(Lnet/minecraft/server/level/ServerPlayer;)V", at = @At("HEAD"), require = 1)
-    private void phoenium$recipient(ServerPlayer player, CallbackInfo ci) { if (!Stage4Trace.relevantEntity(entity)) return; Stage4Trace.event("tracking.recipient", "player=" + player.getName().getString()
-        + " gameTime=" + player.level().getGameTime()); }
+    private void phoenium$recipient(ServerPlayer player, CallbackInfo ci) {
+        if (!Stage4Trace.relevantEntity(entity)) return;
+        Stage4Trace.event("tracking.recipient", "player=" + player.getName().getString()
+            + " gameTime=" + player.level().getGameTime() + " "
+            + Stage4Trace.authority(player.level(), entity.blockPosition()));
+        Stage4Trace.trackingBodyObserved(entity, "recipient");
+    }
 
     @Inject(method = "removePlayer(Lnet/minecraft/server/level/ServerPlayer;)V", at = @At("HEAD"), require = 1)
-    private void phoenium$recipientRemove(ServerPlayer player, CallbackInfo ci) { if (!Stage4Trace.relevantEntity(entity)) return; Stage4Trace.event("tracking.recipient.remove", "player=" + player.getName().getString()
-        + " gameTime=" + player.level().getGameTime()); }
+    private void phoenium$recipientRemove(ServerPlayer player, CallbackInfo ci) {
+        if (!Stage4Trace.relevantEntity(entity)) return;
+        Stage4Trace.event("tracking.recipient.remove", "player=" + player.getName().getString()
+            + " gameTime=" + player.level().getGameTime() + " "
+            + Stage4Trace.authority(player.level(), entity.blockPosition()));
+        Stage4Trace.trackingBodyObserved(entity, "recipient.remove");
+    }
 }

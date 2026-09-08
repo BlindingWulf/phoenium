@@ -14,12 +14,22 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 abstract class Stage4ServerEntityMixin {
     @org.spongepowered.asm.mixin.Shadow @org.spongepowered.asm.mixin.Final private Entity entity;
     @Inject(method = "addPairing(Lnet/minecraft/server/level/ServerPlayer;)V", at = @At("HEAD"), require = 1)
-    private void phoenium$pair(ServerPlayer player, CallbackInfo ci) { if (!Stage4Trace.relevantEntity(entity)) return; Stage4Trace.event("tracking.pair", "recipient=" + player.getName().getString()
-        + " entityId=" + entity.getId() + " gameTime=" + player.level().getGameTime()); }
+    private void phoenium$pair(ServerPlayer player, CallbackInfo ci) {
+        if (!Stage4Trace.relevantEntity(entity)) return;
+        Stage4Trace.event("tracking.pair", "recipient=" + player.getName().getString()
+            + " entityId=" + entity.getId() + " gameTime=" + player.level().getGameTime() + " "
+            + Stage4Trace.authority(player.level(), entity.blockPosition()));
+        Stage4Trace.trackingBodyObserved(entity, "pair");
+    }
 
     @Inject(method = "removePairing(Lnet/minecraft/server/level/ServerPlayer;)V", at = @At("HEAD"), require = 1)
-    private void phoenium$remove(ServerPlayer player, CallbackInfo ci) { if (!Stage4Trace.relevantEntity(entity)) return; Stage4Trace.event("tracking.remove", "recipient=" + player.getName().getString()
-        + " entityId=" + entity.getId() + " gameTime=" + player.level().getGameTime()); }
+    private void phoenium$remove(ServerPlayer player, CallbackInfo ci) {
+        if (!Stage4Trace.relevantEntity(entity)) return;
+        Stage4Trace.event("tracking.remove", "recipient=" + player.getName().getString()
+            + " entityId=" + entity.getId() + " gameTime=" + player.level().getGameTime() + " "
+            + Stage4Trace.authority(player.level(), entity.blockPosition()));
+        Stage4Trace.trackingBodyObserved(entity, "remove");
+    }
 
     @Inject(method = "sendChanges()V", at = @At("HEAD"), require = 1)
     private void phoenium$changes(CallbackInfo ci) { Stage4Trace.trackingChanges(entity); }

@@ -162,5 +162,143 @@ in its manifest. Both configurations remain disposable campaign preparations
 until an integrated Stage 4 source identity is dispatched. At that point the
 fixture will bind A/B to the production route seam and record
 `RegionalSaveBinding.currentCut()` at the original save capture/write edge.
-Migration, pending-save shutdown, disk tick persistence and post-reload
-effects, and the saved-vault regression remain open acceptance gates.
+The installed runner now decodes the actual MCA NBT tick lists before restart,
+checks the expected B deadline and coordinates, waits through the reload
+deadline, and requires the test-only B tick effect to be observed after reload;
+it returns a failing gate when either persisted check is absent. Migration,
+pending-save shutdown, disk tick persistence and post-reload effects, and the
+saved-vault regression remain open acceptance gates.
+
+## Current controlled gate checklist
+
+The producer-repair continuation at
+`run/stage4/integrated-installed-producer-032139/` is preserved as development
+evidence. Its first phase completed A/B scheduled block and fluid callbacks,
+nested block dispatch, save-all, and normal stop with no closure failure. Its
+MCA check was `MISSING` because the probe scheduled the near and long lived B
+note-block ticks at the same position; vanilla deduplicated them before save.
+That run remains retained as invalid-fixture evidence and is not a candidate
+result.
+
+The fixture now schedules the long lived obligation at distinct B position
+`(120,65,9)`, derives the MCA expectation from the recorded order-99 event,
+and checks that same position reaches its post-reload effect. The runner uses
+a nonblocking bounded output reader and captures a JVM thread dump before
+terminating a run that misses its reload barrier/effect. Focused service,
+dispatcher, topology, area-mutation, and producer tests are passing. Remaining
+gates for the integrated candidate are precise vanilla eligibility equivalence,
+canonical restored-tick indexing, tracking packet lifecycle, coordinator-backed
+merge/split evidence, save/stop failure and pressure cases, 5/5 and 8/8
+installed runs, affected FULL and saved-vault runs, deterministic reference
+comparison, and the positive MCA deadline plus restored effect run.
+
+## Coordinator-backed lifecycle fixture (harness-only)
+
+The current probe adds an opt-in `stage4trace lifecycle` command and the runner
+flag `--topology-lifecycle`. The command reads the live runtime's installed
+`FullRegionalEnclosure` and `RegionDirectory` only through test-only reflection,
+then invokes the production enclosure for the merge and the production
+`TopologyCoordinator.request(Transition)` plus `advance()` for the split. It
+never calls `RegionDirectory.publish`, invents readiness, or executes a route
+directly. The lifecycle first merges the nearby A0/B7 fixture, then requests a
+wide separated split assigning the declared support-domain interior chunks
+12..54, z -22..22 to B and retaining the remaining support routes with A.
+
+The arm phase now includes a distinct long lived B tick, an A block event, and
+an unloaded B-domain block event at `(520,65,200)` (chunk `(32,12)`). The latter
+is retained by the real block-event service and is recorded when the original
+`shouldTickBlocksAt` predicate defers it; its B owner therefore crosses B -> A
+-> B during the lifecycle. Callback probes record the active
+`OwnershipContext` region/lease/category and immutable route generation at
+block/fluid/event and tracking callback bodies; lifecycle mode requires merge,
+split, body, and deferred markers. The runner sends the lifecycle request
+immediately after arm for the nearby merge. The client then settles its final
+distant viewport before issuing `split-far`; after that split it loads the
+deferred event's interior chunk and observes the B callback before save/stop.
+Before arming it freezes the native server tick manager; every workload phase
+then advances through an explicit native step receipt. Before the split it
+invokes
+`await-full-far`, which waits on the live ChunkMap's current BLOCK_TICKING
+candidates and verifies their original FULL and ticking futures are complete
+across the radius-nine receipt (the configured 8/8 cohort plus its one-chunk
+dependency halo). After the split it repeats that receipt for the
+deferred chunk and advances exactly 100 native frozen ticks. The fixture also
+carries a distinct far fluid obligation at `(521,65,8)` and far block
+obligation at `(520,65,7)` (both now+320) through the split and requires their
+B-owner callbacks, while the long lived block tick at `(120,65,9)` (now+400)
+remains pending for the immutable pre-restart MCA check.
+
+The client fixture opts into the same explicit topology, creates tagged A/B
+entities before requesting the lifecycle, and requires tracking bodies from both
+actual owner contexts. Its block probes move the real TCP player to B, enqueue
+an A event and verify zero `PlayerList.broadcast` sends, then enqueue a B event
+and verify the actual in-range send. The test-only `PlayerList.broadcast` probe
+records the original published center/radius, packet class, and recipient name;
+it does not read recipient gameplay coordinates from an owner-free server path.
+The client packet stream and controlled teleport sequence provide the recipient
+movement evidence. Its client-only connection probe also records a sanitized
+deterministic payload projection for approved entity and block-event packet
+families (record `toString()` values, with a sorted-field fallback for
+identity-style packets); unrelated chunk/world payloads are omitted. The three fixture
+entities use fixed UUIDs so fresh reference and candidate streams can compare
+payloads as well as packet classes and order.
+
+For sustained tracking ownership the client enables the established
+`chunkTrace` fixture extension, whose declared support domain covers the
+post-merge split interior chunks 12..54, and creates a second B entity at
+chunk 32. The nearby chunk 7 pair remains a deliberate merge/closure
+regression; the chunk 32 entity is the separated 8/8 tracking proof and does
+not change view or simulation distance.
+
+The extension compiles into the disposable acceptance harness and passes
+`stage4AcceptanceHarness`, Python syntax, and whitespace checks. No installed
+lifecycle run is claimed yet: the next run must use a stable production source
+identity after Sol's outer-producer/tracking repairs, and must retain the
+pre-restart MCA byte snapshot plus exact route/body trace for comparison.
+The ordered comparator excludes only `topology.*` and `tracking.body` receipt
+events from the frozen behavioral stream, while `--require-lifecycle` checks
+those candidate metadata receipts independently; event timing, positions,
+priorities, packet classes/payload fields, recipients, and effects remain
+strict comparison inputs.
+
+## Shared reference/candidate readiness update
+
+The alternate lightweight reference workload has been removed. The client
+fixture now starts the same disposable Stage 4 probe in both modes, passes the
+same explicit support-domain and trace properties, freezes the native server
+clock before arming, and advances every simulation phase through the probe's
+native `step` command. The candidate flag only enables the coordinator and
+regional-owner calls that do not exist in the frozen serial reference; common
+tick, event, tracking, packet, readiness, and save inputs remain identical.
+
+FULL readiness now reads the server's native `PlayerList` simulation distance
+at the receipt point. It requires the exact requested simulation cohort, its
+one-chunk native dependency halo, the current `LiveTickReadiness` receipt, the
+requested center, and successful non-null `ChunkResult` values for each FULL
+and ticking future. The client-side FULL observation uses the same configured
+distance for its visible cohort. The comparator strips the explicit reference
+route marker with other authority metadata before comparing the ordered
+behavioral stream.
+
+The fixture clears each one-block fluid area through the real native
+`LevelTicks.clearArea` after water placement and before scheduling its
+controlled deadline, then records the far fluid obligation as present. This
+prevents a placement-generated water tick from being mistaken for the
+controlled migration input. The deferred event check now requires one exact
+server callback at `(520,65,200)` with parameters `3,11` and observes its real
+client block-event packet; it no longer expects a NOTE_BLOCK to become redstone.
+The separate `(120,65,9)` future block remains the reload-effect obligation.
+
+The client sequence now proves the B entity withdrawal while the player is still
+at the B viewport, before teleporting away. After final far FULL readiness and
+the candidate split, both far obligations execute during a controlled 100-tick
+step while the player remains at `(520,65,8)`; the deferred viewport is loaded
+afterward and receives a separate controlled 10-tick step. Block-event packet
+checks require the approved payload fields `b0`, `b1`, and the exact
+`BlockPos`, and the trace retains their original callback order.
+
+The current changes compile through `stage4AcceptanceHarness` and
+`clientGameTestClasses`, pass Python syntax and whitespace checks, and have no
+new installed campaign result. The next run still requires the stable
+integrated production identity and the open migration, save/reload, tracking,
+5/5, 8/8, affected FULL, and saved-vault gates.

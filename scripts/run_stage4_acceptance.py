@@ -298,17 +298,21 @@ def capture_thread_dump(server, process, label):
     return str(output)
 
 
-def run_process(server, trace_path=None, drive=False, explicit_topology=False):
+def run_process(server, trace_path=None, drive=False, explicit_topology=False, topology_lifecycle=False):
     java = Path(os.environ.get("JAVA_HOME", "")) / "bin" / ("java.exe" if os.name == "nt" else "java")
     if not java.exists():
         java = Path(shutil.which("java") or "java")
-    properties = ["-Xmx2G", "-Dphoenium.test.diagnostics=true"]
+    properties = ["-Xmx2G", "-Dphoenium.test.diagnostics=true",
+                  "-Dphoenium.stage4.candidate=" + str(bool(explicit_topology)).lower()]
     if explicit_topology:
         properties.append("-Dphoenium.stage3.explicitTopology=true")
         # The production fixture otherwise publishes only its narrow default
         # A/B strip before the initial spawn is known.  Keep the spawn support
         # domain identical on the initial and restart processes.
         properties.append("-Dphoenium.test.chunkFixtureSupport=true")
+        if topology_lifecycle:
+            # The lifecycle fixture's deferred B event lives in the established far B interior.
+            properties.append("-Dphoenium.stage3.chunkTrace=true")
     if trace_path:
         properties.append("-Dphoenium.stage4.tracePath=" + str(trace_path))
     command = [str(java), *properties, "-jar", "fabric-server-launch.jar", "nogui"]
@@ -366,6 +370,11 @@ def run_process(server, trace_path=None, drive=False, explicit_topology=False):
         if drive and process.poll() is None:
             try:
                 send("stage4trace run")
+                if topology_lifecycle:
+                    # Keep the merge/split request adjacent to arm so the pending block/fluid
+                    # work and block event cross the real coordinator boundary before they run.
+                    send("stage4trace lifecycle")
+                    send("stage4trace split-far")
                 time.sleep(5)
                 send("save-all flush")
                 time.sleep(3)
@@ -439,6 +448,8 @@ def main():
                         help="installed server simulation distance (use 5 or 8 for the Stage 4 campaign)")
     parser.add_argument("--explicit-topology", action="store_true",
                         help="enable the stable explicit disjoint A/B production topology")
+    parser.add_argument("--topology-lifecycle", action="store_true",
+                        help="request the installed coordinator-backed A/B merge and split fixture")
     args = parser.parse_args()
     args.output = args.output.resolve()
     if args.output.exists():
@@ -461,7 +472,8 @@ def main():
             raise SystemExit(f"world source has no level.dat: {args.world_source}")
         shutil.copytree(args.world_source, server / args.world)
     trace = args.output / "trace.json"
-    first = run_process(server, trace, drive=True, explicit_topology=args.explicit_topology)
+    first = run_process(server, trace, drive=True, explicit_topology=args.explicit_topology,
+                        topology_lifecycle=args.topology_lifecycle)
     world = server / args.world
     mca_snapshot = args.output / "pre-restart-world"
     snapshot_files = snapshot_mca(world, mca_snapshot)
@@ -469,10 +481,34 @@ def main():
     (args.output / "mca-before-restart.json").write_text(json.dumps(before_restart, indent=2) + "\n", encoding="utf-8")
     pending = pending_tick_readback(before_restart, expected_pending_tick(trace))
     (args.output / "pending-tick-readback.json").write_text(json.dumps(pending, indent=2) + "\n", encoding="utf-8")
-    second = run_process(server, drive=False, explicit_topology=args.explicit_topology)
+    second = run_process(server, drive=False, explicit_topology=args.explicit_topology,
+                         topology_lifecycle=args.topology_lifecycle)
+    try:
+        trace_report = json.loads(trace.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        trace_report = {}
+    trace_events = trace_report.get("events", []) if isinstance(trace_report, dict) else []
+    lifecycle_evidence = {
+        "topology.merge": any(item == "topology.merge" or item.startswith("topology.merge ")
+                              for item in trace_events if isinstance(item, str)),
+        "topology.split": any(item == "topology.split" or item.startswith("topology.split ")
+                              for item in trace_events if isinstance(item, str)),
+        "topology.body": any(item == "topology.body" or item.startswith("topology.body ")
+                             for item in trace_events if isinstance(item, str)),
+        "topology.body.owner.a": any(item.startswith("topology.body ") and "contextRegion=stage3-fixture-a" in item
+                                     for item in trace_events if isinstance(item, str)),
+        "topology.body.owner.b": any(item.startswith("topology.body ") and "contextRegion=stage3-fixture-b" in item
+                                     for item in trace_events if isinstance(item, str)),
+        "block.deferred": any(item == "block.deferred" or item.startswith("block.deferred ")
+                              for item in trace_events if isinstance(item, str)),
+        "tracking.body": any(item == "tracking.body" or item.startswith("tracking.body ")
+                              for item in trace_events if isinstance(item, str)),
+    }
     manifest = {"kind": "stage4-installed-acceptance-fixture", "world": args.world,
                 "seed": 444444, "viewDistance": args.view_distance, "simulationDistance": args.simulation_distance,
                 "explicitTopology": args.explicit_topology,
+                "topologyLifecycle": args.topology_lifecycle,
+                "topologyLifecycleEvidence": lifecycle_evidence,
                 "runtimeMeasurement": {"jvm": first["command"][0], "heap": "-Xmx2G",
                                         "gcLogging": "disabled; log pattern count only",
                                         "rss": "psutil peak process RSS when available"},

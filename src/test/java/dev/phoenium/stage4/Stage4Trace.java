@@ -14,6 +14,14 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.level.chunk.ChunkAccess;
+import net.minecraft.resources.ResourceKey;
+import net.minecraft.network.protocol.Packet;
+import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.level.Level;
+import net.minecraft.network.protocol.game.ClientboundBlockEventPacket;
+import dev.phoenium.Phoenium;
+import dev.phoenium.ownership.OwnershipContext;
 
 /** Test-only ordered trace. It records original callbacks without changing their values. */
 public final class Stage4Trace {
@@ -26,8 +34,16 @@ public final class Stage4Trace {
     private static volatile Path output;
     private static volatile long barrierTarget = -1;
     private static volatile String barrierLabel = "";
+    private static volatile long stepTarget = -1;
+    private static volatile String stepLabel = "";
     private static volatile boolean reloadMode;
+    private static volatile boolean lifecycleRequested;
+    private static volatile boolean trackingLifecycleRequested;
+    private static volatile boolean blockRecipientRequested;
+    private static volatile boolean fullReadinessRequested;
     private static final Set<Integer> changeSeen = new HashSet<>();
+    private static final Map<String, BlockPos> BLOCK_PROBES = new LinkedHashMap<>();
+    private static final Map<String, Integer> BLOCK_PROBE_PACKETS = new LinkedHashMap<>();
     private Stage4Trace() { }
 
     public static void begin(ServerLevel level) {
@@ -38,8 +54,16 @@ public final class Stage4Trace {
             lastGameTime = startedAt;
             barrierTarget = -1;
             barrierLabel = "";
+            stepTarget = -1;
+            stepLabel = "";
             reloadMode = false;
+            lifecycleRequested = false;
+            trackingLifecycleRequested = false;
+            blockRecipientRequested = false;
+            fullReadinessRequested = false;
             changeSeen.clear();
+            BLOCK_PROBES.clear();
+            BLOCK_PROBE_PACKETS.clear();
             world = level.dimension().identifier().toString();
             output = Path.of(System.getProperty("phoenium.stage4.tracePath", "run/stage4/acceptance/trace.json"));
             event("trace.begin", "world=" + level.dimension() + " gameTime=" + startedAt);
@@ -66,8 +90,29 @@ public final class Stage4Trace {
         event("trace.await", "label=" + label + " target=" + barrierTarget);
     }
 
+    public static void clockFrozen(ServerLevel level) {
+        event("clock.freeze", "gameTime=" + level.getGameTime());
+        System.out.println("STAGE4_TRACE_CLOCK_FROZEN gameTime=" + level.getGameTime());
+    }
+
+    /** Arms an exact native frozen-tick receipt before requesting ServerTickRateManager steps. */
+    public static void clockStep(ServerLevel level, String label, int ticks) {
+        if (stepTarget >= 0) throw new IllegalStateException("native tick step already pending: " + stepLabel);
+        stepLabel = label;
+        stepTarget = level.getGameTime() + ticks;
+        event("clock.step", "label=" + label + " ticks=" + ticks + " target=" + stepTarget);
+    }
+
     public static void observeTick(long gameTime) {
-        if (!active || barrierTarget < 0 || gameTime < barrierTarget) return;
+        if (!active) return;
+        if (stepTarget >= 0 && gameTime >= stepTarget) {
+            String label = stepLabel;
+            stepTarget = -1;
+            stepLabel = "";
+            event("clock.step.reached", "label=" + label + " gameTime=" + gameTime);
+            System.out.println("STAGE4_TRACE_CLOCK_STEP_REACHED label=" + label + " gameTime=" + gameTime);
+        }
+        if (barrierTarget < 0 || gameTime < barrierTarget) return;
         String label = barrierLabel;
         long reached = gameTime;
         barrierTarget = -1;
@@ -80,7 +125,8 @@ public final class Stage4Trace {
         if (!relevantEntity(entity) || packet == null) return;
         long gameTime = entity.level() instanceof ServerLevel level ? level.getGameTime() : -1;
         event("tracking.packet", "operation=" + operation + " entityId=" + entity.getId()
-            + " packet=" + packet.getClass().getName() + " gameTime=" + gameTime);
+            + " packet=" + packet.getClass().getName() + " gameTime=" + gameTime
+            + " " + authority(entity.level() instanceof ServerLevel level ? level : null, entity.blockPosition()));
     }
 
     public static void trackingChanges(Entity entity) {
@@ -90,12 +136,14 @@ public final class Stage4Trace {
         }
         long gameTime = entity.level() instanceof ServerLevel level ? level.getGameTime() : -1;
         event("tracking.changes", "entityId=" + entity.getId()
-            + " pos=" + entity.blockPosition() + " gameTime=" + gameTime);
+            + " pos=" + entity.blockPosition() + " gameTime=" + gameTime
+            + " " + authority(entity.level() instanceof ServerLevel level ? level : null, entity.blockPosition()));
     }
 
     public static boolean relevantEntity(Entity entity) {
         return entity != null && (entity.entityTags().contains("stage4_trace_a")
-            || entity.entityTags().contains("stage4_trace_b"));
+            || entity.entityTags().contains("stage4_trace_b")
+            || entity.entityTags().contains("stage4_trace_b_far"));
     }
 
     public static boolean reloadEffect(BlockPos pos) {
@@ -109,11 +157,124 @@ public final class Stage4Trace {
 
     public static void event(String kind) { event(kind, ""); }
 
+    /** Marks that the installed lifecycle fixture must prove coordinator-backed merge and split. */
+    public static void requestLifecycle() { lifecycleRequested = true; }
+
+    /** Enables the client fixture's actual PlayerList.broadcast recipient gate. */
+    public static void requestBlockRecipient() { blockRecipientRequested = true; }
+
+    /** Enables the client fixture's per-owner tracking-body gate. */
+    public static void requestTrackingLifecycle() { trackingLifecycleRequested = true; }
+
+    /** Enables the gate requiring authentic holder FULL/ticking futures for the final viewport. */
+    public static void fullReadiness(String label, int centerX, int centerZ, int radius,
+                                     int targetCount, int candidateCount) {
+        fullReadinessRequested = true;
+        event("full.ready", "label=" + label + " center=" + centerX + "," + centerZ
+            + " radius=" + radius + " target=" + targetCount + " candidates=" + candidateCount);
+    }
+
+    /** Owner and immutable route generation observed at an actual callback body. */
+    public static String authority(ServerLevel level, BlockPos pos) {
+        String context = OwnershipContext.current().map(active ->
+            "contextRegion=" + active.region().value() + " lease=" + active.lease().value()
+                + " category=" + active.category()).orElse("contextRegion=NONE");
+        if (level == null || pos == null) return context + " route=UNAVAILABLE";
+        if (!Boolean.getBoolean("phoenium.stage4.candidate")) return context + " route=REFERENCE";
+        String route = Phoenium.liveRuntime().routeDiagnostic(level.dimension().identifier().toString(),
+            pos.getX() >> 4, pos.getZ() >> 4);
+        return context + " " + route;
+    }
+
+    /** The PlayerList distance loop calls send() only for an actual in-range recipient. */
+    public static void blockEventRecipient(Player source, ServerPlayer recipient, Packet<?> packet,
+                                           double x, double y, double z, double radius,
+                                           ResourceKey<Level> dimension) {
+        if (!active || !(packet instanceof ClientboundBlockEventPacket)) return;
+        synchronized (LOCK) {
+            for (var entry : BLOCK_PROBES.entrySet()) {
+                if (entry.getValue().getX() == (int) x && entry.getValue().getY() == (int) y
+                        && entry.getValue().getZ() == (int) z)
+                    BLOCK_PROBE_PACKETS.merge(entry.getKey(), 1, Integer::sum);
+            }
+        }
+        event("block.recipient.packet", "recipient=" + recipient.getName().getString()
+            + " packet=" + packet.getClass().getName() + " center=" + x + "," + y + "," + z
+            + " radius=" + radius + " dimension=" + dimension
+            + " recipientState=connection-send");
+    }
+
+    public static void beginBlockProbe(String label, BlockPos pos) {
+        synchronized (LOCK) {
+            BLOCK_PROBES.put(label, pos);
+            BLOCK_PROBE_PACKETS.put(label, 0);
+        }
+        event("block.probe", "label=" + label + " pos=" + pos);
+    }
+
+    public static void checkBlockProbe(String label, boolean expectRecipient) {
+        int packets;
+        synchronized (LOCK) { packets = BLOCK_PROBE_PACKETS.getOrDefault(label, 0); }
+        boolean passed = expectRecipient ? packets > 0 : packets == 0;
+        event("block.probe.result", "label=" + label + " packets=" + packets + " expected="
+            + (expectRecipient ? "recipient" : "none") + " pass=" + passed);
+    }
+
+    /** The deferred fixture event is observable through its real server callback. */
+    public static boolean checkDeferredEvent() {
+        String prefix = "block.dispatch pos=BlockPos{x=520, y=65, z=200}";
+        int reached = 0;
+        for (String item : snapshot())
+            if (item.startsWith(prefix) && item.contains("a=3 b=11")) reached++;
+        boolean pass = reached == 1;
+        event("block.deferred.result", "pos=BlockPos{x=520, y=65, z=200} reached=" + reached + " pass=" + pass);
+        System.out.println("STAGE4_TRACE_DEFERRED_CHECK pass=" + pass + " reached=" + reached);
+        return pass;
+    }
+
+    /** Confirms that the two far obligations actually reached their native callbacks
+     * during the controlled post-transition step. */
+    public static boolean checkFarEffects() {
+        int block = 0;
+        int fluid = 0;
+        for (String item : snapshot()) {
+            if (item.startsWith("tick.block.vanilla pos=BlockPos{x=520, y=65, z=7}")) block++;
+            if (item.startsWith("tick.fluid pos=BlockPos{x=521, y=65, z=8}")) fluid++;
+        }
+        boolean pass = block == 1 && fluid > 0;
+        event("tick.migrated.result", "block=" + block + " fluid=" + fluid + " pass=" + pass);
+        System.out.println("STAGE4_TRACE_FAR_CHECK pass=" + pass + " block=" + block + " fluid=" + fluid);
+        return pass;
+    }
+
+    /** Records a callback observed after the real coordinator transition. */
+    public static void bodyObserved(ServerLevel level, BlockPos pos, String callback) {
+        if (lifecycleRequested) event("topology.body", "callback=" + callback + " pos=" + pos + " " + authority(level, pos));
+    }
+
+    public static void trackingBodyObserved(Entity entity, String callback) {
+        if (!trackingLifecycleRequested || !(entity.level() instanceof ServerLevel level)) return;
+        event("tracking.body", "callback=" + callback + " entityId=" + entity.getId()
+            + " pos=" + entity.blockPosition() + " " + authority(level, entity.blockPosition()));
+    }
+
     /** Record only the detached result returned by the original serialization callback. */
     public static void packedTicks(ChunkAccess chunk, long gameTime, ChunkAccess.PackedTicks packed) {
         if (!active || packed == null) return;
         event("save.serialization.ticks", "chunk=" + chunk.getPos() + " gameTime=" + gameTime
-            + " blocks=" + packed.blocks() + " fluids=" + packed.fluids());
+            + " blocks=" + packed.blocks() + " fluids=" + packed.fluids()
+            + " " + packedAuthority(chunk));
+    }
+
+    /** Serializer evidence uses only detached packed data plus route/context metadata. */
+    private static String packedAuthority(ChunkAccess chunk) {
+        String context = OwnershipContext.current().map(active ->
+            "contextRegion=" + active.region().value() + " lease=" + active.lease().value()
+                + " category=" + active.category()).orElse("contextRegion=NONE");
+        String route = Boolean.getBoolean("phoenium.stage4.candidate")
+            ? Phoenium.liveRuntime().routeDiagnostic("minecraft:overworld", chunk.getPos().x(), chunk.getPos().z())
+            : "route=REFERENCE";
+        return context + " " + route;
     }
 
     public static String block(Block block) {
@@ -124,6 +285,10 @@ public final class Stage4Trace {
     public static boolean fixture(BlockPos pos) {
         return pos.equals(new BlockPos(8, 65, 8)) || pos.equals(new BlockPos(120, 65, 8))
             || pos.equals(new BlockPos(120, 65, 9))
+            || pos.equals(new BlockPos(520, 65, 8))
+            || pos.equals(new BlockPos(520, 65, 200))
+            || pos.equals(new BlockPos(521, 65, 8))
+            || pos.equals(new BlockPos(520, 65, 7))
             || pos.equals(new BlockPos(121, 65, 8)) || pos.equals(new BlockPos(8, 66, 8));
     }
 
@@ -156,12 +321,53 @@ public final class Stage4Trace {
         require(events, "tick.fluid", missing);
         require(events, "block.enqueue", missing);
         require(events, "block.dispatch", missing);
+        requireContains(events, "tick.pending.input", "present=true", "tick.pending.input", missing);
+        requireContains(events, "tick.migrated.result", "pass=true", "tick.migrated.result", missing);
+        requireContains(events, "block.deferred.result", "pass=true", "block.deferred.result", missing);
         require(events, "tracking.pair", missing);
         require(events, "tracking.remove", missing);
         require(events, "tracking.recipient", missing);
         require(events, "tracking.changes", missing);
         require(events, "save.enter", missing);
         require(events, "save.exit", missing);
+        if (blockRecipientRequested) require(events, "block.recipient.packet", missing);
+        if (blockRecipientRequested) {
+            requireContains(events, "block.probe.result", "label=a packets=0 pass=true",
+                "block.probe.a.noRecipient", missing);
+            requireContains(events, "block.probe.result", "label=b packets=", "block.probe.b.result", missing);
+            if (events.stream().noneMatch(item -> item.startsWith("block.probe.result label=b ")
+                    && item.contains("expected=recipient pass=true"))) missing.add("block.probe.b.recipient");
+        }
+        if (trackingLifecycleRequested) {
+            require(events, "tracking.body", missing);
+            requireContains(events, "tracking.body", "contextRegion=stage3-fixture-a",
+                "tracking.body.owner.a", missing);
+            requireContains(events, "tracking.body", "contextRegion=stage3-fixture-b",
+                "tracking.body.owner.b", missing);
+        }
+        if (lifecycleRequested) {
+            require(events, "topology.merge", missing);
+            require(events, "topology.split", missing);
+            require(events, "topology.body", missing);
+            requireContains(events, "topology.body", "contextRegion=stage3-fixture-a", "topology.body.owner.a", missing);
+            requireContains(events, "topology.body", "contextRegion=stage3-fixture-b", "topology.body.owner.b", missing);
+            requireBodyOwner(events, "block.tick", "stage3-fixture-a", "service.block.owner.a", missing);
+            requireBodyOwner(events, "block.tick", "stage3-fixture-b", "service.block.owner.b", missing);
+            requireBodyOwner(events, "fluid.tick", "stage3-fixture-a", "service.fluid.owner.a", missing);
+            requireBodyOwner(events, "fluid.tick", "stage3-fixture-b", "service.fluid.owner.b", missing);
+            requireBodyOwner(events, "block.dispatch", "stage3-fixture-a", "service.event.owner.a", missing);
+            requireBodyOwner(events, "block.dispatch", "stage3-fixture-b", "service.event.owner.b", missing);
+            requireContains(events, "save.serialization.ticks", "contextRegion=stage3-fixture-a", "save.owner.a", missing);
+            requireContains(events, "save.serialization.ticks", "contextRegion=stage3-fixture-b", "save.owner.b", missing);
+            requireContains(events, "topology.split", "fluids=Measurements[", "service.fluid.split", missing);
+            require(events, "block.deferred", missing);
+            if (fullReadinessRequested) {
+                requireContains(events, "full.ready", "label=far ", "full.ready.far", missing);
+                requireContains(events, "full.ready", "label=deferred ", "full.ready.deferred", missing);
+                require(events, "clock.freeze", missing);
+                requireContains(events, "clock.step.reached", "label=post-split ", "clock.step.post-split", missing);
+            }
+        }
         if (includeStop) require(events, "server.stop", missing);
         return missing;
     }
@@ -188,6 +394,23 @@ public final class Stage4Trace {
             if (events.stream().anyMatch(event -> event.startsWith(marker + " ") || event.equals(marker))) return;
         }
         missing.add(markers[0]);
+    }
+
+    private static void requireContains(List<String> events, String marker, String text,
+                                        String missingMarker, List<String> missing) {
+        if (events.stream().noneMatch(event -> (event.startsWith(marker + " ") || event.equals(marker))
+                && event.contains(text))) missing.add(missingMarker);
+    }
+
+    private static void requireBodyOwner(List<String> events, String callback, String owner,
+                                         String missingMarker, List<String> missing) {
+        requireContains(events, "topology.body", "callback=" + callback,
+            missingMarker + ".callback", missing);
+        requireContains(events, "topology.body", "callback=" + callback + " ",
+            missingMarker + ".owner", missing);
+        if (events.stream().noneMatch(event -> event.startsWith("topology.body ")
+                && event.contains("callback=" + callback + " ")
+                && event.contains("contextRegion=" + owner))) missing.add(missingMarker);
     }
 
     private static void write(Map<String, Object> report) {

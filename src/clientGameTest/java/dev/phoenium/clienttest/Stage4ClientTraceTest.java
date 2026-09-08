@@ -9,8 +9,11 @@ import net.minecraft.client.multiplayer.ClientPacketListener;
 import net.minecraft.client.multiplayer.ServerData;
 import net.minecraft.client.multiplayer.resolver.ServerAddress;
 import net.minecraft.network.chat.Component;
+import net.minecraft.world.entity.Entity;
+import net.minecraft.world.level.chunk.status.ChunkStatus;
 
 import java.io.IOException;
+import java.util.ArrayList;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
@@ -22,6 +25,9 @@ public final class Stage4ClientTraceTest implements FabricClientGameTest {
     private static final int PORT = 25565;
     private static final int START_TIMEOUT_TICKS = 3600;
     private static final int CONNECT_TIMEOUT_TICKS = 1200;
+    private static final java.util.UUID ENTITY_A = java.util.UUID.fromString("00000001-0000-0002-0000-000300000004");
+    private static final java.util.UUID ENTITY_B = java.util.UUID.fromString("00000005-0000-0006-0000-000700000008");
+    private static final java.util.UUID ENTITY_B_FAR = java.util.UUID.fromString("00000009-0000-000a-0000-000b0000000c");
 
     @Override public void runTest(ClientGameTestContext context) {
         Path directory = Path.of(System.getProperty("phoenium.test.serverDirectory"));
@@ -33,34 +39,122 @@ public final class Stage4ClientTraceTest implements FabricClientGameTest {
         Path log = directory.resolve("stage4-client-server-" + runId + ".log");
         Process server = null;
         boolean connected = false;
+        boolean candidate = !Boolean.getBoolean("phoenium.stage4.reference");
         try {
             configure(directory, worldName);
-            List<String> command = List.of(Path.of(System.getProperty("java.home"), "bin",
+            List<String> command = new ArrayList<>(List.of(Path.of(System.getProperty("java.home"), "bin",
                 System.getProperty("os.name", "").toLowerCase().contains("win") ? "java.exe" : "java").toString(),
                 "-Xmx2G", "-Dphoenium.test.diagnostics=true",
-                "-Dphoenium.stage4.tracePath=" + trace.toAbsolutePath(), "-jar",
-                "fabric-server-launch.jar", "nogui");
+                "-Dphoenium.stage4.candidate=" + candidate,
+                // Both modes use the same disposable Stage 4 probe and support domain.
+                // The candidate flag only changes calls that require regional production APIs.
+                "-Dphoenium.stage3.explicitTopology=true",
+                "-Dphoenium.test.chunkFixtureSupport=true",
+                "-Dphoenium.stage3.chunkTrace=true",
+                "-Dphoenium.stage4.tracePath=" + trace.toAbsolutePath()));
+            command.add("-jar");
+            command.add("fabric-server-launch.jar");
+            command.add("nogui");
             server = new ProcessBuilder(command).directory(directory.toFile()).redirectErrorStream(true)
                 .redirectOutput(ProcessBuilder.Redirect.appendTo(log.toFile())).start();
             waitForReady(context, server, log);
             connectClient(context);
             connected = true;
+            // Hold the native server clock before arming the fixture.  Every subsequent
+            // simulation phase advances through the same explicit ServerTickRateManager step
+            // in both the frozen reference and the regional candidate.
+            command(server, "stage4trace freeze");
+            awaitLog(context, server, log, "STAGE4_TRACE_CLOCK_FROZEN", START_TIMEOUT_TICKS);
             command(server, "stage4trace run");
+            command(server, "stage4trace require-block-recipient");
+            if (candidate) command(server, "stage4trace require-tracking-lifecycle");
             awaitLog(context, server, log, "STAGE4_TRACE_ARMED", START_TIMEOUT_TICKS);
-            command(server, "summon minecraft:armor_stand 8 65 8 {NoGravity:1b,Invulnerable:1b,Tags:[\"stage4_trace_a\"]}");
-            command(server, "summon minecraft:armor_stand 120 65 8 {NoGravity:1b,Invulnerable:1b,Tags:[\"stage4_trace_b\"]}");
+            // Fixed UUIDs keep the client packet projection comparable across fresh reference
+            // and candidate worlds; entity IDs remain deterministic because the world is fresh.
+            command(server, "summon minecraft:armor_stand 8 65 8 {NoGravity:1b,Invulnerable:1b,UUID:[I;1,2,3,4],Tags:[\"stage4_trace_a\"]}");
+            command(server, "summon minecraft:armor_stand 120 65 8 {NoGravity:1b,Invulnerable:1b,UUID:[I;5,6,7,8],Tags:[\"stage4_trace_b\"]}");
+            command(server, "summon minecraft:armor_stand 520 65 8 {NoGravity:1b,Invulnerable:1b,UUID:[I;9,10,11,12],Tags:[\"stage4_trace_b_far\"]}");
+            if (candidate) {
+                command(server, "stage4trace lifecycle");
+                awaitLog(context, server, log, "STAGE4_TRACE_TOPOLOGY_MERGE", START_TIMEOUT_TICKS);
+            }
+            command(server, "stage4trace step initial 4");
+            awaitLog(context, server, log, "STAGE4_TRACE_CLOCK_STEP_REACHED label=initial", START_TIMEOUT_TICKS);
+            assertClientEntity(context, ENTITY_A, 8, 8, true);
             command(server, "tp " + USER + " 8.5 65 8.5");
             command(server, "stage4trace barrier setup");
             awaitLog(context, server, log, "STAGE4_TRACE_BARRIER label=setup", START_TIMEOUT_TICKS);
-            command(server, "stage4trace await settle 80");
-            awaitLog(context, server, log, "STAGE4_TRACE_BARRIER label=settle", START_TIMEOUT_TICKS);
+            command(server, "stage4trace step settle 80");
+            awaitLog(context, server, log, "STAGE4_TRACE_CLOCK_STEP_REACHED label=settle", START_TIMEOUT_TICKS);
             command(server, "tp " + USER + " 120.5 65 8.5");
             command(server, "stage4trace barrier region-b");
             awaitLog(context, server, log, "STAGE4_TRACE_BARRIER label=region-b", START_TIMEOUT_TICKS);
-            command(server, "stage4trace await settle-b 80");
-            awaitLog(context, server, log, "STAGE4_TRACE_BARRIER label=settle-b", START_TIMEOUT_TICKS);
+            dev.phoenium.clienttrace.ClientConnectionTraceMixin.clearReceived();
+            command(server, "stage4trace block-probe-a");
+            command(server, "stage4trace step far-block 10");
+            awaitLog(context, server, log, "STAGE4_TRACE_CLOCK_STEP_REACHED label=far-block", START_TIMEOUT_TICKS);
+            assertClientPacket(context, "ClientboundBlockEventPacket", false,
+                "b0=4", "b1=21", "pos=BlockPos{x=8, y=65, z=8}");
+            command(server, "stage4trace block-probe-check-a");
+            dev.phoenium.clienttrace.ClientConnectionTraceMixin.clearReceived();
+            command(server, "stage4trace block-probe-b");
+            command(server, "stage4trace step moved-block 10");
+            awaitLog(context, server, log, "STAGE4_TRACE_CLOCK_STEP_REACHED label=moved-block", START_TIMEOUT_TICKS);
+            assertClientPacket(context, "ClientboundBlockEventPacket", true,
+                "b0=5", "b1=22", "pos=BlockPos{x=120, y=65, z=8}");
+            command(server, "stage4trace block-probe-check-b");
+            command(server, "stage4trace step settle-b 80");
+            awaitLog(context, server, log, "STAGE4_TRACE_CLOCK_STEP_REACHED label=settle-b", START_TIMEOUT_TICKS);
+            waitForClientFull(context, START_TIMEOUT_TICKS);
+            assertClientEntity(context, ENTITY_B, 120, 8, true);
+            // Check withdrawal while the client is still viewing B; after the next teleport
+            // absence would be ambiguous because the entity can simply be out of range.
+            command(server, "kill @e[tag=stage4_trace_b,limit=1]");
+            command(server, "stage4trace step remove-b 1");
+            awaitLog(context, server, log, "STAGE4_TRACE_CLOCK_STEP_REACHED label=remove-b", START_TIMEOUT_TICKS);
+            assertClientEntity(context, ENTITY_B, 120, 8, false);
+            // The split is intentionally requested only after the final distant viewport and
+            // its FULL dependencies have settled, so the real admission path cannot merge it
+            // again while the split is being proposed.
+            command(server, "tp " + USER + " 520.5 65 8.5");
+            command(server, "stage4trace barrier region-b-far");
+            awaitLog(context, server, log, "STAGE4_TRACE_BARRIER label=region-b-far", START_TIMEOUT_TICKS);
+            command(server, "stage4trace step settle-b-far 80");
+            awaitLog(context, server, log, "STAGE4_TRACE_CLOCK_STEP_REACHED label=settle-b-far", START_TIMEOUT_TICKS);
+            waitForClientFull(context, START_TIMEOUT_TICKS);
+            assertClientEntity(context, ENTITY_B_FAR, 520, 8, true);
+            command(server, "stage4trace await-full-far");
+            awaitLog(context, server, log, "STAGE4_TRACE_FULL_READY label=far", START_TIMEOUT_TICKS);
+            if (candidate) {
+                command(server, "stage4trace split-far");
+                awaitLog(context, server, log, "STAGE4_TRACE_TOPOLOGY_SPLIT", START_TIMEOUT_TICKS);
+            }
+            // Keep the player at the far B cohort while the now+320 obligations execute,
+            // then use a separate short step for the deferred event in chunk 32,12.
+            command(server, "stage4trace step far-effects 100");
+            awaitLog(context, server, log, "STAGE4_TRACE_CLOCK_STEP_REACHED label=far-effects", START_TIMEOUT_TICKS);
+            command(server, "stage4trace check-far");
+            awaitLog(context, server, log, "STAGE4_TRACE_FAR_CHECK pass=true", START_TIMEOUT_TICKS);
+            command(server, "tp " + USER + " 520.5 65 200.5");
+            command(server, "stage4trace barrier deferred-ready");
+            awaitLog(context, server, log, "STAGE4_TRACE_BARRIER label=deferred-ready", START_TIMEOUT_TICKS);
+            waitForClientFull(context, START_TIMEOUT_TICKS);
+            command(server, "stage4trace await-full-deferred");
+            awaitLog(context, server, log, "STAGE4_TRACE_FULL_READY label=deferred", START_TIMEOUT_TICKS);
+            // Leave the original now+400 block obligation pending while allowing the migrated
+            // far fluid/block (now+320) to execute under B after the split.  This is an exact
+            // native frozen-clock step rather than a wall-clock/game-time deadline race.
+            dev.phoenium.clienttrace.ClientConnectionTraceMixin.clearReceived();
+            command(server, "stage4trace step post-split 10");
+            awaitLog(context, server, log, "STAGE4_TRACE_CLOCK_STEP_REACHED label=post-split", START_TIMEOUT_TICKS);
+            assertClientPacket(context, "ClientboundBlockEventPacket", true,
+                "b0=3", "b1=11", "pos=BlockPos{x=520, y=65, z=200}");
+            command(server, "stage4trace check-deferred");
+            awaitLog(context, server, log, "STAGE4_TRACE_DEFERRED_CHECK pass=true", START_TIMEOUT_TICKS);
             command(server, "save-all flush");
-            command(server, "stage4trace await saved 5");
+            // save-all flush is a synchronous server command; use an immediate receipt because
+            // the native clock is intentionally still frozen and cannot satisfy a tick deadline.
+            command(server, "stage4trace barrier saved");
             awaitLog(context, server, log, "STAGE4_TRACE_BARRIER label=saved", START_TIMEOUT_TICKS);
             disconnectClient(context);
             connected = false;
@@ -78,6 +172,46 @@ public final class Stage4ClientTraceTest implements FabricClientGameTest {
         } finally {
             if (server != null && server.isAlive()) server.destroyForcibly();
         }
+    }
+
+    private static void waitForClientFull(ClientGameTestContext context, int timeoutTicks) {
+        int radius = clientSimulationDistance();
+        context.waitFor(client -> {
+            if (client.level == null || client.player == null) return false;
+            var center = client.player.chunkPosition();
+            for (int x = center.x() - radius; x <= center.x() + radius; x++)
+                for (int z = center.z() - radius; z <= center.z() + radius; z++)
+                    if (client.level.getChunkSource().getChunk(x, z, ChunkStatus.FULL, false) == null) return false;
+            return true;
+        }, timeoutTicks);
+    }
+
+    private static int clientSimulationDistance() {
+        return Integer.parseInt(System.getProperty("phoenium.stage4.simulationDistance", "8"));
+    }
+
+    private static void assertClientEntity(ClientGameTestContext context, java.util.UUID uuid,
+                                           double expectedX, double expectedZ, boolean present) {
+        context.waitFor(client -> {
+            Entity found = null;
+            if (client.level != null) for (Entity entity : client.level.entitiesForRendering())
+                if (uuid.equals(entity.getUUID())) { found = entity; break; }
+            boolean observed = found != null && Math.abs(found.getX() - expectedX) < 2.0
+                && Math.abs(found.getZ() - expectedZ) < 2.0;
+            return present ? observed : found == null;
+        }, 600);
+    }
+
+    private static void assertClientPacket(ClientGameTestContext context, String packetName,
+                                           boolean present, String... payloadTokens) {
+        for (int tick = 0; tick < 20; tick++) context.waitTick();
+        boolean[] observed = {false};
+        context.runOnClient(client -> observed[0] = dev.phoenium.clienttrace.ClientConnectionTraceMixin
+            .receivedAll(packetName, payloadTokens));
+        if (observed[0] != present)
+            throw new AssertionError("client packet observation mismatch packet=" + packetName
+                + " tokens=" + java.util.Arrays.toString(payloadTokens)
+                + " expected=" + present + " observed=" + observed[0]);
     }
 
     private static void configure(Path directory, String worldName) throws IOException {
