@@ -11,6 +11,8 @@
     "FailedStopServerLevelMixin",
     "FailedStopChunkMapMixin",
     "RegionalLevelTicksAccess",
+    "RegionalEntityStorageMixin",
+    "RegionalEntityStorageRemovalMixin",
     "RegionalLevelTicksMixin",
     "RegionalServerLevelAccess",
     "RegionalBlockEventMixin",

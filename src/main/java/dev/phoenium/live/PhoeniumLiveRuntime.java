@@ -308,12 +308,21 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
                     phases.phoenium$beforeEntityList(pending.levelState);
                     phases.phoenium$runEntityTicks(pending.levelState);
                     phases.phoenium$afterEntityList(pending.levelState);
-                    queueTickPhase(pending, live, PendingTick.Step.FINAL_OWNER);
+                    pending.step = PendingTick.Step.ENTITY_MANAGEMENT_COORDINATOR;
                 }
                 else {
                     pending.levelState.skipEntityBody(pending.level());
-                    queueTickPhase(pending, live, PendingTick.Step.FINAL_OWNER);
+                    pending.step = PendingTick.Step.ENTITY_MANAGEMENT_COORDINATOR;
                 }
+            }
+            case ENTITY_MANAGEMENT_COORDINATOR -> {
+                // Native entity-storage application can introduce entities from any current
+                // chunk owner. Its registry coordinator runs before owner admission; tracking
+                // callbacks and stored-entity removal each obtain their own truthful owner turn.
+                try (var access = dev.phoenium.chunk.FullFinishingServices.forServer(pending.level().getServer()).referenceAccess()) {
+                    phases.phoenium$runEntityManagement(pending.levelState);
+                }
+                queueTickPhase(pending, live, PendingTick.Step.FINAL_OWNER);
             }
             default -> throw new IllegalStateException("owner-free tick coordinator reached " + pending.step);
         }
@@ -592,6 +601,11 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
     }
     public boolean regionalTrackingAdd(net.minecraft.server.level.ChunkMap map, Entity entity, Runnable original) {
         return regionalServiceBound() && regionalServices.addTrackingEntity(map, entity, original);
+    }
+    public Boolean regionalEntityStorageSave(ServerLevel level, long chunk,
+            java.util.function.Supplier<java.util.List<Entity>> selection, java.util.function.BooleanSupplier original) {
+        if (!regionalServiceBound()) return null;
+        return regionalServices.storeEntitySections(level, chunk, selection, original);
     }
     public boolean regionalTrackingAddPlayers(net.minecraft.server.level.ChunkMap map, Object tracker,
                                               java.util.List<ServerPlayer> players) {
@@ -1080,7 +1094,7 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
         boolean runEntityBody;
         enum Step { PREFIX_OWNER, SCHEDULED_COORDINATOR, MIDDLE_OWNER, READINESS_COORDINATOR,
             CACHE_OWNER, BLOCK_EVENTS_COORDINATOR, FINAL_PREFIX_OWNER, FINAL_DECISION_COORDINATOR,
-            FINAL_OWNER, DONE }
+            ENTITY_MANAGEMENT_COORDINATOR, FINAL_OWNER, DONE }
     }
     public enum State { NEW, RUNNING, STOPPED }
 }

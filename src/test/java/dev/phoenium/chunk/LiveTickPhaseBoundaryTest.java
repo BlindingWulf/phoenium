@@ -42,6 +42,7 @@ final class LiveTickPhaseBoundaryTest {
         actual.addAll(calls(named(level, "phoenium$beforeEntityList")));
         actual.addAll(calls(named(level, "phoenium$runEntityTicks")));
         actual.addAll(calls(named(level, "phoenium$afterEntityList")));
+        actual.addAll(calls(named(level, "phoenium$runEntityManagement")));
         actual.addAll(calls(named(level, "phoenium$afterEntityTicks")));
         assertEquals(expected, actual, "Control preparation and resumed gameplay retain the original complete call order");
         assertEquals(1, allCalls(named(cache, "phoenium$finishChunkTick")).stream()
@@ -62,6 +63,19 @@ final class LiveTickPhaseBoundaryTest {
         assertTrue(cache.interfaces.contains("dev/phoenium/live/LiveTickPhases$CacheAccess"));
         assertThrows(IllegalStateException.class, () -> LiveTickPhaseBoundary.installLevel(level));
         assertThrows(IllegalStateException.class, () -> LiveTickPhaseBoundary.installCache(cache));
+    }
+
+    @Test void entityStorageManagementHasItsOwnCutAndRejectsDuplicatedOriginalWork() throws Exception {
+        ClassNode level = original(ServerLevel.class);
+        LiveTickPhaseBoundary.installLevel(level);
+        String manager = "net/minecraft/world/level/entity/PersistentEntitySectionManager.tick()V";
+        assertEquals(1, calls(named(level, "phoenium$runEntityManagement")).stream().filter(manager::equals).count());
+        assertFalse(calls(named(level, "phoenium$afterEntityTicks")).contains(manager));
+        ClassNode changed = original(ServerLevel.class);
+        MethodNode nativeTick = tick(changed, "(Ljava/util/function/BooleanSupplier;)V");
+        var original = allCalls(nativeTick).stream().filter(call -> (call.owner + "." + call.name + call.desc).equals(manager)).findFirst().orElseThrow();
+        nativeTick.instructions.insertBefore(original, original.clone(null));
+        assertThrows(IllegalStateException.class, () -> LiveTickPhaseBoundary.installLevel(changed));
     }
 
     @Test void movedOrDuplicatedDistanceBoundaryIsRejected() throws Exception {

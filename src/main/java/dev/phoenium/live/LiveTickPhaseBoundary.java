@@ -171,7 +171,15 @@ public final class LiveTickPhaseBoundary {
             "runBlockEntities", "(L" + LEVEL + ";)V", false));
         phaseEnd(blockEntities.instructions, blockEntityState, "finishBlockEntities");
         blockEntities.maxLocals = blockEntityState + 1; retainLocalAcrossFrames(blockEntities, blockEntityState, LEVEL_STATE);
-        MethodNode finish = portion(original, "phoenium$afterEntityTicks", "(L" + LEVEL_STATE + ";)V", suffixStart, original.instructions.size());
+        int managementEnd = boundaryAtConstant(original, "debugSynchronizers");
+        require(managementEnd > suffixStart, "entity-management suffix order changed");
+        MethodNode management = portion(original, "phoenium$runEntityManagement", "(L" + LEVEL_STATE + ";)V", suffixStart, managementEnd);
+        unique(management, "net/minecraft/world/level/entity/PersistentEntitySectionManager", "tick", "()V");
+        int managementState = original.maxLocals;
+        management.instructions.insert(finalLocals(managementState, "beginEntityManagement"));
+        phaseEnd(management.instructions, managementState, "finishEntityManagement");
+        management.maxLocals = managementState + 1; retainLocalAcrossFrames(management, managementState, LEVEL_STATE);
+        MethodNode finish = portion(original, "phoenium$afterEntityTicks", "(L" + LEVEL_STATE + ";)V", managementEnd, original.instructions.size());
         int finishState = original.maxLocals;
         finish.instructions.insert(finalLocals(finishState, "consumeFinal"));
         finish.maxLocals = finishState + 1; retainLocalAcrossFrames(finish, finishState, LEVEL_STATE);
@@ -179,7 +187,7 @@ public final class LiveTickPhaseBoundary {
         node.interfaces.add(PHASES + "$LevelAccess");
         node.methods.add(prefix); node.methods.add(scheduled); node.methods.add(middle);
         node.methods.add(chunk); node.methods.add(events); node.methods.add(finalPrefix); node.methods.add(entityPrelude);
-        node.methods.add(entities); node.methods.add(blockEntities); node.methods.add(finish);
+        node.methods.add(entities); node.methods.add(blockEntities); node.methods.add(management); node.methods.add(finish);
     }
 
     public static void installCache(ClassNode node) {

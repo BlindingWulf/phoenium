@@ -4,6 +4,28 @@ Stage 4 remains **PARTIAL**, Stage 5 OFF, one gameplay worker, parallel gameplay
 This section supersedes the historical worker assignments and next-step instructions below.
 The session began from clean `2b3080b`; all newer work is preserved. No agents are running.
 
+- Recovery parent `d433305`; current entity-storage integration is under installed validation
+  in `finish-candidate-5-m`. Focused checks pass: 65 tests / 22 suites, zero failures/errors
+  (`run/stage4/entity-management-focused-results.json`). New native target and hidden-storage
+  lifetime regressions cover the additional phase and section identity.
+- `finish-candidate-5-l` passed native far effects, deferred callback plus actual client packet,
+  normal save-all flush and immutable MCA copy, and normal first shutdown with zero terminal
+  leases/services/saves/ownership/fallback/barrier residue. Its first trace remained PARTIAL:
+  split converged back to A before required actual B bodies. Restart then exposed a production
+  error: `PersistentEntitySectionManager.processPendingLoads` applied saved B entities inside
+  A's FINAL_OWNER phase, reaching foreign-owner tracking registration before client login.
+- Native entity management now has its own checked owner-free coordinator cut in unchanged
+  original call order. Loaded-entity registry application reaches original tracking callbacks,
+  which acquire their exact regional claims. Native per-chunk entity storage/save/unload wraps
+  the original predicates, serialization and removal visitor in a current source/passenger
+  closure and lease. Hidden entities retain facts/routes from actual persistent-section insertion
+  through actual section removal; they do not enter the visible selector or UUID lookup.
+  Receipts are revalidated after admission, and native callbacks run outside metadata locks.
+- A disposable, bounded enclosure observer now reports actual cross-owner footprint/caller,
+  to diagnose the premature post-split convergence without changing topology or readiness.
+  The installed candidate's rebuilt SHA is recorded before both child process launches.
+  Last previous installed production was `7B611FC87302400F74DDDF57916ECEC72DB7FD30E790068083D8E1FDC7D28C01`.
+
 - Recovery boundary `530eca0`: full suite passed after restoring the audited native merged
   build-cache JAR (803 tests / 82 suites; `run/stage4/finishing-full-suite-cache-repaired.log`).
   Main's raw native class bytes had drifted while the pinned sources and installed native
@@ -90,7 +112,7 @@ The session began from clean `2b3080b`; all newer work is preserved. No agents a
 Resume candidate command (use a fresh run ID/directory for each attempt):
 
 ```powershell
-.\gradlew.bat runStage4ClientGameTest -Pstage4RunId=finish-candidate-5-c -Pstage4ServerDirectory=run/stage4/finish-candidate-5-c -Pstage4EvidenceDir=run/stage4/finish-candidate-5-c/evidence -Pstage4ViewDistance=5 -Pstage4SimulationDistance=5 -Pstage4PacketTrace=true --no-daemon --console=plain
+.\gradlew.bat runStage4ClientGameTest -Pstage4RunId=finish-candidate-5-m -Pstage4ServerDirectory=run/stage4/finish-candidate-5-m -Pstage4EvidenceDir=run/stage4/finish-candidate-5-m/evidence -Pstage4ViewDistance=5 -Pstage4SimulationDistance=5 -Pstage4PacketTrace=true --no-daemon --console=plain
 ```
 
 Remaining: candidate connected failures; trustworthy frozen selection negative/positive checks;

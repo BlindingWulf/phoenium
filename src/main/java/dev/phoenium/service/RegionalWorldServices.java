@@ -313,6 +313,49 @@ public final class RegionalWorldServices implements RegionalStateMigration {
         return true;
     }
 
+    /** Native section membership is registry metadata. Original save predicates, serialization,
+     * and removal callbacks run only after all selected aliases/passengers have current authority. */
+    public boolean storeEntitySections(ServerLevel level, long chunkKey,
+            java.util.function.Supplier<List<net.minecraft.world.entity.Entity>> selection,
+            java.util.function.BooleanSupplier original) {
+        requireActiveLifetime();
+        FullFinishingServices finishing = FullFinishingServices.forServer(level.getServer());
+        FullFinishingServices.requireWorld(level, FullFinishingServices.Kind.ENTITY_REGISTRY);
+        List<net.minecraft.world.entity.Entity> aliases = List.copyOf(selection.get());
+        var sources = new java.util.ArrayList<dev.phoenium.chunk.FullEntityFacts.Candidate>();
+        var relations = new java.util.ArrayList<List<dev.phoenium.chunk.FullEntityFacts.Candidate>>();
+        WorldId world = new WorldId(level.dimension().identifier().toString());
+        var chunk = net.minecraft.world.level.ChunkPos.unpack(chunkKey);
+        var key = new dev.phoenium.topology.RoutingKey(world, chunk.x(), chunk.z());
+        var footprint = new java.util.LinkedHashSet<dev.phoenium.topology.RoutingKey>();
+        footprint.add(key);
+        for (var alias : aliases) {
+            var source = finishing.entityFacts.trackingCandidate(level, alias);
+            sources.add(source);
+            footprint.add(new dev.phoenium.topology.RoutingKey(world, source.position().x(), source.position().z()));
+            var passengers = finishing.entityFacts.trackingPassengers(source);
+            relations.add(passengers);
+            for (var passenger : passengers)
+                footprint.add(new dev.phoenium.topology.RoutingKey(world, passenger.position().x(), passenger.position().z()));
+        }
+        if (dev.phoenium.ownership.OwnershipContext.current().isPresent()) dispatcher.requireCurrentClosure(footprint);
+        else dispatcher.ensureClosure(footprint);
+        java.util.function.BooleanSupplier body = () -> {
+            dispatcher.requireCurrentClosure(footprint);
+            if (!aliases.equals(selection.get())) throw new IllegalStateException("entity storage section membership changed");
+            for (int index = 0; index < sources.size(); index++)
+                if (!finishing.entityFacts.validTrackingCandidate(sources.get(index))
+                        || !finishing.entityFacts.validTrackingPassengers(sources.get(index), relations.get(index)))
+                    throw new IllegalStateException("entity storage lost its native source identity or passenger relation");
+            return original.getAsBoolean();
+        };
+        if (dev.phoenium.ownership.OwnershipContext.current().isPresent()) return body.getAsBoolean();
+        boolean[] result = new boolean[1];
+        dispatcher.executeAndDrain(key, RegionalServiceKind.ENTITY_STORAGE_SAVE,
+            execution -> result[0] = body.getAsBoolean());
+        return result[0];
+    }
+
     public boolean addTrackingEntity(ChunkMap map, net.minecraft.world.entity.Entity entity, Runnable original) {
         RegionalChunkMapAccess access = (RegionalChunkMapAccess) map;
         WorldServices services;

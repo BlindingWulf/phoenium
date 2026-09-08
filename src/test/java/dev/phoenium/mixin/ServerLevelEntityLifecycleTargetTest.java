@@ -59,6 +59,25 @@ final class ServerLevelEntityLifecycleTargetTest {
         assertEquals("HEAD", inject.at()[0].value());
     }
 
+    @Test
+    void nativeStorageWorldAndRemovalIdentitiesAreExact() throws Exception {
+        ClassNode manager = original(PersistentEntitySectionManager.class);
+        assertNotNull(method(manager, "storeChunkSections", "(JLjava/util/function/Consumer;)Z"));
+        MethodNode add = method(manager, "addEntity", "(" + ACCESS + "Z)Z");
+        List<MethodInsnNode> calls = Arrays.stream(add.instructions.toArray()).filter(MethodInsnNode.class::isInstance)
+            .map(MethodInsnNode.class::cast).toList();
+        assertTrue(index(calls, "net/minecraft/world/level/entity/EntitySection", "add", "(" + ACCESS + ")V")
+            < index(calls, manager.name, "startTracking", "(" + ACCESS + ")V"));
+        ClassNode callbacks = original(ServerLevel.class, "ServerLevel$EntityCallbacks.class");
+        assertEquals("Lnet/minecraft/server/level/ServerLevel;", callbacks.fields.stream()
+            .filter(field -> field.name.equals("this$0")).findFirst().orElseThrow().desc);
+        ClassNode removal = original(PersistentEntitySectionManager.class, "PersistentEntitySectionManager$Callback.class");
+        assertNotNull(method(removal, "onRemove", "(Lnet/minecraft/world/entity/Entity$RemovalReason;)V"));
+        assertEquals(ACCESS, removal.fields.stream().filter(field -> field.name.equals("entity")).findFirst().orElseThrow().desc);
+        assertEquals("Lnet/minecraft/world/level/entity/PersistentEntitySectionManager;", removal.fields.stream()
+            .filter(field -> field.name.equals("this$0")).findFirst().orElseThrow().desc);
+    }
+
     private static int index(List<MethodInsnNode> calls, String owner, String name, String descriptor) {
         for (int index = 0; index < calls.size(); index++) {
             MethodInsnNode call = calls.get(index);

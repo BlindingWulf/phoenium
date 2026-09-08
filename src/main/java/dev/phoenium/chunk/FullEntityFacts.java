@@ -36,6 +36,7 @@ public final class FullEntityFacts {
     private final IdentityHashMap<ServerLevel, LinkedHashMap<Integer, Entity>> candidates = new IdentityHashMap<>();
     private final IdentityHashMap<ServerLevel, Long> candidateRevisions = new IdentityHashMap<>();
     private final IdentityHashMap<Entity, Route> routes = new IdentityHashMap<>();
+    private final IdentityHashMap<Entity, Object> stored = new IdentityHashMap<>();
     private final IdentityHashMap<Entity, Vec3> precisePositions = new IdentityHashMap<>();
     private final IdentityHashMap<Entity, List<Entity>> passengerRelations = new IdentityHashMap<>();
     private final IdentityHashMap<Entity, Entity> passengerVehicles = new IdentityHashMap<>();
@@ -98,8 +99,10 @@ public final class FullEntityFacts {
         facts.candidateMetadata.lock();
         try {
             if (displaced != null && displaced != entity) {
-                facts.routes.remove(displaced); facts.precisePositions.remove(displaced);
-                facts.removeRelationsLocked(displaced);
+                if (!facts.stored.containsKey(displaced)) {
+                    facts.routes.remove(displaced); facts.precisePositions.remove(displaced);
+                    facts.removeRelationsLocked(displaced);
+                }
             }
             long routeRevision = Math.incrementExact(facts.routingSequence);
             long worldRevision = facts.nextCandidateRevision(fact.world);
@@ -135,12 +138,52 @@ public final class FullEntityFacts {
                 ordered.remove(id, entity);
                 if (ordered.isEmpty()) facts.candidates.remove(fact.world);
             }
-            facts.routes.remove(entity); facts.candidateRevisions.put(fact.world, worldRevision);
-            facts.precisePositions.remove(entity);
+            facts.candidateRevisions.put(fact.world, worldRevision);
+            if (!facts.stored.containsKey(entity)) {
+                facts.routes.remove(entity); facts.precisePositions.remove(entity);
+                facts.removeRelationsLocked(entity);
+            }
+        } finally { facts.candidateMetadata.unlock(); }
+        facts.service.changed(FullFinishingServices.Kind.ENTITY_REGISTRY);
+    }
+    /** Original persistent-section insertion precedes visibility. Hidden entities retain a
+     * routing receipt until actual section removal, without entering the visible selector cut. */
+    public static void stored(Entity entity, Object manager) {
+        publish(entity, true);
+        Fact fact = ((Access) entity).phoenium$referenceFact();
+        if (fact == null) return;
+        var facts = FullFinishingServices.forServer(fact.server).entityFacts;
+        ChunkPos position = entity.chunkPosition();
+        Vec3 precise = entity.position();
+        facts.candidateMetadata.lock();
+        try {
+            Object previous = facts.stored.putIfAbsent(entity, Objects.requireNonNull(manager));
+            if (previous != null) throw new ChunkProtocolException("entity already belongs to persistent storage");
+            long revision = facts.routingSequence = Math.incrementExact(facts.routingSequence);
+            facts.routes.put(entity, new Route(position, revision));
+            facts.precisePositions.put(entity, precise);
+        } finally { facts.candidateMetadata.unlock(); }
+        passengersChanged(entity);
+        facts.service.changed(FullFinishingServices.Kind.ENTITY_REGISTRY);
+    }
+
+    /** Runs after the original removal callback, including tracker removal and UUID retirement. */
+    public static void unstored(Entity entity, Object manager) {
+        Fact fact = entity instanceof Access access ? access.phoenium$referenceFact() : null;
+        if (fact == null) return;
+        var facts = FullFinishingServices.forServer(fact.server).entityFacts;
+        facts.candidateMetadata.lock();
+        try {
+            if (!facts.stored.remove(entity, manager)) throw new ChunkProtocolException("entity storage membership changed");
+            var visible = facts.candidates.get(fact.world);
+            if (visible != null && visible.containsValue(entity))
+                throw new ChunkProtocolException("persistent entity removal retained visible identity");
+            facts.routes.remove(entity); facts.precisePositions.remove(entity);
             facts.removeRelationsLocked(entity);
         } finally { facts.candidateMetadata.unlock(); }
         facts.service.changed(FullFinishingServices.Kind.ENTITY_REGISTRY);
     }
+
     /** Owner-side movement publishes routing metadata without reading through a foreign alias. */
     public static void routed(Entity entity) {
         Fact fact = entity instanceof Access access ? access.phoenium$referenceFact() : null;
@@ -510,7 +553,7 @@ public final class FullEntityFacts {
     void close() {
         directories.clear();
         candidateMetadata.lock();
-        try { candidates.clear(); candidateRevisions.clear(); routes.clear(); precisePositions.clear(); passengerRelations.clear();
+        try { candidates.clear(); candidateRevisions.clear(); routes.clear(); stored.clear(); precisePositions.clear(); passengerRelations.clear();
             passengerVehicles.clear(); relationRevisions.clear(); }
         finally { candidateMetadata.unlock(); }
     }

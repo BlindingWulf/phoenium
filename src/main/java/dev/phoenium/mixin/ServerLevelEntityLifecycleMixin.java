@@ -18,7 +18,10 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
  * owner-published identity and route before this callback; the original tracker body has not run.
  */
 @Mixin(targets = "net.minecraft.server.level.ServerLevel$EntityCallbacks")
-abstract class ServerLevelEntityLifecycleMixin {
+abstract class ServerLevelEntityLifecycleMixin implements dev.phoenium.service.RegionalEntityStorageWorld {
+    @org.spongepowered.asm.mixin.Shadow @org.spongepowered.asm.mixin.Final private ServerLevel this$0;
+
+    @Override public ServerLevel phoenium$entityStorageWorld() { return this$0; }
     /** Distance-manager promotion/demotion also reaches these callbacks from pollTask, outside
      * tickServer. Reserve the existing named lifecycle turn before tracker regional admission;
      * an enclosing serial or exact FULL operation is retained unchanged. */

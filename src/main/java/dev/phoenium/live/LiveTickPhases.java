@@ -25,6 +25,7 @@ public final class LiveTickPhases {
         void phoenium$beforeEntityList(LevelState state);
         void phoenium$runEntityTicks(LevelState state);
         void phoenium$afterEntityList(LevelState state);
+        void phoenium$runEntityManagement(LevelState state);
         void phoenium$afterEntityTicks(LevelState state);
     }
     public interface CacheAccess {
@@ -54,7 +55,7 @@ public final class LiveTickPhases {
                           TickRateManager tickRate, boolean runs, int sleepingPercentage) {
             this(level, haveTime, profiler, tickRate, runs, sleepingPercentage);
             this.cache = Objects.requireNonNull(cache);
-            this.phase = Phase.ENTITY_BODY_COMPLETE;
+            this.phase = Phase.ENTITY_MANAGEMENT_COMPLETE;
         }
         public BooleanSupplier haveTime() { return haveTime; }
         public ServerChunkCache cache() { return cache; }
@@ -85,7 +86,9 @@ public final class LiveTickPhases {
         public void finishEntities(ServerLevel expected) { require(expected, Phase.ENTITIES_RUNNING, false); phase = Phase.ENTITIES_COMPLETE; }
         public void beginBlockEntities(ServerLevel expected) { require(expected, Phase.ENTITIES_COMPLETE, false); phase = Phase.BLOCK_ENTITIES_RUNNING; }
         public void finishBlockEntities(ServerLevel expected) { require(expected, Phase.BLOCK_ENTITIES_RUNNING, false); phase = Phase.ENTITY_BODY_COMPLETE; }
-        public void consumeFinal(ServerLevel expected) { require(expected, Phase.ENTITY_BODY_COMPLETE, true); phase = Phase.COMPLETE; }
+        public void beginEntityManagement(ServerLevel expected) { require(expected, Phase.ENTITY_BODY_COMPLETE, false); phase = Phase.ENTITY_MANAGEMENT_RUNNING; }
+        public void finishEntityManagement(ServerLevel expected) { require(expected, Phase.ENTITY_MANAGEMENT_RUNNING, false); phase = Phase.ENTITY_MANAGEMENT_COMPLETE; }
+        public void consumeFinal(ServerLevel expected) { require(expected, Phase.ENTITY_MANAGEMENT_COMPLETE, true); phase = Phase.COMPLETE; }
         public void consume(ServerLevel expected) { consumeFinal(expected); }
         private void require(ServerLevel expected, Phase expectedPhase, boolean owned) {
             if (expected != level || phase != expectedPhase || OwnershipContext.current().isPresent() != owned)
@@ -95,7 +98,7 @@ public final class LiveTickPhases {
             MIDDLE_COMPLETE, CHUNK_RUNNING, CHUNK_GAMEPLAY_COMPLETE, CHUNK_COMPLETE,
             BLOCK_EVENTS_RUNNING, BLOCK_EVENTS_COMPLETE, FINAL_PREFIX_RUNNING, FINAL_PREFIX_COMPLETE,
             ENTITY_PRELUDE_RUNNING, ENTITY_PRELUDE_COMPLETE, ENTITIES_RUNNING, ENTITIES_COMPLETE,
-            BLOCK_ENTITIES_RUNNING, ENTITY_BODY_COMPLETE, COMPLETE }
+            BLOCK_ENTITIES_RUNNING, ENTITY_BODY_COMPLETE, ENTITY_MANAGEMENT_RUNNING, ENTITY_MANAGEMENT_COMPLETE, COMPLETE }
     }
     public static final class CacheState {
         private final ServerChunkCache cache;
