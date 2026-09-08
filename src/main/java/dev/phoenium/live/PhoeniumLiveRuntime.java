@@ -212,13 +212,16 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
         pendingTick = new PendingTick(level, shouldKeepTicking, envelope);
         try {
             while (executions < dispatches && scheduler.lifecycle().acceptsSimulationWork()) {
-                if (!pendingTick.queued) advanceOwnerFreeTickPhase(pendingTick, live);
-                long before = scheduler.advances();
-                scheduler.advanceOne();
-                if (scheduler.advances() == before) {
-                    if (scheduler.lifecycle() == SchedulerLifecycle.FAILED) break;
-                    throw new IllegalStateException("admitted live tick was not reachable through the owner scheduler");
-                }
+                if (!pendingTick.queued) advanceConsecutiveOwnerFreePhases(
+                    () -> pendingTick.queued,
+                    () -> pendingTick.step == PendingTick.Step.DONE,
+                    () -> scheduler.lifecycle().acceptsSimulationWork(),
+                    () -> pendingTick.step,
+                    () -> advanceOwnerFreeTickPhase(pendingTick, live));
+                if (!scheduler.lifecycle().acceptsSimulationWork()) break;
+                if (!pendingTick.queued)
+                    throw new IllegalStateException("live tick coordinator completed without reachable owner work");
+                advanceRequiredOwnerWork(scheduler);
             }
         } catch (RuntimeException | Error failure) {
             // Preserve a failed original control-plane prefix; never replay the owned prefix.
@@ -314,6 +317,27 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
             }
             default -> throw new IllegalStateException("owner-free tick coordinator reached " + pending.step);
         }
+    }
+
+    static void advanceConsecutiveOwnerFreePhases(java.util.function.BooleanSupplier queued,
+            java.util.function.BooleanSupplier complete, java.util.function.BooleanSupplier acceptsWork,
+            java.util.function.Supplier<?> marker, Runnable advance) {
+        int remaining = PendingTick.Step.values().length;
+        while (!queued.getAsBoolean() && !complete.getAsBoolean() && acceptsWork.getAsBoolean()) {
+            Object before = marker.get();
+            advance.run();
+            if (!queued.getAsBoolean() && !complete.getAsBoolean() && Objects.equals(before, marker.get()))
+                throw new IllegalStateException("owner-free live tick coordinator made no progress at " + before);
+            if (--remaining == 0 && !queued.getAsBoolean() && !complete.getAsBoolean())
+                throw new IllegalStateException("owner-free live tick coordinator exceeded finite phase chain");
+        }
+    }
+
+    static void advanceRequiredOwnerWork(RegionScheduler scheduler) {
+        long before = scheduler.advances();
+        scheduler.advanceOne();
+        if (scheduler.advances() == before && scheduler.lifecycle() != SchedulerLifecycle.FAILED)
+            throw new IllegalStateException("admitted live tick was not reachable through the owner scheduler");
     }
 
     public void runRegionalChunkGameplay(ServerChunkCache cache) {
