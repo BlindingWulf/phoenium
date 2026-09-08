@@ -236,26 +236,40 @@ public final class Stage4ClientTraceTest implements FabricClientGameTest {
             connected = true;
             context.waitFor(client -> client.player != null, CONNECT_TIMEOUT_TICKS);
             topologyTeleport(context, server, restartLog, 120, 65, 8, new int[][] {{7, 0}});
+            long reloadOffset = logSize(restartLog);
             command(server, "stage4trace reload");
-            awaitLog(context, server, restartLog, "STAGE4_TRACE_RELOAD_UNPACK", START_TIMEOUT_TICKS);
-            awaitLog(context, server, restartLog, "STAGE4_TRACE_RELOAD_CLOCK_FROZEN", START_TIMEOUT_TICKS);
-            awaitLog(context, server, restartLog, "STAGE4_TRACE_RELOAD_ELIGIBILITY", START_TIMEOUT_TICKS);
+            awaitLogAfter(context, server, restartLog, "STAGE4_TRACE_RELOAD_UNPACK", reloadOffset,
+                START_TIMEOUT_TICKS, "matches=1");
+            awaitLogAfter(context, server, restartLog, "STAGE4_TRACE_RELOAD_CLOCK_FROZEN", reloadOffset,
+                START_TIMEOUT_TICKS, null);
+            awaitLogAfter(context, server, restartLog, "STAGE4_TRACE_RELOAD_ELIGIBILITY", reloadOffset,
+                START_TIMEOUT_TICKS, "eligible=true");
+            long restoredStepOffset = logSize(restartLog);
             command(server, "stage4trace step-restored 450");
-            awaitLog(context, server, restartLog, "STAGE4_TRACE_RELOAD_STEP_SCHEDULED phase=before", 30);
-            awaitLog(context, server, restartLog,
-                "STAGE4_TRACE_CLOCK_STEP_REACHED label=restored-before-deadline", 180);
+            awaitLogAfter(context, server, restartLog, "STAGE4_TRACE_RELOAD_STEP_SCHEDULED phase=before",
+                restoredStepOffset, 30, null);
+            awaitLogAfter(context, server, restartLog,
+                "STAGE4_TRACE_CLOCK_STEP_REACHED label=restored-before-deadline", restoredStepOffset, 180, null);
+            long beforePhaseOffset = logSize(restartLog);
             command(server, "stage4trace check-restored-before");
-            awaitLog(context, server, restartLog, "STAGE4_TRACE_RELOAD_PHASE phase=before", 30);
+            awaitLogAfter(context, server, restartLog, "STAGE4_TRACE_RELOAD_PHASE phase=before",
+                beforePhaseOffset, 30, "pass=true");
+            long deadlineStepOffset = logSize(restartLog);
             command(server, "stage4trace step restored-deadline 1");
-            awaitLog(context, server, restartLog,
-                "STAGE4_TRACE_CLOCK_STEP_REACHED label=restored-deadline", 30);
+            awaitLogAfter(context, server, restartLog,
+                "STAGE4_TRACE_CLOCK_STEP_REACHED label=restored-deadline", deadlineStepOffset, 30, null);
+            long deadlinePhaseOffset = logSize(restartLog);
             command(server, "stage4trace check-restored-deadline");
-            awaitLog(context, server, restartLog, "STAGE4_TRACE_RELOAD_PHASE phase=deadline", 30);
+            awaitLogAfter(context, server, restartLog, "STAGE4_TRACE_RELOAD_PHASE phase=deadline",
+                deadlinePhaseOffset, 30, "pass=true");
+            long afterStepOffset = logSize(restartLog);
             command(server, "stage4trace step restored-after-deadline 1");
-            awaitLog(context, server, restartLog,
-                "STAGE4_TRACE_CLOCK_STEP_REACHED label=restored-after-deadline", 30);
+            awaitLogAfter(context, server, restartLog,
+                "STAGE4_TRACE_CLOCK_STEP_REACHED label=restored-after-deadline", afterStepOffset, 30, null);
+            long afterPhaseOffset = logSize(restartLog);
             command(server, "stage4trace check-restored-after");
-            awaitLog(context, server, restartLog, "STAGE4_TRACE_RELOAD_PHASE phase=after", 30);
+            awaitLogAfter(context, server, restartLog, "STAGE4_TRACE_RELOAD_PHASE phase=after",
+                afterPhaseOffset, 30, "pass=true");
             disconnectClient(context);
             connected = false;
             command(server, "stop");
@@ -332,13 +346,17 @@ public final class Stage4ClientTraceTest implements FabricClientGameTest {
      */
     private static void topologyTeleport(ClientGameTestContext context, Process server, Path log,
                                           int x, int y, int z, int[][] expectedChunks) throws IOException {
+        long preparedOffset = logSize(log);
         command(server, "stage4trace prepare-teleport " + x + " " + y + " " + z);
-        awaitLog(context, server, log, "STAGE4_TRACE_TELEPORT_TOPOLOGY_PREPARED", START_TIMEOUT_TICKS);
+        awaitLogAfter(context, server, log, "STAGE4_TRACE_TELEPORT_TOPOLOGY_PREPARED", preparedOffset,
+            START_TIMEOUT_TICKS, null);
         command(server, "tp " + USER + " " + x + ".5 " + y + " " + z + ".5");
         nudgeAfterTeleport(context);
         waitForClientChunks(context, expectedChunks, START_TIMEOUT_TICKS);
+        long completedOffset = logSize(log);
         command(server, "stage4trace complete-teleport");
-        awaitLog(context, server, log, "STAGE4_TRACE_TELEPORT_TOPOLOGY_COMPLETED", START_TIMEOUT_TICKS);
+        awaitLogAfter(context, server, log, "STAGE4_TRACE_TELEPORT_TOPOLOGY_COMPLETED", completedOffset,
+            START_TIMEOUT_TICKS, null);
     }
 
     /**
@@ -430,6 +448,24 @@ public final class Stage4ClientTraceTest implements FabricClientGameTest {
             context.waitTick();
         }
         throw new AssertionError("server did not reach barrier " + token + ": " + log);
+    }
+
+    private static long logSize(Path log) {
+        return read(log).length();
+    }
+
+    /** Waits for a marker emitted after {@code offset}; an optional token must be on that same line. */
+    private static void awaitLogAfter(ClientGameTestContext context, Process server, Path log,
+                                      String token, long offset, int timeoutTicks, String required) {
+        for (int tick = 0; tick < timeoutTicks; tick++) {
+            if (!server.isAlive()) throw new AssertionError("server exited before barrier " + token + ": " + read(log));
+            String contents = read(log);
+            int begin = (int) Math.min(offset, contents.length());
+            for (String line : contents.substring(begin).split("\\R"))
+                if (line.contains(token) && (required == null || line.contains(required))) return;
+            context.waitTick();
+        }
+        throw new AssertionError("server did not reach fresh barrier " + token + " required=" + required + ": " + log);
     }
 
     private static String read(Path path) {
@@ -540,6 +576,10 @@ public final class Stage4ClientTraceTest implements FabricClientGameTest {
         Path installedMods = restartLog.getParent().resolve("mods");
         String productionSha = sha256(installedMods.resolve("phoenium-0.2.0-stage2.jar"));
         String probeSha = sha256(installedMods.resolve("stage4-acceptance-probe.jar"));
+        String unpackReceipt = lineContaining(restartLog, "STAGE4_TRACE_RELOAD_UNPACK");
+        String beforeReceipt = lineContaining(restartLog, "STAGE4_TRACE_RELOAD_PHASE phase=before");
+        String deadlineReceipt = lineContaining(restartLog, "STAGE4_TRACE_RELOAD_PHASE phase=deadline");
+        String afterReceipt = lineContaining(restartLog, "STAGE4_TRACE_RELOAD_PHASE phase=after");
         Files.writeString(evidence, "{\n" +
             "  \"kind\": \"stage4-account-free-client-trace\",\n" +
             "  \"username\": \"" + USER + "\",\n" +
@@ -551,6 +591,10 @@ public final class Stage4ClientTraceTest implements FabricClientGameTest {
             "  \"simulationDistance\": " + simulationDistance + ",\n" +
             "  \"productionSha256\": \"" + productionSha + "\",\n" +
             "  \"probeSha256\": \"" + probeSha + "\",\n" +
+            "  \"restartUnpackReceipt\": " + jsonString(unpackReceipt) + ",\n" +
+            "  \"restartBeforeReceipt\": " + jsonString(beforeReceipt) + ",\n" +
+            "  \"restartDeadlineReceipt\": " + jsonString(deadlineReceipt) + ",\n" +
+            "  \"restartAfterReceipt\": " + jsonString(afterReceipt) + ",\n" +
             "  \"serverExitCode\": " + exitCode + ",\n" +
             "  \"trace\": \"" + trace.toAbsolutePath().toString().replace("\\", "\\\\") + "\",\n" +
             "  \"log\": \"" + log.toAbsolutePath().toString().replace("\\", "\\\\") + "\",\n" +
@@ -574,6 +618,18 @@ public final class Stage4ClientTraceTest implements FabricClientGameTest {
         } catch (java.security.NoSuchAlgorithmException failure) {
             throw new IOException("SHA-256 unavailable", failure);
         }
+    }
+
+    private static String lineContaining(Path path, String token) throws IOException {
+        if (!Files.exists(path)) return null;
+        try (var lines = Files.lines(path)) {
+            return lines.filter(line -> line.contains(token)).findFirst().orElse(null);
+        }
+    }
+
+    private static String jsonString(String value) {
+        if (value == null) return "null";
+        return "\"" + value.replace("\\", "\\\\").replace("\"", "\\\"") + "\"";
     }
 
     private static void copyMcaSnapshot(Path world, Path snapshot) throws IOException {
