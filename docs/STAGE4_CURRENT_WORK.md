@@ -20,7 +20,9 @@ the installed spawn-state identity failure below. Existing `gpt-5.6-luna` / high
 harness work and the sole broad/live campaign in `Phoenium-stage4-luna`. No recursive
 or additional agents. Backend runtime model identity and task/worker tokens are
 unavailable. Account-wide usage began 35% used / 65% remaining; latest integration
-reading is **99% used / 1% remaining**, reserve 7% used / 93% remaining. No reset,
+reading is **100% used / 0% remaining**, reserve 7% used / 93% remaining; the tool
+still returns rateLimitReachedType=null, so no actual execution refusal is claimed.
+No reset,
 paid API, account change, remote publication or personal client account used.
 
 ## Connected outcomes
@@ -131,6 +133,13 @@ normal-health PASS. Sol owns the precise captured entity identity/lifetime repai
 with focused tests, no duplicate live work. Luna owns the launch prerequisite:
 require actual frozen JAR hash and `stage4ReferenceProduction` plus reference mode
 before a fresh run; do not rerun the unchanged candidate crash as a reference.
+The second `reference-client-topology-5-frozen-20260908` attempt also contained
+candidate SHA6016F943...D1A8 despite its label, independently verified by the lead.
+Luna was interrupted to stop the invalid wait and repair installer/startup hash
+checks; it now investigates in `identity-dry-run`. Both attempts remain preserved.
+Sol's uncommitted repair currently touches ServerLevelEntityLifecycleMixin and
+RegionalChunkGameplayService with a focused native lifecycle target test; do not
+treat it as accepted or copy it over the stable production artifact before review.
 
 Luna then executes the corrected frozen 5/5 reference, fixes actual connected
 failures, and advances the paired candidate and unchanged 8/8 campaign. Preserve
