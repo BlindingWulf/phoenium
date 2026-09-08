@@ -6,6 +6,27 @@ The session began from clean `2b3080b`; all newer work is preserved. No agents a
 
 ## Finalization recovery — terminal packet delivery
 
+- Finalization update after `7da528d`: candidate5AA **PASS**, both normal stops and exact MCA/
+  restart/deadline PASS. Strict frozen reference5J comparison **PASS 123 events, identical
+  6CBE83B4A6C44D3D92FE62BAA9A0F0AC2B2688B1325C821528F95E3198EE375A**:
+  `run/stage4/final43-comparison-5.json`. Both drains explicitly empty before cleanup.
+  Candidate8D also PASS both lifecycles with the same43AAC... production. Its first drain
+  acknowledged44 pending real saves, then reached zero. Comparator negative controls8/8 PASS.
+- Frozen reference8C reproduced the separate fixture unload problem. Exact native evidence:
+  `Ticket[unknown 33]` remained at FULL, no block/entity ticking range, pending ticks saved,
+  while simulation was frozen. Native TicketStorage cannot age tickets until holder ready for
+  saving; UNKNOWN timeout1 expires after two running decrements, so the old +4 freeze could
+  strand the last ticket. This is a shared-input defect, not a frozen production change.
+- Shared client fixture now executes original `save-all flush` at +4, observes a fresh receipt,
+  releases its force tickets, and steps native clock exactly2 more ticks. The unchanged strong
+  actual-holder/visible-input absence and exact saved-array gate is observed at common +6.
+  No ticket/readiness removal, counter mutation, saved-delay normalization, or production change.
+  Reference8D is now progressing past unload with that corrected boundary. Next candidate8E
+  uses the same corrected inputs. Accepted5AA/reference5J remains a valid immutable pair on
+  final production and their identical earlier clock contract; avoid a redundant5/5 rerun.
+  Remaining: final8E/8D strict comparison, same43AAC... authoritative FULL fresh/reload,
+  controlled FULL/vault/adverse, closure report and freeze. Production hash remains unchanged.
+
 - Recovery parent `b60591e`. Production SHA256 **43AAC30184E5C77784D7A56590AA23A87DC86438684EB2B2F2577A197F4DD81E**.
 - ObjectOwnerGateway formerly dropped a queued envelope after terminal delivery rejection without
   acknowledging the retained runtime packet. Disconnect removes its object ownership; delivery

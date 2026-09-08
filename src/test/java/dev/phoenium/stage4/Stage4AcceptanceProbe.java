@@ -648,7 +648,7 @@ public final class Stage4AcceptanceProbe implements DedicatedServerModInitialize
         try {
             var storage = privateField(map, "ticketStorage", net.minecraft.world.level.TicketStorage.class);
             return storage.getTickets(key).stream()
-                .map(ticket -> ticket.getType() + "@" + ticket.getTicketLevel())
+                .map(Object::toString)
                 .collect(java.util.stream.Collectors.joining(",", "[", "]"));
         } catch (Throwable failure) {
             return "<unavailable:" + failure.getClass().getSimpleName() + ">";
@@ -690,12 +690,14 @@ public final class Stage4AcceptanceProbe implements DedicatedServerModInitialize
             + level.getGameTime());
         System.out.println("STAGE4_TRACE_TEMPORARY_RELEASED gameTime=" + level.getGameTime());
         pendingFarUnload = level;
+        farUnloadObservationTick = level.getGameTime() + 2;
         farUnloadDeadline = System.nanoTime() + 60_000_000_000L;
         farUnloadNextDiagnostic = System.nanoTime() + 1_000_000_000L;
     }
 
     private static ServerLevel pendingFarUnload;
     private static long farUnloadDeadline;
+    private static long farUnloadObservationTick;
     private static long farUnloadNextDiagnostic;
     public static void observeFarUnload() {
         ServerLevel level = pendingFarUnload;
@@ -709,7 +711,7 @@ public final class Stage4AcceptanceProbe implements DedicatedServerModInitialize
                 + " visible=" + (((dev.phoenium.chunk.FullInputView) map).phoenium$visibleInput(key) != null)
                 + " pendingSaved=" + Stage4Trace.farPendingSaved());
         }
-        if (map.getUpdatingChunkIfPresent(key) == null
+        if (level.getGameTime() >= farUnloadObservationTick && map.getUpdatingChunkIfPresent(key) == null
                 && ((dev.phoenium.chunk.FullInputView) map).phoenium$visibleInput(key) == null
                 && Stage4Trace.farPendingSaved()) {
             pendingFarUnload = null;

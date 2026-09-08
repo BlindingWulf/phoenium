@@ -137,11 +137,16 @@ public final class Stage4ClientTraceTest implements FabricClientGameTest {
             }
             command(server, "stage4trace step initial 4");
             awaitLog(context, server, log, "STAGE4_TRACE_CLOCK_STEP_REACHED label=initial", START_TIMEOUT_TICKS);
-            // Native transient terrain tickets have expired during the shared four steps.
-            // Remove far force retention at this exact frozen time and observe actual unload
-            // and packed pending ticks before later travel. Both artifacts now receive the
-            // same saved delay instead of an I/O-dependent release during the clock step.
+            // UNKNOWN tickets cannot age while their native holder is not ready for saving,
+            // and cannot age at all while paused. Flush the identical pending input at +4,
+            // then let the original ticket clock expire through two explicit native steps.
+            // The saved arrays remain exact and unload is observed at the common +6 cut.
+            command(server, "save-all flush");
+            command(server, "stage4trace barrier before-unload");
+            awaitLog(context, server, log, "STAGE4_TRACE_BARRIER label=before-unload", START_TIMEOUT_TICKS);
             command(server, "stage4trace release-temporary");
+            command(server, "stage4trace step unload 2");
+            awaitLog(context, server, log, "STAGE4_TRACE_CLOCK_STEP_REACHED label=unload", START_TIMEOUT_TICKS);
             awaitLog(context, server, log, "STAGE4_TRACE_TEMPORARY_UNLOADED", START_TIMEOUT_TICKS);
             assertClientEntity(context, ENTITY_A, 8, 8, true);
             topologyTeleport(context, server, log, 8, 65, 8, new int[][] {{0, 0}});
