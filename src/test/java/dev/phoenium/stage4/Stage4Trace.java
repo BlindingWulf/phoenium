@@ -126,9 +126,9 @@ public final class Stage4Trace {
         deferredEligibilityRequested = true;
         if (expected) deferredEligibleObserved = true;
         else deferredIneligibleObserved = true;
-        event("block.deferred.eligibility", "phase=" + phase + " pos="
-            + Stage4AcceptanceProbe.REGION_DEFERRED_EVENT + " eligible=" + eligible
-            + " expected=" + expected + " gameTime=" + level.getGameTime());
+        event("block.deferred.eligibility", "phase=" + phase + " eligible=" + eligible
+            + " expected=" + expected + " pos=" + Stage4AcceptanceProbe.REGION_DEFERRED_EVENT
+            + " gameTime=" + level.getGameTime());
         System.out.println("STAGE4_TRACE_DEFERRED_ELIGIBILITY phase=" + phase + " pos="
             + Stage4AcceptanceProbe.REGION_DEFERRED_EVENT + " eligible=" + eligible
             + " expected=" + expected + " gameTime=" + level.getGameTime());
@@ -447,7 +447,7 @@ public final class Stage4Trace {
             requireContains(events, "save.serialization.ticks", "contextRegion=stage3-fixture-b", "save.owner.b", missing);
             requireContains(events, "topology.split", "fluids=Measurements[", "service.fluid.split", missing);
             require(events, "block.deferred", missing);
-        if (fullReadinessRequested) {
+            if (fullReadinessRequested) {
                 requireContains(events, "full.ready", "label=far ", "full.ready.far", missing);
                 requireContains(events, "full.ready", "label=deferred ", "full.ready.deferred", missing);
                 require(events, "clock.freeze", missing);
