@@ -15,12 +15,12 @@ closure H/I. Stage 5 OFF; one gameplay worker; parallel gameplay OFF.
 
 Astra/Max lead handles architecture, integration and review. Existing explicit
 `gpt-5.6-sol` / high / fork none worker owns implementation in `Phoenium-stage4-sol`;
-its scoped teleport helper `1f0e0e6` is integrated as `b529dfb`, worker idle awaiting
-an actual connected failure. Existing `gpt-5.6-luna` / high / fork none worker owns
+its scoped teleport helper `1f0e0e6` is integrated as `b529dfb`, and it now owns
+the installed spawn-state identity failure below. Existing `gpt-5.6-luna` / high / fork none worker owns
 harness work and the sole broad/live campaign in `Phoenium-stage4-luna`. No recursive
 or additional agents. Backend runtime model identity and task/worker tokens are
 unavailable. Account-wide usage began 35% used / 65% remaining; latest integration
-reading is **98% used / 2% remaining**, reserve 7% used / 93% remaining. No reset,
+reading is **99% used / 1% remaining**, reserve 7% used / 93% remaining. No reset,
 paid API, account change, remote publication or personal client account used.
 
 ## Connected outcomes
@@ -82,7 +82,7 @@ All following runtime paths are under `Phoenium-stage4-luna/run`.
   18 Stage3 ownership); coherent combined Luna harness through `fc953e1` compiles
   client tests and probe, and its helper test passes. Probe SHA-256
   `4C91D58FDFB6BF2A128F0E22A317C7375AB18FD01C991B337C140FB43060AE2B`.
-  No new installed run on this combined harness yet; production remains unchanged.
+  The new installed attempt below uses this combined harness; production is unchanged.
 
 ## Next unresolved case and exact continuation
 
@@ -120,7 +120,19 @@ trigger == unpack currentTick + t, and all three phase passes. Python syntax and
 client compilation pass. No installed restart PASS yet. Luna must invoke this
 validator on actual client evidence as a mandatory campaign gate.
 
-Luna now executes one corrected frozen 5/5 reference, fixes actual connected
+Latest attempt `stage4/reference-client-topology-5-20260908` is **candidate failure
+evidence despite its directory name**: lead verified installed production SHA is
+6016F943...D1A8, not frozen 017EE8ED..., with probe 4C91D58F...AE2B. It prepared and
+completed the initial A teleport, then crashed after preparing B and native ACK3:
+NoSuchElementException at RegionalChunkGameplayService.requireEntity:425 called by
+createSpawnState:97. First crash is `crash-2026-09-08_09.00.43-server.txt`; the later
+watchdog crash, server/client dumps, world and logs are preserved. No reference or
+normal-health PASS. Sol owns the precise captured entity identity/lifetime repair
+with focused tests, no duplicate live work. Luna owns the launch prerequisite:
+require actual frozen JAR hash and `stage4ReferenceProduction` plus reference mode
+before a fresh run; do not rerun the unchanged candidate crash as a reference.
+
+Luna then executes the corrected frozen 5/5 reference, fixes actual connected
 failures, and advances the paired candidate and unchanged 8/8 campaign. Preserve
 all failures; no longer waits, capped distances, server-only receipts or weakened
 current-client FULL gates. Actual A/B service and save bodies, planned pending-work
