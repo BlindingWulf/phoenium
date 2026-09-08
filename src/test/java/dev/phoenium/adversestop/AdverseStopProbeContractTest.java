@@ -79,18 +79,35 @@ final class AdverseStopProbeContractTest {
     @Test
     void expectedFailureIsEvidenceOnlyWithEveryNativeAndProtocolOutcome() {
         var complete = new AdverseStopProbe.Gate(true, 1, 1, 1, 1, 0, 1, 1, true, 1,
-                true, true, true);
+                true, true, true, true);
         assertTrue(AdverseStopProbe.accepted(complete));
         assertFalse(AdverseStopProbe.accepted(new AdverseStopProbe.Gate(false, 1, 1, 1, 1, 0, 1, 1,
-                true, 1, true, true, true)), "an ordinary unexpected failure cannot count as PASS");
+                true, 1, true, true, true, true)), "an ordinary unexpected failure cannot count as PASS");
         assertFalse(AdverseStopProbe.accepted(new AdverseStopProbe.Gate(true, 1, 1, 1, 0, 1, 1, 1,
-                true, 1, true, true, true)), "a fabricated or failed write outcome cannot count as PASS");
+                true, 1, true, true, true, true)), "a fabricated or failed write outcome cannot count as PASS");
         assertFalse(AdverseStopProbe.accepted(new AdverseStopProbe.Gate(true, 1, 1, 1, 1, 0, 1, 1,
-                false, 1, true, true, true)), "message equality cannot replace exception identity evidence");
+                false, 1, true, true, true, true)), "message equality cannot replace exception identity evidence");
         assertFalse(AdverseStopProbe.accepted(new AdverseStopProbe.Gate(true, 1, 1, 1, 1, 0, 1, 1,
-                true, 1, true, false, true)), "residual protocol custody cannot count as PASS");
+                true, 1, false, true, true, true)),
+                "native cleanup before write acknowledgement cannot count as PASS");
         assertFalse(AdverseStopProbe.accepted(new AdverseStopProbe.Gate(true, 1, 1, 1, 1, 0, 1, 1,
-                true, 1, true, true, false)), "incomplete native resource cleanup cannot count as PASS");
+                true, 1, true, true, false, true)), "residual protocol custody cannot count as PASS");
+        assertFalse(AdverseStopProbe.accepted(new AdverseStopProbe.Gate(true, 1, 1, 1, 1, 0, 1, 1,
+                true, 1, true, true, true, false)), "incomplete native resource cleanup cannot count as PASS");
+    }
+
+    @Test
+    void exceptionIdentityTraversalTerminatesOnCauseCycles() throws Exception {
+        Throwable first = new IllegalStateException("first");
+        Throwable second = new IllegalArgumentException("second");
+        first.initCause(second);
+        second.initCause(first);
+        Throwable absent = new AssertionError("absent");
+        var traversal = AdverseStopProbe.class.getDeclaredMethod(
+                "containsIdentity", Throwable.class, Throwable.class);
+        traversal.setAccessible(true);
+        assertEquals(false, traversal.invoke(null, first, absent));
+        assertEquals(true, traversal.invoke(null, first, second));
     }
 
     private static void assertCalls(String owner, String method, String descriptor,

@@ -8,6 +8,9 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
 @Mixin(targets = "net.minecraft.server.MinecraftServer$ReloadableResources")
 abstract class AdverseReloadableResourcesMixin {
+    @Inject(method = "close()V", at = @At("HEAD"), require = 1)
+    private void phoenium$enter(CallbackInfo ci) { AdverseStopProbe.resourcesCloseEntered(this); }
+
     @Inject(method = "close()V", at = @At("RETURN"), require = 1)
     private void phoenium$closed(CallbackInfo ci) { AdverseStopProbe.resourcesClosed(this); }
 }

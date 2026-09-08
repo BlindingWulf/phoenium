@@ -58,6 +58,7 @@ public final class AdverseStopProbe implements DedicatedServerModInitializer {
     private static final AtomicLong ORDER = new AtomicLong();
     private static final AtomicLong STOP_WAIT_ORDER = new AtomicLong();
     private static final AtomicLong WRITE_COMPLETE_ORDER = new AtomicLong();
+    private static final AtomicLong FIRST_CLEANUP_ENTRY_ORDER = new AtomicLong();
     private static final AtomicLong NATIVE_STOP_ORDER = new AtomicLong();
     private static final AtomicInteger ORIGINAL_SAVE_SELECTED = new AtomicInteger();
     private static final AtomicInteger CALLBACK_FAILURES = new AtomicInteger();
@@ -67,6 +68,7 @@ public final class AdverseStopProbe implements DedicatedServerModInitializer {
     private static final AtomicInteger RUNTIME_STOP_WITNESSES = new AtomicInteger();
     private static final AtomicInteger SHUTDOWN_FAILURES = new AtomicInteger();
     private static final AtomicBoolean EXPECTED_FAILURE_RETAINED = new AtomicBoolean();
+    private static final AtomicInteger CLEANUP_ENTRIES = new AtomicInteger();
     private static final AtomicInteger NATIVE_STOP_RETURNS = new AtomicInteger();
     private static final Set<Object> EXPECTED_LEVELS = identitySet();
     private static final Set<Object> EXPECTED_CACHES = identitySet();
@@ -223,12 +225,33 @@ public final class AdverseStopProbe implements DedicatedServerModInitializer {
         NATIVE_STOP_RETURNS.incrementAndGet();
         NATIVE_STOP_ORDER.compareAndSet(0, ORDER.incrementAndGet());
     }
+    public static void levelCloseEntered(Object value) { cleanupEntered(value, EXPECTED_LEVELS); }
+    public static void cacheCloseEntered(Object value) { cleanupEntered(value, EXPECTED_CACHES); }
+    public static void mapCloseEntered(Object value) { cleanupEntered(value, EXPECTED_MAPS); }
+    public static void dataCloseEntered(Object value) { cleanupEntered(value, EXPECTED_DATA); }
+    public static void storageCloseEntered(Object value) { cleanupEntered(value, EXPECTED_STORAGE); }
+    public static void resourcesCloseEntered(Object value) { cleanupEntered(value, EXPECTED_RESOURCES); }
     public static void levelClosed(Object value) { closed(value, EXPECTED_LEVELS, CLOSED_LEVELS); }
     public static void cacheClosed(Object value) { closed(value, EXPECTED_CACHES, CLOSED_CACHES); }
     public static void mapClosed(Object value) { closed(value, EXPECTED_MAPS, CLOSED_MAPS); }
     public static void dataClosed(Object value) { closed(value, EXPECTED_DATA, CLOSED_DATA); }
     public static void storageClosed(Object value) { closed(value, EXPECTED_STORAGE, CLOSED_STORAGE); }
     public static void resourcesClosed(Object value) { closed(value, EXPECTED_RESOURCES, CLOSED_RESOURCES); }
+
+    private static void cleanupEntered(Object value, Set<Object> expected) {
+        if (!expected.contains(value)) return;
+        CLEANUP_ENTRIES.incrementAndGet();
+        PhoeniumLiveRuntime runtime = RUNTIME.get();
+        RegionalSaveCoordinator saves = runtime == null ? null : runtime.regionalSaves();
+        if (WRITE_COMPLETIONS.get() != 1 || WRITE_COMPLETE_ORDER.get() == 0)
+            fail(new IllegalStateException("native resource cleanup entered before the original write outcome"));
+        if (saves == null || saves.pending() != 0 || value(saves.measurements(), "failedSettlements") != 1)
+            fail(new IllegalStateException("native resource cleanup entered before terminal save acknowledgement"));
+        if (runtime == null || !runtime.diagnostics().lifecycle().toString().equals("STOPPED")
+                || runtime.diagnostics().activeLeases() != 0)
+            fail(new IllegalStateException("native resource cleanup entered before runtime termination"));
+        FIRST_CLEANUP_ENTRY_ORDER.compareAndSet(0, ORDER.incrementAndGet());
+    }
 
     private static void closed(Object value, Set<Object> expected, Set<Object> actual) {
         if (expected.contains(value) && !actual.add(value)) fail(new IllegalStateException("native resource closed twice"));
@@ -257,8 +280,12 @@ public final class AdverseStopProbe implements DedicatedServerModInitializer {
             catch (InterruptedException interrupted) { Thread.currentThread().interrupt(); fail(interrupted); break; }
         } while (System.nanoTime() < serviceDeadline);
         String chunks = runtime == null ? "" : runtime.chunkBinding().diagnostics();
+        int expectedCleanupEntries = expectedCleanupEntries();
+        boolean cleanupAfterAcknowledgement = FIRST_CLEANUP_ENTRY_ORDER.get() > WRITE_COMPLETE_ORDER.get()
+                && CLEANUP_ENTRIES.get() == expectedCleanupEntries;
         boolean order = STOP_WAIT_ORDER.get() > 0 && STOP_WAIT_ORDER.get() < WRITE_COMPLETE_ORDER.get()
-                && WRITE_COMPLETE_ORDER.get() < NATIVE_STOP_ORDER.get();
+                && WRITE_COMPLETE_ORDER.get() < FIRST_CLEANUP_ENTRY_ORDER.get()
+                && FIRST_CLEANUP_ENTRY_ORDER.get() <= NATIVE_STOP_ORDER.get();
         boolean clean = runtime != null && runtime.diagnostics().lifecycle().toString().equals("STOPPED")
                 && runtime.diagnostics().barrierTripped() && runtime.diagnostics().activeLeases() == 0
                 && runtime.regionalDispatcher().pendingCount() == 0
@@ -273,7 +300,7 @@ public final class AdverseStopProbe implements DedicatedServerModInitializer {
         boolean pass = accepted(new Gate(PROBE_FAILURE.get() == null, ORIGINAL_SAVE_SELECTED.get(),
                 CALLBACK_FAILURES.get(), WRITE_ENTRIES.get(), WRITE_COMPLETIONS.get(), WRITE_FAILURES.get(),
                 RUNTIME_STOP_WITNESSES.get(), SHUTDOWN_FAILURES.get(), EXPECTED_FAILURE_RETAINED.get(),
-                NATIVE_STOP_RETURNS.get(), order, clean, resources));
+                NATIVE_STOP_RETURNS.get(), cleanupAfterAcknowledgement, order, clean, resources));
         String line = "PHOENIUM_ADVERSE_SAVE_SHUTDOWN " + (pass ? "PASS" : "FAIL")
                 + " expectedFailureIdentity=" + EXPECTED_FAILURE_RETAINED.get()
                 + " callbackFailures=" + CALLBACK_FAILURES.get()
@@ -287,6 +314,7 @@ public final class AdverseStopProbe implements DedicatedServerModInitializer {
                 + " scoreboardSessions=" + value(scoreboard, "sessions")
                 + " legacyPlans=" + value(legacy, "plans")
                 + " legacyProducerTerminated=" + value(legacy, "producerTerminated")
+                + " cleanupEntries=" + CLEANUP_ENTRIES.get() + "/" + expectedCleanupEntries
                 + " resourceSets=" + CLOSED_LEVELS.size() + "/" + CLOSED_CACHES.size() + "/" + CLOSED_MAPS.size()
                 + "/" + CLOSED_DATA.size() + "/" + CLOSED_STORAGE.size() + "/" + CLOSED_RESOURCES.size()
                 + " orderedWaitWriteCleanup=" + order + " durablePersistenceClaim=false"
@@ -296,6 +324,10 @@ public final class AdverseStopProbe implements DedicatedServerModInitializer {
 
     private static boolean complete(Set<Object> expected, Set<Object> actual) {
         return !expected.isEmpty() && actual.size() == expected.size() && actual.containsAll(expected);
+    }
+    private static int expectedCleanupEntries() {
+        return EXPECTED_LEVELS.size() + EXPECTED_CACHES.size() + EXPECTED_MAPS.size()
+                + EXPECTED_DATA.size() + EXPECTED_STORAGE.size() + EXPECTED_RESOURCES.size();
     }
     private static boolean namedServicesClean(Map<String, Long> service, Map<String, Long> entities,
                                               Map<String, Long> scoreboard, Map<String, Long> legacy) {
@@ -311,7 +343,8 @@ public final class AdverseStopProbe implements DedicatedServerModInitializer {
         return gate.noUnexpectedFailure && gate.originalSaveSelected == 1 && gate.callbackFailures == 1
                 && gate.writeEntries == 1 && gate.writeCompletions == 1 && gate.writeFailures == 0
                 && gate.runtimeStopWitnesses == 1 && gate.shutdownFailures == 1 && gate.expectedFailureRetained
-                && gate.nativeStopReturns == 1 && gate.ordered && gate.protocolClean && gate.resourcesComplete;
+                && gate.nativeStopReturns == 1 && gate.cleanupAfterAcknowledgement && gate.ordered
+                && gate.protocolClean && gate.resourcesComplete;
     }
     private static long value(Map<String, Long> values, String key) { return values.getOrDefault(key, -1L); }
     private static void require(boolean condition, String message) { if (!condition) throw new IllegalStateException(message); }
@@ -321,10 +354,15 @@ public final class AdverseStopProbe implements DedicatedServerModInitializer {
                 ? invocation.getCause() : failure;
     }
     private static boolean containsIdentity(Throwable root, Throwable expected) {
+        Set<Throwable> visited = Collections.newSetFromMap(new IdentityHashMap<>());
+        return containsIdentity(root, expected, visited);
+    }
+    private static boolean containsIdentity(Throwable root, Throwable expected, Set<Throwable> visited) {
         if (root == expected) return true;
-        if (root == null) return false;
-        if (containsIdentity(root.getCause(), expected)) return true;
-        for (Throwable suppressed : root.getSuppressed()) if (containsIdentity(suppressed, expected)) return true;
+        if (root == null || !visited.add(root)) return false;
+        if (containsIdentity(root.getCause(), expected, visited)) return true;
+        for (Throwable suppressed : root.getSuppressed())
+            if (containsIdentity(suppressed, expected, visited)) return true;
         return false;
     }
     private static Object field(Object target, Class<?> owner, String name) throws Exception {
@@ -341,6 +379,7 @@ public final class AdverseStopProbe implements DedicatedServerModInitializer {
     record Gate(boolean noUnexpectedFailure, int originalSaveSelected, int callbackFailures,
                 int writeEntries, int writeCompletions, int writeFailures, int runtimeStopWitnesses,
                 int shutdownFailures, boolean expectedFailureRetained, int nativeStopReturns,
-                boolean ordered, boolean protocolClean, boolean resourcesComplete) { }
+                boolean cleanupAfterAcknowledgement, boolean ordered, boolean protocolClean,
+                boolean resourcesComplete) { }
     private record Selection(ServerLevel level, ChunkMap map, ChunkHolder holder) { }
 }
