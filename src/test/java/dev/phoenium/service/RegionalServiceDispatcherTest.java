@@ -67,6 +67,20 @@ final class RegionalServiceDispatcherTest {
     }
 
     @Test
+    void nativeSelectionIsTakenAfterPreviouslyAcceptedOwnerEffects() {
+        Fixture f = new Fixture(); var dispatcher = f.dispatcher();
+        var state = new java.util.ArrayList<String>();
+        dispatcher.submit(f.aKey, RegionalServiceKind.TRACKING_UPDATE, execution -> state.add("moved"));
+        dispatcher.drainBeforeSelection();
+        var selected = List.copyOf(state);
+        dispatcher.executeAndDrain(f.bKey, RegionalServiceKind.TRACKING_UPDATE,
+            execution -> assertEquals(selected, state));
+        assertEquals(List.of("moved"), selected);
+        assertEquals(0, dispatcher.pendingCount());
+        assertFalse(f.barrier.tripped());
+    }
+
+    @Test
     void unresolvedClosureStillFailsWithoutRunningTheCallbackOrPublishingRoutes() {
         Fixture f = new Fixture();
         var dispatcher = f.dispatcher();

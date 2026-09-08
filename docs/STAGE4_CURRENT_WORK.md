@@ -4,6 +4,33 @@ Stage 4 remains **PARTIAL**, Stage 5 OFF, one gameplay worker, parallel gameplay
 This section supersedes the historical worker assignments and next-step instructions below.
 The session began from clean `2b3080b`; all newer work is preserved. No agents are running.
 
+- Recovery parent `4ed718f`; next/current run **`finish-candidate-5-q`** includes current
+  source-range/view-distance selection, daytime siege and pre-selection delivery repairs.
+  Focused Regional/LiveTick checks pass (`run/stage4/siege-selection-focused.log`).
+  Last full suite was 808/83; two further meaningful regressions now require a final recount.
+- `finish-candidate-5-o/p` proved further unnecessary enclosures, from chunk gameplay's
+  maximum-type recipient radius and VillageSiege's origin read even in its bright-day reset
+  branch. Recipient projections now apply native ChunkMap's current server-view cap, preserve
+  all seen recipients for removal, and use source/passenger effective type ranges. The exact
+  native bright-day siege callback runs its original reset without claiming unreachable terrain;
+  actual dark/spawning paths still retain their complete original origin/player footprints.
+- P's restart passed prior missing lifecycle/foreign-recipient failures, then detected a stale
+  tracker cut because its first synchronous drain executed an earlier queued movement. The
+  tracker now drains already accepted work through the existing owner scheduler before taking
+  player/entity selection receipts. No original effects are replayed or invoked without leases.
+- Last installed P production was **`E6242797716D4CB495051B50B2610958FF09A068DA2A71D3D1D36DD6871D490B`**.
+  On those exact bytes, controlled installed FULL passed in
+  `run/full-production-integration/transform-20260908-111230` (actual directory recorded by
+  `run/stage4/final-controlled-full-launch.log`; use that path if timestamp differs).
+  Existing native adverse probe passed with exit0, one pending original write and exact ordered
+  acknowledgement/15 resource closures in `run/stage4/adverse-final-20260908-111030`.
+  Both gates must be rerun on the eventual final JAR because Q changes production.
+- Frozen **`finish-reference-5-g` first workload/save/shutdown trace PASS** (793 events), with
+  exact frozen hash and explicit serial A domain. Restart observed native unpack current724,
+  trigger910, saved delay186; the client wait allowed only180 ticks for185 native steps. The
+  shared timeout is now900 client ticks, still bounded; no deadline/state criteria changed.
+  Next reference ID: `finish-reference-5-h`. G is not final restart acceptance.
+
 - Latest committed entity-storage boundary is `2929375`. Full suite then passed with the
   initial recipient refinement/drain-cause changes: **808 tests / 83 suites**, zero failures,
   errors/skips (`run/stage4/finishing-full-suite-entity-storage-results.json`).
@@ -138,7 +165,7 @@ The session began from clean `2b3080b`; all newer work is preserved. No agents a
 Resume candidate command (use a fresh run ID/directory for each attempt):
 
 ```powershell
-.\gradlew.bat runStage4ClientGameTest -Pstage4RunId=finish-candidate-5-o -Pstage4ServerDirectory=run/stage4/finish-candidate-5-o -Pstage4EvidenceDir=run/stage4/finish-candidate-5-o/evidence -Pstage4ViewDistance=5 -Pstage4SimulationDistance=5 -Pstage4PacketTrace=true --no-daemon --console=plain
+.\gradlew.bat runStage4ClientGameTest -Pstage4RunId=finish-candidate-5-q -Pstage4ServerDirectory=run/stage4/finish-candidate-5-q -Pstage4EvidenceDir=run/stage4/finish-candidate-5-q/evidence -Pstage4ViewDistance=5 -Pstage4SimulationDistance=5 -Pstage4PacketTrace=true --no-daemon --console=plain
 ```
 
 Remaining: candidate connected failures; trustworthy frozen selection negative/positive checks;

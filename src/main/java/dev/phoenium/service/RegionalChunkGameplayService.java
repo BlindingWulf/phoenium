@@ -162,6 +162,11 @@ public final class RegionalChunkGameplayService {
      * seven chunk keys cover it and the final 2x3x2 probe. */
     public void customSpawnerCallback(CustomSpawner spawner, boolean spawnEnemies, Runnable original) {
         requireCycle(); Objects.requireNonNull(original);
+        // The pinned bright-day branch resets only this named spawner's own state and
+        // cannot reach terrain, players, or the newly constructed zombie's origin read.
+        if (spawner instanceof net.minecraft.world.entity.ai.village.VillageSiege && level.isBrightOutside()) {
+            original.run(); return;
+        }
         int radius = customSpawnerRadius(spawner, spawnEnemies);
         if (radius < 0) { original.run(); return; }
         List<PlayerProjection> players = captureLevelPlayers(); cycle.levelPlayers = players;
@@ -225,9 +230,11 @@ public final class RegionalChunkGameplayService {
         cycle.levelPlayers = captureLevelPlayers();
         RoutingKey source = new RoutingKey(world, chunk.getPos().x(), chunk.getPos().z());
         Set<RoutingKey> footprint = new LinkedHashSet<>(new TopologyPlanner().requiredClosure(Set.of(source), terrainRadius));
+        int visibleRecipientRadius = Math.min(recipientRadius,
+            ((RegionalChunkMapAccess) map).phoenium$getServerViewDistance() + 2);
         for (PlayerProjection player : cycle.players)
-            if (Math.abs((long) player.key.x() - source.x()) <= recipientRadius
-                    && Math.abs((long) player.key.z() - source.z()) <= recipientRadius) footprint.add(player.key);
+            if (Math.abs((long) player.key.x() - source.x()) <= visibleRecipientRadius
+                    && Math.abs((long) player.key.z() - source.z()) <= visibleRecipientRadius) footprint.add(player.key);
         dispatcher.ensureClosure(Set.copyOf(footprint));
         dispatcher.executeAndDrain(source, RegionalServiceKind.CHUNK_GAMEPLAY, ignored -> {
             dispatcher.requireCurrentOwner(source); cycle.callbackKey = source;
@@ -285,7 +292,8 @@ public final class RegionalChunkGameplayService {
             int entityRange = source.fact().type().clientTrackingRange() * 16;
             for (var passenger : passengers)
                 entityRange = Math.max(entityRange, passenger.fact().type().clientTrackingRange() * 16);
-            int entityRecipientRadius = (level.getServer().getScaledTrackingDistance(entityRange) + 15) / 16 + 2;
+            int entityRecipientRadius = Math.min((level.getServer().getScaledTrackingDistance(entityRange) + 15) / 16 + 2,
+                ((RegionalChunkMapAccess) map).phoenium$getServerViewDistance() + 2);
             PlayerCut currentPlayers = capturePlayers();
             for (PlayerProjection player : currentPlayers.players)
                 if (Math.abs((long) player.key.x() - key.x()) <= entityRecipientRadius

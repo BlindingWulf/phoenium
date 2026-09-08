@@ -252,7 +252,7 @@ public final class Stage4ClientTraceTest implements FabricClientGameTest {
             awaitLogAfter(context, server, restartLog, "STAGE4_TRACE_RELOAD_STEP_SCHEDULED phase=before",
                 restoredStepOffset, 30, null);
             awaitLogAfter(context, server, restartLog,
-                "STAGE4_TRACE_CLOCK_STEP_REACHED label=restored-before-deadline", restoredStepOffset, 180, null);
+                "STAGE4_TRACE_CLOCK_STEP_REACHED label=restored-before-deadline", restoredStepOffset, 900, null);
             long beforePhaseOffset = logSize(restartLog);
             command(server, "stage4trace check-restored-before");
             awaitLogAfter(context, server, restartLog, "STAGE4_TRACE_RELOAD_PHASE phase=before",

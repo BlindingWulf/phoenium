@@ -195,6 +195,22 @@ public final class RegionalServiceDispatcher implements RegionalServiceExecutor 
         drain(submit(key, kind, body));
     }
 
+    /** Finish already accepted owner work before taking a native service's selection cut.
+     * Otherwise the first synchronous service drain can run an older movement envelope after
+     * that cut and invalidate an untouched tracker. This uses ordinary FIFO owner delivery. */
+    public void drainBeforeSelection() {
+        if (OwnershipContext.current().isPresent())
+            throw new IllegalStateException("service selection boundary still has owner authority");
+        while (true) {
+            var failed = scheduler.failureBarrier().record().orElse(null);
+            if (failed != null) throw new IllegalStateException("service selection stopped by owner failure", failed.cause());
+            if (!scheduler.acceptsSimulationWork()) throw new IllegalStateException("service selection after scheduler stop");
+            long before = scheduler.deliveryAttempts();
+            scheduler.advanceOne();
+            if (scheduler.deliveryAttempts() == before && !boundaryAdvancer.getAsBoolean()) return;
+        }
+    }
+
     /** Validates an original producer mutation that is already executing inside an owner body. */
     public void requireCurrentOwner(RoutingKey key) {
         Objects.requireNonNull(key, "key");

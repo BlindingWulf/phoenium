@@ -612,7 +612,11 @@ public final class RegionalTrackingService {
             footprint.add(key(passenger));
             effective = Math.max(effective, passenger.fact().type().clientTrackingRange() * 16);
         }
-        return new RangeProjection(source, level.getServer().getScaledTrackingDistance(effective),
+        // Native updatePlayer caps every requested player distance by this current server
+        // distance, before any entity predicate. Keep seen recipients separately for removal.
+        int visible = Math.min(level.getServer().getScaledTrackingDistance(effective),
+            ((RegionalChunkMapAccess) level.getChunkSource().chunkMap).phoenium$getServerViewDistance() * 16);
+        return new RangeProjection(source, visible,
             Set.copyOf(footprint), passengers);
     }
     private void requireRelation(RangeProjection projection) {

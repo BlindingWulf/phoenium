@@ -308,6 +308,7 @@ public final class RegionalWorldServices implements RegionalStateMigration {
         if (services.chunkMap() != map) throw new IllegalStateException("regional tracker ChunkMap identity changed");
         FullFinishingServices.requireWorld(level, FullFinishingServices.Kind.TRACKER);
         FullFinishingServices.requireServer(level.getServer(), FullFinishingServices.Kind.CONNECTIONS);
+        dispatcher.drainBeforeSelection();
         List<net.minecraft.server.level.ServerPlayer> active = List.copyOf(access.phoenium$getPlayerMap().getAllPlayers());
         services.tracking().tick(map, active, List.copyOf(level.players()));
         return true;

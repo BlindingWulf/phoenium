@@ -14,5 +14,6 @@ public interface RegionalChunkMapAccess {
     @Accessor("level") ServerLevel phoenium$getLevel();
     @Accessor("entityMap") Int2ObjectMap<Object> phoenium$getTrackedEntities();
     @Accessor("playerMap") PlayerMap phoenium$getPlayerMap();
+    @Accessor("serverViewDistance") int phoenium$getServerViewDistance();
     @Invoker("updateChunkTracking") void phoenium$invokeUpdateChunkTracking(ServerPlayer player);
 }

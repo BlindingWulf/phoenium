@@ -32,4 +32,5 @@ final class RegionalCustomSpawnerBoundaryTest {
         spawner.tick(null, true);
         assertEquals(1, counter.getInt(spawner));
     }
+
 }
