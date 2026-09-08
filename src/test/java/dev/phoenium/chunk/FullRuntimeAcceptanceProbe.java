@@ -118,10 +118,16 @@ public final class FullRuntimeAcceptanceProbe implements DedicatedServerModIniti
         System.out.println("PHOENIUM_FULL_LIVE_GENERATED chunk=" + access.getPos() + " roots=2");
     }
 
+    public static boolean persistenceFixtureEligible(ServerLevel level, ChunkAccess chunk) {
+        return Boolean.getBoolean("phoenium.test.fullFixtureSeedDisk")
+                && level.dimension() == Level.OVERWORLD && target(chunk.getPos())
+                && chunk.getPersistedStatus() == ChunkStatus.FULL;
+    }
+
     /** Test-only legacy entity list written by the original FULL serializer and consumed by its
      * original parse/read/post-load path after restart. The normal writer omits the record's
-     * entities field for FULL chunks, so this adds only the four exact fixture roots to the
-     * serializer's output NBT; it does not replace the writer or patch the saved world. */
+     * entities field for FULL chunks, so this adds the eight exact fixture roots (two per target
+     * chunk) to the serializer's output NBT; it does not replace the writer or patch the saved world. */
     public static CompoundTag persistedWrite(ChunkPos pos, ChunkStatus status, CompoundTag output) {
         if (!Boolean.getBoolean("phoenium.test.fullFixtureSeedDisk") || !target(pos)
                 || status != ChunkStatus.FULL) return output;
