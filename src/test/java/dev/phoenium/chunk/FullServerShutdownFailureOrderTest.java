@@ -14,6 +14,42 @@ import static org.junit.jupiter.api.Assertions.*;
 /** The terminal wrapper must retain every failure while it still closes its named services. */
 final class FullServerShutdownFailureOrderTest {
     @Test
+    void reentrantStopRetainsTheOuterDrainAndCannotTerminateServicesEarly() throws Exception {
+        var events = new ArrayList<String>();
+        MinecraftServer server = stub(MinecraftServer.class, List.of());
+        var service = FullFinishingServices.forServer(server);
+        FullServerShutdown.run(server, () -> events.add("admission-closed"), () -> {
+            events.add("drain-start");
+            FullServerShutdown.run(server, () -> fail("nested stop must not replay vanilla"),
+                    () -> fail("nested stop must not acknowledge an active outer drain"));
+            assertSame(service, FullFinishingServices.forServer(server));
+            events.add("drain-end");
+        }, () -> events.add("runtime-acknowledgement"));
+        FullServerShutdown.run(server, () -> fail("settled stop must not replay vanilla"),
+                () -> fail("settled stop must not acknowledge twice"));
+        assertEquals(List.of("admission-closed", "drain-start", "drain-end", "runtime-acknowledgement"), events);
+        service.legacyOwners.termination().toCompletableFuture().get(5, TimeUnit.SECONDS);
+        assertThrows(ChunkProtocolException.class, () -> FullFinishingServices.forServer(server));
+    }
+
+    @Test
+    void anOwnedStopRequestCannotRunCleanupUnderTheInterruptedMutation() throws Exception {
+        MinecraftServer server = stub(MinecraftServer.class, List.of());
+        var region = new dev.phoenium.region.RegionId(new dev.phoenium.core.WorldId("stop-test"), "owner");
+        var leases = new dev.phoenium.ownership.RegionLeaseManager(region);
+        try (var lease = leases.acquire(); var owner = dev.phoenium.ownership.OwnershipContext.enter(
+                region, lease.epoch(), dev.phoenium.ownership.OperationCategory.OWNER_TASK)) {
+            assertThrows(ChunkProtocolException.class, () -> FullServerShutdown.run(server,
+                    () -> fail("owned caller cannot close admission"), () -> fail("owned caller cannot drain"),
+                    () -> fail("owned caller cannot clean up")));
+            lease.requireCurrent();
+        }
+        var calls = new AtomicInteger();
+        FullServerShutdown.run(server, calls::incrementAndGet, calls::incrementAndGet);
+        assertEquals(2, calls.get(), "refused nested mutation must not mark the real stop complete");
+    }
+
+    @Test
     void originalAndAcknowledgementFailuresStillRunNamedCleanupExactlyOnce() throws Exception {
         var events = new ArrayList<String>();
         var serviceLookups = new AtomicInteger();
@@ -54,5 +90,7 @@ final class FullServerShutdownFailureOrderTest {
         // A repeated terminal acknowledgement is a no-op and cannot invoke the named service again.
         FullFinishingServices.stopped(server);
         assertEquals(1, serviceLookups.get(), "terminal cleanup must be exactly once");
+        FullServerShutdown.run(server, () -> fail("failed original stop cannot be replayed"),
+                () -> fail("failed acknowledgement cannot be replayed"));
     }
 }
