@@ -20,6 +20,14 @@ The session began from clean `2b3080b`; all newer work is preserved. No agents a
   publication and grants no readiness. It follows the frozen FULL bed/vault support pattern.
   The same disposable probe supports both production artifacts without changing frozen bytes.
   Next/current candidate run is `finish-candidate-5-g`; all final runtime gates remain pending.
+- `finish-candidate-5-g/h` reached all destinations, then stopped dispatching at return A.
+  `finish-candidate-5-i` exposed the retained cause: POI_INSTALL at (14,23) was permanently
+  unroutable. Native simulation tickets start at ENTITY_TICKING (31), so FULL (33) extends two
+  rings outside simulation distance. The shared support radius now derives that exact native
+  difference, plus native generation dependencies; focused support test passes at both distances.
+  The current `finish-candidate-5-j` uses the unchanged production 7B611F...8C01 and has reached
+  arming, merge, initial/settle clocks, and both block recipient phases. A bounded probe observer
+  now emits the retained production barrier cause immediately; failure dumps stay inside each run.
 
 - Repaired entity lifecycle publication at native `ServerLevel$EntityCallbacks.onTrackingStart`
   HEAD, after `EntityLookup.add` and before original tracker registration. Chunk-loaded and

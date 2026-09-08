@@ -20,7 +20,11 @@ public final class Stage4FixtureSupport {
         int nativeDependencies = ChunkPyramid.GENERATION_PYRAMID.getStepTo(ChunkStatus.FULL)
             .getAccumulatedRadiusOf(ChunkStatus.EMPTY);
         int forcedFullHalo = 1 + ChunkLevel.byStatus(ChunkStatus.FULL) - ChunkMap.FORCED_TICKET_LEVEL;
-        return Math.max(Math.max(viewDistance, simulationDistance) + 1, forcedFullHalo) + nativeDependencies;
+        // Simulation tickets are anchored at ENTITY_TICKING, two levels inside FULL. Their
+        // outer FULL and generation rings exceed the block-ticking receipt's one-chunk halo.
+        int simulationFullRadius = simulationDistance + ChunkLevel.byStatus(ChunkStatus.FULL)
+            - ChunkLevel.byStatus(net.minecraft.server.level.FullChunkStatus.ENTITY_TICKING);
+        return Math.max(Math.max(viewDistance + 1, simulationFullRadius), forcedFullHalo) + nativeDependencies;
     }
 
     public static ExplicitLiveTopologyFixture.Plan extend(ExplicitLiveTopologyFixture.Plan plan,

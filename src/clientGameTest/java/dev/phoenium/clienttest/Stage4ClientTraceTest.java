@@ -334,7 +334,7 @@ public final class Stage4ClientTraceTest implements FabricClientGameTest {
                 try {
                     for (int[] chunk : chunks)
                         command(server, "stage4trace inspect-demand " + chunk[0] + " " + chunk[1]);
-                    command(server, "phoenium status");
+                    command(server, "phoenium diagnostics");
                 } catch (IOException failure) { throw new AssertionError("cannot request pending FULL diagnostics", failure); }
             }
             boolean applied = context.computeOnClient(client -> {
@@ -508,6 +508,7 @@ public final class Stage4ClientTraceTest implements FabricClientGameTest {
     private static void requireHealthyServer(Process server, Path log) {
         String contents = read(log);
         if (!server.isAlive() || contents.contains("live tick failure; simulation remains fenced")
+                || contents.contains("STAGE4_TRACE_PRODUCTION_FAILURE")
                 || contents.contains("An unexpected error occurred while trying to execute that command")
                 || contents.contains("Encountered an unexpected exception"))
             throw new AssertionError("server failed during Stage 4 workload; evidence=" + log);

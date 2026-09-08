@@ -369,7 +369,17 @@ public final class Stage4AcceptanceProbe implements DedicatedServerModInitialize
         }
     }
 
+    private static boolean reportedFailure;
     public static void observeTeleportReadiness() {
+        var live = Phoenium.liveRuntime();
+        if (!reportedFailure && live != null && !live.failureDescription().isEmpty()) {
+            reportedFailure = true;
+            System.out.println("STAGE4_TRACE_PRODUCTION_FAILURE " + live.failureDescription()
+                + " diagnostics=" + live.diagnostics().toLogLine());
+            Object barrier = fieldValue(live, "barrier");
+            if (barrier instanceof dev.phoenium.failure.FailureBarrier failureBarrier)
+                failureBarrier.record().ifPresent(record -> record.cause().printStackTrace());
+        }
         for (Stage4TeleportTopology.Prepared prepared : TELEPORT_RECEIPTS.values())
             prepared.observeDestinationFull();
     }

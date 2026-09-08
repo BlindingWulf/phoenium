@@ -21,6 +21,8 @@ class Stage4FixtureSupportTest {
             "old z=0 corridor cannot cover the deferred destination's forced FULL dependency square");
         for (int distance : new int[] {5, 8}) {
             var extended = Stage4FixtureSupport.extend(original, anchor, distance, distance);
+            assertNotNull(extended.routes().get(new RoutingKey(world, 14, 23)),
+                "actual native simulation ticket propagation previously rejected POI_INSTALL here");
             original.routes().forEach((key, route) -> assertEquals(route, extended.routes().get(key)));
             int radius = Stage4FixtureSupport.supportRadius(distance, distance);
             for (int x = 32 - radius; x <= 32 + radius; x++)
