@@ -39,6 +39,7 @@ public final class FullRegistrationRuntime {
     private long registrations, captures, releases, preparationCalls, finishingCalls, publicationCalls;
     private final Thread observationThread;
     public final FullInitializedInputs inputs;
+    final FullStructureMutationTurns structureMutations;
     public final FullPublishedInputs published;
     private final AutoCloseable publishedSubscription;
     private final AutoCloseable inputRouteSubscription;
@@ -59,6 +60,7 @@ public final class FullRegistrationRuntime {
         observationThread = Objects.requireNonNull(((FullInputObservationThread) level.getChunkSource()).phoenium$inputThread());
         services = authority.services(); custody = services.custody();
         inputs = new FullInitializedInputs(this, limits);
+        structureMutations = new FullStructureMutationTurns(observationThread, inputs::changed);
         published = services.publishedInputs(level, authority);
         publishedSubscription = published.changes().subscribe(inputs::changed);
         inputRouteSubscription = authority.directory().observeChanges(inputs::changed);
@@ -101,6 +103,17 @@ public final class FullRegistrationRuntime {
 
     private CompletableFuture<ChunkAccess> winning(GeneratingChunkMap map, GenerationChunkHolder holder,
             ChunkStep step, StaticCache2D<GenerationChunkHolder> cache, Supplier<CompletableFuture<ChunkAccess>> original) {
+        var structures = structureMutations.beginWriter(holder, step, cache);
+        try { return winningWithStructureTurn(map, holder, step, cache, original, structures); }
+        catch (Throwable failure) {
+            if (structures != null) try { structures.close(); }
+            catch (Throwable cleanup) { if (cleanup != failure) failure.addSuppressed(cleanup); }
+            throw failure;
+        }
+    }
+    private CompletableFuture<ChunkAccess> winningWithStructureTurn(GeneratingChunkMap map, GenerationChunkHolder holder,
+            ChunkStep step, StaticCache2D<GenerationChunkHolder> cache, Supplier<CompletableFuture<ChunkAccess>> original,
+            FullStructureMutationTurns.Writer structures) {
         FullHolderEvidence evidence = (FullHolderEvidence) holder;
         if (evidence.phoenium$startedWork().get() != step.targetStatus() || cache.get(holder.getPos().x(), holder.getPos().z()) != holder)
             throw new ChunkProtocolException("FULL generation did not receive the actual winning reservation");
@@ -113,7 +126,7 @@ public final class FullRegistrationRuntime {
             if (!open) throw new ChunkProtocolException("generation registration after shutdown");
             Generation generation = generations.computeIfAbsent(holder, Generation::new);
             if (generation.steps.containsKey(step.targetStatus())) throw new ChunkProtocolException("repeated winning status reservation");
-            producer = new Producer(generation, step);
+            producer = new Producer(generation, step, structures);
             generation.steps.put(step.targetStatus(), producer);
             int radius = Math.max(0, step.blockStateWriteRadius());
             if (step.targetStatus() != ChunkStatus.FULL) {
@@ -132,7 +145,10 @@ public final class FullRegistrationRuntime {
         Invocation previous = SYNCHRONOUS.get();
         SYNCHRONOUS.set(new Invocation(this, map, holder, step, cache, producer));
         final CompletableFuture<ChunkAccess> returned;
-        try { returned = Objects.requireNonNull(original.get()); }
+        try {
+            if (structures != null) structures.awaitReady();
+            returned = Objects.requireNonNull(original.get());
+        }
         catch (Throwable failure) { release(producer, null, failure); throw failure; }
         finally { if (previous == null) SYNCHRONOUS.remove(); else SYNCHRONOUS.set(previous); }
         custody.gate().lock();
@@ -217,6 +233,7 @@ public final class FullRegistrationRuntime {
             for (Generation target : producer.targets) { target.writers.remove(producer); target.revision++; }
             wake = List.copyOf(graphs);
         } finally { custody.gate().unlock(); }
+        if (producer.structures != null) producer.structures.close();
         wake.forEach(Graph::wake);
         inputs.changed();
         cleanupGenerations();
@@ -243,6 +260,7 @@ public final class FullRegistrationRuntime {
         List<Graph> snapshot;
         custody.gate().lock(); try { open = false; snapshot = List.copyOf(graphs); } finally { custody.gate().unlock(); }
         var failures = new FullInputNotifications.Failures();
+        failures.run(structureMutations::shutdown);
         for (Graph graph : snapshot) failures.run(() -> graph.stop(ChunkStageAdmission.Result.SHUTDOWN, null));
         failures.run(published::shutdown);
         failures.run(services::stopResidentHolders);
@@ -274,10 +292,14 @@ public final class FullRegistrationRuntime {
     }
     public Map<String, Long> measurements() {
         custody.gate().lock(); try {
-            return Map.of("registrations", registrations, "captures", captures, "producerReleases", releases,
+            var result = new LinkedHashMap<>(Map.of("registrations", registrations, "captures", captures, "producerReleases", releases,
                     "preparationCalls", preparationCalls, "graphs", (long) graphs.size(), "returnedIndex", (long) returnedIndex.size(),
                     "generationHolders", (long) generations.size(), "deliveries", (long) deliveries.size(),
-                    "finishingCalls", finishingCalls, "publicationCalls", publicationCalls);
+                    "finishingCalls", finishingCalls, "publicationCalls", publicationCalls));
+            var structures = structureMutations.measurements();
+            result.put("structureHolders", structures.get("holders")); result.put("structureReaders", structures.get("readers"));
+            result.put("structureWriters", structures.get("writers")); result.put("structureWaitingWriters", structures.get("waitingWriters"));
+            return Map.copyOf(result);
         } finally { custody.gate().unlock(); }
     }
     private void cleanupGenerations() {
@@ -307,13 +329,16 @@ public final class FullRegistrationRuntime {
     private static final class Producer {
         final Generation generation;
         final ChunkStep step;
+        final FullStructureMutationTurns.Writer structures;
         final List<Generation> targets = new ArrayList<>();
         CompletableFuture<ChunkAccess> returned;
         ChunkAccess value;
         Throwable failure;
         boolean finished;
         Graph graph;
-        Producer(Generation generation, ChunkStep step) { this.generation = generation; this.step = step; }
+        Producer(Generation generation, ChunkStep step, FullStructureMutationTurns.Writer structures) {
+            this.generation = generation; this.step = step; this.structures = structures;
+        }
     }
 
     public record Prepared(ChunkCustodyModel.LifecycleId lifecycle, ChunkCustodyModel.WorkId work,
