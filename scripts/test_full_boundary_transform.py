@@ -258,16 +258,20 @@ with log.open("w") as output:
                 if matches:
                     assert all(int(value) == 0 for value in matches), line
         services_stopped = [line for line in text.splitlines() if "PHOENIUM_FULL_SERVICES STOPPED PASS" in line]
-        assert len(services_stopped) == 1, "missing or duplicate finishing-service cleanup evidence"
-        for name in ("stopEvent=true", "serviceReservations=0", "serviceActive=0", "serviceWorlds=0",
-                     "serviceEnvironmentRequests=0", "entityFactsAddressable=0", "scoreboardSessions=0",
-                     "scoreboardCatchup=0", "legacyPlans=0", "legacyQueued=0", "legacyRunning=0",
-                     "legacyProducerTerminated=1", "legacyCacheRoots=0"):
-            assert name in services_stopped[0], services_stopped[0]
+        if controlled:
+            assert len(services_stopped) == 1, "missing or duplicate finishing-service cleanup evidence"
+            for name in ("stopEvent=true", "serviceReservations=0", "serviceActive=0", "serviceWorlds=0",
+                         "serviceEnvironmentRequests=0", "entityFactsAddressable=0", "scoreboardSessions=0",
+                         "scoreboardCatchup=0", "legacyPlans=0", "legacyQueued=0", "legacyRunning=0",
+                         "legacyProducerTerminated=1", "legacyCacheRoots=0"):
+                assert name in services_stopped[0], services_stopped[0]
+        else:
+            assert not services_stopped, "finishing-service marker appeared without the controlled probe"
         manifest.update({"result": "PASS", "exitCode": process.returncode, "stopped": stopped,
                          "stage2Stopped": stage2_stopped,
                          "fullRuntimeStopped": full_stopped,
                          "fullServicesStopped": services_stopped,
+                         "fullServicesMarkerApplicable": controlled,
                          "seedLines": [line for line in text.splitlines() if "Seed:" in line],
                          "transformedClassSha256": digest(exported), "holderClassSha256": digest(holder_export),
                          "clockClassSha256": digest(clock_export)})
