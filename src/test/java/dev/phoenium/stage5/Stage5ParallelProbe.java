@@ -32,7 +32,6 @@ public final class Stage5ParallelProbe implements DedicatedServerModInitializer 
         .split(",")).mapToInt(Integer::parseInt).toArray();
     private static final List<BlockPos> POSITIONS = new ArrayList<>();
     private static Measurement measurement;
-    private static Measurement nativeSprintFinishing;
     private static long tickStart;
     private static String layout = "distributed";
     private static boolean demandPending;
@@ -213,7 +212,7 @@ public final class Stage5ParallelProbe implements DedicatedServerModInitializer 
     }
 
     private static void measure(MinecraftServer server, String label, int ticks) {
-        if (measurement != null || nativeSprintFinishing != null) throw new IllegalStateException("overlapping measurements");
+        if (measurement != null) throw new IllegalStateException("overlapping measurements");
         if (POSITIONS.isEmpty()) throw new IllegalStateException("no actual furnace workload");
         measurement = new Measurement(label, server.overworld().getGameTime(), ticks, System.nanoTime());
         snapshot(server, label + "-before", Map.of());
@@ -221,13 +220,6 @@ public final class Stage5ParallelProbe implements DedicatedServerModInitializer 
         System.out.println("STAGE5_MEASURING label=" + label + " ticks=" + ticks);
     }
     private static void endTick(MinecraftServer server) {
-        Measurement finishing = nativeSprintFinishing;
-        if (finishing != null && !server.tickRateManager().isSprinting()) {
-            if (!server.tickRateManager().isFrozen() || server.overworld().getGameTime() != finishing.lastGameTime)
-                throw new IllegalStateException("native sprint changed the completed tick cut");
-            nativeSprintFinishing = null;
-            System.out.println("STAGE5_MEASURED label=" + finishing.label + " ticks=" + finishing.ticks + " nativeSprintFinished=true");
-        }
         if (demandPending) {
             boolean ready = true;
             for (int center : CENTERS) for (int x = center - 1; x <= center + 1; x++) for (int z = -1; z <= 1; z++) {
@@ -245,15 +237,21 @@ public final class Stage5ParallelProbe implements DedicatedServerModInitializer 
             current.tickNanos.add(System.nanoTime() - tickStart); current.lastGameTime = now;
         }
         if (current.tickNanos.size() == current.ticks) {
-            // Let the original sprint finalizer restore its saved frozen state. Freezing
-            // here can prevent that finalizer from running, so a later unfreeze command
-            // gets overwritten by an unfinished sprint. Publish completion only afterward.
-            measurement = null; nativeSprintFinishing = current;
+            // Console admission can advance the first native world tick before the loop
+            // charges a sprint tick. Stop through Minecraft's own finalizer at the exact
+            // observed game-time cut; never leave a sprint to overwrite a later unfreeze.
+            var rate = server.tickRateManager();
+            if (rate.isSprinting() && !rate.stopSprinting()
+                    && (rate.checkShouldSprintThisTick() || rate.isSprinting()))
+                throw new IllegalStateException("native sprint did not finish at the measured tick cut");
+            if (!rate.isFrozen()) throw new IllegalStateException("native sprint did not restore the frozen clock");
+            measurement = null;
             try (var turn = FullFinishingServices.forServer(server).serial(FullFinishingServices.Phase.SERVER_TASK)) {
                 snapshot(server, current.label, Map.of("tickNanos", current.tickNanos,
                     "startGameTime", current.startGameTime, "ticks", current.ticks,
                     "elapsedNanos", System.nanoTime() - current.started));
             }
+            System.out.println("STAGE5_MEASURED label=" + current.label + " ticks=" + current.ticks + " nativeSprintFinished=true");
         }
     }
     private static void snapshot(MinecraftServer server, String label, Map<String, Object> measurementData) {

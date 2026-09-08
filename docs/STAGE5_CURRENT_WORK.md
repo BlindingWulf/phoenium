@@ -161,3 +161,13 @@ its saved frozen state. The probe now lets native finalization finish and only t
 publishes STAGE5_MEASURED. This is a harness repair, not a production clock change.
 The independent Sol High review of 5aeb2fe found no actionable issue; coordinator-only
 registration-before-route publication remains an explicit requirement.
+
+`churn-final-4-a` rejected one extra native tick when merely awaiting sprint completion:
+console admission can run an initial game tick before the server loop charges a sprint
+tick. The exact cut now calls original `stopSprinting` (or the original zero-remaining
+finalizer) and requires the native frozen state, rather than changing time or ignoring
+the extra callback. `churn-final-4-b` passes: 800 actual ticks, 128 furnaces, three
+merge/replacement/split rounds, 12 actual replacement instances and 24 stale queued
+native read deliveries; natural process exit. Strict reference comparison is next.
+Full Java suite passes after the owner repair (834 tests / 88 suites); all 14 Python
+comparator negative tests pass, including the unchanged Stage 4 cases.
