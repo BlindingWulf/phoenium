@@ -8,6 +8,7 @@ import static org.junit.jupiter.api.Assertions.*;
 
 import com.mojang.brigadier.StringReader;
 import com.mojang.serialization.Lifecycle;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
@@ -26,6 +27,8 @@ import net.minecraft.world.entity.Display;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.EntitySpawnReason;
 import net.minecraft.world.entity.EntityTypes;
+import net.minecraft.util.RandomSource;
+import net.minecraft.world.level.levelgen.PositionalRandomFactory;
 import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.level.chunk.status.ChunkStatus;
 import net.minecraft.world.level.entity.EntityLookup;
@@ -34,6 +37,7 @@ import net.minecraft.world.level.storage.SavedDataStorage;
 import net.minecraft.world.level.storage.loot.IntRange;
 import net.minecraft.world.level.storage.loot.providers.number.ConstantValue;
 import net.minecraft.world.level.storage.loot.providers.number.StorageValue;
+import net.minecraft.world.level.storage.loot.providers.number.Sum;
 import net.minecraft.world.level.storage.loot.predicates.EntityHasScoreCondition;
 import net.minecraft.world.level.storage.loot.predicates.EnvironmentAttributeCheck;
 import net.minecraft.world.level.storage.loot.predicates.LootItemCondition;
@@ -52,19 +56,41 @@ final class FullRegisteredPredicateExecutionTest {
 
     @BeforeAll static void bootstrap() { FullTadpoleDecisionTest.bootstrap(); }
 
+    /** Invoked only by the disposable installed registration harness. */
+    static int runInstalled() throws Exception {
+        FullTadpoleDecisionTest.bootstrap();
+        var test = new FullRegisteredPredicateExecutionTest();
+        test.directory = Files.createTempDirectory("phoenium-installed-registered-predicates");
+        test.registeredValueCheckRunsOriginalSelector();
+        test.registeredNestedStorageValueCapturesBeforeOriginalSelectorWithoutEarlyStorageRead();
+        test.registeredEntityScoreUsesOriginalScoreboardContext();
+        test.registeredPositionalEnvironmentCheckUsesOriginalEnvironmentContext();
+        test.registeredRandomChanceUsesExactlyOneOriginalRandomDraw();
+        return 5;
+    }
+
     @Test void registeredValueCheckRunsOriginalSelector() throws Exception {
         runRegistered(new ValueCheckCondition(ConstantValue.exactly(3), IntRange.exact(3)),
                 "numeric candidate", (fixture, candidate) -> { });
     }
 
-    @Test void registeredStorageValueCapturesBeforeOriginalSelectorWithoutEarlyStorageRead() throws Exception {
+    @Test void registeredNestedStorageValueCapturesBeforeOriginalSelectorWithoutEarlyStorageRead() throws Exception {
         SavedDataStorage[] dataHolder = new SavedDataStorage[1];
+        CountingCommandStorage[] storageHolder = new CountingCommandStorage[1];
         try {
-            var provider = new StorageValue(STORAGE,
+            var nested = new StorageValue(STORAGE,
                     net.minecraft.commands.arguments.NbtPathArgument.nbtPath().parse(new StringReader("value")));
+            var provider = Sum.sum(ConstantValue.exactly(1), nested);
             runRegistered(new ValueCheckCondition(provider, IntRange.exact(3)),
                     "storage candidate", (fixture, candidate) -> set(fixture.world.level.getServer(),
-                            MinecraftServer.class, "commandStorage", storage(dataHolder, fixture)));
+                            MinecraftServer.class, "commandStorage", storage(dataHolder, storageHolder, fixture)),
+                    (fixture, candidate) -> {
+                        assertNotNull(storageHolder[0]);
+                        assertEquals(1, storageHolder[0].discoveryGets,
+                                "storage capture must perform one owner-free discovery read");
+                        assertEquals(1, storageHolder[0].originalGets,
+                                "the original selector must perform one finishing read");
+                    });
         } finally { if (dataHolder[0] != null) dataHolder[0].close(); }
     }
 
@@ -83,17 +109,40 @@ final class FullRegisteredPredicateExecutionTest {
                 EnvironmentAttributes.VILLAGER_ACTIVITY.defaultValue()), "environment candidate", (fixture, candidate) -> { });
     }
 
+    @Test void registeredRandomChanceUsesExactlyOneOriginalRandomDraw() throws Exception {
+        CountingRandomSource[] randomHolder = new CountingRandomSource[1];
+        runRegistered(new net.minecraft.world.level.storage.loot.predicates.LootItemRandomChanceCondition(
+                        ConstantValue.exactly(1)), "random candidate", (fixture, candidate) -> {
+                    var random = new CountingRandomSource(RandomSource.create(9917L)); randomHolder[0] = random;
+                    // The allocated fixture's getRandom answer closes over this field, while
+                    // the ordinary Level field is bypassed by the controlled endpoint.
+                    set(fixture.world, FullTadpoleDecisionTest.Fixture.class, "random", random);
+                }, (fixture, candidate) -> {
+                    assertNotNull(randomHolder[0]);
+                    assertEquals(1, randomHolder[0].floatDraws,
+                            "the original random-chance predicate must draw exactly once");
+                });
+    }
+
     @FunctionalInterface
     private interface Setup { void install(FullRegistrationFixture fixture, Entity candidate) throws Exception; }
 
-    private CommandStorage storage(SavedDataStorage[] dataHolder, FullRegistrationFixture fixture) {
+    private CommandStorage storage(SavedDataStorage[] dataHolder, CountingCommandStorage[] storageHolder,
+                                   FullRegistrationFixture fixture) {
         dataHolder[0] = new SavedDataStorage(directory, null, fixture.world.level.registryAccess());
-        var storage = new CommandStorage(dataHolder[0]);
-        var value = new CompoundTag(); value.putInt("value", 3); storage.set(STORAGE, value);
+        var storage = new CountingCommandStorage(dataHolder[0]); storageHolder[0] = storage;
+        var value = new CompoundTag(); value.putInt("value", 2); storage.set(STORAGE, value);
         return storage;
     }
 
+    @FunctionalInterface
+    private interface Verify { void verify(FullRegistrationFixture fixture, Entity candidate) throws Exception; }
+
     private static void runRegistered(LootItemCondition condition, String name, Setup setup) throws Exception {
+        runRegistered(condition, name, setup, (fixture, candidate) -> { });
+    }
+
+    private static void runRegistered(LootItemCondition condition, String name, Setup setup, Verify verify) throws Exception {
         var fixture = new FullRegistrationFixture(true);
         var lookup = new EntityLookup<Entity>();
         var candidate = EntityTypes.TEXT_DISPLAY.create(fixture.world.level, EntitySpawnReason.LOAD);
@@ -120,9 +169,39 @@ final class FullRegisteredPredicateExecutionTest {
             assertEquals(name, FullSavedContextTestHooks.text(
                     assertInstanceOf(Display.TextDisplay.class, fixture.world.inserted.getFirst())).getString());
             assertFalse(fixture.barrier.tripped());
+            verify.verify(fixture, candidate);
         } finally {
             lookup.remove(candidate); fixture.stop(); FullFinishingServices.stopped(fixture.world.level.getServer());
         }
         assertCleanup(fixture);
+    }
+
+    private static final class CountingCommandStorage extends CommandStorage {
+        int discoveryGets;
+        int originalGets;
+
+        CountingCommandStorage(SavedDataStorage storage) { super(storage); }
+
+        @Override public CompoundTag get(Identifier id) {
+            if (FullFinishingServices.finishing()) originalGets++;
+            else discoveryGets++;
+            return super.get(id);
+        }
+    }
+
+    private static final class CountingRandomSource implements RandomSource {
+        private final RandomSource delegate;
+        int floatDraws;
+        CountingRandomSource(RandomSource delegate) { this.delegate = delegate; }
+        @Override public RandomSource fork() { return new CountingRandomSource(delegate.fork()); }
+        @Override public PositionalRandomFactory forkPositional() { return delegate.forkPositional(); }
+        @Override public void setSeed(long seed) { delegate.setSeed(seed); }
+        @Override public int nextInt() { return delegate.nextInt(); }
+        @Override public int nextInt(int bound) { return delegate.nextInt(bound); }
+        @Override public long nextLong() { return delegate.nextLong(); }
+        @Override public boolean nextBoolean() { return delegate.nextBoolean(); }
+        @Override public float nextFloat() { floatDraws++; return delegate.nextFloat(); }
+        @Override public double nextDouble() { return delegate.nextDouble(); }
+        @Override public double nextGaussian() { return delegate.nextGaussian(); }
     }
 }

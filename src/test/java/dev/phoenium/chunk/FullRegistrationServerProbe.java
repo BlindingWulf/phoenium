@@ -141,6 +141,7 @@ public final class FullRegistrationServerProbe implements DedicatedServerModInit
             contexts.ownedSelfCustomNamePublishesNestedStorageDependenciesBeforeOriginalEntitySerialization(true);
             contexts.directory = java.nio.file.Files.createTempDirectory("phoenium-full-invalid-name-probe");
             contexts.originalInvalidCustomNameDecodeDoesNotLeakIntoTheNextInterpretedEntityOccurrence();
+            int registeredPredicateCases = FullRegisteredPredicateExecutionTest.runInstalled();
             var completion = new FullAuthoritativeFinishingTest();
             completion.originalFinishingAndSeparatePublicationCompleteExactlyOnce(false);
             completion.originalFinishingAndSeparatePublicationCompleteExactlyOnce(true);
@@ -153,6 +154,10 @@ public final class FullRegistrationServerProbe implements DedicatedServerModInit
                     + "sameWorldSelector=true registeredSelectorPredicate=true earlierSavedRootSelector=true sameWorldEntityNbt=true filteredSelfSelector=true nestedSelector=true interpretedSavedCustomName=true "
                     + "noPrivateCacheEntries=true claimedOperationRequired=true controlledWorldEndpoints=true "
                     + "controlledLowerGenerationOutputs=true javaagent=false");
+            System.out.println("PHOENIUM_FULL_REGISTERED_PREDICATE_PROBE PASS cases=" + registeredPredicateCases
+                    + " originalSelector=true valueCheck=true nestedStorageValue=true storageCapture=true "
+                    + "scoreboardContext=true positionalEnvironment=true randomChance=true "
+                    + "noEarlyStorageRead=true originalRandomDraws=1 javaagent=false");
         } catch (Throwable failure) {
             System.err.println("PHOENIUM_FULL_FINISHING_PROBE FAIL " + failure);
             throw failure;

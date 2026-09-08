@@ -169,6 +169,21 @@ with log.open("w") as output:
                 "installed FULL finishing probe omitted an expected branch/counter: " + finishing_probe[0]
             )
             manifest["finishingProbe"] = finishing_probe
+            registered_predicate_probe = [line for line in text.splitlines()
+                                          if "PHOENIUM_FULL_REGISTERED_PREDICATE_PROBE PASS" in line]
+            assert len(registered_predicate_probe) == 1, (
+                "connected registered predicate selector fixture did not pass exactly once"
+            )
+            required_registered_predicate_fields = (
+                "cases=5", "originalSelector=true", "valueCheck=true", "nestedStorageValue=true",
+                "storageCapture=true", "scoreboardContext=true", "positionalEnvironment=true",
+                "randomChance=true", "noEarlyStorageRead=true", "originalRandomDraws=1", "javaagent=false",
+            )
+            assert all(field in registered_predicate_probe[0] for field in required_registered_predicate_fields), (
+                "installed registered predicate probe omitted an expected branch/counter: "
+                + registered_predicate_probe[0]
+            )
+            manifest["registeredPredicateProbe"] = registered_predicate_probe
         input_exports = {}
         for name, selectors in {
             "world/level/chunk/ProtoChunk": ["phoenium$savedInput", "FullSavedInput.beforeWrite", "FullSavedInput.written"],
