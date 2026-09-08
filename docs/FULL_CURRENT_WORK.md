@@ -12,6 +12,26 @@ unindexed fields remain explicit deferred scope. On all required gates passing, 
 `STAGE3_SERIAL_CORRECTNESS_FROZEN`, stop work and produce the requested A–L closure report.
 No Stage4 implementation, public push/release or PASS tag is authorized.
 
+**Closure checkpoint:** main7974439 is clean and source integration is frozen except
+the active Sol cache review. Root40b9790 entity predicates:28 PASS (-58); Luna pending
+stack integrated asdf2cf58/745f672/509212e/cc408be/b138daf plus root7974439 correction:
+89 PASS (-60: pending12/context62/entityproducer4/entityexecution3/metadata2/inputAck6).
+All logs and exact XML are under main`run/full-resume/session-20260907/`; failed -55/-59
+compiler attempts are preserved. The -60 Core filter used the wrong package and selected
+no Core tests; final verification must include actual`dev.phoenium.CoreAcceptanceTest`.
+Root7974439 preserves pending capture staleness until whole-plan rebuild/ack, closes
+capacity refusal, and propagates observation wake failures without replacing originals.
+
+Sol stackb312283/8e6ecc2 (not main) replaces getIfPresent with a non-mutating pinned
+Guava bucket witness and152 focused PASS. Active last cases: a settled one-shot cache
+waiter must rearm for a second load; no LOADING/wait may slip between final R validation
+and original encode without actual producer evidence/exclusion; capture races retry;
+activity/waiter counters must prove zero cleanup. No new component scope is requested.
+Luna9842cc0 (not main) is harness-only prep based on current root; review required actual
+new command/sign/mannequin and pending-text method calls behind its new marker flags,
+plus current runtime cleanup counters. Luna owns early installed and the final one-SHA
+clean/focused/installed/fresh/disk/reload/vault campaign. No final artifact exists yet.
+
 Finish authoritative original FULL finishing and separate publication through installed
 probes, actual fresh/disk/reload and offline-client acceptance. Stage3/R-CHUNK-01 PARTIAL;
 Stage4 NOT STARTED. Pinned Minecraft26.2 / Java25 / Loader0.19.5 / Fabric0.159.0+26.2 /
