@@ -85,12 +85,16 @@ are integrated and covered by focused native-source oracles.
 
 ## Next unresolved campaign case
 
-Luna's shared real-TCP reference workload now logs in and receives A=(0,0) and
-B=(7,0). `run/stage4/reference-serial-receipt-20260908-072500` stalls at far (32,0)
-after teleport. Server continues normal network/tick activity; both process dumps
-are preserved. Luna owns the first missing native holder/ticket/FULL/generation
-prerequisite diagnosis. Do not increase timeouts, cap 5/5 or 8/8, substitute a
-server-only receipt, or silently widen the frozen supported topology.
+Luna's frozen real-TCP reference logs in and receives A=(0,0) and B=(7,0).
+`run/stage4/reference-far-native-error-20260908-084500` preserves the exact frozen
+JAR and the first native far prerequisite: after teleport to (520.5,65,8.5) and 120
+genuine ticks, center (32,0) has ticket 33, FULL/latest full and successful fullFuture,
+but tickingFuture=Unloaded. All eight halo holders have ticket 34, INACCESSIBLE,
+unloaded FULL/ticking futures; native block/entity-range and nearby checks are false.
+No current client chunk payload arrives. Both process dumps and packet/server logs
+are preserved. Luna now traces the actual ticket producer/player movement continuation
+and exact native send predicate upstream. Do not increase timeouts, cap 5/5 or 8/8,
+substitute server-only receipts or silently widen the frozen supported topology.
 
 Main harness now integrates Luna's coherent test-only work through `b558c68`,
 including `dec8c48`, diagnostic `2a6c0f0` / `0f57111` and the first observation
