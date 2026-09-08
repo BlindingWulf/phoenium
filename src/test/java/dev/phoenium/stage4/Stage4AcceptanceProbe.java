@@ -691,15 +691,24 @@ public final class Stage4AcceptanceProbe implements DedicatedServerModInitialize
         System.out.println("STAGE4_TRACE_TEMPORARY_RELEASED gameTime=" + level.getGameTime());
         pendingFarUnload = level;
         farUnloadDeadline = System.nanoTime() + 60_000_000_000L;
+        farUnloadNextDiagnostic = System.nanoTime() + 1_000_000_000L;
     }
 
     private static ServerLevel pendingFarUnload;
     private static long farUnloadDeadline;
+    private static long farUnloadNextDiagnostic;
     public static void observeFarUnload() {
         ServerLevel level = pendingFarUnload;
         if (level == null) return;
         long key = centerKey(REGION_B_FAR.getX() >> 4, REGION_B_FAR.getZ() >> 4);
         var map = level.getChunkSource().chunkMap;
+        if (System.nanoTime() >= farUnloadNextDiagnostic) {
+            farUnloadNextDiagnostic = System.nanoTime() + 10_000_000_000L;
+            inspectDemand(level, REGION_B_FAR.getX() >> 4, REGION_B_FAR.getZ() >> 4);
+            System.out.println("STAGE4_FAR_UNLOAD_WAIT gameTime=" + level.getGameTime()
+                + " visible=" + (((dev.phoenium.chunk.FullInputView) map).phoenium$visibleInput(key) != null)
+                + " pendingSaved=" + Stage4Trace.farPendingSaved());
+        }
         if (map.getUpdatingChunkIfPresent(key) == null
                 && ((dev.phoenium.chunk.FullInputView) map).phoenium$visibleInput(key) == null
                 && Stage4Trace.farPendingSaved()) {

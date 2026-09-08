@@ -348,6 +348,38 @@ class Stage3OwnershipTest {
         assertEquals(1, custody.duplicateClaims());
     }
 
+    @Test void terminalDeliverySettlesDisconnectedPlayerExactlyOnceWithoutAuthority() {
+        Harness h = new Harness();
+        ObjectOwnership player = h.objects.admit("disconnect", OwnedObjectKind.PLAYER, h.aKey);
+        var request = h.envelope("disconnect", player.objectEpoch(), "player-movement", AdmissionPolicy.REROUTE, 901);
+        assertEquals(ObjectOwnerGateway.Delivery.QUEUED, h.objectsGateway.submit(request));
+        h.objects.remove(player.objectId());
+        h.scheduler.advanceOne();
+        h.scheduler.advanceOne();
+        assertEquals(List.of(new TaskCorrelationId(901)), h.rejectedDeliveries);
+        assertEquals(0, h.playerMutations);
+        assertEquals(0, h.a.inboxSize());
+        assertFalse(h.fixture.barrier.tripped());
+        assertEquals(ObjectOwnerGateway.Delivery.REJECTED_ABSENT, h.objectsGateway.submit(request));
+        assertEquals(1, h.rejectedDeliveries.size(), "initial rejection remains the submitting caller's custody");
+    }
+
+    @Test void terminalDeliveryAcknowledgesStaleRejectButRetainsReroutedRequest() {
+        Harness h = new Harness();
+        ObjectOwnership player = h.objects.admit("moving", OwnedObjectKind.PLAYER, h.aKey);
+        assertEquals(ObjectOwnerGateway.Delivery.QUEUED, h.objectsGateway.submit(
+            h.envelope("moving", player.objectEpoch(), "player-movement", AdmissionPolicy.REJECT, 902)));
+        assertEquals(ObjectOwnerGateway.Delivery.QUEUED, h.objectsGateway.submit(
+            h.envelope("moving", player.objectEpoch(), "player-movement", AdmissionPolicy.REROUTE, 903)));
+        assertTrue(h.topology(Map.of(h.aKey, h.bId, h.bKey, h.bId)));
+        for (int i = 0; i < 6; i++) h.scheduler.advanceOne();
+        assertEquals(List.of(new TaskCorrelationId(902)), h.rejectedDeliveries);
+        assertEquals(1, h.playerMutations);
+        assertEquals(h.bId, h.lastMutationRegion);
+        assertEquals(0, h.a.inboxSize() + h.b.inboxSize());
+        assertFalse(h.fixture.barrier.tripped());
+    }
+
     private static final class Harness implements ObjectOperationExecutor {
         final CoreFixture fixture = new CoreFixture();
         final WorldId world = fixture.world;
@@ -359,7 +391,13 @@ class Stage3OwnershipTest {
         final RegionScheduler scheduler = new RegionScheduler(runtimes, directory, fixture.barrier, null, this);
         final OwnerGateway gateway = new OwnerGateway(directory, runtimes, scheduler);
         final ObjectOwnershipRegistry objects = new ObjectOwnershipRegistry(directory);
-        final ObjectOwnerGateway objectsGateway = new ObjectOwnerGateway(objects, directory, gateway);
+        final List<TaskCorrelationId> rejectedDeliveries = new java.util.ArrayList<>();
+        final ObjectOwnerGateway objectsGateway = new ObjectOwnerGateway(objects, directory, gateway, operation -> {
+            assertTrue(OwnershipContext.current().isEmpty(), "terminal custody acknowledgement must not acquire authority");
+            assertFalse(a.leases().hasActiveLease());
+            assertFalse(b.leases().hasActiveLease());
+            rejectedDeliveries.add(operation.correlationId());
+        });
         final ChunkCustody custody = new ChunkCustody();
         final ChunkCompletionGateway chunkGateway = new ChunkCompletionGateway(directory, gateway, custody);
         final Map<TaskCorrelationId, ChunkWorkRequest> chunkRequests = new ConcurrentHashMap<>();

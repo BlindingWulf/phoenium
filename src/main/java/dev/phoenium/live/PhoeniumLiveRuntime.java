@@ -162,7 +162,7 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
         if (regions.isEmpty()) throw new IllegalStateException("no server levels available for Stage 2 live binding");
         scheduler = new RegionScheduler(runtimes, directory, barrier, this, this);
         gateway = new OwnerGateway(directory, runtimes, scheduler);
-        objectGateway = new ObjectOwnerGateway(objects, directory, gateway);
+        objectGateway = new ObjectOwnerGateway(objects, directory, gateway, this::acknowledgeRejectedPacket);
         chunkGateway = new ChunkCompletionGateway(directory, gateway, chunkCustody);
         regionalDispatcher = new RegionalServiceDispatcher("phoenium-regional-services", lifecycleStarts + 1,
             directory, runtimes, gateway, scheduler);
@@ -905,6 +905,14 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
             packets.remove(correlation);
             packetRejections++;
         }
+    }
+
+    private void acknowledgeRejectedPacket(TaskPayload.OwnedObjectOperation operation) {
+        if (OwnershipContext.current().isPresent())
+            throw new IllegalStateException("rejected packet acknowledgement retained gameplay authority");
+        if (packets.remove(operation.correlationId()) == null)
+            throw new IllegalStateException("missing rejected packet custody " + operation.correlationId());
+        packetRejections++;
     }
 
     @Override

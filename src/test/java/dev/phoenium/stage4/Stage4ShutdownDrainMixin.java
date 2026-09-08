@@ -12,16 +12,22 @@ import org.spongepowered.asm.mixin.injection.At;
 /** Observe a slow original shutdown predicate on its own server thread. */
 @Mixin(PhoeniumLiveRuntime.class)
 abstract class Stage4ShutdownDrainMixin {
+    @org.spongepowered.asm.mixin.injection.Inject(method = "acknowledgeRejectedPacket", at = @At("RETURN"), require = 0)
+    private void rejection(dev.phoenium.task.TaskPayload.OwnedObjectOperation operation,
+                           org.spongepowered.asm.mixin.injection.callback.CallbackInfo callback) {
+        System.out.println("STAGE4_REJECTED_DELIVERY_ACK operation=" + operation);
+    }
+
     @WrapOperation(method = "drainAdmittedWork", at = @At(value = "INVOKE",
         target = "Lnet/minecraft/server/MinecraftServer;managedBlock(Ljava/util/function/BooleanSupplier;)V"), require = 0)
     private void drain(MinecraftServer server, BooleanSupplier ready, Operation<Void> original) {
         long[] next = {0};
         original.call(server, (BooleanSupplier) () -> {
             boolean done = ready.getAsBoolean();
-            if (!done && System.nanoTime() >= next[0]) {
+            if (done || System.nanoTime() >= next[0]) {
                 next[0] = System.nanoTime() + 1_000_000_000L;
                 try {
-                    StringBuilder state = new StringBuilder("STAGE4_DRAIN_WAIT");
+                    StringBuilder state = new StringBuilder(done ? "STAGE4_DRAIN_COMPLETE" : "STAGE4_DRAIN_WAIT");
                     for (String name : new String[]{"packets", "chunkRequests", "regionalDispatcher", "regionalSaves", "runtimes"}) {
                         var field = PhoeniumLiveRuntime.class.getDeclaredField(name); field.setAccessible(true);
                         Object value = field.get(this);

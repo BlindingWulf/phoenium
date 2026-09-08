@@ -13,11 +13,17 @@ public final class ObjectOwnerGateway {
     private final ObjectOwnershipRegistry objects;
     private final dev.phoenium.topology.RegionDirectory directory;
     private final OwnerGateway gateway;
+    private final java.util.function.Consumer<TaskPayload.OwnedObjectOperation> rejectedDelivery;
     private long staleReroutes;
     private long staleRejections;
 
     public ObjectOwnerGateway(ObjectOwnershipRegistry objects, dev.phoenium.topology.RegionDirectory directory, OwnerGateway gateway) {
+        this(objects, directory, gateway, ignored -> { });
+    }
+    public ObjectOwnerGateway(ObjectOwnershipRegistry objects, dev.phoenium.topology.RegionDirectory directory,
+                              OwnerGateway gateway, java.util.function.Consumer<TaskPayload.OwnedObjectOperation> rejectedDelivery) {
         this.objects = Objects.requireNonNull(objects, "objects"); this.directory = Objects.requireNonNull(directory, "directory"); this.gateway = Objects.requireNonNull(gateway, "gateway");
+        this.rejectedDelivery = Objects.requireNonNull(rejectedDelivery, "rejectedDelivery");
         gateway.scheduler().installObjectDeliveryValidator(this);
     }
     public Delivery submit(OwnedObjectEnvelope requested) {
@@ -54,7 +60,11 @@ public final class ObjectOwnerGateway {
         if (valid) return true;
         OwnedObjectEnvelope retry = new OwnedObjectEnvelope(operation.objectId(), operation.expectedObjectEpoch(), operation.operationKind(),
             queued.origin(), operation.correlationId(), queued.sequence(), queued.admissionPolicy());
-        submit(retry);
+        Delivery delivery = submit(retry);
+        // A queued operation can lose its object before delivery (for example disconnect).
+        // Terminal rejection settles its retained request without executing the body. A
+        // rerouted/deferred operation still belongs to its next inbox and must retain it.
+        if (delivery != Delivery.QUEUED && delivery != Delivery.REROUTED) rejectedDelivery.accept(operation);
         return false;
     }
     public enum Delivery { QUEUED, REROUTED, REJECTED_STALE, REJECTED_ABSENT, REJECTED_GATEWAY }

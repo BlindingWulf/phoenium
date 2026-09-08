@@ -4,6 +4,33 @@ Stage 4 remains **PARTIAL**, Stage 5 OFF, one gameplay worker, parallel gameplay
 This section supersedes the historical worker assignments and next-step instructions below.
 The session began from clean `2b3080b`; all newer work is preserved. No agents are running.
 
+## Finalization recovery — terminal packet delivery
+
+- Recovery parent `b60591e`. Production SHA256 **43AAC30184E5C77784D7A56590AA23A87DC86438684EB2B2F2577A197F4DD81E**.
+- ObjectOwnerGateway formerly dropped a queued envelope after terminal delivery rejection without
+  acknowledging the retained runtime packet. Disconnect removes its object ownership; delivery
+  correctly rejects without execution, but the packet remained forever in the admitted-work drain.
+  The gateway now notifies a terminal-rejection callback; the runtime removes that exact correlation
+  and counts rejection without a lease or original callback. Rerouted/deferred requests retain custody.
+  Both focused terminal-delivery tests FAIL with the old behavior restored and PASS with the fix:
+  `run/stage4/terminal-delivery-negative-control.log`, `terminal-delivery-build.log`.
+- Complete suite **818 tests / 87 suites, zero failures/errors/skips**, final production packaging PASS:
+  `run/stage4/final-suite-terminal-delivery-results.json`, `final-packaging-terminal-delivery.json`.
+  Same-source probes prepared; no production edits planned unless a final gate exposes a real bug.
+- Candidate5AA currently running on final43AAC...: `run/stage4/finish-candidate-5-aa-launch.log`.
+  Test-only shutdown diagnostics now report exact rejected operation identity and actual empty
+  admitted-work drain before cleanup, in addition to post-stop topology/lease zero checks.
+- Candidate5Z failed before gameplay completion because original far unload did not settle at the
+  frozen +4 boundary. Its stop was normal with zero residue; it is NOT PASS. Current probe adds only
+  read-only native far holder/ticket diagnostics to resolve this if reproduced. No unload/tick gate
+  is weakened. Candidate5Y's captured stop hang remains preserved evidence of the drain failure;
+  its thread dump alone does not identify the retained map item.
+- User finalization directive: use milestone `STAGE4_PARALLEL_CORRECTNESS_FROZEN` only after all
+  required final gates pass; gameplay workers remain1 and parallel remainsOFF. Do not start Stage5.
+  Remaining same-JAR gates:5AA both stops/restart+strict reference5J comparison, candidate8D/reference8C,
+  authoritative FULL fresh/reload, controlled FULL, saved vault/adverse; final report/evidence freeze.
+  No unrelated historical campaigns or speculative audits. This section supersedes statuses below.
+
 - Recovery parent **ce3f980**, current production **28EE6B1757BB7C24D7D7A0F5AC4605969426BDC2561521E479F9C0055FDF3C94**.
   Startup tracker bootstrap now reserves its named service turn before reading preexisting native
   trackers. Complete suite816 tests/87 suites PASS, zero failures/errors/skips:
