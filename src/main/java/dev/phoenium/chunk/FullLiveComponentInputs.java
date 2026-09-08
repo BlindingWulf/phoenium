@@ -138,16 +138,15 @@ public final class FullLiveComponentInputs {
     }
 
     static BlockField blockField(String path) {
-        if (path.equals("CustomName")) return BlockField.CUSTOM_NAME;
-        if (path.equals("LastOutput")) return BlockField.COMMAND_LAST_OUTPUT;
-        if (fieldPath(path, "front_text.messages")) return BlockField.SIGN_FRONT_MESSAGES;
-        if (fieldPath(path, "front_text.filtered_messages")) return BlockField.SIGN_FRONT_FILTERED_MESSAGES;
-        if (fieldPath(path, "back_text.messages")) return BlockField.SIGN_BACK_MESSAGES;
-        if (fieldPath(path, "back_text.filtered_messages")) return BlockField.SIGN_BACK_FILTERED_MESSAGES;
+        List<String> fields = FullNbtPathInputs.leadingFields(path, 2);
+        if (!fields.isEmpty() && fields.getFirst().equals("CustomName")) return BlockField.CUSTOM_NAME;
+        if (!fields.isEmpty() && fields.getFirst().equals("LastOutput")) return BlockField.COMMAND_LAST_OUTPUT;
+        if (fields.size() < 2) return null;
+        if (fields.get(0).equals("front_text") && fields.get(1).equals("messages")) return BlockField.SIGN_FRONT_MESSAGES;
+        if (fields.get(0).equals("front_text") && fields.get(1).equals("filtered_messages")) return BlockField.SIGN_FRONT_FILTERED_MESSAGES;
+        if (fields.get(0).equals("back_text") && fields.get(1).equals("messages")) return BlockField.SIGN_BACK_MESSAGES;
+        if (fields.get(0).equals("back_text") && fields.get(1).equals("filtered_messages")) return BlockField.SIGN_BACK_FILTERED_MESSAGES;
         return null;
-    }
-    private static boolean fieldPath(String path, String field) {
-        return path.equals(field) || path.startsWith(field + "[");
     }
 
     static Measure measureBlock(BlockEntity block, BlockField field, int depth) {

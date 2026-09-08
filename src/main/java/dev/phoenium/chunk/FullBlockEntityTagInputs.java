@@ -69,6 +69,8 @@ public final class FullBlockEntityTagInputs {
     }
 
     public static final class Capture {
+        private record ComponentMeasure(List<net.minecraft.nbt.Tag> tags, long bytes) { }
+        private record ComponentCopies(List<FullSavedTextInputs.Saved> values, long bytes) { }
         private final Source source;
         private final Occurrence occurrence;
         private final Reload reload;
@@ -104,48 +106,54 @@ public final class FullBlockEntityTagInputs {
         /** Returns every component-valued slot of the audited serialized field. Classification
          * is deliberately conservative and does not evaluate an arbitrary NBT path. */
         List<FullSavedTextInputs.Saved> components(String path, LongPredicate reserve, Runnable changed) {
-            synchronized (this) {
-                if (!valid()) throw new ChunkProtocolException("pending block-entity component source changed before field capture");
-            }
-            List<net.minecraft.nbt.Tag> tags = componentTags(path);
-            long admitted = 0L;
-            for (var tag : tags) admitted = Math.addExact(admitted, FullSavedTextInputs.measureTag(tag));
+            var initial = source.custody.observeIfAvailable(() -> componentMeasure(path));
+            if (!initial.acquired() || initial.value() == null) throw occurrence.retry(changed, reload, reloadRevision);
+            long admitted = initial.value().bytes();
             if (!reserve.test(admitted)) throw new Capacity();
-            if (!valid()) throw occurrence.retry(changed, reload, reloadRevision);
             // The reservation callback may have run a writer or lifecycle transition. Refresh
             // the exact audited slots and scalar measure before any detached copy is made.
-            tags = componentTags(path);
-            long refreshed = 0L;
-            for (var tag : tags) refreshed = Math.addExact(refreshed, FullSavedTextInputs.measureTag(tag));
-            if (refreshed > admitted) throw new Capacity();
-            if (!valid()) throw occurrence.retry(changed, reload, reloadRevision);
-            var result = new ArrayList<FullSavedTextInputs.Saved>(tags.size());
-            for (var tag : tags) result.add(FullSavedTextInputs.captureTag(tag, source.custody));
-            return List.copyOf(result);
+            var copies = source.custody.observeIfAvailable(() -> {
+                var refreshed = componentMeasure(path);
+                if (refreshed == null || refreshed.bytes() > admitted) return null;
+                var result = new ArrayList<FullSavedTextInputs.Saved>(refreshed.tags().size());
+                for (var tag : refreshed.tags()) result.add(FullSavedTextInputs.captureTag(tag, source.custody));
+                return new ComponentCopies(List.copyOf(result), refreshed.bytes());
+            });
+            if (!copies.acquired() || copies.value() == null) {
+                var refreshed = source.custody.observeIfAvailable(() -> componentMeasure(path));
+                if (refreshed.acquired() && refreshed.value() != null && refreshed.value().bytes() > admitted)
+                    throw new Capacity();
+                throw occurrence.retry(changed, reload, reloadRevision);
+            }
+            return copies.value().values();
+        }
+        private ComponentMeasure componentMeasure(String path) {
+            if (!validUnderObservation()) return null;
+            List<net.minecraft.nbt.Tag> tags = componentTags(path);
+            long bytes = 0L;
+            for (var tag : tags) bytes = Math.addExact(bytes, FullSavedTextInputs.measureTag(tag));
+            return new ComponentMeasure(List.copyOf(tags), bytes);
+        }
+        private synchronized boolean validUnderObservation() {
+            return source.validSnapshot(snapshot) && (consumed || occurrence.valid()
+                    && (reload == null || reload.valid(reloadRevision)));
         }
         private List<net.minecraft.nbt.Tag> componentTags(String path) {
             var result = new ArrayList<net.minecraft.nbt.Tag>();
-            if (path.equals("CustomName")) {
+            var fields = FullNbtPathInputs.leadingFields(path, 2);
+            if (fields.size() == 1 && fields.getFirst().equals("CustomName")) {
                 var tag = source.tag.get("CustomName"); if (tag != null) result.add(tag);
                 return result;
             }
-            if (path.equals("LastOutput")) {
+            if (fields.size() == 1 && fields.getFirst().equals("LastOutput")) {
                 if (!source.tag.getBooleanOr("TrackOutput", true)) return result;
                 var tag = source.tag.get("LastOutput"); if (tag != null) result.add(tag);
                 return result;
             }
-            String side;
-            boolean filtered;
-            if (path.equals("front_text.messages") || path.startsWith("front_text.messages[")) {
-                side = "front_text"; filtered = false;
-            } else if (path.equals("front_text.filtered_messages") || path.startsWith("front_text.filtered_messages[")) {
-                side = "front_text"; filtered = true;
-            } else if (path.equals("back_text.messages") || path.startsWith("back_text.messages[")) {
-                side = "back_text"; filtered = false;
-            } else if (path.equals("back_text.filtered_messages") || path.startsWith("back_text.filtered_messages[")) {
-                side = "back_text"; filtered = true;
-            } else return result;
-            var text = source.tag.getCompound(side).orElse(null);
+            if (fields.size() != 2 || !(fields.getFirst().equals("front_text") || fields.getFirst().equals("back_text"))) return result;
+            boolean filtered = fields.get(1).equals("filtered_messages");
+            if (!filtered && !fields.get(1).equals("messages")) return result;
+            var text = source.tag.getCompound(fields.getFirst()).orElse(null);
             if (text == null) return result;
             addSlots(result, text.getListOrEmpty(filtered ? "filtered_messages" : "messages"));
             if (filtered) addSlots(result, text.getListOrEmpty("messages"));
@@ -426,6 +434,10 @@ public final class FullBlockEntityTagInputs {
         boolean valid(FullSavedInput.Snapshot snapshot) {
             synchronized (this) { if (owners == 0) return false; }
             return custody.available() && custody.snapshot() == snapshot;
+        }
+        boolean validSnapshot(FullSavedInput.Snapshot snapshot) {
+            synchronized (this) { if (owners == 0) return false; }
+            return custody.snapshot() == snapshot;
         }
         AutoCloseable retain(FullSavedInput.Snapshot snapshot, Runnable changed) {
             var use = new Use(this, changed); listeners.add(changed);

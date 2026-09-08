@@ -42,6 +42,15 @@ public final class FullSavedInput {
         try { return captureExclusive(roots); } finally { endWrite(); }
     }
     record CaptureAttempt(boolean acquired, boolean selected, boolean capacity, Snapshot snapshot) { }
+    record ObservationAttempt<T>(boolean acquired, T value) { }
+    /** Runs a bounded saved-input read under the same nonblocking observation fence used by
+     * original saved readers. A busy writer/observer returns acquired=false for retry. */
+    <T> ObservationAttempt<T> observeIfAvailable(java.util.function.Supplier<T> action) {
+        tracking = true;
+        if (!observing.compareAndSet(false, true)) return new ObservationAttempt<>(false, null);
+        try { return new ObservationAttempt<>(true, action.get()); }
+        finally { endWrite(); }
+    }
     /** Nonblocking producer observation used where an overlapping legitimate writer supplies a
      * completion notification. An unacquired attempt means retry after that producer releases its
      * turn. The current snapshot is reused under the observation fence so a read can never retain

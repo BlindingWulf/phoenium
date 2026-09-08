@@ -308,6 +308,14 @@ class FullPendingBlockTextInputTest {
                     f.world.level.registryAccess(), () -> { }, ignored -> true);
             assertNotNull(fresh);
             assertDoesNotThrow(() -> fresh.components("front_text.messages[]", ignored -> true, () -> { }));
+            var source = FullSavedCollections.source(tag);
+            source.beforeWrite();
+            try {
+                var busy = assertThrows(FullBlockEntityTagInputs.Retry.class, () ->
+                        fresh.components("front_text.messages[]", ignored -> true, () -> { }));
+                busy.waiter.close();
+            } finally { source.endWrite(); }
+            assertDoesNotThrow(() -> fresh.components("front_text.messages[]", ignored -> true, () -> { }));
         } finally {
             if (waiter != null) waiter.close();
             f.stop(); FullFinishingServices.stopped(f.world.level.getServer());
