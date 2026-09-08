@@ -11,6 +11,7 @@ import net.minecraft.client.multiplayer.ClientPacketListener;
 import net.minecraft.client.multiplayer.ServerData;
 import net.minecraft.client.multiplayer.resolver.ServerAddress;
 import net.minecraft.network.chat.Component;
+import net.fabricmc.fabric.api.client.gametest.v1.TestInput;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.level.chunk.status.ChunkStatus;
 
@@ -74,26 +75,34 @@ public final class Stage4ClientTraceTest implements FabricClientGameTest {
             // freezing.  This avoids a synchronous managed getChunk wait in the server command,
             // while each client-side FULL receipt proves the native holder future completed.
             command(server, "tp " + USER + " 8.5 65 8.5");
+            nudgeAfterTeleport(context);
             waitForClientChunks(context, new int[][] {{0, 0}}, START_TIMEOUT_TICKS);
             command(server, "stage4trace prepare-a");
             awaitLog(context, server, log, "STAGE4_TRACE_PREPARED_POINT label=A", START_TIMEOUT_TICKS);
-            ClientTraceObservations.clear();
             command(server, "tp " + USER + " 120.5 65 8.5");
+            nudgeAfterTeleport(context);
             waitForClientChunks(context, new int[][] {{7, 0}}, START_TIMEOUT_TICKS);
             command(server, "stage4trace prepare-b");
             awaitLog(context, server, log, "STAGE4_TRACE_PREPARED_POINT label=B", START_TIMEOUT_TICKS);
-            ClientTraceObservations.clear();
             command(server, "tp " + USER + " 520.5 65 8.5");
+            nudgeAfterTeleport(context);
+            command(server, "stage4trace inspect-far");
+            awaitLog(context, server, log, "STAGE4_TRACE_FAR_DEMAND_DONE center=32,0", START_TIMEOUT_TICKS);
+            // Let the native distance manager consume the teleport before the second snapshot;
+            // the immediate snapshot above records the exact pre-update state as well.
+            for (int tick = 0; tick < 120; tick++) context.waitTick();
+            command(server, "stage4trace inspect-far-late");
+            awaitLog(context, server, log, "STAGE4_TRACE_FAR_DEMAND_DONE_LATE center=32,0", START_TIMEOUT_TICKS);
             waitForClientChunks(context, new int[][] {{32, 0}}, START_TIMEOUT_TICKS);
             command(server, "stage4trace prepare-far");
             awaitLog(context, server, log, "STAGE4_TRACE_PREPARED_POINT label=far", START_TIMEOUT_TICKS);
-            ClientTraceObservations.clear();
             command(server, "tp " + USER + " 520.5 65 200.5");
+            nudgeAfterTeleport(context);
             waitForClientChunks(context, new int[][] {{32, 12}}, START_TIMEOUT_TICKS);
             command(server, "stage4trace prepare-deferred");
             awaitLog(context, server, log, "STAGE4_TRACE_PREPARED_FAR", START_TIMEOUT_TICKS);
-            ClientTraceObservations.clear();
             command(server, "tp " + USER + " 8.5 65 8.5");
+            nudgeAfterTeleport(context);
             waitForClientChunks(context, new int[][] {{0, 0}}, START_TIMEOUT_TICKS);
             command(server, "stage4trace freeze");
             awaitLog(context, server, log, "STAGE4_TRACE_CLOCK_FROZEN", START_TIMEOUT_TICKS);
@@ -119,22 +128,24 @@ public final class Stage4ClientTraceTest implements FabricClientGameTest {
             awaitLog(context, server, log, "STAGE4_TRACE_CLOCK_STEP_REACHED label=initial", START_TIMEOUT_TICKS);
             assertClientEntity(context, ENTITY_A, 8, 8, true);
             command(server, "tp " + USER + " 8.5 65 8.5");
+            nudgeAfterTeleport(context);
             command(server, "stage4trace barrier setup");
             awaitLog(context, server, log, "STAGE4_TRACE_BARRIER label=setup", START_TIMEOUT_TICKS);
             command(server, "stage4trace step settle 80");
             awaitLog(context, server, log, "STAGE4_TRACE_CLOCK_STEP_REACHED label=settle", START_TIMEOUT_TICKS);
             command(server, "tp " + USER + " 120.5 65 8.5");
+            nudgeAfterTeleport(context);
             command(server, "stage4trace barrier region-b");
             awaitLog(context, server, log, "STAGE4_TRACE_BARRIER label=region-b", START_TIMEOUT_TICKS);
             command(server, "stage4trace clear-block-probe-support");
-            ClientTraceObservations.clear();
+            ClientTraceObservations.clearPacketEvents();
             command(server, "stage4trace block-probe-a");
             command(server, "stage4trace step far-block 10");
             awaitLog(context, server, log, "STAGE4_TRACE_CLOCK_STEP_REACHED label=far-block", START_TIMEOUT_TICKS);
             assertClientPacket(context, "ClientboundBlockEventPacket", false,
                 "b0=4", "b1=21", "pos=BlockPos{x=8, y=65, z=8}");
             command(server, "stage4trace block-probe-check-a");
-            ClientTraceObservations.clear();
+            ClientTraceObservations.clearPacketEvents();
             command(server, "stage4trace block-probe-b");
             command(server, "stage4trace step moved-block 10");
             awaitLog(context, server, log, "STAGE4_TRACE_CLOCK_STEP_REACHED label=moved-block", START_TIMEOUT_TICKS);
@@ -155,6 +166,7 @@ public final class Stage4ClientTraceTest implements FabricClientGameTest {
             // its FULL dependencies have settled, so the real admission path cannot merge it
             // again while the split is being proposed.
             command(server, "tp " + USER + " 520.5 65 8.5");
+            nudgeAfterTeleport(context);
             command(server, "stage4trace barrier region-b-far");
             awaitLog(context, server, log, "STAGE4_TRACE_BARRIER label=region-b-far", START_TIMEOUT_TICKS);
             command(server, "stage4trace step settle-b-far 80");
@@ -174,6 +186,7 @@ public final class Stage4ClientTraceTest implements FabricClientGameTest {
             command(server, "stage4trace check-far");
             awaitLog(context, server, log, "STAGE4_TRACE_FAR_CHECK pass=true", START_TIMEOUT_TICKS);
             command(server, "tp " + USER + " 520.5 65 200.5");
+            nudgeAfterTeleport(context);
             command(server, "stage4trace barrier deferred-ready");
             awaitLog(context, server, log, "STAGE4_TRACE_BARRIER label=deferred-ready", START_TIMEOUT_TICKS);
             waitForClientChunks(context, new int[][] {{32, 12}}, START_TIMEOUT_TICKS);
@@ -182,7 +195,7 @@ public final class Stage4ClientTraceTest implements FabricClientGameTest {
             // Leave the original now+400 block obligation pending while allowing the migrated
             // far fluid/block (now+320) to execute under B after the split.  This is an exact
             // native frozen-clock step rather than a wall-clock/game-time deadline race.
-            ClientTraceObservations.clear();
+            ClientTraceObservations.clearPacketEvents();
             command(server, "stage4trace step post-split 10");
             awaitLog(context, server, log, "STAGE4_TRACE_CLOCK_STEP_REACHED label=post-split", START_TIMEOUT_TICKS);
             assertClientPacket(context, "ClientboundBlockEventPacket", true,
@@ -247,6 +260,25 @@ public final class Stage4ClientTraceTest implements FabricClientGameTest {
         }
         throw new AssertionError("client did not apply exact FULL chunks "
             + java.util.Arrays.deepToString(chunks) + " within " + timeoutTicks + " ticks");
+    }
+
+    /**
+     * A server-side /tp sends a native teleport packet, but vanilla only refreshes the
+     * DistanceManager player-simulation ticket when ChunkMap.move is reached.  The regular
+     * self-camera player tick does not call that method, so the next real client movement
+     * packet is part of this fixture's controlled input.  One short horizontal input keeps
+     * the player in the commanded chunk while completing teleport acknowledgement and the
+     * native remove/add-player ticket transition in both reference and candidate runs.
+     */
+    private static void nudgeAfterTeleport(ClientGameTestContext context) {
+        TestInput input = context.getInput();
+        input.holdKey(options -> options.keyLeft);
+        try {
+            context.waitTicks(2);
+        } finally {
+            input.releaseKey(options -> options.keyLeft);
+        }
+        context.waitTicks(2);
     }
 
     private static int clientSimulationDistance() {

@@ -73,6 +73,8 @@ public abstract class ClientConnectionTraceMixin {
         String packetPayload = approved(packet) ? payload(packet) : "<omitted>";
         if ("receive".equals(event)) {
             ClientTraceObservations.record(packetName + " " + packetPayload);
+            if (packet instanceof ClientboundLevelChunkWithLightPacket chunk)
+                ClientTraceObservations.recordChunk(chunk.getX(), chunk.getZ());
             persistentTrace(event, packetName, packetPayload);
         }
         System.out.println("PHOENIUM_FULL_CLIENT_TRACE event=" + event + " packet="

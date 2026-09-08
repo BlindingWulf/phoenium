@@ -73,6 +73,14 @@ public final class Stage4AcceptanceProbe implements DedicatedServerModInitialize
                     prepareChunk(context.getSource().getLevel(), REGION_B_FAR, "far");
                     return 1;
                 }))
+                .then(Commands.literal("inspect-far").executes(context -> {
+                    inspectFarDemand(context.getSource().getLevel(), "");
+                    return 1;
+                }))
+                .then(Commands.literal("inspect-far-late").executes(context -> {
+                    inspectFarDemand(context.getSource().getLevel(), "_LATE");
+                    return 1;
+                }))
                 .then(Commands.literal("prepare-deferred").executes(context -> {
                     prepareChunk(context.getSource().getLevel(), REGION_DEFERRED_EVENT, "deferred");
                     return 1;
@@ -295,6 +303,63 @@ public final class Stage4AcceptanceProbe implements DedicatedServerModInitialize
             System.out.println("STAGE4_TRACE_PREPARED routes=(0,0),(7,0) gameTime=" + level.getGameTime());
         if (label.equals("deferred"))
             System.out.println("STAGE4_TRACE_PREPARED_FAR routes=(32,0),(32,12) gameTime=" + level.getGameTime());
+    }
+
+    /**
+     * Bounded evidence for a real player-distance demand.  This command only reads the native
+     * ChunkMap/DistanceManager state immediately after the teleport; it does not create tickets,
+     * request generation, or substitute a server-side readiness assertion for the client receipt.
+     */
+    private static void inspectFarDemand(ServerLevel level, String markerSuffix) {
+        final int centerX = REGION_B_FAR.getX() >> 4;
+        final int centerZ = REGION_B_FAR.getZ() >> 4;
+        var map = level.getChunkSource().chunkMap;
+        var distance = map.getDistanceManager();
+        int simulation = level.getServer().getPlayerList().getSimulationDistance();
+        var player = level.players().stream().findFirst().orElse(null);
+        String playerState = player == null ? "player=none"
+            : "player=" + player.getX() + "," + player.getY() + "," + player.getZ()
+                + " lastSection=" + player.getLastSectionPos()
+                + " distanceToCenter=" + Math.sqrt(player.distanceToSqr(centerX * 16 + 8, 65, centerZ * 16 + 8));
+        System.out.println("STAGE4_TRACE_FAR_DEMAND" + markerSuffix + " center=" + centerX + "," + centerZ
+            + " simulationDistance=" + simulation + " " + playerState);
+        for (int dx = -1; dx <= 1; dx++) for (int dz = -1; dz <= 1; dz++) {
+            int x = centerX + dx;
+            int z = centerZ + dz;
+            long key = net.minecraft.world.level.ChunkPos.pack(x, z);
+            ChunkHolder holder = map.getUpdatingChunkIfPresent(key);
+            String holderState = holder == null ? "holder=absent" : "holder=present"
+                + " ticket=" + holder.getTicketLevel()
+                + " fullStatus=" + holder.getFullStatus()
+                + " latest=" + holder.getLatestStatus()
+                + " persisted=" + holder.getPersistedStatus()
+                + " fullFuture=" + futureState(holder.getFullChunkFuture())
+                + " tickingFuture=" + futureState(holder.getTickingChunkFuture())
+                + " futures=" + holder.getAllFutures().stream()
+                    .map(pair -> pair.getFirst() + ":" + futureState(pair.getSecond()))
+                    .collect(java.util.stream.Collectors.joining(","));
+            String demand = "chunk=" + x + "," + z
+                + " tracked=" + (player != null && map.isChunkTracked(player, x, z))
+                + " chunkLevel=" + distance.getChunkLevel(key, true)
+                + " blockRange=" + distance.inBlockTickingRange(key)
+                + " entityRange=" + distance.inEntityTickingRange(key)
+                + " nearby=" + distance.hasPlayersNearby(key);
+            System.out.println("STAGE4_TRACE_FAR_DEMAND_ROW" + markerSuffix + " " + demand + " " + holderState);
+        }
+        System.out.println("STAGE4_TRACE_FAR_DEMAND_DONE" + markerSuffix + " center=" + centerX + "," + centerZ);
+    }
+
+    private static String futureState(java.util.concurrent.CompletableFuture<?> future) {
+        if (future == null) return "null";
+        if (!future.isDone()) return "pending";
+        if (future.isCancelled()) return "cancelled";
+        if (future.isCompletedExceptionally()) return "exceptional";
+        Object result = future.getNow(null);
+        if (result instanceof net.minecraft.server.level.ChunkResult<?> chunkResult) {
+            if (chunkResult.isSuccess() && chunkResult.orElse(null) != null) return "success";
+            return "failure[" + chunkResult.getError() + "]";
+        }
+        return result == null ? "done-null" : "done";
     }
 
     /**
