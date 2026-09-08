@@ -1,6 +1,9 @@
 # Saved-selector cross-world authority decision — 2026-09-07
 
-Status: proposal; no cross-world gameplay authority enabled.
+Status: **deferred by the user's Stage 3 closure direction**; no cross-world gameplay
+authority enabled. The 2026-09-07 closure request explicitly permits arbitrary/global
+cross-world selectors and new cross-dimension owner bundles to remain unsupported.
+This proposal is preserved for a future authorized change and is not a closure gate.
 
 The requested saved-text completion includes selectors that can reach another
 dimension. The approved D1-F grant in `STAGE3_FULL_D1_D3_DECISIONS.md` permits
@@ -51,8 +54,9 @@ side-effect order. Implementation still requires positive cross-world original
 method tests, wrong/stale capability and partial-failure tests, installed adapters,
 and affected actual client/reload acceptance. An approval is not evidence of PASS.
 
-Recommendation: authorize this bounded owner-bundle extension. If the current
-one-world boundary is retained, global saved selectors remain an explicit missing
-binding and the FULL assignment cannot be reported complete. Existing block NBT,
-same-world contexts, service fixes and installed/client diagnosis continue
-independently while this decision is pending.
+Historical recommendation: authorize this bounded owner-bundle extension. That request
+is superseded for Stage 3 closure: the current one-world boundary remains in force.
+Global saved selectors return an explicit unmet input obligation before FULL execution;
+they never gain foreign object or RNG authority. The closure report must state this
+limitation. Implementing the proposal would require separate future authorization and
+the positive original-method and installed/reload evidence described above.
