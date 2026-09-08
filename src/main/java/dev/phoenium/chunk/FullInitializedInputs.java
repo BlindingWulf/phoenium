@@ -211,8 +211,17 @@ public final class FullInitializedInputs {
                     refinement.capacity ? "live context input consumer acknowledgement" : "live context target retention", null); return;
         }
         boolean refinedLive;
+        Throwable refinementFailure = null;
         try { refinedLive = plan.contexts != null && plan.contexts.refineLive(runtime, plan.graph, targets); }
-        finally { releaseRefinementTargets(refinement.pins); }
+        catch (Throwable failure) { refinementFailure = failure; refinedLive = false; }
+        try { releaseRefinementTargets(refinement.pins); }
+        catch (Throwable cleanup) {
+            if (refinementFailure == null) refinementFailure = cleanup;
+            else if (refinementFailure != cleanup) refinementFailure.addSuppressed(cleanup);
+        }
+        if (refinementFailure instanceof Error error) throw error;
+        if (refinementFailure instanceof RuntimeException failure) throw failure;
+        if (refinementFailure != null) throw new ChunkProtocolException("live context refinement failed", refinementFailure);
         if (refinedLive) {
             plan.evaluation = plan.contexts.unmet() != null
                     ? new Evaluation(State.UNRESOLVED, plan.contexts.unmet(), null)
@@ -276,12 +285,28 @@ public final class FullInitializedInputs {
         if (expanded != plan && consumers - otherExpanded + eligible.size() > limits.consumers)
             return new RefinementTargets(List.of(), true, false);
         var retained = new ArrayList<AutoCloseable>();
-        for (var target : eligible) {
-            AutoCloseable pin = target.availability == Availability.PUBLISHED ? runtime.published.retain(target.publication)
-                    : target.availability == Availability.BIOMES ? FullBiomeInputs.retain(runtime, target)
-                    : runtime.findGraph(target.holder).map(FullRegistrationRuntime.Graph::retainPrepared).orElse(null);
-            if (pin == null) { releaseRefinementTargets(retained); changed(); return new RefinementTargets(List.of(), false, true); }
-            retained.add(pin); consumers++;
+        try {
+            for (var target : eligible) {
+                AutoCloseable pin = target.availability == Availability.PUBLISHED ? runtime.published.retain(target.publication)
+                        : target.availability == Availability.BIOMES ? FullBiomeInputs.retain(runtime, target)
+                        : runtime.findGraph(target.holder).map(FullRegistrationRuntime.Graph::retainPrepared).orElse(null);
+                if (pin == null) {
+                    var abandoned = List.copyOf(retained); retained.clear(); releaseRefinementTargets(abandoned);
+                    changed(); return new RefinementTargets(List.of(), false, true);
+                }
+                retained.add(pin); consumers++;
+                if (plans.get(plan.graph) != plan || !plan.graph.inputRequested() || stale(plan)) {
+                    var abandoned = List.copyOf(retained); retained.clear(); releaseRefinementTargets(abandoned);
+                    release(plan.graph); changed();
+                    return new RefinementTargets(List.of(), false, true);
+                }
+            }
+        } catch (Throwable failure) {
+            try { releaseRefinementTargets(retained); }
+            catch (Throwable cleanup) { if (failure != cleanup) failure.addSuppressed(cleanup); }
+            if (failure instanceof Error error) throw error;
+            if (failure instanceof RuntimeException runtime) throw runtime;
+            throw new ChunkProtocolException("live context target acquisition failed", failure);
         }
         return new RefinementTargets(List.copyOf(retained), false, false);
     }

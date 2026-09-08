@@ -392,12 +392,26 @@ public final class FullSavedContextInputs {
         }
 
         private static boolean validLiveTarget(FullRegistrationRuntime runtime, FullInitializedInputs.Target target) {
-            if (runtime.visible(target.position()) != target.holder()) return false;
-            if (target.availability() == FullInitializedInputs.Availability.PUBLISHED)
-                return target.publication() != null && runtime.published.validates(target.publication());
+            if (runtime.visible(target.position()) != target.holder() || target.holder() == null
+                    || target.holder().getTicketLevel() != target.ticketLevel()) return false;
+            var evidence = (FullHolderEvidence) target.holder();
+            if (target.availability() == FullInitializedInputs.Availability.PUBLISHED) {
+                if (target.publication() == null || !runtime.published.validates(target.publication())
+                        || target.publicSlot() != evidence.phoenium$futures().get(net.minecraft.world.level.chunk.status.ChunkStatus.FULL.getIndex())
+                        || target.lowerSlot() != evidence.phoenium$futures().get(net.minecraft.world.level.chunk.status.ChunkStatus.SPAWN.getIndex())) return false;
+                var result = target.publicSlot().getNow(null); Object current = result == null ? null : result.orElse(null);
+                var actual = current instanceof net.minecraft.world.level.chunk.LevelChunk level ? level
+                        : current instanceof net.minecraft.world.level.chunk.ImposterProtoChunk imposter ? imposter.getWrapped() : null;
+                return actual == target.actual();
+            }
             if (target.availability() != FullInitializedInputs.Availability.PREPARED) return false;
             var targetGraph = runtime.findGraph(target.holder()).orElse(null);
-            return targetGraph != null && targetGraph.work.equals(target.work())
+            return targetGraph != null && targetGraph.inputActive() && targetGraph.lifecycle.equals(target.lifecycle())
+                    && targetGraph.work.equals(target.work())
+                    && target.reservation() == evidence.phoenium$startedWork().get()
+                    && target.lowerSlot() == evidence.phoenium$futures().get(net.minecraft.world.level.chunk.status.ChunkStatus.SPAWN.getIndex())
+                    && target.publicSlot() == evidence.phoenium$futures().get(net.minecraft.world.level.chunk.status.ChunkStatus.FULL.getIndex())
+                    && target.generationRetention() == evidence.phoenium$generationSaveSync()
                     && targetGraph.prepared().map(prepared -> prepared.actual() == target.actual()
                     && prepared.attempt().equals(target.preparationAttempt())).orElse(false);
         }
