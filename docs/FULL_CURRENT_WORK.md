@@ -9,10 +9,11 @@ Loom1.17.20 / Gradle9.5.1; view/simulation5, one gameplay worker, parallel OFF. 
 PhoeniumTest0 only; no push, release, PASS tag, accounts, GUI or production worlds.
 
 Recovery39105d25 preserves the interrupted source. Historical a7b40743/419 tests are not
-current proof. Main committed HEAD before this note:111f02c. Root has UNVERIFIED pending
-changes in ChunkStageAdmission/PendingVanillaStage/FullRegistrationRuntime for final
-same-lease component validation; compilation awaits Sol's Plan.validateLive binding.
-Keep this exact dirty work. No reset/stash/reconstruction.
+current proof. Main committed HEAD before this note:8704dfd. The final same-lease
+preclaim validation and original LocationPredicate block-query adapters now compile;
+live-context-integration-38 passed22 tests at a5e51c5. New live alias/numeric footprint
+followups are integrated at8704dfd; worker focused results below are not installed proof.
+Preserve newer source and unsuccessful evidence. No reset/stash/reconstruction.
 
 Lead retains user-selected Astra/Max and service_tier=default. Supported spawn controls
 selected gpt-5.6-sol/high and gpt-5.6-luna/high with fork_turns=none; useful minimal tasks
@@ -23,7 +24,7 @@ nickname-based identity claims, recursive agents, extra Astra, tier overrides or
 | --- | --- | --- |
 | Root | Phoenium / main | Admission, custody, cross-cutting integration, review, work note |
 | /root/sol_services | ../Phoenium-full-sol / recovery/full-services-sol | Live component dependency producers/consumers; owns FullSavedContextInputs/FullInitializedInputs and new live helpers/mixins/tests |
-| /root/luna_harness | ../Phoenium-full-luna / recovery/full-harness-luna | Independent pinned predicate-footprint audit; sole final build/installed/live/client/vault owner |
+| /root/luna_harness | ../Phoenium-full-luna / recovery/full-harness-luna | Registered numeric/environment predicate connected tests and footprint fixes; sole final build/installed/live/client/vault owner |
 
 ## Current source and focused verification
 
@@ -51,7 +52,8 @@ nickname-based identity claims, recursive agents, extra Astra, tier overrides or
   waits for read exit, including replacement and reentrant shutdown. Root context-read-37:
   24 PASS (new6+finishing6+custody12). Luna75cda02 -> main0187aca adds wrong-runtime and
   unpublished-FULL boundaries: context7+light16+adversarial28+custody12+services12=75 PASS.
-  This primitive is infrastructure; live producer/consumer connection is still pending.
+  Subsequent live producer/consumer connection is described below; final target retention
+  review remains active.
 * 480fdc4: TEST-only FullConstructionFragments expected hash updated from stale class
   bytes to pinned26.2 SHA4e5c8b1c192e9a77c713163762fff0382beb58580155d7e719d83e903963f72f.
   Original broad wildcard failure was diagnosed, not weakened: FullNonself48+serverTasks6
@@ -104,21 +106,40 @@ General new distant chunk demand during owned ordinary ticks remains a coverage 
 
 ## Immediate interfaces, incomplete bindings and next work
 
-1. Root pending changes use ContextUse before real FULL custody claim, validate live
+1. Root8a0ade6 changes use ContextUse before real FULL custody claim, validate live
    fields under the eventual R lease, then atomically transfer to the original claim
    without dropping R. Stale validation releases R/use/services and leaves original
    queued/uninvoked. Graph.contextFootprint(targets), encloseContextTargets(targets),
    validateContextInputs(claim) call Sol Plan.validateLive(claim,graph).
-   NOT compiled/tested yet: missing live method is the exact next dependency.
-2. Sol owns actual live interpreted Entity/BE component producers plus refinement pins,
-   capacity, raw list/array structural receipt and consumer tests. Never serialize or
-   resolve early. Add demand only after typed read exits. Direct legacy save roots are
-   uncached, but cached DataComponents can preserve old serialized output: not yet bound.
+   Root8b90433 binds original LocationPredicate.matches -> exact declared FULL cache
+   query and immediate block-entity read. New location3 tests prove original block/NBT
+   predicates on an unpublished prepared neighbor and dimension short-circuit. Main
+   a5e51c5 live-context-integration-38: location3+numeric6+contextRead7+finishing6=22 PASS;
+   log and archived XML under run/full-resume/session-20260907. No installed run yet.
+2. Sol8123e6c ->7118d21 binds actual live Entity.CustomName/TextDisplay.text and named
+   live BE fields without early serialization. Typed measure/capture reads retain raw
+   component/list/argument-array structural receipts; final validation uses the same R
+   lease as the eventual original FULL body. 7f9cf0a ->4307005 remeasures before clones,
+   charges null roots consistently, invalidates stale plans for real rebuild and adds
+   direct alias/absence/TextDisplay/depth positives. e9f9827 ->7a696ae connects registered
+   numeric STORAGE IDs to exact noninterpreting retained captures. Sol's focused batch
+   at e9f9827: contexts52+numeric6+location3+contextRead7+finishing6=74 PASS.
+   ACTIVE REVIEW: bind currently invokes refinement before final target pin loop; Sol
+   must prove/fix exact target retention and current entity/BE object-route correlation
+   before discovery reads, plus reentrant target retirement and conversion-candidate
+   growth proofs. Direct legacy save roots are uncached, but cached DataComponents can
+   preserve old serialized output: not yet bound. Command/sign/other component fields
+   and arbitrary legitimate interpreted paths still incomplete.
    Full pinned alias audit and exact source/bytecode hashes are in Luna
    run/full-resume/session-20260907/component-alias-audit-26.2.md.
-3. Registered predicate remaining: EntityPredicate heterogeneous subpredicates,
-   EnvironmentAttributeCheck, dynamic ValueCheck/EntityHasScore, unknown mod types.
-   Luna audits pinned vanilla footprints independently and sends findings to Sol/root.
+3. Luna5be36e1 ->a5e51c5 discovers dynamic numbers/ranges/score/storage syntax without
+   evaluation. 3010d9f ->8704dfd adds EnvironmentAttributeCheck BIOMES inputs and fixes
+   LocationPredicate.biomes to retain a3x3 BIOMES neighborhood independently of FULL
+   clauses. Predicate9+location3 PASS in Luna checkout. Actual numeric consumer tests
+   and installed probe/parser counts are Luna's next work; visitor-only proof is partial.
+   Structure location clauses explicitly unmet until data-dependent exact
+   STRUCTURE_REFERENCES/STRUCTURE_STARTS producer/consumer binding (root owns this next).
+   EntityPredicate heterogeneous/nested references/player-ray footprints remain.
 4. Cross-world saved-selector authority APPROVAL PENDING. Exact proposal:
    STAGE3_FULL_SELECTOR_CONTEXT_DECISION.md. Async question has no answer; D1-F forbids
    foreign virtual calls/cross-dimension same-world convergence. Do not enable proposed
@@ -128,7 +149,7 @@ General new distant chunk demand during owned ordinary ticks remains a coverage 
    on one recorded production JAR. Root reviews current diff/manifests; update acceptance
    ledger and commit verified work. No competing root/live servers, no optimistic PASS.
 
-Latest exposed weekly Codex window:2% used after previously observed38%; reported resetsAt
+Latest exposed weekly Codex window:7% used after previously observed2%; reported resetsAt
 1789435538. Reserve7% used. These are account-wide readings, not per-task consumption;
 window change is not evidence of any agent-issued reset. No reset was requested or used.
 Per-task/worker tokens unknown. No purchases or extra spending.
