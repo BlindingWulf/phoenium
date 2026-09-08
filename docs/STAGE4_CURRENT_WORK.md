@@ -128,6 +128,18 @@ failure in the initial frozen-reference 5/5 run. The failed bundle is preserved 
 Final candidate, reference 5/5 and 8/8, comparison, persisted MCA/restart
 and foundation gates remain open. Preserve each prepared server/world bundle before
 another Sync preparation; verify the actual installed JAR hash on every launch.
+The stable-source full gate passes 769 tests / 72 suites, zero failures/errors/skips,
+after the reviewed metadata-only tracker exemption in `1d18b5c` (worker `3706f34`).
+Gradle build passes. Production JAR SHA-256 is
+`1EBB8A438BD6DB8F98E15481F26DF63136D8A9E24E26A3758F071D7B64589900`;
+shared probe at worker `44e7249` is
+`F4137F8084E9A362EE519690209FF7164D1765B7355ED1A06293861D2DC03C05`.
+`73095e7` integrates isolated launch paths and the repaired recipient Mixin/client
+observation holder. The current frozen-reference run
+`run/stage4/reference-client-5-20260908-054512` starts/listens but client login times
+out after Hello. Luna is capturing both process stacks and running the independent
+installed transformed-runtime candidate probe. No client/runtime PASS is inferred
+from the successful build or a listening TCP endpoint.
 Lead `c3cf005` rejects late producers after service termination before native mutation;
 its new focused lifetime regression passes. The genuine same-holder withdrawal /
 re-promotion repair preserves the original producer, revoked old subscriber, current
