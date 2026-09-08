@@ -149,6 +149,12 @@ counter_values = {key: int(value) for key, value in re.findall(r"\b(\w+)=(\d+)\b
 cleanup_lines = [line for line in text.splitlines() if "PHOENIUM_CHUNK_BINDING STOPPED" in line]
 stage2_stopped_lines = [line for line in text.splitlines() if "PHOENIUM_STAGE2 stopped" in line]
 full_stopped_lines = [line for line in text.splitlines() if "PHOENIUM_FULL STOPPED" in line]
+services_stopped_lines = [line for line in text.splitlines() if "PHOENIUM_FULL_SERVICES STOPPED PASS" in line]
+services_clean = len(services_stopped_lines) == 1 and all(field in services_stopped_lines[0] for field in (
+    "stopEvent=true", "serviceReservations=0", "serviceActive=0", "serviceWorlds=0",
+    "serviceEnvironmentRequests=0", "entityFactsAddressable=0", "scoreboardSessions=0",
+    "scoreboardCatchup=0", "legacyPlans=0", "legacyQueued=0", "legacyRunning=0",
+    "legacyProducerTerminated=1", "legacyCacheRoots=0"))
 full_runtime_zero = True
 for line in full_stopped_lines:
     for key in ("structureHolders", "structureReaders", "structureWriters", "structureWaitingWriters",
@@ -185,13 +191,15 @@ manifest.update({
     "cleanupLines": cleanup_lines,
     "stage2StoppedLines": stage2_stopped_lines,
     "fullRuntimeStoppedLines": full_stopped_lines,
+    "fullServicesStoppedLines": services_stopped_lines,
+    "fullServicesClean": services_clean,
     "fullRuntimeZeroResidue": full_runtime_zero,
     "stage2Healthy": stage2_healthy,
     "zeroBarriers": zero_barriers,
     "zeroCleanupResidue": zero_cleanup,
     "cleanShutdown": process is not None and process.returncode == 0 and "Stopping the server" in text
         and "Encountered an unexpected exception" not in text and "Exception stopping the server" not in text
-        and zero_barriers and zero_cleanup and stage2_healthy and full_runtime_zero,
+        and zero_barriers and zero_cleanup and stage2_healthy and full_runtime_zero and services_clean,
     "serverLog": str(log),
 })
 (OUTPUT / "manifest.json").write_text(json.dumps(manifest, indent=2))

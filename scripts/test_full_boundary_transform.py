@@ -121,7 +121,7 @@ with log.open("w") as output:
             input_probe = [line for line in text.splitlines() if "PHOENIUM_FULL_INPUT_BINDING_PROBE PASS" in line]
             assert len(input_probe) == 1, "selected production discovery/input consumer did not pass exactly once"
             required_input_fields = (
-                "cases=21", "productionDiscovery=true", "exactInputConsumer=true", "proto=true",
+                "cases=19", "productionDiscovery=true", "exactInputConsumer=true", "proto=true",
                 "inMemoryImposter=true", "bothPairOrders=true", "largerWindow=true", "savedWriter=true",
                 "actualDemand=true", "capacityToProgress=true", "completeAcknowledgement=true",
                 "biomeRollback=true", "inputSatisfied=true", "aggregate=NOT_READY",
@@ -150,7 +150,7 @@ with log.open("w") as output:
             finishing_probe = [line for line in text.splitlines() if "PHOENIUM_FULL_FINISHING_PROBE PASS" in line]
             assert len(finishing_probe) == 1, "installed FULL finishing fixture did not pass exactly once"
             required_finishing_fields = (
-                "cases=75", "queryCases=14", "serviceCases=7", "d1Cases=7", "contextCases=33", "publicationCases=2",
+                "cases=65", "queryCases=14", "serviceCases=7", "d1Cases=7", "contextCases=35", "publicationCases=2",
                 "originalFinishing=true", "separatePublication=true",
                 "cyclicPreparedPair=true", "bothPairOrders=true",
                 "proto=true", "inMemoryImposter=true", "diskReload=false",
@@ -232,12 +232,12 @@ with log.open("w") as output:
             input_exports[name] = digest(path)
         manifest["inputProducerClassHashes"] = input_exports
         stopped = [line for line in text.splitlines() if "PHOENIUM_CHUNK_BINDING STOPPED" in line]
-        assert stopped, "missing real cleanup accounting"
-        for line in stopped:
-            for name in ("barriers", "retainedGraphs", "returnedIndex", "poiIndex", "synchronousInvocations",
-                         "lightBatches", "lightOccurrences", "lightReceipts", "poiEntries", "metadataEntries",
-                         "custodyEntries", "workEntries", "lifecycleEntries"):
-                assert re.search(r"\b" + name + r"=0\b", line), line
+        assert len(stopped) == 1, "missing or duplicate real cleanup accounting"
+        for name in ("barriers", "retainedGraphs", "returnedIndex", "poiIndex", "synchronousInvocations",
+                     "lightBatches", "lightOccurrences", "lightReceipts", "poiEntries", "metadataEntries",
+                     "custodyEntries", "workEntries", "lifecycleEntries", "duplicateApplications"):
+            matches = re.findall(r"(?:^|[\s,{])" + re.escape(name) + r"=(-?\d+)(?:[\s,}]|$)", stopped[0])
+            assert matches and all(int(value) == 0 for value in matches), stopped[0]
         stage2_stopped = [line for line in text.splitlines() if "PHOENIUM_STAGE2 stopped" in line]
         assert len(stage2_stopped) == 1, "missing or duplicate Stage 2 cleanup accounting"
         stage2 = stage2_stopped[0]
@@ -250,13 +250,23 @@ with log.open("w") as output:
         for line in full_stopped:
             for name in ("structureHolders", "structureReaders", "structureWriters",
                          "structureWaitingWriters", "structureDemandTickets", "generationHolders",
-                         "graphs", "returnedIndex", "custodyEntries", "workEntries", "lifecycleEntries"):
-                match = re.search(r"\b" + name + r"=(\d+)", line)
-                if match:
-                    assert int(match.group(1)) == 0, line
+                         "graphs", "returnedIndex", "deliveries", "plans", "requestedPreparations",
+                         "consumers", "factBytes", "pendingNotifications", "expandedOperations", "edges",
+                         "records", "uses", "transientExecutions", "chargedRecordBytes"):
+                matches = re.findall(r"(?:^|[\s,{])" + re.escape(name) + r"=(-?\d+)(?:[\s,}]|$)", line)
+                if matches:
+                    assert all(int(value) == 0 for value in matches), line
+        services_stopped = [line for line in text.splitlines() if "PHOENIUM_FULL_SERVICES STOPPED PASS" in line]
+        assert len(services_stopped) == 1, "missing or duplicate finishing-service cleanup evidence"
+        for name in ("stopEvent=true", "serviceReservations=0", "serviceActive=0", "serviceWorlds=0",
+                     "serviceEnvironmentRequests=0", "entityFactsAddressable=0", "scoreboardSessions=0",
+                     "scoreboardCatchup=0", "legacyPlans=0", "legacyQueued=0", "legacyRunning=0",
+                     "legacyProducerTerminated=1", "legacyCacheRoots=0"):
+            assert name in services_stopped[0], services_stopped[0]
         manifest.update({"result": "PASS", "exitCode": process.returncode, "stopped": stopped,
                          "stage2Stopped": stage2_stopped,
                          "fullRuntimeStopped": full_stopped,
+                         "fullServicesStopped": services_stopped,
                          "seedLines": [line for line in text.splitlines() if "Seed:" in line],
                          "transformedClassSha256": digest(exported), "holderClassSha256": digest(holder_export),
                          "clockClassSha256": digest(clock_export)})

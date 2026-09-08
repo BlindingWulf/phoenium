@@ -76,8 +76,15 @@ with log.open("w") as output:
 text = read_log()
 summaries = [line for line in text.splitlines() if "PHOENIUM_CHUNK_BINDING STOPPED" in line]
 full_runtime = [line for line in text.splitlines() if "PHOENIUM_FULL STOPPED" in line]
+services_stopped = [line for line in text.splitlines() if "PHOENIUM_FULL_SERVICES STOPPED PASS" in line]
 assert process.returncode == 0, process.returncode
 assert summaries, "missing shutdown binding accounting"
+assert len(services_stopped) == 1, "missing or duplicate finishing-service cleanup accounting"
+for field in ("stopEvent=true", "serviceReservations=0", "serviceActive=0", "serviceWorlds=0",
+              "serviceEnvironmentRequests=0", "entityFactsAddressable=0", "scoreboardSessions=0",
+              "scoreboardCatchup=0", "legacyPlans=0", "legacyQueued=0", "legacyRunning=0",
+              "legacyProducerTerminated=1", "legacyCacheRoots=0"):
+    assert field in services_stopped[0], services_stopped[0]
 assert "reason=FAILED_BARRIER" in text
 assert "permanently unroutable active chunk work" in text
 assert "reason=CANCELLED" not in text
@@ -103,7 +110,7 @@ jar = next((target / "mods").glob("phoenium-*.jar"))
 manifest = {"kind": "live diagnostic: active reservation without route or topology producer", "productionFullEnabled": False,
             "directory": str(target), "exitCode": process.returncode,
             "cancellations": text.count("reason=CANCELLED"), "protocolTerminals": text.count("reason=FAILED_BARRIER"),
-            "stopped": summaries, "fullRuntimeStopped": full_runtime,
+            "stopped": summaries, "fullRuntimeStopped": full_runtime, "fullServicesStopped": services_stopped,
             "jarSha256": hashlib.sha256(jar.read_bytes()).hexdigest(),
             "logSha256": hashlib.sha256(log.read_bytes()).hexdigest()}
 (target / "acceptance.json").write_text(json.dumps(manifest, indent=2))

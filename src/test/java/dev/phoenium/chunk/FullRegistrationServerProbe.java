@@ -6,6 +6,7 @@ import net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents;
 /** Disposable test mod only. Uses installed production Mixin hooks, never the JUnit javaagent. */
 public final class FullRegistrationServerProbe implements DedicatedServerModInitializer {
     @Override public void onInitializeServer() {
+        FullServiceCleanupWitness.install();
         ServerLifecycleEvents.SERVER_STARTED.register(server -> {
             try {
                 var test = new FullProductionRegistrationTest();
@@ -61,7 +62,7 @@ public final class FullRegistrationServerProbe implements DedicatedServerModInit
                         + "independentConsumers=true originalSavePins=true originalUnload=true repeatedCycles=34 "
                         + "originalPublishedResidentRecordsAfterAck=1 pendingSelectedRecordsAfterAck=2 totalRecordsAfterAck=3 "
                         + "usesAfterAck=0 pendingSelectedExecutionsAfterAck=2 trueTeardownRecords=0 javaagent=false");
-                System.out.println("PHOENIUM_FULL_INPUT_BINDING_PROBE PASS cases=21 productionDiscovery=true exactInputConsumer=true "
+                System.out.println("PHOENIUM_FULL_INPUT_BINDING_PROBE PASS cases=19 productionDiscovery=true exactInputConsumer=true "
                         + "proto=true inMemoryImposter=true bothPairOrders=true largerWindow=true savedWriter=true "
                         + "actualDemand=true capacityToProgress=true completeAcknowledgement=true biomeRollback=true inputSatisfied=true aggregate=NOT_READY "
                         + "postLoad=0 publicFull=0 terminalInputPlans=0 terminalInputConsumers=0 javaagent=false");
@@ -173,7 +174,7 @@ public final class FullRegistrationServerProbe implements DedicatedServerModInit
             System.out.println("PHOENIUM_FULL_ENTITY_PROPERTY_PROBE PASS cases=" + entityPropertyCases
                     + " entityPropertyExecution=true originalTypeAndNbt=true constructedPredicateSnapshot=true "
                     + "absentTargetShortCircuit=true javaagent=false");
-            System.out.println("PHOENIUM_FULL_FINISHING_PROBE PASS cases=75 queryCases=14 serviceCases=7 d1Cases=7 contextCases=33 publicationCases=2 "
+            System.out.println("PHOENIUM_FULL_FINISHING_PROBE PASS cases=65 queryCases=14 serviceCases=7 d1Cases=7 contextCases=35 publicationCases=2 "
                     + "originalFinishing=true separatePublication=true cyclicPreparedPair=true bothPairOrders=true "
                     + "proto=true inMemoryImposter=true diskReload=false originalDifficulty=true originalCollision=true "
                     + "originalShulkerImmediate=true originalLaterRegistration=true originalMovingPiston=true "

@@ -1855,6 +1855,7 @@ public final class Stage3ClientTest implements FabricClientGameTest {
                 evidence.put(phase + "FullStopped", requireFullStoppedMetrics(lifecycleProcessLog));
                 evidence.put(phase + "ChunkBindingStopped", requireChunkBindingStopped(lifecycleProcessLog));
                 evidence.put(phase + "Stage2Stopped", requireStage2Stopped(lifecycleProcessLog));
+                evidence.put(phase + "ServicesStopped", requireServicesStopped(lifecycleProcessLog));
                 Path savedLatestLog = directory.resolve(phase + "-latest.log");
                 Path savedProcessLog = directory.resolve(phase + "-server-process.log");
                 Files.copy(active.latestLog, savedLatestLog, StandardCopyOption.REPLACE_EXISTING);
@@ -2011,6 +2012,23 @@ public final class Stage3ClientTest implements FabricClientGameTest {
                 "ownershipViolations=0", "unleased=0", "barriers=0", "duplicate=0", "bypass=0"
         })
             require(line.contains(field), "STAGE2 teardown omitted or changed " + field + ": " + line);
+        return line;
+    }
+
+    private static String requireServicesStopped(String lifecycleProcessLog) {
+        List<String> lines = lifecycleProcessLog.lines()
+                .filter(line -> line.contains("PHOENIUM_FULL_SERVICES STOPPED PASS"))
+                .toList();
+        require(lines.size() == 1,
+                "authoritative FULL teardown must emit exactly one finishing-service snapshot: " + lines);
+        String line = lines.get(0);
+        for (String field : new String[] {
+                "stopEvent=true", "serviceReservations=0", "serviceActive=0", "serviceWorlds=0",
+                "serviceEnvironmentRequests=0", "entityFactsAddressable=0", "scoreboardSessions=0",
+                "scoreboardCatchup=0", "legacyPlans=0", "legacyQueued=0", "legacyRunning=0",
+                "legacyProducerTerminated=1", "legacyCacheRoots=0"
+        })
+            require(line.contains(field), "finishing-service teardown omitted or changed " + field + ": " + line);
         return line;
     }
 

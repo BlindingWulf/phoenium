@@ -59,6 +59,7 @@ public final class FullRuntimeAcceptanceProbe implements DedicatedServerModIniti
     private static String marker(String phase) { return "phoenium_full_" + phase; }
 
     @Override public void onInitializeServer() {
+        FullServiceCleanupWitness.install();
         boolean vaultDiagnostic = Boolean.getBoolean("phoenium.test.vaultDiagnostic");
         if (vaultDiagnostic) registerVaultDiagnosticCommand();
         if (!Boolean.getBoolean("phoenium.full.authoritative") || phase().isEmpty()) {
