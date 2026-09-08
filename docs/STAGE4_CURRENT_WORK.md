@@ -4,6 +4,23 @@ Stage 4 remains **PARTIAL**, Stage 5 OFF, one gameplay worker, parallel gameplay
 This section supersedes the historical worker assignments and next-step instructions below.
 The session began from clean `2b3080b`; all newer work is preserved. No agents are running.
 
+- Recovery boundary `530eca0`: full suite passed after restoring the audited native merged
+  build-cache JAR (803 tests / 82 suites; `run/stage4/finishing-full-suite-cache-repaired.log`).
+  Main's raw native class bytes had drifted while the pinned sources and installed native
+  server still matched Stage 3. The 48 exact-byte FULL tests failed honestly, and passed after
+  restoring the audited cache from the preserved Stage 4 Luna checkout. No dependency version
+  or expected assertion was changed. Original differing JAR and entry/hash comparison are
+  retained in `run/stage4/main-pre-recovery-minecraft-cache.jar` and
+  `run/stage4/native-cache-difference.json`.
+- `finish-candidate-5-f` identified native destination holders stuck at STRUCTURE_STARTS.
+  The old z=0 fixture has no route at (32,26), inside the deferred destination's native forced
+  FULL dependency square. A shared test-only startup-plan extension now declares finite native
+  generation support for the exact A/B/far/deferred destinations and configured 5/5 or 8/8
+  distances. It preserves every existing A/B route, adds no default route, uses no live directory
+  publication and grants no readiness. It follows the frozen FULL bed/vault support pattern.
+  The same disposable probe supports both production artifacts without changing frozen bytes.
+  Next/current candidate run is `finish-candidate-5-g`; all final runtime gates remain pending.
+
 - Repaired entity lifecycle publication at native `ServerLevel$EntityCallbacks.onTrackingStart`
   HEAD, after `EntityLookup.add` and before original tracker registration. Chunk-loaded and
   world-generation entities no longer bypass ownership publication. Exact native target tests pass.

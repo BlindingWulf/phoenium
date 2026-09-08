@@ -542,7 +542,10 @@ public final class Stage4AcceptanceProbe implements DedicatedServerModInitialize
             Object awaitingPosition = fieldValue(player.connection, "awaitingPositionFromClient");
             Object awaitingTime = fieldValue(player.connection, "awaitingTeleportTime");
             connectionState = "connection=present awaitingTeleport=" + awaitingTeleport
-                + " awaitingPositionFromClient=" + awaitingPosition + " awaitingTeleportTime=" + awaitingTime;
+                + " awaitingPositionFromClient=" + awaitingPosition + " awaitingTeleportTime=" + awaitingTime
+                + " lastGood=" + fieldValue(player.connection, "lastGoodX") + ","
+                + fieldValue(player.connection, "lastGoodY") + "," + fieldValue(player.connection, "lastGoodZ")
+                + " packets=" + Phoenium.liveRuntime().packetDiagnostics();
         }
         long key = net.minecraft.world.level.ChunkPos.pack(chunkX, chunkZ);
         ChunkHolder holder = map.getUpdatingChunkIfPresent(key);

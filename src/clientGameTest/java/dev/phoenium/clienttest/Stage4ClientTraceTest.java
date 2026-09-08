@@ -63,6 +63,8 @@ public final class Stage4ClientTraceTest implements FabricClientGameTest {
                 "-Dphoenium.stage3.explicitTopology=true",
                 "-Dphoenium.test.chunkFixtureSupport=true",
                 "-Dphoenium.stage3.chunkTrace=true",
+                "-Dphoenium.stage4.viewDistance=" + System.getProperty("phoenium.stage4.viewDistance", "8"),
+                "-Dphoenium.stage4.simulationDistance=" + System.getProperty("phoenium.stage4.simulationDistance", "8"),
                 "-Dphoenium.stage4.tracePath=" + trace.toAbsolutePath()));
             if (Boolean.getBoolean("phoenium.stage4.packetTrace"))
                 command.add("-Dphoenium.stage4.packetTracePath="
@@ -281,7 +283,7 @@ public final class Stage4ClientTraceTest implements FabricClientGameTest {
         } catch (Throwable failure) {
             Path dumpDirectory = log.toAbsolutePath().getParent() == null
                 ? Path.of("run/stage4/diagnostics")
-                : log.toAbsolutePath().getParent().getParent().resolve("thread-dumps");
+                : log.toAbsolutePath().getParent().resolve("thread-dumps");
             captureThreadDump(server, dumpDirectory.resolve("server-handshake-timeout.txt"));
             captureCurrentThreadDump(dumpDirectory.resolve("client-handshake-timeout.txt"));
             captureNetworkState(server, dumpDirectory.resolve("tcp-state-handshake-timeout.txt"));
@@ -328,6 +330,13 @@ public final class Stage4ClientTraceTest implements FabricClientGameTest {
                                              int[][] chunks, int timeoutTicks) {
         for (int tick = 0; tick < timeoutTicks; tick++) {
             requireHealthyServer(server, log);
+            if (tick == 40 || tick == 200) {
+                try {
+                    for (int[] chunk : chunks)
+                        command(server, "stage4trace inspect-demand " + chunk[0] + " " + chunk[1]);
+                    command(server, "phoenium status");
+                } catch (IOException failure) { throw new AssertionError("cannot request pending FULL diagnostics", failure); }
+            }
             boolean applied = context.computeOnClient(client -> {
                 if (client.level == null) return false;
                 for (int[] chunk : chunks) {
@@ -373,7 +382,10 @@ public final class Stage4ClientTraceTest implements FabricClientGameTest {
             START_TIMEOUT_TICKS, null);
         awaitLogAfter(context, server, log, "STAGE4_TRACE_TELEPORT_TERRAIN_READY", preparedOffset,
             START_TIMEOUT_TICKS, "destination=" + (x >> 4) + "," + (z >> 4));
+        long teleportOffset = logSize(log);
         command(server, "tp " + USER + " " + x + ".5 " + y + " " + z + ".5");
+        awaitLogAfter(context, server, log, "STAGE4_TRACE_TELEPORT_ACCEPT", teleportOffset,
+            START_TIMEOUT_TICKS, null);
         nudgeAfterTeleport(context);
         waitForClientChunks(context, server, log, expectedChunks, START_TIMEOUT_TICKS);
         long completedOffset = logSize(log);
