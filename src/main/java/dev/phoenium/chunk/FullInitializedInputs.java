@@ -17,8 +17,8 @@ import dev.phoenium.topology.RoutingKey;
  */
 public final class FullInitializedInputs {
     public enum State { SATISFIED, PENDING, STALE, TERMINAL, UNRESOLVED, CAPACITY }
-    public enum Purpose { SELF_INITIALIZED, DIFFICULTY, COLLISION, DYNAMIC_SHAPE_MUTATION, ENVIRONMENT, BLOCK_CONTEXT, ENTITY_CONTEXT }
-    public enum Availability { PUBLISHED, PREPARED, BIOMES, ROUTED, PREPARATION_PENDING, ABSENT, STALE, TOPOLOGY_PENDING, TERMINAL, UNROUTABLE, CAPACITY }
+    public enum Purpose { SELF_INITIALIZED, DIFFICULTY, COLLISION, DYNAMIC_SHAPE_MUTATION, ENVIRONMENT, BLOCK_CONTEXT, ENTITY_CONTEXT, STRUCTURE_REFERENCES, STRUCTURE_STARTS }
+    public enum Availability { PUBLISHED, PREPARED, BIOMES, STRUCTURES, ROUTED, PREPARATION_PENDING, ABSENT, STALE, TOPOLOGY_PENDING, TERMINAL, UNROUTABLE, CAPACITY }
     public record Limits(int plans, int targetsPerPlan, int edges, int consumers, int factBytes) {
         public Limits { if (plans < 1 || targetsPerPlan < 1 || edges < 1 || consumers < 1 || factBytes < FullSavedInput.MAX_FACT_BYTES) throw new IllegalArgumentException("finite input limits and at least one fact allocation required"); }
         public static Limits production() { return new Limits(256, 256, 8192, 8192, 16 * 1024 * 1024); }
@@ -29,16 +29,28 @@ public final class FullInitializedInputs {
                          LevelChunk actual, CompletableFuture<ChunkResult<ChunkAccess>> lowerSlot,
                          CompletableFuture<ChunkResult<ChunkAccess>> publicSlot, CompletableFuture<Void> generationRetention,
                          ChunkStatus reservation, RegionRoute route, int ticketLevel,
-                         FullPublishedInputs.Evidence publication, FullBiomeInputs.Evidence biomes) {
+                         FullPublishedInputs.Evidence publication, FullBiomeInputs.Evidence biomes,
+                         FullStatusInputs.Evidence structureReferences, FullStatusInputs.Evidence structureStarts) {
+        public Target(ChunkPos position, Set<Purpose> purposes, Availability availability,
+                      GenerationChunkHolder holder, ChunkCustodyModel.LifecycleId lifecycle,
+                      ChunkCustodyModel.WorkId work, ChunkCustodyModel.StageId preparationAttempt,
+                      LevelChunk actual, CompletableFuture<ChunkResult<ChunkAccess>> lowerSlot,
+                      CompletableFuture<ChunkResult<ChunkAccess>> publicSlot, CompletableFuture<Void> generationRetention,
+                      ChunkStatus reservation, RegionRoute route, int ticketLevel,
+                      FullPublishedInputs.Evidence publication, FullBiomeInputs.Evidence biomes) {
+            this(position, purposes, availability, holder, lifecycle, work, preparationAttempt, actual,
+                    lowerSlot, publicSlot, generationRetention, reservation, route, ticketLevel, publication, biomes, null, null);
+        }
         public Target { purposes = Set.copyOf(purposes); }
     }
     public record Receipt(Object server, ServerLevel world, ChunkCustodyModel.WorkId source,
                           ChunkCustodyModel.StageId operation, long plan, long savedRevision,
-                          RegionDirectory.View routes, List<Target> targets, FullSavedContextInputs.Plan contexts) {
+                          RegionDirectory.View routes, List<Target> targets, FullSavedContextInputs.Plan contexts,
+                          FullStructureInputs.Plan structures) {
         public Receipt(Object server, ServerLevel world, ChunkCustodyModel.WorkId source,
                        ChunkCustodyModel.StageId operation, long plan, long savedRevision,
                        RegionDirectory.View routes, List<Target> targets) {
-            this(server, world, source, operation, plan, savedRevision, routes, targets, null);
+            this(server, world, source, operation, plan, savedRevision, routes, targets, null, null);
         }
         public Receipt { targets = List.copyOf(targets); }
     }
@@ -52,6 +64,7 @@ public final class FullInitializedInputs {
         final List<AutoCloseable> pins = new ArrayList<>();
         Receipt receipt;
         FullSavedContextInputs.Plan contexts;
+        FullStructureInputs.Plan structures;
         long factCharge;
         Evaluation evaluation = new Evaluation(State.PENDING, "direct preparation availability", null);
         Plan(FullRegistrationRuntime.Graph graph, FullSavedInput.Snapshot saved, long sequence, RegionDirectory.View routes) {
@@ -121,7 +134,8 @@ public final class FullInitializedInputs {
         }
         if (plan.contexts != null) {
             long charge = Math.max(FullSavedInput.MAX_FACT_BYTES,
-                    Math.addExact(plan.saved.payloadBytes(), plan.contexts.payloadBytes()));
+                    Math.addExact(plan.saved.payloadBytes(), Math.addExact(plan.contexts.payloadBytes(),
+                            plan.structures == null ? 0L : plan.structures.bytes())));
             if (charge > plan.factCharge && !expand(plan)) {
                 plan.contexts.close(); plan.contexts = null;
                 plan.evaluation = new Evaluation(State.CAPACITY, "expanded operation acknowledgement", null); return;
@@ -135,6 +149,11 @@ public final class FullInitializedInputs {
                 add(required, position, Purpose.ENVIRONMENT);
             for (ChunkPos position : plan.contexts.predicateFullChunks())
                 add(required, position, Purpose.BLOCK_CONTEXT);
+            if (plan.structures == null) plan.structures = new FullStructureInputs.Plan(plan.contexts.predicateStructureChunks());
+            for (ChunkPos position : plan.contexts.predicateStructureChunks())
+                add(required, position, Purpose.STRUCTURE_REFERENCES);
+            for (ChunkPos position : plan.structures.starts())
+                add(required, position, Purpose.STRUCTURE_STARTS);
         }
         for (var fact : plan.saved.entities()) {
             if (!Double.isFinite(fact.x()) || !Double.isFinite(fact.y()) || !Double.isFinite(fact.z())) {
@@ -205,14 +224,20 @@ public final class FullInitializedInputs {
             return;
         }
         RefinementTargets refinement = plan.contexts != null && plan.contexts.needsLiveRefinement()
+                || plan.structures != null && !plan.structures.empty()
                 ? retainRefinementTargets(plan, targets) : new RefinementTargets(List.of(), false, false);
         if (refinement.capacity || refinement.pending) {
             plan.evaluation = new Evaluation(refinement.capacity ? State.CAPACITY : State.PENDING,
                     refinement.capacity ? "live context input consumer acknowledgement" : "live context target retention", null); return;
         }
         boolean refinedLive;
+        FullStructureInputs.State refinedStructures = FullStructureInputs.State.READY;
         Throwable refinementFailure = null;
-        try { refinedLive = plan.contexts != null && plan.contexts.refineLive(runtime, plan.graph, targets); }
+        try {
+            refinedLive = plan.contexts != null && plan.contexts.refineLive(runtime, plan.graph, targets);
+            if (!refinedLive && plan.structures != null) refinedStructures = plan.structures.refine(runtime, plan.graph, targets,
+                    structureBytes -> reserveContexts(plan, Math.addExact(plan.contexts.payloadBytes(), structureBytes)));
+        }
         catch (Throwable failure) { refinementFailure = failure; refinedLive = false; }
         try { releaseRefinementTargets(refinement.pins); }
         catch (Throwable cleanup) {
@@ -222,6 +247,12 @@ public final class FullInitializedInputs {
         if (refinementFailure instanceof Error error) throw error;
         if (refinementFailure instanceof RuntimeException failure) throw failure;
         if (refinementFailure != null) throw new ChunkProtocolException("live context refinement failed", refinementFailure);
+        if (refinedStructures != FullStructureInputs.State.READY) {
+            plan.evaluation = new Evaluation(refinedStructures == FullStructureInputs.State.CAPACITY ? State.CAPACITY : State.PENDING,
+                    "original structure reference/status dependency refinement", null);
+            if (refinedStructures == FullStructureInputs.State.CHANGED || refinedStructures == FullStructureInputs.State.STALE) changed();
+            return;
+        }
         if (refinedLive) {
             plan.evaluation = plan.contexts.unmet() != null
                     ? new Evaluation(State.UNRESOLVED, plan.contexts.unmet(), null)
@@ -232,7 +263,7 @@ public final class FullInitializedInputs {
             else if (!plan.contexts.refinementWaiting()) changed();
             return;
         }
-        int needed = (int) targets.stream().filter(t -> t.availability == Availability.PREPARED || t.availability == Availability.PUBLISHED || t.availability == Availability.BIOMES).count();
+        int needed = (int) targets.stream().filter(FullInitializedInputs::retained).count();
         if (needed > limits.consumers && !expand(plan)) {
             plan.evaluation = new Evaluation(State.CAPACITY, "expanded operation acknowledgement", null); return;
         }
@@ -241,9 +272,10 @@ public final class FullInitializedInputs {
             plan.evaluation = new Evaluation(State.CAPACITY, "independent input consumer acknowledgement", null); return;
         }
         // All target preparations have settled before reserving capacity or retaining any target.
-        for (var target : targets) if (target.availability == Availability.PREPARED || target.availability == Availability.PUBLISHED || target.availability == Availability.BIOMES) {
+        for (var target : targets) if (retained(target)) {
             AutoCloseable pin = target.availability == Availability.PUBLISHED ? runtime.published.retain(target.publication)
                     : target.availability == Availability.BIOMES ? FullBiomeInputs.retain(runtime, target)
+                    : target.availability == Availability.STRUCTURES ? FullStatusInputs.retain(runtime, target)
                     : runtime.findGraph(target.holder).orElseThrow().retainPrepared();
             if (pin == null) { release(plan.graph); changed(); return; }
             if (plans.get(plan.graph) != plan || !plan.graph.inputRequested()) {
@@ -254,7 +286,7 @@ public final class FullInitializedInputs {
         }
         if (!plan.graph.inputRequested() || plans.get(plan.graph) != plan || stale(plan)) { release(plan.graph); changed(); return; }
         plan.receipt = new Receipt(runtime.server(), runtime.level(), plan.graph.work, plan.graph.finishing.stage(),
-                plan.sequence, plan.saved.revision(), plan.routes, plan.targets, plan.contexts);
+                plan.sequence, plan.saved.revision(), plan.routes, plan.targets, plan.contexts, plan.structures);
         plan.evaluation = new Evaluation(State.SATISFIED, "exact operation's retained initialized inputs", plan.receipt);
         // Ownership and receipt are installed before this synchronous prerequisite-consumer notification.
         runtime.pump.publishAndDeliver(plan.graph.finishing);
@@ -277,9 +309,12 @@ public final class FullInitializedInputs {
     /** Target evidence must survive both nonblocking owner-read phases. These temporary uses
      * are charged like final consumers and independently acknowledged before new demand. */
     private record RefinementTargets(List<AutoCloseable> pins, boolean capacity, boolean pending) { }
+    private static boolean retained(Target target) {
+        return target.availability == Availability.PREPARED || target.availability == Availability.PUBLISHED
+                || target.availability == Availability.BIOMES || target.availability == Availability.STRUCTURES;
+    }
     private RefinementTargets retainRefinementTargets(Plan plan, List<Target> targets) {
-        var eligible = targets.stream().filter(target -> target.availability == Availability.PREPARED
-                || target.availability == Availability.PUBLISHED || target.availability == Availability.BIOMES).toList();
+        var eligible = targets.stream().filter(FullInitializedInputs::retained).toList();
         if (eligible.size() > limits.consumers && !expand(plan)) return new RefinementTargets(List.of(), true, false);
         long otherExpanded = expanded != null && expanded != plan ? expanded.pins.size() : 0;
         if (expanded != plan && consumers - otherExpanded + eligible.size() > limits.consumers)
@@ -289,6 +324,7 @@ public final class FullInitializedInputs {
             for (var target : eligible) {
                 AutoCloseable pin = target.availability == Availability.PUBLISHED ? runtime.published.retain(target.publication)
                         : target.availability == Availability.BIOMES ? FullBiomeInputs.retain(runtime, target)
+                        : target.availability == Availability.STRUCTURES ? FullStatusInputs.retain(runtime, target)
                         : runtime.findGraph(target.holder).map(FullRegistrationRuntime.Graph::retainPrepared).orElse(null);
                 if (pin == null) {
                     var abandoned = List.copyOf(retained); retained.clear(); releaseRefinementTargets(abandoned);
@@ -333,20 +369,23 @@ public final class FullInitializedInputs {
             return target(position, purposes, route == null ? Availability.UNROUTABLE : Availability.ROUTED,
                     null, null, null, route, ticket);
         }
-        if (purposes.contains(Purpose.ENVIRONMENT)
-                && purposes.stream().allMatch(purpose -> purpose == Purpose.ENVIRONMENT || purpose == Purpose.ENTITY_CONTEXT)) {
-            if (holder == null || ticket > ChunkLevel.byStatus(ChunkStatus.BIOMES))
+        if (purposes.stream().allMatch(purpose -> purpose == Purpose.ENVIRONMENT || purpose == Purpose.ENTITY_CONTEXT
+                || purpose == Purpose.STRUCTURE_REFERENCES || purpose == Purpose.STRUCTURE_STARTS)) {
+            ChunkStatus status = purposes.contains(Purpose.ENVIRONMENT) ? ChunkStatus.BIOMES
+                    : purposes.contains(Purpose.STRUCTURE_REFERENCES) ? ChunkStatus.STRUCTURE_REFERENCES : ChunkStatus.STRUCTURE_STARTS;
+            if (holder == null || ticket > ChunkLevel.byStatus(status))
                 return target(position, purposes, Availability.ABSENT, holder, null, null, route, ticket);
             if (route == null) return target(position, purposes,
                     runtime.authority.directory().pendingChange(key).isPresent() ? Availability.TOPOLOGY_PENDING : Availability.UNROUTABLE,
                     holder, null, null, route, ticket);
-            var biome = FullBiomeInputs.capture(holder);
-            if (biome != null && runtime.biomesReleased(holder))
-                return target(position, purposes, Availability.BIOMES, holder, null, null, route, ticket);
+            var settled = FullStatusInputs.capture(holder, status);
+            if (settled != null && runtime.statusReleased(holder, status))
+                return target(position, purposes, status == ChunkStatus.BIOMES ? Availability.BIOMES : Availability.STRUCTURES,
+                        holder, null, null, route, ticket);
             if (requested.size() >= demandCapacity && !requested.contains(holder))
                 return target(position, purposes, Availability.CAPACITY, holder, null, null, route, ticket);
             if (requested.add(holder)) {
-                holder.scheduleChunkGenerationTask(ChunkStatus.BIOMES, runtime.level().getChunkSource().chunkMap)
+                holder.scheduleChunkGenerationTask(status, runtime.level().getChunkSource().chunkMap)
                         .whenComplete((ignored, failure) -> changed());
                 runtime.level().getChunkSource().chunkMap.runGenerationTasks();
             }
@@ -407,11 +446,14 @@ public final class FullInitializedInputs {
                 evidence == null ? null : evidence.phoenium$futures().get(ChunkStatus.FULL.getIndex()),
                 evidence == null ? null : evidence.phoenium$generationSaveSync(),
                 evidence == null ? null : evidence.phoenium$startedWork().get(), route, ticket, publication,
-                holder == null || !purposes.contains(Purpose.ENVIRONMENT) ? null : FullBiomeInputs.capture(holder));
+                holder == null || !purposes.contains(Purpose.ENVIRONMENT) ? null : FullBiomeInputs.capture(holder),
+                holder == null || !purposes.contains(Purpose.STRUCTURE_REFERENCES) ? null : FullStatusInputs.capture(holder, ChunkStatus.STRUCTURE_REFERENCES),
+                holder == null || !purposes.contains(Purpose.STRUCTURE_STARTS) ? null : FullStatusInputs.capture(holder, ChunkStatus.STRUCTURE_STARTS));
     }
     private boolean stale(Plan plan) {
         if (plan.graph.savedSnapshot() != plan.saved || runtime.authority.directory().snapshot() != plan.routes) return true;
         if (plan.contexts != null && !plan.contexts.valid(plan.saved)) return true;
+        if (plan.structures != null && (plan.contexts == null || !plan.structures.current(plan.contexts.predicateStructureChunks()))) return true;
         for (Target target : plan.targets) {
             if (target.availability == Availability.ROUTED) {
                 var key = new RoutingKey(runtime.authority.world(), target.position.x(), target.position.z());
@@ -423,6 +465,8 @@ public final class FullInitializedInputs {
             if (holder != target.holder || holder != null && holder.getTicketLevel() != target.ticketLevel) return true;
             if (holder == null) continue;
             if (target.availability == Availability.BIOMES && !FullBiomeInputs.validates(holder, target.biomes)) return true;
+            if (target.structureReferences != null && !FullStatusInputs.validates(holder, target.structureReferences)) return true;
+            if (target.structureStarts != null && !FullStatusInputs.validates(holder, target.structureStarts)) return true;
             var evidence = (FullHolderEvidence) holder;
             if (target.availability == Availability.PREPARED || target.availability == Availability.PUBLISHED) {
                 if (target.availability == Availability.PUBLISHED) {

@@ -34,7 +34,7 @@ public final class FullSelectorPredicateInputs {
         NumberProvider phoenium$max();
     }
     record Result(ReloadableServerRegistries.Holder registries, Set<ChunkPos> biomes,
-                  Set<ChunkPos> full, Set<Identifier> storageIds,
+                  Set<ChunkPos> full, Set<ChunkPos> structures, Set<Identifier> storageIds,
                   long bytes, boolean capacity, String unmet) { }
 
     private FullSelectorPredicateInputs() { }
@@ -42,23 +42,23 @@ public final class FullSelectorPredicateInputs {
     static Result discover(MinecraftServer server, String selector, Set<ChunkPos> candidateChunks,
                            java.util.function.LongPredicate capacity) {
         ReloadableServerRegistries.Holder holder = server.reloadableRegistries();
-        if (holder == null) return new Result(null, Set.of(), Set.of(), Set.of(), 0, false,
+        if (holder == null) return new Result(null, Set.of(), Set.of(), Set.of(), Set.of(), 0, false,
                 "registered selector predicate registry is unavailable");
         var lookup = holder.lookup().lookup(Registries.PREDICATE).orElse(null);
-        if (lookup == null) return new Result(holder, Set.of(), Set.of(), Set.of(), 0, false,
+        if (lookup == null) return new Result(holder, Set.of(), Set.of(), Set.of(), Set.of(), 0, false,
                 "registered selector predicate registry is unavailable");
         var visitor = new Visitor(lookup, candidateChunks, capacity);
         for (String value : FullSavedTextInputs.optionValues(selector, "predicate")) {
             String id = value.trim();
             if (id.startsWith("!")) id = id.substring(1).trim();
             Identifier location = Identifier.tryParse(id);
-            if (location == null) return new Result(holder, Set.of(), Set.of(), Set.of(), visitor.bytes, visitor.capacity,
+            if (location == null) return new Result(holder, Set.of(), Set.of(), Set.of(), Set.of(), visitor.bytes, visitor.capacity,
                     "registered selector predicate identifier changed after accepted parsing: " + value);
             visitor.reference(ResourceKey.create(Registries.PREDICATE, location));
             if (visitor.unmet != null) break;
         }
         return new Result(holder, Collections.unmodifiableSet(visitor.biomes),
-                Collections.unmodifiableSet(visitor.full), Collections.unmodifiableSet(visitor.storageIds),
+                Collections.unmodifiableSet(visitor.full), Collections.unmodifiableSet(visitor.structures), Collections.unmodifiableSet(visitor.storageIds),
                 visitor.bytes, visitor.capacity, visitor.unmet);
     }
 
@@ -67,6 +67,7 @@ public final class FullSelectorPredicateInputs {
         private final Set<ChunkPos> candidates;
         private final Set<ResourceKey<LootItemCondition>> visiting = new HashSet<>();
         private final LinkedHashSet<ChunkPos> biomes = new LinkedHashSet<>(), full = new LinkedHashSet<>();
+        private final LinkedHashSet<ChunkPos> structures = new LinkedHashSet<>();
         private final LinkedHashSet<Identifier> storageIds = new LinkedHashSet<>();
         private final Set<NumberProvider> numberVisiting = Collections.newSetFromMap(new IdentityHashMap<>());
         private final java.util.function.LongPredicate capacityCheck;

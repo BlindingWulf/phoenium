@@ -86,9 +86,12 @@ public final class FullRegistrationRuntime {
         return graphSnapshot().stream().filter(graph -> graph.holder == holder).findFirst();
     }
     boolean biomesReleased(GenerationChunkHolder holder) {
+        return statusReleased(holder, ChunkStatus.BIOMES);
+    }
+    boolean statusReleased(GenerationChunkHolder holder, ChunkStatus status) {
         custody.gate().lock(); try {
             var generation = generations.get(holder);
-            var producer = generation == null ? null : generation.steps.get(ChunkStatus.BIOMES);
+            var producer = generation == null ? null : generation.steps.get(status);
             return producer == null || producer.finished && producer.failure == null;
         } finally { custody.gate().unlock(); }
     }
@@ -377,6 +380,7 @@ public final class FullRegistrationRuntime {
         private FullResult fullResult;
         private FullInitializedInputs.Receipt claimedInputs;
         private FullFinishingServices.Reservation serviceReservation;
+        private FullStructureMutationTurns.Read structureRead;
         private FullLegacyOwners.Plan legacyOwners;
         private boolean finished, finishingParked;
         private final CompletableFuture<ChunkAccess> conversion = new CompletableFuture<>();
@@ -508,6 +512,7 @@ public final class FullRegistrationRuntime {
                 lastInputEvaluation = inputs.inspect(this);
                 if (lastInputEvaluation.state() != FullInitializedInputs.State.SATISFIED
                         || serviceReservation == null || !serviceReservation.valid(finishing.stage(), holder)
+                        || inputReceipt().structures() != null && !inputReceipt().structures().empty() && structureRead == null
                         || legacyOwners == null || !legacyOwners.valid(finishing.stage(), savedSnapshot()))
                     return LightInputService.Readiness.NOT_REGISTERED;
                 if (prepared == null || stopped != null || !services.lifecycles().isCurrent(lifecycle))
@@ -520,6 +525,7 @@ public final class FullRegistrationRuntime {
                             && !route.equals(target.route())) return LightInputService.Readiness.NOT_REGISTERED;
                     var generation = generations.get(target.holder());
                     if (target.availability() != FullInitializedInputs.Availability.BIOMES
+                            && target.availability() != FullInitializedInputs.Availability.STRUCTURES
                             && generation != null && !generation.writers.isEmpty()) return LightInputService.Readiness.NOT_REGISTERED;
                 }
                 return LightInputService.Readiness.REGISTERED;
@@ -673,6 +679,8 @@ public final class FullRegistrationRuntime {
             if (receipt == null || receipt != inputReceipt()) return false;
             for (var key : contextFootprint(receipt.targets())) claim.require(this, key);
             boolean current = receipt.contexts() == null || receipt.contexts().validateLive(claim, this);
+            if (current && receipt.structures() != null)
+                current = receipt.structures().validate(FullRegistrationRuntime.this, this, receipt.targets(), structureRead, claim);
             if (!current) inputs.changed();
             return current;
         }
@@ -697,11 +705,23 @@ public final class FullRegistrationRuntime {
             for (var other : server.getAllLevels()) if (other != level) worlds.add(other);
             serviceReservation = shared.tryReserve(finishing.stage(), holder,
                     worlds, savedSnapshot().entities().size());
+            if (serviceReservation != null && inputReceipt().structures() != null && !inputReceipt().structures().empty()) {
+                structureRead = structureMutations.tryRead(finishing.stage(), FullStructureInputs.holders(inputReceipt().targets()));
+                if (structureRead == null) stageExited(kind);
+            }
         }
         void stageExited(ChunkStageKind kind) {
-            if (kind == ChunkStageKind.FULL_FINISH && serviceReservation != null) {
-                serviceReservation.close(); serviceReservation = null; claimedInputs = null;
-            }
+            if (kind != ChunkStageKind.FULL_FINISH) return;
+            var service = serviceReservation; var structures = structureRead;
+            serviceReservation = null; structureRead = null; claimedInputs = null;
+            var failures = new FullInputNotifications.Failures();
+            if (structures != null) failures.run(structures::close);
+            if (service != null) failures.run(service::close);
+            failures.rethrow();
+        }
+        void requireStructureInput(GenerationChunkHolder holder) {
+            if (structureRead == null) throw new ChunkProtocolException("structure query has no generation exclusion");
+            structureRead.require(finishing.stage(), holder);
         }
         boolean hasSavedInput() { return savedInput != null; }
         boolean savedAvailable() { return savedInput == null || savedInput.available(); }

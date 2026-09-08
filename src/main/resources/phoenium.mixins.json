@@ -45,6 +45,8 @@
     "FullLiveEntityComponentMixin",
     "FullLiveTextDisplayComponentMixin",
     "FullLiveChunkComponentMixin",
+    "FullStructureChunkAccessMixin",
+    "FullStructureCacheAccessMixin",
     "FullLiveNamedBlockComponentMixin",
     "FullLiveSkullComponentMixin",
     "FullSelectorPredicateMixin",

@@ -78,6 +78,8 @@ public final class FullFinishingQueries {
             if (target.holder() != null) {
                 var evidence = (FullHolderEvidence) target.holder();
                 if (purpose != FullInitializedInputs.Purpose.ENVIRONMENT
+                        && purpose != FullInitializedInputs.Purpose.STRUCTURE_REFERENCES
+                        && purpose != FullInitializedInputs.Purpose.STRUCTURE_STARTS
                         && (evidence.phoenium$futures().get(ChunkStatus.SPAWN.getIndex()) != target.lowerSlot()
                         || evidence.phoenium$futures().get(ChunkStatus.FULL.getIndex()) != target.publicSlot())
                         )
@@ -88,6 +90,16 @@ public final class FullFinishingQueries {
                         || !target.biomes().actual().getPos().equals(position)
                         || target.route() == null || !target.route().equals(claim.frozenRoute()))
                     throw breach("environment query lacks its exact original biome slot/result/object enclosure");
+            }
+            if (purpose == FullInitializedInputs.Purpose.STRUCTURE_REFERENCES
+                    || purpose == FullInitializedInputs.Purpose.STRUCTURE_STARTS) {
+                var status = purpose == FullInitializedInputs.Purpose.STRUCTURE_REFERENCES
+                        ? ChunkStatus.STRUCTURE_REFERENCES : ChunkStatus.STRUCTURE_STARTS;
+                var evidence = FullStructureInputs.evidence(target, status);
+                if (!FullStatusInputs.validates(target.holder(), evidence)
+                        || !evidence.actual().getPos().equals(position) || !claim.frozenRoute().equals(target.route()))
+                    throw breach("structure query lacks exact original status/slot/result/object/route evidence");
+                source.requireStructureInput(target.holder());
             }
             if (target.actual() != null) {
                 if (target.actual().getLevel() != receipt.world() || !target.actual().getPos().equals(position)
@@ -157,7 +169,15 @@ public final class FullFinishingQueries {
         Invocation invocation = CURRENT.get();
         if (invocation == null || invocation.locationRead == null || invocation.query != null) return original.get();
         invocation.requireCurrent();
-        if (world != invocation.locationRead.world || status != ChunkStatus.FULL
+        if (world != invocation.locationRead.world) throw breach("location predicate getter changed worlds");
+        if (status == ChunkStatus.STRUCTURE_REFERENCES || status == ChunkStatus.STRUCTURE_STARTS) {
+            if (!create || invocation.receipt.structures() == null)
+                throw breach("structure getter has no declared structure context");
+            return query(world, status == ChunkStatus.STRUCTURE_REFERENCES
+                    ? FullInitializedInputs.Purpose.STRUCTURE_REFERENCES : FullInitializedInputs.Purpose.STRUCTURE_STARTS,
+                    x, z, status, create, original);
+        }
+        if (status != ChunkStatus.FULL
                 || !invocation.receipt.contexts().predicateFullChunks().contains(new ChunkPos(x, z)))
             throw breach("location predicate getter has no declared exact FULL context input");
         return query(world, FullInitializedInputs.Purpose.BLOCK_CONTEXT, x, z, status, create, original);
@@ -174,6 +194,8 @@ public final class FullFinishingQueries {
             case DYNAMIC_SHAPE_MUTATION -> status == ChunkStatus.FULL && create;
             case ENVIRONMENT -> status == ChunkStatus.BIOMES && !create;
             case BLOCK_CONTEXT -> status == ChunkStatus.FULL && invocation.locationRead != null;
+            case STRUCTURE_REFERENCES -> status == ChunkStatus.STRUCTURE_REFERENCES && create && invocation.locationRead != null;
+            case STRUCTURE_STARTS -> status == ChunkStatus.STRUCTURE_STARTS && create && invocation.locationRead != null;
             default -> false;
         };
         if (!audited) throw breach("unaudited initialized query status/create/purpose combination");
@@ -211,6 +233,9 @@ public final class FullFinishingQueries {
                     if (target.biomes() == null || !sameBiomeInput(target.biomes().actual(), result))
                         throw breach("environment getter returned another original biome object");
                 } else if (result != null) throw breach("absent biome input became present during the operation");
+            } else if (status == ChunkStatus.STRUCTURE_REFERENCES || status == ChunkStatus.STRUCTURE_STARTS) {
+                if (!invocation.receipt.structures().allows(target, status, result))
+                    throw breach("structure getter returned an uncaptured original status/cache object");
             }
             return result;
         } finally { invocation.query = null; }
@@ -234,6 +259,11 @@ public final class FullFinishingQueries {
                 ? query.target.biomes() == null || selected != query.target.biomes().slot()
                 : selected != GenerationChunkHolder.UNLOADED_CHUNK_FUTURE))
             throw breach("environment getter selected another original biome/absent future");
+        if (status == ChunkStatus.STRUCTURE_REFERENCES || status == ChunkStatus.STRUCTURE_STARTS) {
+            var evidence = FullStructureInputs.evidence(query.target, status);
+            if (evidence == null || selected != evidence.slot() || !selected.isDone())
+                throw breach("structure getter selected another or unfinished original status future");
+        }
         // Ready, absent and exceptional/cancelled results retain the original join/error branch.
         if (selected.isDone()) return;
         if (status != ChunkStatus.FULL || query.target.availability() != FullInitializedInputs.Availability.PREPARED

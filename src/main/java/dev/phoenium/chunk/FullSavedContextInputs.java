@@ -96,6 +96,7 @@ public final class FullSavedContextInputs {
         private Set<net.minecraft.world.level.ChunkPos> selectorChunks = Set.of();
         private final Set<net.minecraft.world.level.ChunkPos> predicateBiomeChunks = new LinkedHashSet<>();
         private final Set<net.minecraft.world.level.ChunkPos> predicateFullChunks = new LinkedHashSet<>();
+        private final Set<net.minecraft.world.level.ChunkPos> predicateStructureChunks = new LinkedHashSet<>();
         private net.minecraft.server.ReloadableServerRegistries.Holder predicateRegistries;
         private int maximumSelectorCandidates;
         private IdentityHashMap<Entity, FullEntityFacts.Fact> selectorCandidates;
@@ -145,6 +146,7 @@ public final class FullSavedContextInputs {
         }
         Set<net.minecraft.world.level.ChunkPos> predicateBiomeChunks() { return Collections.unmodifiableSet(predicateBiomeChunks); }
         Set<net.minecraft.world.level.ChunkPos> predicateFullChunks() { return Collections.unmodifiableSet(predicateFullChunks); }
+        Set<net.minecraft.world.level.ChunkPos> predicateStructureChunks() { return Collections.unmodifiableSet(predicateStructureChunks); }
         private void discover(FullSavedInput.EntityFact fact) {
             var queue = new ArrayDeque<Pending>();
             add(fact, FullSavedTextInputs.discover(fact, world.registryAccess()), queue);
@@ -483,6 +485,7 @@ public final class FullSavedContextInputs {
                     }
                     predicateBiomeChunks.addAll(predicates.biomes());
                     predicateFullChunks.addAll(predicates.full());
+                    predicateStructureChunks.addAll(predicates.structures());
                     bytes = Math.addExact(bytes, predicates.bytes());
                     if (!predicates.storageIds().isEmpty()) {
                         var reads = predicates.storageIds().stream().map(id -> new FullSavedTextInputs.NbtRead(
