@@ -154,6 +154,11 @@ Lead review requires the following remaining corrections:
 - Inspect one exact native pending minecraft:stone_button record in its actual MCA
   chunk, saved powered=true state, priority and native relative delay at the snapshot.
   Current parser's local/world coordinate alternatives and deadline guesses are invalid.
+  Luna `573ba9d` is committed in its worktree but not accepted/integrated: it invents
+  saved `o` order, expects the wrong ChunkPos string, and uses continuous rather than
+  native padded-per-long palette packing. Pinned SavedTick saves only i/x/y/z/t/p;
+  ChunkPos prints `[x, z]`. Correct to exactly one obligation with coherent dimension,
+  region/chunk identity and named powered state. Luna owns the source-based repair.
 - Freeze restart before a saved deadline can pass, activate observation, then step
   through actual restored execution exactly once; do not reschedule or extend it.
 - Reuse the completed real-client world and immutable pre-restart copy. The generic
