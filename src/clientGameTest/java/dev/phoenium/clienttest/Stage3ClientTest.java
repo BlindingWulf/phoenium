@@ -1827,7 +1827,11 @@ public final class Stage3ClientTest implements FabricClientGameTest {
                 require(received, "client never received exact target chunks/nonair fixture during " + phase);
                 evidence.put(phase + "RealTcpChunkReceipt", true);
                 evidence.put(phase + "Diagnostics", active.execute("phoenium diagnostics"));
-                active.execute("save-all flush");
+                // Vanilla handles this synchronously, including region-file I/O for the
+                // generated fixture.  Keep the short control-command timeout for the
+                // ordinary RCON traffic, but give this one required disk barrier its
+                // own bounded response window.
+                active.execute("save-all flush", 30_000);
                 if (phase.equals("fresh"))
                     evidence.put("freshPersistedFullPayload", persistedFullFixturePayload(worldRoot));
                 disconnectClient(context); connected = false;
@@ -2034,7 +2038,7 @@ public final class Stage3ClientTest implements FabricClientGameTest {
 
     private static void requireZeroMetric(String line, String field, String subsystem) {
         Matcher metric = Pattern.compile("(?:^|[\\s,{])" + Pattern.quote(field)
-                        + "=(-?\\d+)(?:\\s|[,}])")
+                        + "=(-?\\d+)(?=\\s|[,}]|$)")
                 .matcher(line);
         int occurrences = 0;
         while (metric.find()) {
@@ -2336,6 +2340,11 @@ public final class Stage3ClientTest implements FabricClientGameTest {
             return RconClient.execute("127.0.0.1", rconPort(), rconPassword(), command);
         }
 
+        private String execute(String command, int responseTimeoutMillis) throws IOException {
+            return RconClient.execute("127.0.0.1", rconPort(), rconPassword(), command,
+                    responseTimeoutMillis);
+        }
+
         private String serverPosition() throws IOException {
             return execute("data get entity " + TEST_USERNAME + " Pos");
         }
@@ -2421,9 +2430,14 @@ public final class Stage3ClientTest implements FabricClientGameTest {
         private RconClient() { }
 
         private static String execute(String host, int port, String password, String command) throws IOException {
+            return execute(host, port, password, command, 4_000);
+        }
+
+        private static String execute(String host, int port, String password, String command,
+                                      int responseTimeoutMillis) throws IOException {
             try (Socket socket = new Socket()) {
                 socket.connect(new InetSocketAddress(host, port), 1500);
-                socket.setSoTimeout(4000);
+                socket.setSoTimeout(responseTimeoutMillis);
                 DataInputStream input = new DataInputStream(new BufferedInputStream(socket.getInputStream()));
                 OutputStream output = socket.getOutputStream();
                 writePacket(output, 1, 3, password);
