@@ -113,9 +113,22 @@ final class FullSavedTextInputs {
     static Saved captureComponent(CompoundTag entity, String key, FullSavedInput custodian) {
         Tag component = entity.get(key);
         if (component == null) return Saved.EMPTY;
+        return captureTag(component, custodian);
+    }
+
+    /** Dependency-only snapshot for a component reached through a retained block tag path. */
+    static Saved captureTag(Tag component, FullSavedInput custodian) {
+        if (component == null) return Saved.EMPTY;
         long[] budget = {0, 0};
         protect(component, custodian, 0, budget);
         return new Saved(component.copy(), Vec2.ZERO, budget[1]);
+    }
+
+    static long measureTag(Tag component) {
+        if (component == null) return 0L;
+        long[] budget = {0, 0};
+        protect(component, null, 0, budget);
+        return budget[1];
     }
 
     static Optional<Component> decode(Saved saved, HolderLookup.Provider registries) {

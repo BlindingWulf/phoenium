@@ -101,6 +101,51 @@ public final class FullBlockEntityTagInputs {
             consumed = true;
         }
         FullSavedTextInputs.Saved customName() { return customName; }
+        /** Returns every component-valued slot of the audited serialized field. Classification
+         * is deliberately conservative and does not evaluate an arbitrary NBT path. */
+        List<FullSavedTextInputs.Saved> components(String path, LongPredicate reserve) {
+            synchronized (this) {
+                if (!valid()) throw new ChunkProtocolException("pending block-entity component source changed before field capture");
+            }
+            List<net.minecraft.nbt.Tag> tags = componentTags(path);
+            long bytes = 0L;
+            for (var tag : tags) bytes = Math.addExact(bytes, FullSavedTextInputs.measureTag(tag));
+            if (!reserve.test(bytes)) throw new Capacity();
+            var result = new ArrayList<FullSavedTextInputs.Saved>(tags.size());
+            for (var tag : tags) result.add(FullSavedTextInputs.captureTag(tag, source.custody));
+            return List.copyOf(result);
+        }
+        private List<net.minecraft.nbt.Tag> componentTags(String path) {
+            var result = new ArrayList<net.minecraft.nbt.Tag>();
+            if (path.equals("CustomName")) {
+                var tag = source.tag.get("CustomName"); if (tag != null) result.add(tag);
+                return result;
+            }
+            if (path.equals("LastOutput")) {
+                if (!source.tag.getBooleanOr("TrackOutput", true)) return result;
+                var tag = source.tag.get("LastOutput"); if (tag != null) result.add(tag);
+                return result;
+            }
+            String side;
+            boolean filtered;
+            if (path.equals("front_text.messages") || path.startsWith("front_text.messages[")) {
+                side = "front_text"; filtered = false;
+            } else if (path.equals("front_text.filtered_messages") || path.startsWith("front_text.filtered_messages[")) {
+                side = "front_text"; filtered = true;
+            } else if (path.equals("back_text.messages") || path.startsWith("back_text.messages[")) {
+                side = "back_text"; filtered = false;
+            } else if (path.equals("back_text.filtered_messages") || path.startsWith("back_text.filtered_messages[")) {
+                side = "back_text"; filtered = true;
+            } else return result;
+            var text = source.tag.getCompound(side).orElse(null);
+            if (text == null) return result;
+            addSlots(result, text.getListOrEmpty(filtered ? "filtered_messages" : "messages"));
+            if (filtered) addSlots(result, text.getListOrEmpty("messages"));
+            return result;
+        }
+        private static void addSlots(List<net.minecraft.nbt.Tag> result, net.minecraft.nbt.ListTag values) {
+            for (int index = 0; index < Math.min(4, values.size()); index++) result.add(values.get(index));
+        }
         long bytes() { return bytes; }
         AutoCloseable retain(Runnable changed) {
             synchronized (this) { retainers = Math.incrementExact(retainers); }

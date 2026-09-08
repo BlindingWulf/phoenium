@@ -277,15 +277,37 @@ public final class FullSavedContextInputs {
                         consumers.add(capture.retain(changed));
                     }
                 }
-                refinedBlocks.add(pending); changedPlan = true;
                 if (capture == null) {
+                    refinedBlocks.add(pending); changedPlan = true;
                     pendingLiveBlocks.add(pending);
                     continue;
                 }
                 if (!read.path().equals("CustomName")) {
-                    unmet = pending.fact.path() + ": pending block-entity interpreted path producer pending for " + read.path();
-                    break;
+                    // The serialized tag is only the discovery receipt.  For audited command
+                    // and sign fields, the later live refinement must consume the original
+                    // lazy block instance and its serializer.  Keep every other path an
+                    // explicit unmet producer rather than treating arbitrary saved keys as
+                    // covered by the detached tag.
+                    if (FullLiveComponentInputs.blockField(read.path()) == null) {
+                        unmet = pending.fact.path() + ": pending block-entity interpreted path producer pending for " + read.path();
+                        break;
+                    }
+                    List<FullSavedTextInputs.Saved> components;
+                    try { components = capture.components(read.path(), this::reserve); }
+                    catch (FullBlockEntityTagInputs.Capacity capacity) {
+                        refinementCapacity = true; changedPlan = true; continue;
+                    }
+                    for (var component : components) bytes = Math.addExact(bytes, component.payloadBytes());
+                    refinedBlocks.add(pending); changedPlan = true;
+                    pendingLiveBlocks.add(pending);
+                    var queue = new ArrayDeque<Pending>();
+                    for (var component : components) FullSavedTextInputs.decode(component, registry).ifPresent(value ->
+                            add(pending.fact, FullSavedTextInputs.discoverInterpreted(pending.fact, value,
+                                    read.recursionDepth()), queue));
+                    process(queue);
+                    continue;
                 }
+                refinedBlocks.add(pending); changedPlan = true;
                 var queue = new ArrayDeque<Pending>();
                 FullSavedTextInputs.decode(capture.customName(), world.registryAccess()).ifPresent(component ->
                         add(pending.fact, FullSavedTextInputs.discoverInterpreted(pending.fact, component, read.recursionDepth()), queue));
