@@ -247,6 +247,18 @@ with log.open("w") as output:
                       "chunkAdmissions=0", "chunkApplications=0", "chunkReroutes=0", "chunkRejections=0",
                       "chunkDuplicates=0", "producerChunkMutations=0"):
             assert field in stage2, "Stage 2 cleanup retained an unexpected value: " + stage2
+        executed = re.search(r"(?:^|[\s,{])executed=(\d+)(?:[\s,}]|$)", stage2)
+        assert executed and int(executed.group(1)) > 0, (
+            "Stage 2 shutdown did not record a positive executed-tick count: " + stage2
+        )
+        stage4_shutdown = [line for line in text.splitlines()
+                           if "PHOENIUM_STAGE4_SHUTDOWN" in line]
+        assert len(stage4_shutdown) == 1, "missing or duplicate Stage 4 shutdown accounting"
+        shutdown = stage4_shutdown[0]
+        for field in ("admissionClosed=true", "queuedServices=0", "pendingSaves=0",
+                      "failedSettlements=0", "failedWrites=0", "retiredFailedSources=0",
+                      "completedNotAcknowledged=0"):
+            assert field in shutdown, "Stage 4 shutdown retained an unexpected value: " + shutdown
         full_stopped = [line for line in text.splitlines() if "PHOENIUM_FULL STOPPED" in line]
         for line in full_stopped:
             for name in ("structureHolders", "structureReaders", "structureWriters",
@@ -269,6 +281,7 @@ with log.open("w") as output:
             assert not services_stopped, "finishing-service marker appeared without the controlled probe"
         manifest.update({"result": "PASS", "exitCode": process.returncode, "stopped": stopped,
                          "stage2Stopped": stage2_stopped,
+                         "stage4Shutdown": stage4_shutdown,
                          "fullRuntimeStopped": full_stopped,
                          "fullServicesStopped": services_stopped,
                          "fullServicesMarkerApplicable": controlled,
