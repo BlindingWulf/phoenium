@@ -393,6 +393,53 @@ class FullSavedContextInputTest {
         assertCleanup(f);
     }
 
+    @Test void pendingMapAbsenceInsertionInvalidatesPreflightAndBindsItsNestedContextBeforeClaim() throws Exception {
+        var f = new FullRegistrationFixture(true); var position = new BlockPos(8, 8, 8);
+        var data = new SavedDataStorage(directory, null, f.world.level.registryAccess());
+        var storage = new CommandStorage(data); set(f.world.level.getServer(), MinecraftServer.class, "commandStorage", storage);
+        var stored = new CompoundTag(); stored.putString("message", "late map dependency"); storage.set(SECOND, stored);
+        f.input(ChunkPos.ZERO).getSection(0).setBlockState(8, 8, 8, Blocks.BEACON.defaultBlockState());
+        try {
+            saved(f, ChunkPos.ZERO, false, text(blockText(position))); f.start(ChunkPos.ZERO, ChunkStatus.FULL); f.drain();
+            var graph = f.runtime.graph(f.holder(ChunkPos.ZERO)); var first = graph.inputReceipt();
+            assertNotNull(first); assertEquals(0, first.contexts().blockTagCaptures());
+            var actual = graph.inputTargets().stream().map(FullInitializedInputs.Target::actual)
+                    .filter(java.util.Objects::nonNull).findFirst().orElseThrow();
+            actual.setBlockEntityNbt(pendingBeacon(position, storageText(SECOND))); f.drain();
+            var rebound = graph.inputReceipt(); assertNotNull(rebound); assertNotSame(first, rebound);
+            assertEquals(1, rebound.contexts().blockTagCaptures());
+            assertTrue(rebound.contexts().requirements("root[0]").size() >= 3,
+                    "the late pending tag's nested storage dependency is bound before the original claim");
+        } finally {
+            f.stop(); FullFinishingServices.stopped(f.world.level.getServer()); data.close();
+        }
+        assertCleanup(f);
+    }
+
+    @Test void parsedListAbsenceInsertionInvalidatesPreflightAndBindsItsNestedContextBeforeClaim() throws Exception {
+        var f = new FullRegistrationFixture(true); var position = new BlockPos(8, 8, 8);
+        var data = new SavedDataStorage(directory, null, f.world.level.registryAccess());
+        var storage = new CommandStorage(data); set(f.world.level.getServer(), MinecraftServer.class, "commandStorage", storage);
+        var stored = new CompoundTag(); stored.putString("message", "late parsed dependency"); storage.set(SECOND, stored);
+        var proto = f.input(ChunkPos.ZERO); proto.getSection(0).setBlockState(8, 8, 8, Blocks.BEACON.defaultBlockState());
+        var entities = FullSavedInput.reloadRoots(new java.util.ArrayList<>(List.of(text(blockText(position)))));
+        var blocks = FullBlockEntityTagInputs.reloadRoots(new java.util.ArrayList<CompoundTag>());
+        var loaded = new LevelChunk(f.world.level, proto, FullSavedInput.reload(chunk -> { }, entities, blocks));
+        f.inputs.put(ChunkPos.ZERO.pack(), new net.minecraft.world.level.chunk.ImposterProtoChunk(loaded, false));
+        try {
+            f.start(ChunkPos.ZERO, ChunkStatus.FULL); f.drain(); var graph = f.runtime.graph(f.holder(ChunkPos.ZERO));
+            var first = graph.inputReceipt(); assertNotNull(first); assertEquals(0, first.contexts().blockTagCaptures());
+            blocks.add(pendingBeacon(position, storageText(SECOND))); f.drain();
+            var rebound = graph.inputReceipt(); assertNotNull(rebound); assertNotSame(first, rebound);
+            assertEquals(1, rebound.contexts().blockTagCaptures());
+            assertTrue(rebound.contexts().requirements("root[0]").size() >= 3,
+                    "the late parsed tag's nested storage dependency is bound before the original claim");
+        } finally {
+            f.stop(); loaded.runPostLoad(); FullFinishingServices.stopped(f.world.level.getServer()); data.close();
+        }
+        assertCleanup(f);
+    }
+
     @Test void actualReloadParsedBlockTagsAreRetainedForDependencyRefinementWithoutEarlyInstallation() throws Exception {
         var f = new FullRegistrationFixture(true); var position = new BlockPos(8, 8, 8);
         var data = new SavedDataStorage(directory, net.minecraft.util.datafix.DataFixers.getDataFixer(), f.world.level.registryAccess());
@@ -471,6 +518,25 @@ class FullSavedContextInputTest {
             assertEquals("second", FullSavedTextInputs.decode(restored.customName(), f.world.level.registryAccess()).orElseThrow().getString());
         } finally {
             if (use != null) use.close(); reload.close(); f.stop(); FullFinishingServices.stopped(f.world.level.getServer());
+        }
+        assertCleanup(f);
+    }
+
+    @Test void parsedListMutationDuringCapacityCheckNotifiesRetryOutsideReloadMetadata() throws Exception {
+        var f = new FullRegistrationFixture(true); var position = new BlockPos(8, 8, 8);
+        var roots = FullBlockEntityTagInputs.reloadRoots(new java.util.ArrayList<>(List.of(
+                pendingBeacon(position, net.minecraft.nbt.StringTag.valueOf("before mutation")))));
+        var reload = FullBlockEntityTagInputs.reload(roots); var notified = new AtomicInteger();
+        try {
+            var replacement = pendingBeacon(position, net.minecraft.nbt.StringTag.valueOf("after mutation"));
+            var retry = assertThrows(FullBlockEntityTagInputs.Retry.class, () -> reload.observe(
+                    ChunkPos.ZERO, position, f.world.level.registryAccess(), () -> {
+                        assertFalse(Thread.holdsLock(reload), "retry notification runs outside reload metadata");
+                        notified.incrementAndGet();
+                    }, ignored -> { roots.add(replacement); return true; }));
+            assertEquals(1, notified.get()); retry.waiter.close();
+        } finally {
+            reload.close(); f.stop(); FullFinishingServices.stopped(f.world.level.getServer());
         }
         assertCleanup(f);
     }

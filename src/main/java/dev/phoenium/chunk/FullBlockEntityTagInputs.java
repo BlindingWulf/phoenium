@@ -17,7 +17,55 @@ public final class FullBlockEntityTagInputs {
 
     public static final class State {
         private final Map<BlockPos, Occurrence> sources = new HashMap<>();
+        private final Map<BlockPos, Long> revisions = new HashMap<>();
+        private final Map<BlockPos, CopyOnWriteArrayList<Runnable>> listeners = new HashMap<>();
+        private long sequence;
         private Map<BlockPos, CompoundTag> guarded;
+        private synchronized long revision(BlockPos position) { return revisions.getOrDefault(position, 0L); }
+        private AutoCloseable retain(BlockPos position, long expected, Runnable changed) {
+            PositionUse use;
+            synchronized (this) {
+                var callbacks = listeners.computeIfAbsent(position.immutable(), ignored -> new CopyOnWriteArrayList<>());
+                callbacks.add(changed); use = new PositionUse(this, position.immutable(), changed);
+            }
+            try { if (revision(position) != expected) changed.run(); }
+            catch (Throwable failure) { use.close(); throw failure; }
+            return use;
+        }
+        private Throwable changed(BlockPos position) {
+            List<Runnable> callbacks; Throwable failure = null;
+            synchronized (this) {
+                try { revisions.put(position.immutable(), sequence = Math.incrementExact(sequence)); }
+                catch (Throwable problem) { failure = problem; }
+                callbacks = List.copyOf(listeners.getOrDefault(position, new CopyOnWriteArrayList<>()));
+            }
+            for (Runnable callback : callbacks) try { callback.run(); }
+            catch (Throwable problem) {
+                if (failure == null) failure = problem;
+                else if (failure != problem) failure.addSuppressed(problem);
+            }
+            return failure;
+        }
+    }
+
+    static final class Observation {
+        final Capture capture; final Absence absence;
+        Observation(Capture capture, Absence absence) { this.capture = capture; this.absence = absence; }
+    }
+
+    static final class Absence {
+        private final State state; private final BlockPos position;
+        private final Reload reload; private final long revision;
+        Absence(State state, BlockPos position, long revision) {
+            this.state = state; this.position = position.immutable(); this.reload = null; this.revision = revision;
+        }
+        Absence(Reload reload, long revision) {
+            this.state = null; this.position = null; this.reload = reload; this.revision = revision;
+        }
+        boolean valid() { return state != null ? state.revision(position) == revision : reload.valid(revision); }
+        AutoCloseable retain(Runnable changed) {
+            return state != null ? state.retain(position, revision, changed) : reload.retain(revision, changed);
+        }
     }
 
     public static final class Capture {
@@ -114,12 +162,18 @@ public final class FullBlockEntityTagInputs {
 
     static Capture observe(net.minecraft.world.level.chunk.ChunkAccess chunk, BlockPos position,
                            HolderLookup.Provider registries, Runnable changed, LongPredicate reserve) {
+        return observeVersioned(chunk, position, registries, changed, reserve).capture;
+    }
+    static Observation observeVersioned(net.minecraft.world.level.chunk.ChunkAccess chunk, BlockPos position,
+                                        HolderLookup.Provider registries, Runnable changed, LongPredicate reserve) {
         if (!(chunk instanceof Access access)) throw new ChunkProtocolException("prepared chunk lacks pending-tag custody");
-        Occurrence occurrence;
-        synchronized (access.phoenium$blockEntityTags()) {
-            occurrence = access.phoenium$blockEntityTags().sources.get(position);
+        State state = access.phoenium$blockEntityTags(); Occurrence occurrence; long revision;
+        synchronized (state) {
+            occurrence = state.sources.get(position); revision = state.revisions.getOrDefault(position, 0L);
         }
-        return occurrence == null ? null : occurrence.observe(registries, changed, reserve, () -> true, null, 0L);
+        if (occurrence == null) return new Observation(null, new Absence(state, position, revision));
+        Capture capture = occurrence.observe(registries, changed, reserve, () -> true, null, 0L);
+        return capture == null ? new Observation(null, new Absence(state, position, revision)) : new Observation(capture, null);
     }
 
     public static List<CompoundTag> reloadRoots(List<CompoundTag> original) {
@@ -150,27 +204,32 @@ public final class FullBlockEntityTagInputs {
         Reload(List<Occurrence> sources) { this.sources = sources; }
         Capture observe(ChunkPos chunk, BlockPos position, HolderLookup.Provider registries,
                         Runnable changed, LongPredicate reserve) {
+            return observeVersioned(chunk, position, registries, changed, reserve).capture;
+        }
+        Observation observeVersioned(ChunkPos chunk, BlockPos position, HolderLookup.Provider registries,
+                                     Runnable changed, LongPredicate reserve) {
             final long observed; final int size;
             synchronized (this) {
-                if (sources == null) return null;
+                if (sources == null) return new Observation(null, new Absence(this, revision));
                 observed = revision; size = sources.size();
             }
             for (int index = size - 1; index >= 0; index--) {
-                Occurrence occurrence;
+                Occurrence occurrence = null; boolean stale;
                 synchronized (this) {
-                    if (sources == null || revision != observed) throw retry(observed, changed);
-                    occurrence = sources.get(index);
+                    stale = sources == null || revision != observed;
+                    if (!stale) occurrence = sources.get(index);
                 }
+                if (stale) throw retry(observed, changed);
                 Source source = occurrence.source;
                 Capture capture = occurrence.observe(registries, changed, reserve,
                         () -> retainedPosition(chunk, source.tag).equals(position), this, observed);
                 if (capture != null) {
                     if (!valid(observed)) throw retry(observed, changed);
-                    return capture;
+                    return new Observation(capture, null);
                 }
             }
             if (!valid(observed)) throw retry(observed, changed);
-            return null;
+            return new Observation(null, new Absence(this, observed));
         }
         synchronized boolean valid(long expected) { return sources != null && revision == expected; }
         AutoCloseable retain(long expected, Runnable changed) {
@@ -213,7 +272,7 @@ public final class FullBlockEntityTagInputs {
             List<Occurrence> removed;
             synchronized (this) {
                 if (sources == null || sources.isEmpty()) return;
-                removed = List.copyOf(sources); sources.clear(); revision = Math.incrementExact(revision);
+                removed = sources; sources = new ArrayList<>(); revision = Math.incrementExact(revision);
             }
             notifyAndRetire(removed, "parsed block-entity list clear failed");
         }
@@ -239,7 +298,7 @@ public final class FullBlockEntityTagInputs {
             List<Occurrence> retiring;
             synchronized (this) {
                 if (sources == null) return;
-                retiring = List.copyOf(sources); sources = null; revision = Math.incrementExact(revision);
+                retiring = sources; sources = null; revision = Math.incrementExact(revision);
             }
             try { notifyAndRetire(retiring, "parsed block-entity tag acknowledgement failed"); }
             finally { listeners.clear(); }
@@ -401,6 +460,27 @@ public final class FullBlockEntityTagInputs {
             occurrence.listeners.remove(changed); occurrence = null; changed = null;
         }
     }
+    private static final class PositionUse implements AutoCloseable {
+        private State state; private BlockPos position; private Runnable changed;
+        PositionUse(State state, BlockPos position, Runnable changed) {
+            this.state = state; this.position = position; this.changed = changed;
+        }
+        @Override public void close() {
+            State current; BlockPos key; Runnable callback;
+            synchronized (this) {
+                if (state == null) return;
+                current = state; key = position; callback = changed;
+                state = null; position = null; changed = null;
+            }
+            synchronized (current) {
+                var callbacks = current.listeners.get(key);
+                if (callbacks != null) {
+                    callbacks.remove(callback);
+                    if (callbacks.isEmpty()) current.listeners.remove(key);
+                }
+            }
+        }
+    }
     private static final class ReloadUse implements AutoCloseable {
         private Reload reload; private Runnable changed;
         ReloadUse(Reload reload, Runnable changed) { this.reload = reload; this.changed = changed; }
@@ -435,7 +515,7 @@ public final class FullBlockEntityTagInputs {
             if (old != null && old.source == next) return previous;
             Occurrence occurrence = new Occurrence(next);
             synchronized (state) { state.sources.put(key.immutable(), occurrence); }
-            if (old != null) old.retire();
+            finishMutation(state, key, old, "pending block-entity tag replacement failed");
             return previous;
         }
         @Override public void putAll(Map<? extends BlockPos, ? extends CompoundTag> values) {
@@ -444,14 +524,14 @@ public final class FullBlockEntityTagInputs {
         @Override public CompoundTag remove(Object key) {
             CompoundTag removed = delegate.remove(key); Occurrence old;
             synchronized (state) { old = state.sources.remove(key); }
-            if (old != null) old.retire();
+            if (old != null) finishMutation(state, (BlockPos) key, old, "pending block-entity tag removal failed");
             return removed;
         }
         @Override public void clear() {
-            delegate.clear(); List<Occurrence> old;
-            synchronized (state) { old = List.copyOf(state.sources.values()); state.sources.clear(); }
+            delegate.clear(); List<Map.Entry<BlockPos, Occurrence>> old;
+            synchronized (state) { old = List.copyOf(state.sources.entrySet()); state.sources.clear(); }
             Throwable failure = null;
-            for (Occurrence occurrence : old) try { occurrence.retire(); }
+            for (var entry : old) try { finishMutation(state, entry.getKey(), entry.getValue(), "pending block-entity tag clear failed"); }
             catch (Throwable problem) {
                 if (failure == null) failure = problem;
                 else if (failure != problem) failure.addSuppressed(problem);
@@ -478,7 +558,8 @@ public final class FullBlockEntityTagInputs {
                             if (current == null) throw new IllegalStateException();
                             BlockPos key = current.getKey(); iterator.remove(); Occurrence old;
                             synchronized (state) { old = state.sources.remove(key); }
-                            if (old != null) old.retire(); current = null;
+                            if (old != null) finishMutation(state, key, old, "pending block-entity iterator removal failed");
+                            current = null;
                         }
                     };
                 }
@@ -490,6 +571,15 @@ public final class FullBlockEntityTagInputs {
         if (failure instanceof Error error) throw error;
         if (failure instanceof RuntimeException runtime) throw runtime;
         if (failure != null) throw new ChunkProtocolException(message, failure);
+    }
+    private static void finishMutation(State state, BlockPos position, Occurrence retiring, String message) {
+        Throwable failure = state.changed(position);
+        if (retiring != null) try { retiring.retire(); }
+        catch (Throwable problem) {
+            if (failure == null) failure = problem;
+            else if (failure != problem) failure.addSuppressed(problem);
+        }
+        rethrow(failure, message);
     }
     private static BlockPos retainedPosition(ChunkPos base, CompoundTag tag) {
         int x = tag.getIntOr("x", 0), y = tag.getIntOr("y", 0), z = tag.getIntOr("z", 0);

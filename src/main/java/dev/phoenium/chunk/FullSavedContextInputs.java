@@ -53,6 +53,8 @@ public final class FullSavedContextInputs {
         private final List<Pending> pendingBlocks = new ArrayList<>();
         private final Set<Pending> refinedBlocks = Collections.newSetFromMap(new IdentityHashMap<>());
         private final Map<BlockPos, FullBlockEntityTagInputs.Capture> blockTags = new HashMap<>();
+        private final Map<BlockPos, FullBlockEntityTagInputs.Absence> blockMapAbsences = new HashMap<>();
+        private final Map<BlockPos, FullBlockEntityTagInputs.Absence> blockReloadAbsences = new HashMap<>();
         private final Map<BlockPos, AutoCloseable> blockWaiters = new HashMap<>();
         private final List<AutoCloseable> consumers = new ArrayList<>();
         private final Runnable changed;
@@ -83,6 +85,8 @@ public final class FullSavedContextInputs {
             return !closed && current == saved && world.registryAccess() == registry
                     && storage.values().stream().allMatch(FullCommandStorageInputs.Capture::valid)
                     && blockTags.values().stream().allMatch(FullBlockEntityTagInputs.Capture::valid)
+                    && blockMapAbsences.values().stream().allMatch(FullBlockEntityTagInputs.Absence::valid)
+                    && blockReloadAbsences.values().stream().allMatch(FullBlockEntityTagInputs.Absence::valid)
                     && (entityCut == null || FullFinishingServices.forServer(world.getServer()).entityFacts.valid(entityCut));
         }
         List<FullSavedTextInputs.Requirements> requirements(String path) { return List.copyOf(texts.getOrDefault(path, List.of())); }
@@ -163,11 +167,26 @@ public final class FullSavedContextInputs {
                 var capture = blockTags.get(read.block());
                 if (capture == null) {
                     try {
-                        capture = FullBlockEntityTagInputs.observe(target.actual(), read.block(), world.registryAccess(), changed, this::reserve);
-                        if (capture == null && target.actual() instanceof FullSavedInput.PostLoadAccess access
-                                && access.phoenium$postLoad() instanceof FullSavedInput.ReloadProcessor reload)
-                            capture = reload.blockEntities().observe(target.actual().getPos(), read.block(),
+                        if (!blockMapAbsences.containsKey(read.block())) {
+                            var observation = FullBlockEntityTagInputs.observeVersioned(target.actual(), read.block(),
                                     world.registryAccess(), changed, this::reserve);
+                            capture = observation.capture;
+                            if (observation.absence != null) {
+                                blockMapAbsences.put(read.block(), observation.absence);
+                                consumers.add(observation.absence.retain(changed));
+                            }
+                        }
+                        if (capture == null && !blockReloadAbsences.containsKey(read.block())
+                                && target.actual() instanceof FullSavedInput.PostLoadAccess access
+                                && access.phoenium$postLoad() instanceof FullSavedInput.ReloadProcessor reload) {
+                            var observation = reload.blockEntities().observeVersioned(target.actual().getPos(), read.block(),
+                                    world.registryAccess(), changed, this::reserve);
+                            capture = observation.capture;
+                            if (observation.absence != null) {
+                                blockReloadAbsences.put(read.block(), observation.absence);
+                                consumers.add(observation.absence.retain(changed));
+                            }
+                        }
                     } catch (FullBlockEntityTagInputs.Retry retry) {
                         AutoCloseable prior = blockWaiters.put(read.block(), retry.waiter);
                         if (prior != null) close(prior, "replaced pending block dependency waiter");
@@ -245,7 +264,8 @@ public final class FullSavedContextInputs {
             if (closed) return;
             if (claim != null) throw new ChunkProtocolException("saved contexts released before original reader exit");
             closed = true; texts.clear(); storage.clear(); pendingBlocks.clear(); refinedBlocks.clear();
-            blockTags.clear(); var waiters = List.copyOf(blockWaiters.values()); blockWaiters.clear();
+            blockTags.clear(); blockMapAbsences.clear(); blockReloadAbsences.clear();
+            var waiters = List.copyOf(blockWaiters.values()); blockWaiters.clear();
             Throwable failure = null;
             for (AutoCloseable waiter : waiters) try { waiter.close(); }
             catch (Throwable problem) {
