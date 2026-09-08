@@ -25,6 +25,7 @@
     "FullInputPublicationMixin",
     "FullProductionMapMixin",
     "FullFinishingSerialMixin",
+    "RegionalChunkSaveMixin",
     "FullFinishingWorldContextMixin",
     "FullFinishingEnvironmentMixin",
     "FullWorldgenEnvironmentMixin",
