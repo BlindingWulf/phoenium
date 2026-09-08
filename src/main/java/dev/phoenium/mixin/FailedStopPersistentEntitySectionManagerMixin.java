@@ -19,6 +19,6 @@ abstract class FailedStopPersistentEntitySectionManagerMixin {
     @WrapOperation(method = "close()V", at = @At(value = "INVOKE",
             target = "Lnet/minecraft/world/level/entity/EntityPersistentStorage;close()V"), require = 1, expect = 1)
     private void phoenium$closeStorage(EntityPersistentStorage<?> storage, Operation<Void> original) {
-        FailedStopCleanup.run(() -> original.call(storage));
+        FullServerShutdown.cleanup(() -> original.call(storage));
     }
 }

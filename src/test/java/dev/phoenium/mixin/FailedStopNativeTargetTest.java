@@ -11,9 +11,41 @@ import org.objectweb.asm.Opcodes;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 
 /** Pinned 26.2 bytecode proof for every exact native call intercepted by failed-stop cleanup. */
 final class FailedStopNativeTargetTest {
+    @Test
+    void transformedNativeClassesUsePublicRuntimeHelpersOutsideTheMixinPackage() throws Exception {
+        for (String mixin : new String[]{"FailedStopMinecraftServerMixin", "FailedStopServerChunkCacheMixin",
+                "FailedStopPersistentEntitySectionManagerMixin", "FailedStopSavedDataStorageMixin",
+                "FailedStopServerLevelMixin", "FailedStopChunkMapMixin"}) {
+            try (var bytes = getClass().getResourceAsStream("/dev/phoenium/mixin/" + mixin + ".class")) {
+                assertTrue(bytes != null);
+                new ClassReader(bytes).accept(new ClassVisitor(Opcodes.ASM9) {
+                    @Override public MethodVisitor visitMethod(int access, String name, String desc,
+                            String signature, String[] exceptions) {
+                        return new MethodVisitor(Opcodes.ASM9) {
+                            @Override public void visitMethodInsn(int opcode, String owner, String target,
+                                    String descriptor, boolean isInterface) {
+                                assertFalse(owner.startsWith("dev/phoenium/mixin/"),
+                                        () -> "native target cannot load a helper from the protected Mixin package: " + owner);
+                                if (owner.equals("dev/phoenium/chunk/FullServerShutdown")) {
+                                    try {
+                                        var method = target.equals("cleanup")
+                                                ? dev.phoenium.chunk.FullServerShutdown.class.getMethod(target, Runnable.class)
+                                                : dev.phoenium.chunk.FullServerShutdown.class.getMethod(target);
+                                        assertTrue(java.lang.reflect.Modifier.isPublic(method.getModifiers()));
+                                    } catch (ReflectiveOperationException failure) { throw new AssertionError(failure); }
+                                }
+                            }
+                        };
+                    }
+                }, ClassReader.SKIP_DEBUG | ClassReader.SKIP_FRAMES);
+            }
+        }
+    }
+
     @Test
     void minecraftServerStopTargetsAreExactAndSingular() throws Exception {
         assertCalls("net/minecraft/server/MinecraftServer", "stopServer", "()V", Map.ofEntries(

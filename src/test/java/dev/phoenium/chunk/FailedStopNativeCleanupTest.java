@@ -1,6 +1,5 @@
 package dev.phoenium.chunk;
 
-import java.lang.reflect.InvocationTargetException;
 import java.util.ArrayList;
 import java.util.List;
 import net.minecraft.server.MinecraftServer;
@@ -46,18 +45,6 @@ final class FailedStopNativeCleanupTest {
     }
 
     private static void invoke(Runnable body) {
-        try {
-            Class<?> helper = Class.forName("dev.phoenium.mixin.FailedStopCleanup");
-            var method = helper.getDeclaredMethod("run", Runnable.class);
-            method.setAccessible(true);
-            method.invoke(null, body);
-        } catch (InvocationTargetException failure) {
-            Throwable cause = failure.getCause();
-            if (cause instanceof RuntimeException runtime) throw runtime;
-            if (cause instanceof Error error) throw error;
-            throw new AssertionError(cause);
-        } catch (ReflectiveOperationException failure) {
-            throw new AssertionError(failure);
-        }
+        FullServerShutdown.cleanup(body);
     }
 }

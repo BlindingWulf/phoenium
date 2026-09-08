@@ -36,19 +36,19 @@ abstract class FailedStopMinecraftServerMixin {
     @WrapOperation(method = STOP, at = @At(value = "INVOKE",
             target = "Lnet/minecraft/network/PacketProcessor;close()V"), require = 1, expect = 1)
     private void phoenium$closePacketProcessor(PacketProcessor processor, Operation<Void> original) {
-        FailedStopCleanup.run(() -> original.call(processor));
+        FullServerShutdown.cleanup(() -> original.call(processor));
     }
 
     @WrapOperation(method = STOP, at = @At(value = "INVOKE",
             target = "Lnet/minecraft/server/MinecraftServer;cancelRecordingMetrics()V"), require = 1, expect = 1)
     private void phoenium$cancelMetrics(MinecraftServer server, Operation<Void> original) {
-        FailedStopCleanup.run(() -> original.call(server));
+        FullServerShutdown.cleanup(() -> original.call(server));
     }
 
     @WrapOperation(method = STOP, at = @At(value = "INVOKE",
             target = "Lnet/minecraft/server/network/ServerConnectionListener;stop()V"), require = 1, expect = 1)
     private void phoenium$stopConnections(ServerConnectionListener listener, Operation<Void> original) {
-        FailedStopCleanup.run(() -> original.call(listener));
+        FullServerShutdown.cleanup(() -> original.call(listener));
     }
 
     @WrapOperation(method = STOP, at = @At(value = "INVOKE",
@@ -116,24 +116,24 @@ abstract class FailedStopMinecraftServerMixin {
     @WrapOperation(method = STOP, at = @At(value = "INVOKE",
             target = "Lnet/minecraft/server/level/ServerLevel;close()V"), require = 1, expect = 1)
     private void phoenium$closeLevel(ServerLevel level, Operation<Void> original) {
-        FailedStopCleanup.run(() -> original.call(level));
+        FullServerShutdown.cleanup(() -> original.call(level));
     }
 
     @WrapOperation(method = STOP, at = @At(value = "INVOKE",
             target = "Lnet/minecraft/world/level/storage/SavedDataStorage;close()V"), require = 1, expect = 1)
     private void phoenium$closeGlobalData(SavedDataStorage storage, Operation<Void> original) {
-        FailedStopCleanup.run(() -> original.call(storage));
+        FullServerShutdown.cleanup(() -> original.call(storage));
     }
 
     @WrapOperation(method = STOP, at = @At(value = "INVOKE",
             target = "Lnet/minecraft/server/MinecraftServer$ReloadableResources;close()V"), require = 1, expect = 1)
     private void phoenium$closeResources(@Coerce Object resources, Operation<Void> original) {
-        FailedStopCleanup.run(() -> original.call(resources));
+        FullServerShutdown.cleanup(() -> original.call(resources));
     }
 
     @WrapOperation(method = STOP, at = @At(value = "INVOKE",
             target = "Lnet/minecraft/world/level/storage/LevelStorageSource$LevelStorageAccess;close()V"), require = 1, expect = 1)
     private void phoenium$closeStorage(LevelStorageSource.LevelStorageAccess storage, Operation<Void> original) {
-        FailedStopCleanup.run(() -> original.call(storage));
+        FullServerShutdown.cleanup(() -> original.call(storage));
     }
 }

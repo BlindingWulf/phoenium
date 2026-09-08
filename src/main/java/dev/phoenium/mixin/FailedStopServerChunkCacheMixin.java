@@ -23,18 +23,18 @@ abstract class FailedStopServerChunkCacheMixin {
     @WrapOperation(method = CLOSE, at = @At(value = "INVOKE",
             target = "Lnet/minecraft/world/level/storage/SavedDataStorage;close()V"), require = 1, expect = 1)
     private void phoenium$closeData(SavedDataStorage storage, Operation<Void> original) {
-        FailedStopCleanup.run(() -> original.call(storage));
+        FullServerShutdown.cleanup(() -> original.call(storage));
     }
 
     @WrapOperation(method = CLOSE, at = @At(value = "INVOKE",
             target = "Lnet/minecraft/server/level/ThreadedLevelLightEngine;close()V"), require = 1, expect = 1)
     private void phoenium$closeLight(ThreadedLevelLightEngine light, Operation<Void> original) {
-        FailedStopCleanup.run(() -> original.call(light));
+        FullServerShutdown.cleanup(() -> original.call(light));
     }
 
     @WrapOperation(method = CLOSE, at = @At(value = "INVOKE",
             target = "Lnet/minecraft/server/level/ChunkMap;close()V"), require = 1, expect = 1)
     private void phoenium$closeMap(ChunkMap chunks, Operation<Void> original) {
-        FailedStopCleanup.run(() -> original.call(chunks));
+        FullServerShutdown.cleanup(() -> original.call(chunks));
     }
 }
