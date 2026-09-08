@@ -93,7 +93,11 @@ class NbtReader:
                 child_tag = self.u8()
                 if child_tag == 0:
                     return result
-                result[self.string()] = self.value(child_tag)
+                # Python evaluates assignment RHS before the subscript target.
+                # Read the compound name first or value() consumes the payload
+                # before the name and desynchronizes the entire NBT stream.
+                name = self.string()
+                result[name] = self.value(child_tag)
         if tag == 11:
             return [self.i32() for _ in range(max(0, self.i32()))]
         if tag == 12:
