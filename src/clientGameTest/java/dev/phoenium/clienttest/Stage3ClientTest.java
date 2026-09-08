@@ -1852,7 +1852,7 @@ public final class Stage3ClientTest implements FabricClientGameTest {
                 require(active.process.exitValue() == 0 && healthyFullAcceptanceLog(log)
                         && healthyFullAcceptanceLog(lifecycleProcessLog),
                         active.serverFailure("FULL server health check failed"));
-                require(log.contains("PHOENIUM_FULL STOPPED"), "authoritative FULL teardown evidence missing");
+                evidence.put(phase + "FullStopped", requireFullStoppedMetrics(lifecycleProcessLog));
                 Path savedLatestLog = directory.resolve(phase + "-latest.log");
                 Path savedProcessLog = directory.resolve(phase + "-server-process.log");
                 Files.copy(active.latestLog, savedLatestLog, StandardCopyOption.REPLACE_EXISTING);
@@ -1946,6 +1946,34 @@ public final class Stage3ClientTest implements FabricClientGameTest {
             && !log.contains("FULL fixture failed");
     }
 
+    /**
+     * The authoritative lifecycle must publish one complete FULL cleanup snapshot.  A
+     * generic shutdown marker or a missing field is insufficient evidence: absent metrics
+     * must fail the acceptance instead of being interpreted as zero.
+     */
+    private static String requireFullStoppedMetrics(String lifecycleProcessLog) {
+        List<String> lines = lifecycleProcessLog.lines()
+                .filter(line -> line.contains("PHOENIUM_FULL STOPPED"))
+                .toList();
+        require(lines.size() == 1,
+                "authoritative FULL teardown must emit exactly one scoped STOPPED snapshot: " + lines);
+        String line = lines.get(0);
+        String[] fields = {
+                "structureHolders", "structureReaders", "structureWriters", "structureWaitingWriters",
+                "structureDemandTickets", "generationHolders", "graphs", "returnedIndex",
+                "custodyEntries", "workEntries", "lifecycleEntries"
+        };
+        for (String field : fields) {
+            Matcher metric = Pattern.compile("(?:^|[\\s,{])" + Pattern.quote(field)
+                            + "=(-?\\d+)(?:\\s|[,}])")
+                    .matcher(line);
+            require(metric.find(), "authoritative FULL teardown omitted cleanup metric " + field + ": " + line);
+            require(Long.parseLong(metric.group(1)) == 0L,
+                    "authoritative FULL teardown left " + field + " nonzero: " + line);
+        }
+        return line;
+    }
+
     /** The two acceptance lifecycles append to one process log; scope route evidence to this boot. */
     private static String currentLifecycleProcessLog(String processLog) {
         int start = processLog.lastIndexOf("Starting minecraft server version");
@@ -2019,11 +2047,31 @@ public final class Stage3ClientTest implements FabricClientGameTest {
                     require(expectedUuid.equals(actualUuid), "fresh FULL region record entity UUID was wrong for chunk "
                             + x + ",4 entity " + i + ": " + actualUuid + " expected=" + expectedUuid);
                 }
-                chunks.add("[" + x + ",4]:status=" + status + ",legacyEntities=" + entities.size());
+                String recordHash = java.util.HexFormat.of().withUpperCase().formatHex(
+                        sha256(bytes, start, 4 + length));
+                List<String> uuids = new ArrayList<>();
+                for (int i = 0; i < entities.size(); i++) {
+                    CompoundTag entity = (CompoundTag) entities.get(i);
+                    UUID actualUuid = entity.read("UUID", UUIDUtil.CODEC).orElse(null);
+                    uuids.add(String.valueOf(actualUuid));
+                }
+                chunks.add("[" + x + ",4]:status=" + status + ",offset=" + location
+                        + ",sectors=" + sectors + ",recordBytes=" + (4 + length)
+                        + ",recordSha256=" + recordHash + ",legacyEntities=" + entities.size()
+                        + ",uuids=" + uuids);
             }
             return "path=" + region + " chunks=" + chunks + " roots=8";
         } catch (IOException failure) {
             throw new AssertionError("Unable to inspect the fresh FULL region payload: " + region, failure);
+        }
+    }
+
+    private static byte[] sha256(byte[] bytes, int offset, int length) {
+        try {
+            return java.security.MessageDigest.getInstance("SHA-256")
+                    .digest(java.util.Arrays.copyOfRange(bytes, offset, offset + length));
+        } catch (java.security.GeneralSecurityException failure) {
+            throw new AssertionError("SHA-256 is unavailable for the persisted FULL proof", failure);
         }
     }
 
