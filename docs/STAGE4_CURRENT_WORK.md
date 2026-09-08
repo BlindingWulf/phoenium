@@ -47,8 +47,9 @@ negative cases are preserved. Final installed lifecycle coverage is still requir
 
 Fresh baseline: 690 tests / 59 suites PASS, ten historical hashes verified, frozen
 production rebuilt to its exact hash; `run/stage4/baseline-20260908-012726` in Luna.
-Latest consolidated candidate build and acceptance-probe build pass. Lead recounted
-789 tests / 79 suites, zero failures/errors/skips, from Luna's actual XML reports.
+Latest consolidated candidate build and acceptance-probe build pass at Luna
+`6f91e11` (main parent `2fde9ec`). Lead recounted 790 tests / 79 suites, zero
+failures/errors/skips, from the actual XML reports; adverse tests are additional.
 
 Candidate installed `run/full-production-integration/transform-20260908-073804`
 passes the corrected baseline marker-applicability gate (Luna `9d13b49`). Nine live
@@ -61,32 +62,21 @@ not complete Stage 4 acceptance. The candidate Stage4 shutdown marker, zero resi
 fields, positive execution and exact workers=1 are now mandatory in the runner
 (`177a3dc`, `8934b05`); Luna revalidates the preserved log without another launch.
 
-Controlled FULL `transform-20260908-065445` reaches the native hooks, then fails
-`FullPublishedInputBindingTest.originalUnloadWaitsForRetainedUseThenReclaimsTheActualHolder`:
-the synthetic fixture world calls the actual regional unload adapter, which correctly
-rejects a different live world instance. The original unload callback therefore does
-not reclaim pending state. Native stop and FULL_SERVICES STOPPED PASS still occur;
-they do not erase the initiating test failure.
+Controlled installed FULL `transform-20260908-080511` now PASS. Exact isolated
+fixture authority (`7b28af5`) and a separate post-callback acknowledgement phase
+(`bd505ff`, required positive marker `3f3ed40`) preserve the actual production unload
+and strict world identity. The probe observes pendingBefore=1/custodyBefore=3, then
+real ACK and zero terminal custody. Original negative cases remain. Three actual
+world ticks execute, workers=1, parallel OFF; Stage4 normal-stop residual/failure
+counters and named-service custody are zero. The probe's controlled endpoints are
+explicit; this does not establish real-client disk reload. Probe SHA-256:
+`AD4D14C5508242A924BAFDCC4305F34096EAB84A0C6290E61332B69335F70CD2`;
+log SHA-256 `DAC6B6CD7D85959AD9E18242FFC9E097BD1462290862A3D7E0F56A4D1ED90791`.
+The 46-test focused gate also passes. Preserved failures are `065445` (foreign
+synthetic world), `073703` (three retained entries awaiting ACK), and `080349`
+(stale disposable probe JAR). Forced harness rebuild precedes the valid `080511`.
 
-Controlled fixture repair is integrated as `7b28af5` (Sol `92e3545`). Exact synthetic
-ServerLevel/ChunkMap identity selects genuine isolated regional save/lifecycle
-authority at the existing seams. Original production unload body and all existing
-retention/reclamation assertions remain active; production world identity stays
-strict. The 45-test focused gate passes, including foreign/post-stop rejection,
-throwing-scope cleanup, real save acknowledgement and named-service teardown. The
-probe JAR builds and production packaging excludes this adapter. Installed rerun
-`transform-20260908-073703` reaches the original unload and reclamation but fails
-the unchanged final zero-custody assertion at FullPublishedInputBindingTest:393:
-three entries remain. Probe SHA-256 is
-`A7D06C6F853840E32F8C811F539B5B65EC579A76350F905B20B50917BF6886F8`.
-The three entries are the original clean-save source fork's lifecycle/work/custody,
-retained after completion until its real ACK. Follow-up `bd505ff` (Sol `fef0746`)
-supersedes the earlier wrapper pump: after the native callback returns, the test
-proves pending=1/custody=3, enters a separate owner-free acknowledgement phase, then
-keeps pending=0/custody=0. Only published completions are pumped; unfinished native
-writes remain retained. `3f3ed40` requires the intermediate installed marker so the
-conditional path cannot silently be skipped. The 46-test focused gate passes and
-installed rerun is open. Separate adverse native-write / failed-stop probe is now
+Separate adverse native-write / failed-stop probe is now
 integrated (`af02a04`, Sol `c1c7a24`): exact native IOWorker identity, position and
 first original write; one retained save during the actual regional callback failure;
 original outcome, exception identity, resource completion and zero terminal custody.
