@@ -18,16 +18,20 @@ final class FullServerShutdownFailureOrderTest {
         MinecraftServer server = stub(MinecraftServer.class, List.of());
         var drainFailure = new IllegalStateException("accepted callback failed");
         var originalFailure = new IllegalArgumentException("original storage close failed");
+        var field = FullServerShutdown.class.getDeclaredField("METADATA"); field.setAccessible(true);
+        Object metadata = field.get(null);
         Throwable failure = assertThrows(IllegalStateException.class, () -> FullServerShutdown.run(server,
-                () -> events.add("admission-closed"),
+                () -> { assertFalse(Thread.holdsLock(metadata)); events.add("admission-closed"); },
                 () -> {
+                    assertFalse(Thread.holdsLock(metadata));
                     FullFinishingServices.requireServer(server, FullFinishingServices.Kind.CONNECTIONS);
                     events.add("owned-drain"); throw drainFailure;
                 },
                 () -> {
+                    assertFalse(Thread.holdsLock(metadata));
                     FullFinishingServices.requireServer(server, FullFinishingServices.Kind.CONNECTIONS);
                     events.add("original-stop"); throw originalFailure;
-                }, () -> events.add("runtime-settled")));
+                }, () -> { assertFalse(Thread.holdsLock(metadata)); events.add("runtime-settled"); }));
         assertSame(drainFailure, failure);
         assertArrayEquals(new Throwable[]{originalFailure}, failure.getSuppressed());
         assertEquals(List.of("admission-closed", "owned-drain", "original-stop", "runtime-settled"), events);

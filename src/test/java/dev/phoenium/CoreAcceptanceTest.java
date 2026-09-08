@@ -279,14 +279,14 @@ class CoreAcceptanceTest {
             .map(path -> { try { return Files.readString(path); } catch (Exception e) { throw new RuntimeException(e); } })
             .collect(java.util.stream.Collectors.joining("\n"));
         assertFalse(allCore.contains("ReentrantReadWriteLock"));
-        // These three classes protect finite metadata maps/callback registries. Their monitors
+        // These classes protect finite metadata maps/callback registries. Their monitors
         // never enclose world reads, gameplay callbacks, or peer waits. Keep the broad gameplay
         // prohibition for every other production class instead of rejecting these bounded
         // metadata guards by a source-wide string check.
         var boundedMetadata = java.util.Set.of(
                 "PoiLoadBookkeeping.java", "FullBlockEntityTagInputs.java", "FullCommandStorageInputs.java",
                 "RegionalScheduledTickService.java", "RegionalBlockEventService.java", "RegionalWorldServices.java",
-                "RegionalSaveCoordinator.java");
+                "RegionalSaveCoordinator.java", "RegionDirectory.java", "FullServerShutdown.java");
         String otherCore = Files.walk(Path.of("src/main/java/dev/phoenium"))
             .filter(path -> path.toString().endsWith(".java"))
             .filter(path -> !boundedMetadata.contains(path.getFileName().toString()))
@@ -301,6 +301,8 @@ class CoreAcceptanceTest {
         // exemptions: pending State/Source callbacks and original CommandStorage get/set
         // callbacks run after the private metadata monitors release, while throwing listeners
         // still aggregate and independent subscriptions still clean up.
+        // SaveTopologyCutTest and FullServerShutdownFailureOrderTest additionally assert
+        // that publication/release and stop callbacks do not hold their metadata monitors.
         assertTrue(allCore.contains("ReentrantLock metadataGate"));
     }
     @Test void regressionShutdownDoesNotExecutePendingWorkFromCallerThread() {

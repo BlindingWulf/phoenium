@@ -15,6 +15,7 @@ public final class RegionRuntime {
     private final java.util.concurrent.ConcurrentLinkedDeque<RegionTaskEnvelope> inbox = new java.util.concurrent.ConcurrentLinkedDeque<>();
     private final java.util.concurrent.ConcurrentLinkedDeque<RegionTaskEnvelope> transitionMailbox = new java.util.concurrent.ConcurrentLinkedDeque<>();
     private final List<String> operationLog = new ArrayList<>();
+    private final boolean recordOperationLog;
     private RegionLifecycle lifecycle = RegionLifecycle.TRANSIENT;
     private OwnerEpoch ownerEpoch;
     private boolean transitioning;
@@ -22,7 +23,13 @@ public final class RegionRuntime {
     private long tickCount;
 
     public RegionRuntime(RegionId id, OwnerEpoch ownerEpoch) {
+        this(id, ownerEpoch, true);
+    }
+    /** The deterministic model harness retains its trace. A live runtime keeps counters only;
+     * ordinary world ticks must not accumulate an unbounded historical string list. */
+    public RegionRuntime(RegionId id, OwnerEpoch ownerEpoch, boolean recordOperationLog) {
         this.id = Objects.requireNonNull(id, "id"); this.ownerEpoch = Objects.requireNonNull(ownerEpoch, "ownerEpoch");
+        this.recordOperationLog = recordOperationLog;
         this.leases = new RegionLeaseManager(id);
     }
     public RegionId id() { return id; }
@@ -42,11 +49,11 @@ public final class RegionRuntime {
     public Optional<RegionTaskEnvelope> pollTransitionMailbox() { return Optional.ofNullable(transitionMailbox.pollFirst()); }
     public int transitionMailboxSize() { return transitionMailbox.size(); }
     public int inboxSize() { return inbox.size(); }
-    public void append(String value) { requireMutation(); operationLog.add(value); }
-    public void add(long value) { requireMutation(); accumulator += value; operationLog.add("add:" + value); }
+    public void append(String value) { requireMutation(); if (recordOperationLog) operationLog.add(value); }
+    public void add(long value) { requireMutation(); accumulator += value; if (recordOperationLog) operationLog.add("add:" + value); }
     public List<String> immutableLog() { return List.copyOf(operationLog); }
     public long accumulator() { return accumulator; }
-    public void tick() { requireMutation(); tickCount++; operationLog.add("tick:" + tickCount); }
+    public void tick() { requireMutation(); tickCount++; if (recordOperationLog) operationLog.add("tick:" + tickCount); }
     public long tickCount() { return tickCount; }
     private void requireMutation() {
         dev.phoenium.ownership.OwnershipContext.current().ifPresentOrElse(

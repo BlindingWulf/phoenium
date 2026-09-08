@@ -100,3 +100,11 @@ Dispatch the next stable integrated source only after the coordinator/save-cut c
 are compatible. No integrated Stage 4 installed PASS exists yet. Same-holder re-promotion
 remains deferred and must gain fresh genuine lineage if the new fixture reaches it.
 Internal commits remain recovery points, not completion or stopping instructions.
+Latest lead checkpoint: `89a3b56` connects retained save batches and ordered shutdown.
+Production region runtimes now keep tick counters without accumulating the model's
+completed-operation string history. A 50,000-tick focused witness plus core, save-cut
+and shutdown monitor-boundary checks pass (34 tests). The initial core source-string
+guard failure is preserved under `run/stage4/failed-core-gate-20260908`; its two new
+metadata exemptions retain direct `Thread.holdsLock` callback assertions and the
+negative broad-gameplay-lock coverage. Repaired run:
+`run/stage4/live-retention-focused-repaired-20260908.log`.

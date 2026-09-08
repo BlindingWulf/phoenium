@@ -774,7 +774,7 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
     private boolean acceptsGameplay() { return !gameplayAdmissionClosed && isRunning(); }
     private static WorldId worldId(ServerLevel level) { return new WorldId(level.dimension().identifier().toString()); }
     private static RegionRuntime readyRuntime(RegionId region) {
-        RegionRuntime runtime = new RegionRuntime(region, new OwnerEpoch(0));
+        RegionRuntime runtime = new RegionRuntime(region, new OwnerEpoch(0), false);
         runtime.transitionTo(RegionLifecycle.READY);
         return runtime;
     }
