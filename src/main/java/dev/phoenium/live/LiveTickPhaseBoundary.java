@@ -115,14 +115,59 @@ public final class LiveTickPhaseBoundary {
         events.maxLocals = eventState + 1;
         retainLocalAcrossFrames(events, eventState, LEVEL_STATE);
 
-        MethodNode finish = portion(original, "phoenium$finishLevelTick", "(L" + LEVEL_STATE + ";)V", blockEnd, original.instructions.size());
+        MethodInsnNode entityTicks = unique(original, "net/minecraft/world/level/entity/EntityTickList", "forEach", "(Ljava/util/function/Consumer;)V");
+        AbstractInsnNode entityStartNode = previous(previous(previous(previous(previous(previous(entityTicks))))));
+        require(variable(entityStartNode, Opcodes.ALOAD, 0), "entity tick receiver changed");
+        int entityStart = original.instructions.indexOf(entityStartNode), entityEnd = original.instructions.indexOf(entityTicks) + 1;
+        FieldInsnNode emptyCondition = null;
+        for (AbstractInsnNode instruction : original.instructions) if (instruction instanceof FieldInsnNode field
+                && field.getOpcode() == Opcodes.GETFIELD && field.owner.equals(LEVEL) && field.name.equals("emptyTime") && field.desc.equals("I")
+                && next(field) instanceof IntInsnNode value && value.getOpcode() == Opcodes.SIPUSH && value.operand == 300) {
+            require(emptyCondition == null, "duplicate final empty-time condition"); emptyCondition = field;
+        }
+        require(emptyCondition != null, "missing final empty-time condition");
+        AbstractInsnNode conditionReceiver = previous(emptyCondition), conditionLimit = next(emptyCondition), conditionJump = next(conditionLimit);
+        require(variable(conditionReceiver, Opcodes.ALOAD, 0) && conditionJump instanceof JumpInsnNode jump
+                && jump.getOpcode() == Opcodes.IF_ICMPGE, "final empty-time branch changed");
+        int conditionStart = original.instructions.indexOf(conditionReceiver);
+        int entityPreludeStart = original.instructions.indexOf(next(conditionJump));
+        int suffixStart = boundaryAtConstant(original, "entityManagement");
+        require(blockEnd < conditionStart && conditionStart < entityPreludeStart && entityPreludeStart < entityStart
+                && entityStart < entityEnd && entityEnd < suffixStart, "final entity phase order changed");
+        checkCut(original, conditionStart, Set.of(0, 1, 2, 3, 4, 5));
+        MethodNode finalPrefix = portion(original, "phoenium$beforeEntityTicks", "(L" + LEVEL_STATE + ";)Z", blockEnd, conditionStart);
+        int prefixState = original.maxLocals;
+        finalPrefix.instructions.insert(levelLocals(prefixState, "beginFinalPrefix"));
+        booleanPhaseEnd(finalPrefix.instructions, prefixState, "finishFinalPrefix", "emptyTime");
+        finalPrefix.maxLocals = prefixState + 1; retainLocalAcrossFrames(finalPrefix, prefixState, LEVEL_STATE);
+        MethodNode entityPrelude = portion(original, "phoenium$beforeEntityList", "(L" + LEVEL_STATE + ";)V", entityPreludeStart, entityStart);
+        int preludeState = original.maxLocals;
+        entityPrelude.instructions.insert(finalLocals(preludeState, "beginEntityPrelude"));
+        phaseEnd(entityPrelude.instructions, preludeState, "finishEntityPrelude");
+        entityPrelude.maxLocals = preludeState + 1; retainLocalAcrossFrames(entityPrelude, preludeState, LEVEL_STATE);
+        MethodNode entities = portion(original, "phoenium$runEntityTicks", "(L" + LEVEL_STATE + ";)V", entityStart, entityEnd);
+        int entityState = original.maxLocals;
+        entities.instructions.insert(finalLocals(entityState, "beginEntities"));
+        MethodInsnNode copiedEntityTicks = unique(entities, "net/minecraft/world/level/entity/EntityTickList", "forEach", "(Ljava/util/function/Consumer;)V");
+        entities.instructions.insertBefore(copiedEntityTicks, new VarInsnNode(Opcodes.ALOAD, 0));
+        entities.instructions.set(copiedEntityTicks, new MethodInsnNode(Opcodes.INVOKESTATIC, PHASES, "runEntityTicks",
+            "(Lnet/minecraft/world/level/entity/EntityTickList;Ljava/util/function/Consumer;L" + LEVEL + ";)V", false));
+        phaseEnd(entities.instructions, entityState, "finishEntities");
+        entities.maxLocals = entityState + 1; retainLocalAcrossFrames(entities, entityState, LEVEL_STATE);
+        MethodNode blockEntities = portion(original, "phoenium$afterEntityList", "(L" + LEVEL_STATE + ";)V", entityEnd, suffixStart);
+        int blockEntityState = original.maxLocals;
+        blockEntities.instructions.insert(finalLocals(blockEntityState, "beginBlockEntities"));
+        phaseEnd(blockEntities.instructions, blockEntityState, "finishBlockEntities");
+        blockEntities.maxLocals = blockEntityState + 1; retainLocalAcrossFrames(blockEntities, blockEntityState, LEVEL_STATE);
+        MethodNode finish = portion(original, "phoenium$afterEntityTicks", "(L" + LEVEL_STATE + ";)V", suffixStart, original.instructions.size());
         int finishState = original.maxLocals;
-        finish.instructions.insert(levelLocals(finishState, "consumeFinal"));
-        finish.maxLocals = finishState + 1;
+        finish.instructions.insert(finalLocals(finishState, "consumeFinal"));
+        finish.maxLocals = finishState + 1; retainLocalAcrossFrames(finish, finishState, LEVEL_STATE);
 
         node.interfaces.add(PHASES + "$LevelAccess");
         node.methods.add(prefix); node.methods.add(scheduled); node.methods.add(middle);
-        node.methods.add(chunk); node.methods.add(events); node.methods.add(finish);
+        node.methods.add(chunk); node.methods.add(events); node.methods.add(finalPrefix); node.methods.add(entityPrelude);
+        node.methods.add(entities); node.methods.add(blockEntities); node.methods.add(finish);
     }
 
     public static void installCache(ClassNode node) {
@@ -251,11 +296,31 @@ public final class LiveTickPhaseBoundary {
         restore(locals, LEVEL_STATE, stateLocal, "sleepingPercentage", "I", 5, Opcodes.ISTORE);
         return locals;
     }
+    private static InsnList finalLocals(int stateLocal, String phaseMethod) {
+        InsnList locals = levelLocals(stateLocal, phaseMethod);
+        restore(locals, LEVEL_STATE, stateLocal, "finalActive", "Z", 6, Opcodes.ISTORE);
+        return locals;
+    }
     private static void phaseEnd(InsnList out, int stateLocal, String phaseMethod) {
         removeCopiedReturn(out);
         out.add(new VarInsnNode(Opcodes.ALOAD, stateLocal)); out.add(new VarInsnNode(Opcodes.ALOAD, 0));
         out.add(new MethodInsnNode(Opcodes.INVOKEVIRTUAL, LEVEL_STATE, phaseMethod, "(L" + LEVEL + ";)V", false));
         out.add(new InsnNode(Opcodes.RETURN));
+    }
+    private static void booleanPhaseEnd(InsnList out, int stateLocal, String phaseMethod, String field) {
+        removeCopiedReturn(out);
+        out.add(new VarInsnNode(Opcodes.ALOAD, stateLocal)); out.add(new VarInsnNode(Opcodes.ALOAD, 0));
+        out.add(new VarInsnNode(Opcodes.ILOAD, 6));
+        out.add(new MethodInsnNode(Opcodes.INVOKEVIRTUAL, LEVEL_STATE, phaseMethod, "(L" + LEVEL + ";Z)V", false));
+        out.add(new VarInsnNode(Opcodes.ALOAD, 0)); out.add(new FieldInsnNode(Opcodes.GETFIELD, LEVEL, field, "I"));
+        out.add(new IntInsnNode(Opcodes.SIPUSH, 300));
+        LabelNode noEntities = new LabelNode();
+        out.add(new JumpInsnNode(Opcodes.IF_ICMPGE, noEntities)); out.add(new InsnNode(Opcodes.ICONST_1)); out.add(new InsnNode(Opcodes.IRETURN));
+        out.add(noEntities); out.add(new FrameNode(Opcodes.F_NEW, 9,
+            new Object[] { LEVEL, "java/util/function/BooleanSupplier", "net/minecraft/util/profiling/ProfilerFiller",
+                "net/minecraft/world/TickRateManager", Opcodes.INTEGER, Opcodes.INTEGER, Opcodes.INTEGER,
+                Opcodes.TOP, LEVEL_STATE }, 0, new Object[] { }));
+        out.add(new InsnNode(Opcodes.ICONST_0)); out.add(new InsnNode(Opcodes.IRETURN));
     }
     private static void removeCopiedReturn(InsnList out) {
         AbstractInsnNode tail = out.getLast();

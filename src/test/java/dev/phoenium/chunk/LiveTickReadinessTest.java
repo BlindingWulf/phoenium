@@ -67,13 +67,14 @@ final class LiveTickReadinessTest {
     @Test void retainedPhaseLocalsCannotReplayOrRunInTheWrongOwnershipPhase() throws Exception {
         var f = new Fixture(); BooleanSupplier haveTime = () -> true;
         var cache = new LiveTickPhases.CacheState(f.cache, haveTime, true, InactiveProfiler.INSTANCE);
+        cache.consume(f.cache);
         assertThrows(IllegalStateException.class, () -> cache.consume(f.cache));
         assertThrows(IllegalStateException.class, () -> new LiveTickPhases.LevelState(f.level, f.cache, haveTime,
                 InactiveProfiler.INSTANCE, new TickRateManager(), true, 100));
         var owner = new RegionId(new WorldId("tick"), "owner"); var leases = new RegionLeaseManager(owner);
         try (var lease = leases.acquire(); var owned = OwnershipContext.enter(owner, lease.epoch(), OperationCategory.TICK)) {
             var level = new LiveTickPhases.LevelState(f.level, f.cache, haveTime, InactiveProfiler.INSTANCE, new TickRateManager(), true, 100);
-            level.consume(f.level); cache.consume(f.cache);
+            level.consume(f.level);
             assertThrows(IllegalStateException.class, () -> level.consume(f.level));
             assertThrows(IllegalStateException.class, () -> cache.consume(f.cache));
             assertThrows(IllegalStateException.class, () -> new LiveTickPhases.CacheState(f.cache, haveTime, true, InactiveProfiler.INSTANCE));

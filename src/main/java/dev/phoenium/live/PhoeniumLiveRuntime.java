@@ -261,8 +261,20 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
                 phases.phoenium$afterChunkTick(pending.levelState, pending.cacheState);
                 pending.step = PendingTick.Step.BLOCK_EVENTS_COORDINATOR;
             }
+            case FINAL_PREFIX_OWNER -> {
+                pending.runEntityBody = phases.phoenium$beforeEntityTicks(pending.levelState);
+                pending.step = PendingTick.Step.FINAL_DECISION_COORDINATOR;
+            }
+            case ENTITY_PRELUDE_OWNER -> {
+                phases.phoenium$beforeEntityList(pending.levelState);
+                pending.step = PendingTick.Step.ENTITY_COORDINATOR;
+            }
+            case BLOCK_ENTITY_OWNER -> {
+                phases.phoenium$afterEntityList(pending.levelState);
+                pending.step = PendingTick.Step.FINAL_SUFFIX_COORDINATOR;
+            }
             case FINAL_OWNER -> {
-                phases.phoenium$finishLevelTick(pending.levelState);
+                phases.phoenium$afterEntityTicks(pending.levelState);
                 refreshEntityBindings(pending.level());
                 executions++;
                 runtime.tick();
@@ -294,6 +306,20 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
                 LiveTickPhases.finishCacheMaintenance(pending.levelState.cache(), pending.cacheState);
                 pending.levelState.finishMaintenance(pending.level());
                 phases.phoenium$runBlockEvents(pending.levelState);
+                queueTickPhase(pending, live, PendingTick.Step.FINAL_PREFIX_OWNER);
+            }
+            case FINAL_DECISION_COORDINATOR -> {
+                if (pending.runEntityBody) queueTickPhase(pending, live, PendingTick.Step.ENTITY_PRELUDE_OWNER);
+                else {
+                    pending.levelState.skipEntityBody(pending.level());
+                    queueTickPhase(pending, live, PendingTick.Step.FINAL_OWNER);
+                }
+            }
+            case ENTITY_COORDINATOR -> {
+                phases.phoenium$runEntityTicks(pending.levelState);
+                queueTickPhase(pending, live, PendingTick.Step.BLOCK_ENTITY_OWNER);
+            }
+            case FINAL_SUFFIX_COORDINATOR -> {
                 queueTickPhase(pending, live, PendingTick.Step.FINAL_OWNER);
             }
             default -> throw new IllegalStateException("owner-free tick coordinator reached " + pending.step);
@@ -314,12 +340,19 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
             java.util.List<net.minecraft.world.level.chunk.LevelChunk> output) {
         regionalServices.collectSpawningChunks(cache, map, output);
     }
-    public void regionalChunkCallback(ServerChunkCache cache, net.minecraft.world.level.chunk.LevelChunk chunk, Runnable original) {
-        regionalServices.chunkCallback(cache, chunk, original);
+    public void regionalSpawningChunkCallback(ServerChunkCache cache, net.minecraft.world.level.chunk.LevelChunk chunk, Runnable original) {
+        regionalServices.spawningChunkCallback(cache, chunk, original);
+    }
+    public void regionalBroadcastChunkCallback(ServerChunkCache cache, net.minecraft.world.level.chunk.LevelChunk chunk, Runnable original) {
+        regionalServices.broadcastChunkCallback(cache, chunk, original);
     }
     public void regionalForEachBlockTickingChunk(ServerChunkCache cache, net.minecraft.server.level.ChunkMap map,
             java.util.function.Consumer<net.minecraft.world.level.chunk.LevelChunk> output) {
         regionalServices.forEachBlockTickingChunk(cache, map, output);
+    }
+    public void runRegionalEntityTicks(ServerLevel level, net.minecraft.world.level.entity.EntityTickList entities,
+            java.util.function.Consumer<Entity> output) {
+        regionalServices.runEntityTicks(level, entities, output);
     }
 
     private void queueTickPhase(PendingTick pending, LiveRegion live, PendingTick.Step step) {
@@ -995,8 +1028,10 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
         ServerLevel level() { return level; }
         BooleanSupplier shouldKeepTicking() { return shouldKeepTicking; }
         RegionTaskEnvelope envelope() { return envelope; }
+        boolean runEntityBody;
         enum Step { PREFIX_OWNER, SCHEDULED_COORDINATOR, MIDDLE_OWNER, READINESS_COORDINATOR,
-            CACHE_OWNER, BLOCK_EVENTS_COORDINATOR, FINAL_OWNER, DONE }
+            CACHE_OWNER, BLOCK_EVENTS_COORDINATOR, FINAL_PREFIX_OWNER, FINAL_DECISION_COORDINATOR,
+            ENTITY_PRELUDE_OWNER, ENTITY_COORDINATOR, BLOCK_ENTITY_OWNER, FINAL_SUFFIX_COORDINATOR, FINAL_OWNER, DONE }
     }
     public enum State { NEW, RUNNING, STOPPED }
 }

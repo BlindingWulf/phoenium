@@ -25,6 +25,7 @@ final class LiveTickPhaseBoundaryTest {
             else expected.add(call);
         }
         expected.remove(LiveTickPhaseBoundary.CACHE + ".tickChunks()V");
+        expected.remove("net/minecraft/world/level/entity/EntityTickList.forEach(Ljava/util/function/Consumer;)V");
         LiveTickPhaseBoundary.installLevel(level); LiveTickPhaseBoundary.installCache(cache);
         List<String> actual = new ArrayList<>();
         actual.addAll(calls(named(level, "phoenium$beforeScheduledTicks")));
@@ -35,11 +36,18 @@ final class LiveTickPhaseBoundaryTest {
         actual.addAll(calls(named(level, "phoenium$afterChunkTick")));
         actual.addAll(calls(named(cache, "phoenium$finishChunkMaintenance")));
         actual.addAll(calls(named(level, "phoenium$runBlockEvents")));
-        actual.addAll(calls(named(level, "phoenium$finishLevelTick")));
+        actual.addAll(calls(named(level, "phoenium$beforeEntityTicks")));
+        actual.addAll(calls(named(level, "phoenium$beforeEntityList")));
+        actual.addAll(calls(named(level, "phoenium$runEntityTicks")));
+        actual.addAll(calls(named(level, "phoenium$afterEntityList")));
+        actual.addAll(calls(named(level, "phoenium$afterEntityTicks")));
         assertEquals(expected, actual, "Control preparation and resumed gameplay retain the original complete call order");
         assertEquals(1, allCalls(named(cache, "phoenium$finishChunkTick")).stream()
             .filter(call -> call.owner.equals("dev/phoenium/live/LiveTickPhases")
                 && call.name.equals("runChunkGameplay")).count());
+        assertEquals(1, allCalls(named(level, "phoenium$runEntityTicks")).stream()
+            .filter(call -> call.owner.equals("dev/phoenium/live/LiveTickPhases")
+                && call.name.equals("runEntityTicks")).count());
         assertEquals(originalLevelInstructions, List.of(levelTick.instructions.toArray()));
         assertEquals(originalCacheInstructions, List.of(cacheTick.instructions.toArray()));
         assertTrue(level.interfaces.contains("dev/phoenium/live/LiveTickPhases$LevelAccess"));

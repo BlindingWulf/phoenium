@@ -24,6 +24,7 @@ import net.minecraft.world.entity.*;
 import net.minecraft.world.level.*;
 import net.minecraft.world.level.biome.MobSpawnSettings;
 import net.minecraft.world.level.chunk.LevelChunk;
+import net.minecraft.world.level.entity.EntityTickList;
 import net.minecraft.world.phys.Vec3;
 
 /** Owner-free coordinator for ServerChunkCache's exact selected gameplay cohorts. Temporary spawn
@@ -41,7 +42,7 @@ public final class RegionalChunkGameplayService {
     private final RegionalServiceDispatcher dispatcher;
     private final ObjectOwnershipRegistry objects;
     private final FullFinishingServices finishing;
-    private final int callbackRadius;
+    private final int recipientRadius;
     private Cycle cycle;
     private long cycles, entityContributions, chunkCallbacks;
 
@@ -55,7 +56,7 @@ public final class RegionalChunkGameplayService {
         for (EntityType<?> type : net.minecraft.core.registries.BuiltInRegistries.ENTITY_TYPE)
             maximum = Math.max(maximum, type.clientTrackingRange() * 16);
         int tracking = level.getServer().getScaledTrackingDistance(maximum);
-        this.callbackRadius = Math.max(9, (tracking + 15) / 16 + 2);
+        this.recipientRadius = (tracking + 15) / 16 + 2;
     }
 
     public void runOriginal() {
@@ -132,23 +133,47 @@ public final class RegionalChunkGameplayService {
             ChunkHolder holder = ((RegionalVisibleChunkAccess) map).phoenium$visible(packed);
             if (holder == null) return;
             LevelChunk chunk = holder.getTickingChunk();
-            if (chunk != null) chunkCallback(chunk, () -> output.accept(chunk));
+            if (chunk != null) blockTickCallback(chunk, () -> output.accept(chunk));
         });
     }
 
-    public void chunkCallback(LevelChunk chunk, Runnable original) {
+    public void spawningChunkCallback(LevelChunk chunk, Runnable original) { chunkCallback(chunk, 9, original); }
+    public void blockTickCallback(LevelChunk chunk, Runnable original) { chunkCallback(chunk, 1, original); }
+    public void broadcastChunkCallback(LevelChunk chunk, Runnable original) { chunkCallback(chunk, 0, original); }
+    private void chunkCallback(LevelChunk chunk, int terrainRadius, Runnable original) {
         requireCycle(); Objects.requireNonNull(chunk); Objects.requireNonNull(original);
         cycle.players = capturePlayers().players;
         RoutingKey source = new RoutingKey(world, chunk.getPos().x(), chunk.getPos().z());
-        Set<RoutingKey> footprint = new LinkedHashSet<>(new TopologyPlanner().requiredClosure(Set.of(source), callbackRadius));
+        Set<RoutingKey> footprint = new LinkedHashSet<>(new TopologyPlanner().requiredClosure(Set.of(source), terrainRadius));
         for (PlayerProjection player : cycle.players)
-            if (Math.abs((long) player.key.x() - source.x()) <= callbackRadius
-                    && Math.abs((long) player.key.z() - source.z()) <= callbackRadius) footprint.add(player.key);
+            if (Math.abs((long) player.key.x() - source.x()) <= recipientRadius
+                    && Math.abs((long) player.key.z() - source.z()) <= recipientRadius) footprint.add(player.key);
         dispatcher.ensureClosure(Set.copyOf(footprint));
         dispatcher.executeAndDrain(source, RegionalServiceKind.CHUNK_GAMEPLAY, ignored -> {
             dispatcher.requireCurrentOwner(source); original.run();
         });
         chunkCallbacks = Math.incrementExact(chunkCallbacks);
+    }
+
+    public void entityTicks(EntityTickList entities, Consumer<Entity> output) {
+        requireOwnerFree(); Objects.requireNonNull(entities); Objects.requireNonNull(output);
+        entities.forEach(entity -> {
+            FullEntityFacts.Candidate source = finishing.entityFacts.trackingCandidate(level, entity);
+            List<FullEntityFacts.Candidate> passengers = finishing.entityFacts.trackingPassengers(source);
+            RoutingKey key = key(source); LinkedHashSet<RoutingKey> footprint = new LinkedHashSet<>();
+            footprint.add(key); passengers.forEach(passenger -> footprint.add(key(passenger)));
+            PlayerCut currentPlayers = capturePlayers();
+            for (PlayerProjection player : currentPlayers.players)
+                if (Math.abs((long) player.key.x() - key.x()) <= recipientRadius
+                        && Math.abs((long) player.key.z() - key.z()) <= recipientRadius) footprint.add(player.key);
+            dispatcher.ensureClosure(Set.copyOf(footprint));
+            dispatcher.executeAndDrain(key, RegionalServiceKind.CHUNK_GAMEPLAY, ignored -> {
+                requireEntity(source, key);
+                if (!finishing.entityFacts.validTrackingPassengers(source, passengers))
+                    throw new IllegalStateException("entity tick passenger relation changed");
+                output.accept(entity);
+            });
+        });
     }
 
     private PlayerCut capturePlayers() {
@@ -222,9 +247,10 @@ public final class RegionalChunkGameplayService {
             return false;
         }
         private List<PlayerProjection> near(ChunkPos pos) {
-            if (!map.getDistanceManager().hasPlayersNearby(pos.pack()).toBoolean(true)) return List.of();
-            return near.computeIfAbsent(pos.pack(), ignored -> players.get().stream()
-                .filter(player -> close(player, pos)).toList());
+            return near.computeIfAbsent(pos.pack(), ignored -> {
+                if (!map.getDistanceManager().hasPlayersNearby(pos.pack()).toBoolean(true)) return List.of();
+                return players.get().stream().filter(player -> close(player, pos)).toList();
+            });
         }
     }
 }

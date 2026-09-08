@@ -93,12 +93,22 @@ public final class RegionalWorldServices implements RegionalStateMigration {
             List<net.minecraft.world.level.chunk.LevelChunk> output) {
         gameplay(cache).collectSpawningChunks(map, output);
     }
-    public void chunkCallback(ServerChunkCache cache, net.minecraft.world.level.chunk.LevelChunk chunk, Runnable original) {
-        gameplay(cache).chunkCallback(chunk, original);
+    public void spawningChunkCallback(ServerChunkCache cache, net.minecraft.world.level.chunk.LevelChunk chunk, Runnable original) {
+        gameplay(cache).spawningChunkCallback(chunk, original);
+    }
+    public void broadcastChunkCallback(ServerChunkCache cache, net.minecraft.world.level.chunk.LevelChunk chunk, Runnable original) {
+        gameplay(cache).broadcastChunkCallback(chunk, original);
     }
     public void forEachBlockTickingChunk(ServerChunkCache cache, ChunkMap map,
             java.util.function.Consumer<net.minecraft.world.level.chunk.LevelChunk> output) {
         gameplay(cache).forEachBlockTickingChunk(map, output);
+    }
+    public void runEntityTicks(ServerLevel level, net.minecraft.world.level.entity.EntityTickList entities,
+            java.util.function.Consumer<net.minecraft.world.entity.Entity> output) {
+        WorldServices services;
+        synchronized (this) { services = worlds.get(level); }
+        if (services == null) throw new IllegalStateException("unbound regional entity tick world");
+        services.gameplay().entityTicks(entities, output);
     }
     private RegionalChunkGameplayService gameplay(ServerChunkCache cache) {
         WorldServices services;
