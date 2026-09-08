@@ -192,6 +192,18 @@ def inspect_mca(world):
     return records
 
 
+def snapshot_mca(world, target):
+    """Preserve the exact stopped-world region bytes before starting restart."""
+    copied = []
+    for path in sorted(world.rglob("*.mca")):
+        relative = path.relative_to(world)
+        destination = target / relative
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(path, destination)
+        copied.append(str(relative))
+    return copied
+
+
 def pending_tick_readback(records, expected):
     result = {"status": "NO_EXPECTATION", "expected": expected, "matches": [], "records": 0}
     if expected is None:
@@ -451,7 +463,9 @@ def main():
     trace = args.output / "trace.json"
     first = run_process(server, trace, drive=True, explicit_topology=args.explicit_topology)
     world = server / args.world
-    before_restart = inspect_mca(world)
+    mca_snapshot = args.output / "pre-restart-world"
+    snapshot_files = snapshot_mca(world, mca_snapshot)
+    before_restart = inspect_mca(mca_snapshot)
     (args.output / "mca-before-restart.json").write_text(json.dumps(before_restart, indent=2) + "\n", encoding="utf-8")
     pending = pending_tick_readback(before_restart, expected_pending_tick(trace))
     (args.output / "pending-tick-readback.json").write_text(json.dumps(pending, indent=2) + "\n", encoding="utf-8")
@@ -469,6 +483,8 @@ def main():
                 "firstRun": {key: value for key, value in first.items() if key != "lines"},
                 "restartRun": {key: value for key, value in second.items() if key != "lines"},
                 "mcaBeforeRestart": str(args.output / "mca-before-restart.json"),
+                "mcaSnapshot": str(mca_snapshot),
+                "mcaSnapshotFiles": snapshot_files,
                 "pendingTickReadback": str(args.output / "pending-tick-readback.json"),
                 "pendingTickGate": pending["status"] == "PRESENT" and pending.get("deadlineMatch", False),
                 "reloadEffectGate": second.get("reloadEffectReached", False) is True,
