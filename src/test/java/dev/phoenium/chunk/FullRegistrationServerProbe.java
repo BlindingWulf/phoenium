@@ -150,6 +150,22 @@ public final class FullRegistrationServerProbe implements DedicatedServerModInit
             contexts.liveTextDisplayTextPublishesNestedStorageBeforeOriginalSerializationAndResolution();
             contexts.directory = java.nio.file.Files.createTempDirectory("phoenium-full-live-beacon-probe");
             contexts.liveBeaconCustomNamePublishesNestedStorageBeforeOriginalImmediateGetter();
+            contexts.directory = java.nio.file.Files.createTempDirectory("phoenium-full-live-command-probe");
+            contexts.liveCommandBlockNameAndLastOutputPublishNestedStorageAtTheOriginalBlockSerializer();
+            contexts.directory = java.nio.file.Files.createTempDirectory("phoenium-full-live-sign-probe");
+            contexts.liveSignArrayAliasesAndSideReplacementRebuildBeforeOriginalFilteredAndBackTextSelection();
+            contexts.directory = java.nio.file.Files.createTempDirectory("phoenium-full-live-mannequin-probe");
+            contexts.liveMannequinDescriptionReplacementRebuildsBeforeOriginalEntitySerialization();
+            var pending = new FullPendingBlockTextInputTest();
+            pending.directory = java.nio.file.Files.createTempDirectory("phoenium-full-pending-command-probe");
+            pending.pendingCommandBlockUsesOriginalLazyLoadAndSerializerForBothTextFields();
+            pending.directory = java.nio.file.Files.createTempDirectory("phoenium-full-pending-sign-probe");
+            pending.pendingSignUsesOriginalLazyLoadAndSerializerForInterpretedMessageSlot();
+            pending.directory = java.nio.file.Files.createTempDirectory("phoenium-full-pending-wildcard-probe");
+            pending.pendingSignWildcardBindsEverySerializedSlotAndBothNestedStorageIds();
+            pending.directory = java.nio.file.Files.createTempDirectory("phoenium-full-pending-track-output-probe");
+            pending.pendingCommandTrackOutputFalseLeavesLastOutputDependencyAbsent();
+            new FullLocationPredicateInputTest().registeredEntityLocationReadsTheSameOriginalPreparedBlockAndNbt();
             var completion = new FullAuthoritativeFinishingTest();
             completion.originalFinishingAndSeparatePublicationCompleteExactlyOnce(false);
             completion.originalFinishingAndSeparatePublicationCompleteExactlyOnce(true);
@@ -157,14 +173,14 @@ public final class FullRegistrationServerProbe implements DedicatedServerModInit
             System.out.println("PHOENIUM_FULL_ENTITY_PROPERTY_PROBE PASS cases=" + entityPropertyCases
                     + " entityPropertyExecution=true originalTypeAndNbt=true constructedPredicateSnapshot=true "
                     + "absentTargetShortCircuit=true javaagent=false");
-            System.out.println("PHOENIUM_FULL_FINISHING_PROBE PASS cases=67 queryCases=13 serviceCases=7 d1Cases=7 contextCases=26 publicationCases=2 "
+            System.out.println("PHOENIUM_FULL_FINISHING_PROBE PASS cases=75 queryCases=14 serviceCases=7 d1Cases=7 contextCases=33 publicationCases=2 "
                     + "originalFinishing=true separatePublication=true cyclicPreparedPair=true bothPairOrders=true "
                     + "proto=true inMemoryImposter=true diskReload=false originalDifficulty=true originalCollision=true "
                     + "originalShulkerImmediate=true originalLaterRegistration=true originalMovingPiston=true "
                     + "savedVillagerOriginalBiomeCacheAlias=true originalCachedAbsentBiomeFallback=true originalReadyAbsent=true caughtQueryBarrier=true registeredBiomeOriginalRead=true predicateRegistryReplacement=true "
-                    + "recursiveStorageContext=true retainedBlockNbt=true pendingBlockDependencies=true pendingCases=6 originalAbsentBlockBranch=true lazyBlockEntity=true "
+                    + "recursiveStorageContext=true retainedBlockNbt=true pendingBlockDependencies=true pendingLegacyCases=6 pendingTextCases=4 pendingCases=10 originalAbsentBlockBranch=true lazyBlockEntity=true "
                     + "sameWorldSelector=true registeredSelectorPredicate=true earlierSavedRootSelector=true sameWorldEntityNbt=true filteredSelfSelector=true nestedSelector=true interpretedSavedCustomName=true liveEntityContext=true liveTextContext=true liveBlockContext=true "
-                    + "directSavedFields=true directCases=3 "
+                    + "directSavedFields=true directLegacyCases=3 directLiveFields=3 directCases=6 registeredEntityLocation=true locationCases=1 "
                     + "noPrivateCacheEntries=true claimedOperationRequired=true controlledWorldEndpoints=true "
                     + "controlledLowerGenerationOutputs=true javaagent=false");
             System.out.println("PHOENIUM_FULL_REGISTERED_PREDICATE_PROBE PASS cases=" + registeredPredicateCases

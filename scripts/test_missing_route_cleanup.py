@@ -75,6 +75,7 @@ with log.open("w") as output:
                 raise AssertionError("clean shutdown timed out")
 text = read_log()
 summaries = [line for line in text.splitlines() if "PHOENIUM_CHUNK_BINDING STOPPED" in line]
+full_runtime = [line for line in text.splitlines() if "PHOENIUM_FULL STOPPED" in line]
 assert process.returncode == 0, process.returncode
 assert summaries, "missing shutdown binding accounting"
 assert "reason=FAILED_BARRIER" in text
@@ -86,6 +87,13 @@ for line in summaries:
                   "lightReceipts", "metadataEntries"):
         match = re.search(r"\b" + field + r"=(\d+)", line)
         assert match and int(match.group(1)) == 0, line
+for line in full_runtime:
+    for field in ("structureHolders", "structureReaders", "structureWriters", "structureWaitingWriters",
+                  "structureDemandTickets", "generationHolders", "graphs", "returnedIndex",
+                  "custodyEntries", "workEntries", "lifecycleEntries"):
+        match = re.search(r"\b" + field + r"=(\d+)", line)
+        if match:
+            assert int(match.group(1)) == 0, line
     for field in ("recoveryApplications", "barriers", "duplicateApplications"):
         match = re.search(r"\b" + field + r"=(\d+)", line)
         assert match and int(match.group(1)) == 0, line
@@ -94,7 +102,8 @@ assert not re.search(r'PARSED_APPLIED[^\n]*chunk=1000,1000\b', text)
 jar = next((target / "mods").glob("phoenium-*.jar"))
 manifest = {"kind": "live diagnostic: active reservation without route or topology producer", "productionFullEnabled": False,
             "directory": str(target), "exitCode": process.returncode,
-            "cancellations": text.count("reason=CANCELLED"), "protocolTerminals": text.count("reason=FAILED_BARRIER"), "stopped": summaries,
+            "cancellations": text.count("reason=CANCELLED"), "protocolTerminals": text.count("reason=FAILED_BARRIER"),
+            "stopped": summaries, "fullRuntimeStopped": full_runtime,
             "jarSha256": hashlib.sha256(jar.read_bytes()).hexdigest(),
             "logSha256": hashlib.sha256(log.read_bytes()).hexdigest()}
 (target / "acceptance.json").write_text(json.dumps(manifest, indent=2))

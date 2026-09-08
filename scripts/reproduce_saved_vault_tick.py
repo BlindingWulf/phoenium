@@ -148,6 +148,15 @@ summary = summary_lines[-1] if summary_lines else ""
 counter_values = {key: int(value) for key, value in re.findall(r"\b(\w+)=(\d+)\b", summary)}
 cleanup_lines = [line for line in text.splitlines() if "PHOENIUM_CHUNK_BINDING STOPPED" in line]
 stage2_stopped_lines = [line for line in text.splitlines() if "PHOENIUM_STAGE2 stopped" in line]
+full_stopped_lines = [line for line in text.splitlines() if "PHOENIUM_FULL STOPPED" in line]
+full_runtime_zero = True
+for line in full_stopped_lines:
+    for key in ("structureHolders", "structureReaders", "structureWriters", "structureWaitingWriters",
+                "structureDemandTickets", "generationHolders", "graphs", "returnedIndex", "custodyEntries",
+                "workEntries", "lifecycleEntries"):
+        match = re.search(r"\b%s=(\d+)\b" % key, line)
+        if match and int(match.group(1)) != 0:
+            full_runtime_zero = False
 stage2_healthy = bool(stage2_stopped_lines) and all(
     re.search(r"\b%s=0\b" % key, line) for line in stage2_stopped_lines for key in
     ("barriers", "ownershipViolations", "fallback"))
@@ -175,12 +184,14 @@ manifest.update({
     "tickingFailureObserved": "Ticking block entity" in text,
     "cleanupLines": cleanup_lines,
     "stage2StoppedLines": stage2_stopped_lines,
+    "fullRuntimeStoppedLines": full_stopped_lines,
+    "fullRuntimeZeroResidue": full_runtime_zero,
     "stage2Healthy": stage2_healthy,
     "zeroBarriers": zero_barriers,
     "zeroCleanupResidue": zero_cleanup,
     "cleanShutdown": process is not None and process.returncode == 0 and "Stopping the server" in text
         and "Encountered an unexpected exception" not in text and "Exception stopping the server" not in text
-        and zero_barriers and zero_cleanup and stage2_healthy,
+        and zero_barriers and zero_cleanup and stage2_healthy and full_runtime_zero,
     "serverLog": str(log),
 })
 (OUTPUT / "manifest.json").write_text(json.dumps(manifest, indent=2))

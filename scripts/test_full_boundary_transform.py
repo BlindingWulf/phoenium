@@ -150,7 +150,7 @@ with log.open("w") as output:
             finishing_probe = [line for line in text.splitlines() if "PHOENIUM_FULL_FINISHING_PROBE PASS" in line]
             assert len(finishing_probe) == 1, "installed FULL finishing fixture did not pass exactly once"
             required_finishing_fields = (
-                "cases=67", "queryCases=13", "serviceCases=7", "d1Cases=7", "contextCases=26", "publicationCases=2",
+                "cases=75", "queryCases=14", "serviceCases=7", "d1Cases=7", "contextCases=33", "publicationCases=2",
                 "originalFinishing=true", "separatePublication=true",
                 "cyclicPreparedPair=true", "bothPairOrders=true",
                 "proto=true", "inMemoryImposter=true", "diskReload=false",
@@ -159,11 +159,13 @@ with log.open("w") as output:
                 "originalMovingPiston=true", "savedVillagerOriginalBiomeCacheAlias=true",
                 "originalCachedAbsentBiomeFallback=true", "originalReadyAbsent=true",
                 "registeredBiomeOriginalRead=true", "predicateRegistryReplacement=true",
-                "recursiveStorageContext=true", "retainedBlockNbt=true", "pendingBlockDependencies=true", "pendingCases=6",
+                "recursiveStorageContext=true", "retainedBlockNbt=true", "pendingBlockDependencies=true",
+                "pendingLegacyCases=6", "pendingTextCases=4", "pendingCases=10",
                 "originalAbsentBlockBranch=true", "sameWorldSelector=true", "registeredSelectorPredicate=true",
                 "earlierSavedRootSelector=true", "sameWorldEntityNbt=true", "lazyBlockEntity=true",
                 "filteredSelfSelector=true", "nestedSelector=true", "interpretedSavedCustomName=true",
-                "liveEntityContext=true", "liveTextContext=true", "liveBlockContext=true", "directSavedFields=true", "directCases=3",
+                "liveEntityContext=true", "liveTextContext=true", "liveBlockContext=true", "directSavedFields=true",
+                "directLegacyCases=3", "directLiveFields=3", "directCases=6", "registeredEntityLocation=true", "locationCases=1",
                 "caughtQueryBarrier=true", "noPrivateCacheEntries=true",
                 "claimedOperationRequired=true", "controlledWorldEndpoints=true",
                 "controlledLowerGenerationOutputs=true", "javaagent=false",
@@ -244,8 +246,17 @@ with log.open("w") as output:
                       "chunkAdmissions=0", "chunkApplications=0", "chunkReroutes=0", "chunkRejections=0",
                       "chunkDuplicates=0", "producerChunkMutations=0"):
             assert field in stage2, "Stage 2 cleanup retained an unexpected value: " + stage2
+        full_stopped = [line for line in text.splitlines() if "PHOENIUM_FULL STOPPED" in line]
+        for line in full_stopped:
+            for name in ("structureHolders", "structureReaders", "structureWriters",
+                         "structureWaitingWriters", "structureDemandTickets", "generationHolders",
+                         "graphs", "returnedIndex", "custodyEntries", "workEntries", "lifecycleEntries"):
+                match = re.search(r"\b" + name + r"=(\d+)", line)
+                if match:
+                    assert int(match.group(1)) == 0, line
         manifest.update({"result": "PASS", "exitCode": process.returncode, "stopped": stopped,
                          "stage2Stopped": stage2_stopped,
+                         "fullRuntimeStopped": full_stopped,
                          "seedLines": [line for line in text.splitlines() if "Seed:" in line],
                          "transformedClassSha256": digest(exported), "holderClassSha256": digest(holder_export),
                          "clockClassSha256": digest(clock_export)})
