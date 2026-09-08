@@ -44,6 +44,15 @@ final class FullSelectorPredicateInputsTest {
         assertEquals(Set.of(storageId), field(visitor, "storageIds"));
     }
 
+    @Test void storageIdentifierReservationHonorsFinitePlanCapacityBeforeGrowing() throws Exception {
+        Identifier storageId = Identifier.parse("phoenium:capacity_fixture");
+        NumberProvider storage = new StorageValue(storageId,
+                NbtPathArgument.nbtPath().parse(new StringReader("value")));
+        Object visitor = visit(new ValueCheckCondition(storage, IntRange.exact(1)), ignored -> false);
+        assertTrue((Boolean) field(visitor, "capacity"));
+        assertTrue(((Set<?>) field(visitor, "storageIds")).isEmpty());
+    }
+
     @Test void timeAndEntityScoreRangesInspectBothImmutableBounds() throws Exception {
         NumberProvider min = ConstantValue.exactly(2);
         NumberProvider max = ConstantValue.exactly(8);
@@ -133,12 +142,16 @@ final class FullSelectorPredicateInputsTest {
     }
 
     private static Object visit(LootItemCondition condition) throws Exception {
+        return visit(condition, ignored -> true);
+    }
+
+    private static Object visit(LootItemCondition condition, java.util.function.LongPredicate capacity) throws Exception {
         Class<?> visitorClass = Class.forName(FullSelectorPredicateInputs.class.getName() + "$Visitor");
         Constructor<?> constructor = visitorClass.getDeclaredConstructor(
                 net.minecraft.core.HolderLookup.RegistryLookup.class, Set.class,
                 java.util.function.LongPredicate.class);
         constructor.setAccessible(true);
-        Object visitor = constructor.newInstance(null, Set.of(CANDIDATE), (java.util.function.LongPredicate) ignored -> true);
+        Object visitor = constructor.newInstance(null, Set.of(CANDIDATE), capacity);
         var visit = visitorClass.getDeclaredMethod("visit", LootItemCondition.class);
         visit.setAccessible(true);
         try { visit.invoke(visitor, condition); }

@@ -26,6 +26,7 @@ import net.minecraft.world.level.storage.loot.predicates.*;
  * short circuiting, world reads, serializers and gameplay random remain in EntitySelector's
  * original candidate predicate at the original text-resolution point. */
 public final class FullSelectorPredicateInputs {
+    private static final long STORAGE_ID_BYTES = 64L;
     public interface CompositeAccess { List<LootItemCondition> phoenium$predicateTerms(); }
     /** Read-only access to IntRange's immutable providers; no provider is evaluated here. */
     public interface IntRangeAccess {
@@ -142,7 +143,7 @@ public final class FullSelectorPredicateInputs {
                     return;
                 }
                 if (provider instanceof StorageValue storage) {
-                    storageIds.add(storage.storage()); return;
+                    addStorageId(storage.storage()); return;
                 }
                 if (provider instanceof EnvironmentAttributeValue environment) {
                     EnvironmentAttribute<?> attribute = environment.attribute();
@@ -168,6 +169,12 @@ public final class FullSelectorPredicateInputs {
                 if (!capacityCheck.test(next)) { capacity = true; return; }
                 biomes.add(candidate); bytes = next;
             }
+        }
+        private void addStorageId(Identifier id) {
+            if (storageIds.contains(id)) return;
+            long next = Math.addExact(bytes, STORAGE_ID_BYTES);
+            if (!capacityCheck.test(next)) { capacity = true; return; }
+            storageIds.add(id); bytes = next;
         }
         void location(LocationCheck check) {
             LocationPredicate predicate = check.predicate().orElse(null);
