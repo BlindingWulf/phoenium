@@ -1,8 +1,13 @@
 package dev.phoenium.mixin;
 
 import java.io.IOException;
+import java.lang.reflect.Method;
+import java.util.Arrays;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import com.llamalad7.mixinextras.injector.wrapoperation.Operation;
+import net.minecraft.server.level.ChunkMap;
+import net.minecraft.server.level.ServerLevel;
 import org.junit.jupiter.api.Test;
 import org.objectweb.asm.ClassReader;
 import org.objectweb.asm.ClassVisitor;
@@ -84,6 +89,16 @@ final class FailedStopNativeTargetTest {
     }
 
     @Test
+    void superclassInvocationsUseTheTransformedClassAsTheirHandlerReceiver() throws Exception {
+        assertSpecialReceiver("net/minecraft/server/level/ServerLevel", "close", "()V",
+                new Call("net/minecraft/world/level/Level", "close", "()V"), 1,
+                FailedStopServerLevelMixin.class, "phoenium$closeLevel", ServerLevel.class);
+        assertSpecialReceiver("net/minecraft/server/level/ChunkMap", "close", "()V",
+                new Call("net/minecraft/world/level/chunk/storage/SimpleRegionStorage", "close", "()V"), 2,
+                FailedStopChunkMapMixin.class, "phoenium$closeStorage", ChunkMap.class);
+    }
+
+    @Test
     void productionConfigurationInstallsEveryFailureOnlyAdapter() throws Exception {
         String json;
         try (var input = FailedStopNativeTargetTest.class.getResourceAsStream("/phoenium.mixins.json")) {
@@ -123,6 +138,42 @@ final class FailedStopNativeTargetTest {
             }, ClassReader.SKIP_DEBUG | ClassReader.SKIP_FRAMES);
         }
         assertEquals(expected, actual, () -> "native invocation drift in " + owner + '.' + method + descriptor);
+    }
+
+    private static void assertSpecialReceiver(String owner, String method, String descriptor, Call target,
+                                              int cardinality, Class<?> mixin, String handler,
+                                              Class<?> expectedReceiver) throws IOException {
+        int[] matches = {0};
+        String resource = "/" + owner + ".class";
+        try (var input = FailedStopNativeTargetTest.class.getResourceAsStream(resource)) {
+            assertTrue(input != null, () -> "missing native class " + resource);
+            new ClassReader(input).accept(new ClassVisitor(Opcodes.ASM9) {
+                @Override public MethodVisitor visitMethod(int access, String name, String desc,
+                                                           String signature, String[] exceptions) {
+                    if (!method.equals(name) || !descriptor.equals(desc)) return null;
+                    return new MethodVisitor(Opcodes.ASM9) {
+                        @Override public void visitMethodInsn(int opcode, String invokedOwner,
+                                String invokedName, String invokedDescriptor, boolean isInterface) {
+                            if (target.equals(new Call(invokedOwner, invokedName, invokedDescriptor))) {
+                                assertEquals(Opcodes.INVOKESPECIAL, opcode,
+                                        () -> "pinned superclass invocation opcode changed for " + target);
+                                matches[0]++;
+                            }
+                        }
+                    };
+                }
+            }, ClassReader.SKIP_DEBUG | ClassReader.SKIP_FRAMES);
+        }
+        assertEquals(cardinality, matches[0], () -> "pinned superclass invocation count changed for " + target);
+
+        Method methodHandler = Arrays.stream(mixin.getDeclaredMethods())
+                .filter(candidate -> candidate.getName().equals(handler)).findFirst().orElseThrow();
+        Class<?>[] parameters = methodHandler.getParameterTypes();
+        assertTrue(parameters.length >= 2, () -> "WrapOperation handler lacks receiver/operation: " + handler);
+        assertEquals(expectedReceiver, parameters[0],
+                () -> "INVOKESPECIAL handler receiver must be transformed class for " + target);
+        assertEquals(Operation.class, parameters[parameters.length - 1],
+                () -> "WrapOperation handler must retain its original operation parameter for " + target);
     }
 
     private record Call(String owner, String name, String descriptor) { }

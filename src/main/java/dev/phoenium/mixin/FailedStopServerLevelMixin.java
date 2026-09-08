@@ -4,7 +4,6 @@ import dev.phoenium.chunk.FullServerShutdown;
 
 import com.llamalad7.mixinextras.injector.wrapoperation.Operation;
 import com.llamalad7.mixinextras.injector.wrapoperation.WrapOperation;
-import net.minecraft.world.level.Level;
 import net.minecraft.world.level.entity.PersistentEntitySectionManager;
 import net.minecraft.server.level.ServerLevel;
 import org.spongepowered.asm.mixin.Mixin;
@@ -14,7 +13,7 @@ import org.spongepowered.asm.mixin.injection.At;
 abstract class FailedStopServerLevelMixin {
     @WrapOperation(method = "close()V", at = @At(value = "INVOKE",
             target = "Lnet/minecraft/world/level/Level;close()V"), require = 1, expect = 1)
-    private void phoenium$closeLevel(Level level, Operation<Void> original) {
+    private void phoenium$closeLevel(ServerLevel level, Operation<Void> original) {
         FullServerShutdown.cleanup(() -> original.call(level));
     }
 

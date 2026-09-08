@@ -7,7 +7,6 @@ import com.llamalad7.mixinextras.injector.wrapoperation.WrapOperation;
 import net.minecraft.server.level.ChunkMap;
 import net.minecraft.server.level.ChunkTaskDispatcher;
 import net.minecraft.world.entity.ai.village.poi.PoiManager;
-import net.minecraft.world.level.chunk.storage.SimpleRegionStorage;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 
@@ -27,7 +26,7 @@ abstract class FailedStopChunkMapMixin {
 
     @WrapOperation(method = "close()V", at = @At(value = "INVOKE",
             target = "Lnet/minecraft/world/level/chunk/storage/SimpleRegionStorage;close()V"), require = 2, expect = 2)
-    private void phoenium$closeStorage(SimpleRegionStorage storage, Operation<Void> original) {
+    private void phoenium$closeStorage(ChunkMap storage, Operation<Void> original) {
         FullServerShutdown.cleanup(() -> original.call(storage));
     }
 }
