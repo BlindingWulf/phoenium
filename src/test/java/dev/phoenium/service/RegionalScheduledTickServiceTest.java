@@ -174,6 +174,41 @@ final class RegionalScheduledTickServiceTest {
     }
 
     @Test
+    void restoredUnpackIndexesAContainerHeadBeforeItsFirstRegionalCycle() throws Exception {
+        Fixture f = new Fixture();
+        Object type = new Object();
+        var pendingPosition = new BlockPos(0, 64, 0);
+        var restored = new LevelChunkTicks<Object>(List.of(
+            new net.minecraft.world.ticks.SavedTick<>(type, pendingPosition, 7, TickPriority.NORMAL)));
+        var original = new LevelTicks<Object>(key -> true);
+        original.addContainer(new ChunkPos(0, 0), restored);
+        var service = new RegionalScheduledTickService<Object>(f.world, f.directory, f.dispatcher,
+            key -> true, true);
+
+        // LevelChunkTicks retains SavedTick records until the original
+        // LevelTicks registration has installed the empty container. The
+        // deserializer then calls unpack, after both original and regional
+        // registration, and no LevelTicks.schedule call follows.
+        long chunkKey = ChunkPos.pack(0, 0);
+        service.addContainer(chunkKey, restored);
+        bindOriginalCycle(service, original);
+        assertNull(restored.peek());
+        var nextField = LevelTicks.class.getDeclaredField("nextTickForContainer");
+        nextField.setAccessible(true);
+        @SuppressWarnings("unchecked") var originalIndex =
+            (it.unimi.dsi.fastutil.longs.Long2LongMap) nextField.get(original);
+        assertFalse(originalIndex.containsKey(chunkKey), "registration sees no unpacked head");
+        restored.unpack(100);
+        assertNotNull(restored.peek());
+        assertEquals(107L, originalIndex.get(chunkKey), "unpack updates the canonical original index");
+
+        var actual = new java.util.ArrayList<BlockPos>();
+        service.tick(107, 65536, (pos, ignored) -> actual.add(pos.immutable()));
+        assertEquals(List.of(pendingPosition), actual);
+        assertEquals(0, restored.count());
+    }
+
+    @Test
     void activeAreaMutationRejectsForeignClosureBeforeOriginalEffects() throws Exception {
         Fixture f = new Fixture(); var service = f.service(key -> true);
         var original = bindOriginalCycle(service, f);
@@ -219,6 +254,13 @@ final class RegionalScheduledTickServiceTest {
     private static LevelTicks<Object> bindOriginalCycle(RegionalScheduledTickService<Object> service, Fixture f) throws Exception {
         var original = new LevelTicks<Object>(key -> true);
         original.addContainer(new ChunkPos(0, 0), f.aTicks); original.addContainer(new ChunkPos(10, 0), f.bTicks);
+        bindOriginalCycle(service, original);
+        return original;
+    }
+
+    @SuppressWarnings("unchecked")
+    private static void bindOriginalCycle(RegionalScheduledTickService<Object> service,
+                                          LevelTicks<Object> original) throws Exception {
         var pending = LevelTicks.class.getDeclaredField("toRunThisTick"); pending.setAccessible(true);
         var ran = LevelTicks.class.getDeclaredField("alreadyRunThisTick"); ran.setAccessible(true);
         var queries = LevelTicks.class.getDeclaredField("toRunThisTickSet"); queries.setAccessible(true);
@@ -226,7 +268,6 @@ final class RegionalScheduledTickServiceTest {
         service.bindOriginalCycle((it.unimi.dsi.fastutil.longs.Long2LongMap) next.get(original),
             (java.util.Queue<ScheduledTick<Object>>) pending.get(original),
             (List<ScheduledTick<Object>>) ran.get(original), (java.util.Set<ScheduledTick<?>>) queries.get(original));
-        return original;
     }
 
     @Test
@@ -292,6 +333,81 @@ final class RegionalScheduledTickServiceTest {
     }
 
     @Test
+    void equalPriorityAndRestoredSubTickOrderMatchesPinnedLevelTicks() {
+        Fixture f = new Fixture();
+        var service = f.service(key -> true);
+        var oracle = new LevelTicks<Object>(key -> true);
+        var oracleA = new LevelChunkTicks<Object>();
+        var oracleB = new LevelChunkTicks<Object>();
+        oracle.addContainer(new ChunkPos(0, 0), oracleA);
+        oracle.addContainer(new ChunkPos(10, 0), oracleB);
+        Object aType = new Object(), bType = new Object();
+        // These values model two independently unpacked persistent containers. The
+        // restored sub-tick order is the tie-breaker after trigger and priority.
+        var a = tick(aType, new BlockPos(0, 64, 0), 12, TickPriority.NORMAL, -7);
+        var b = tick(bType, new BlockPos(160, 64, 0), 12, TickPriority.NORMAL, -12);
+        f.aTicks.schedule(a);
+        f.bTicks.schedule(b);
+        oracleA.schedule(a);
+        oracleB.schedule(b);
+        service.scheduled(f.aChunk, f.aTicks);
+        service.scheduled(f.bChunk, f.bTicks);
+        var expected = new java.util.ArrayList<BlockPos>();
+        var actual = new java.util.ArrayList<BlockPos>();
+
+        oracle.tick(12, 65536, (pos, ignored) -> expected.add(pos.immutable()));
+        service.tick(12, 65536, (pos, ignored) -> actual.add(pos.immutable()));
+
+        assertEquals(expected, actual);
+        assertEquals(List.of(b.pos(), a.pos()), actual);
+    }
+
+    @Test
+    void maxTicksZeroRecordsPinnedEligibilityBeforeRegionalLimitSelection() {
+        Fixture f = new Fixture();
+        var oracleEligibilityCalls = new java.util.ArrayList<Long>();
+        var eligibilityCalls = new java.util.ArrayList<Long>();
+        var service = f.service(key -> {
+            eligibilityCalls.add(key);
+            return true;
+        });
+        Object aType = new Object(), bType = new Object();
+        var a = tick(aType, new BlockPos(0, 64, 0), 4, TickPriority.NORMAL, 20);
+        var b = tick(bType, new BlockPos(160, 64, 0), 4, TickPriority.NORMAL, 10);
+        f.aTicks.schedule(a);
+        f.bTicks.schedule(b);
+        service.scheduled(f.aChunk, f.aTicks);
+        service.scheduled(f.bChunk, f.bTicks);
+
+        var oracle = new LevelTicks<Object>(key -> {
+            oracleEligibilityCalls.add(key);
+            return true;
+        });
+        var oracleA = new LevelChunkTicks<Object>();
+        var oracleB = new LevelChunkTicks<Object>();
+        oracle.addContainer(new ChunkPos(0, 0), oracleA);
+        oracle.addContainer(new ChunkPos(10, 0), oracleB);
+        oracleA.schedule(a);
+        oracleB.schedule(b);
+        oracle.tick(4, 0, (pos, ignored) -> fail("vanilla ran a zero-limit tick"));
+        assertEquals(List.of(f.aChunk, f.bChunk), oracleEligibilityCalls);
+
+        var zero = new java.util.ArrayList<BlockPos>();
+        service.tick(4, 0, (pos, ignored) -> zero.add(pos.immutable()));
+        assertTrue(zero.isEmpty());
+        // Vanilla performs its eligibility reads while sorting due containers,
+        // before applying maxTicks. The regional path must preserve that order.
+        assertEquals(oracleEligibilityCalls, eligibilityCalls);
+        assertEquals(2, f.aTicks.count() + f.bTicks.count());
+
+        var one = new java.util.ArrayList<BlockPos>();
+        service.tick(4, 1, (pos, ignored) -> one.add(pos.immutable()));
+        assertEquals(List.of(b.pos()), one);
+        assertEquals(List.of(f.aChunk, f.bChunk, f.aChunk, f.bChunk), eligibilityCalls);
+        assertEquals(1, f.aTicks.count() + f.bTicks.count());
+    }
+
+    @Test
     void callbackScheduledTickWaitsForNextCycle() {
         Fixture f = new Fixture();
         var service = f.service(key -> true);
@@ -352,6 +468,53 @@ final class RegionalScheduledTickServiceTest {
         assertEquals(List.of(f.bId), owners);
         assertEquals(1, service.measurements().migratedContainers());
         assertEquals(1, service.measurements().ownerPartitions());
+    }
+
+    @Test
+    void mergeThenSplitKeepsBothContainerQueuesExecutableByTheirPublishedOwners() {
+        Fixture f = new Fixture();
+        var service = f.service(key -> true);
+        Object aType = new Object(), bType = new Object();
+        var aTick = tick(aType, new BlockPos(0, 64, 0), 5, TickPriority.NORMAL, 10);
+        var bTick = tick(bType, new BlockPos(160, 64, 0), 5, TickPriority.NORMAL, 20);
+        f.aTicks.schedule(aTick);
+        f.bTicks.schedule(bTick);
+        service.scheduled(f.aChunk, f.aTicks);
+        service.scheduled(f.bChunk, f.bTicks);
+
+        TopologyGeneration mergedGeneration = f.directory.snapshot().generation().next();
+        Map<RoutingKey, RegionRoute> mergedRoutes = new LinkedHashMap<>();
+        f.directory.snapshot().routes().keySet().forEach(key ->
+            mergedRoutes.put(key, new RegionRoute(f.bId, mergedGeneration, f.b.ownerEpoch())));
+        f.directory.publish(mergedGeneration, mergedRoutes);
+        service.installMigration(service.planMigration(f.directory.snapshot()), f.directory.snapshot());
+
+        var mergedOwners = new java.util.ArrayList<RegionId>();
+        service.tick(5, 65536, (pos, ignored) ->
+            mergedOwners.add(OwnershipContext.current().orElseThrow().region()));
+        assertEquals(List.of(f.bId, f.bId), mergedOwners);
+
+        TopologyGeneration splitGeneration = f.directory.snapshot().generation().next();
+        Map<RoutingKey, RegionRoute> splitRoutes = new LinkedHashMap<>();
+        f.directory.snapshot().routes().keySet().forEach(key -> {
+            RegionId owner = key.x() >= f.aKey.x() - 1 && key.x() <= f.aKey.x() + 1
+                ? f.aId : f.bId;
+            RegionRuntime runtime = owner.equals(f.aId) ? f.a : f.b;
+            splitRoutes.put(key, new RegionRoute(owner, splitGeneration, runtime.ownerEpoch()));
+        });
+        f.directory.publish(splitGeneration, splitRoutes);
+        service.installMigration(service.planMigration(f.directory.snapshot()), f.directory.snapshot());
+
+        var afterSplit = tick(aType, new BlockPos(0, 64, 0), 6, TickPriority.NORMAL, 30);
+        f.aTicks.schedule(afterSplit);
+        service.scheduled(f.aChunk, f.aTicks);
+        var splitOwners = new java.util.ArrayList<RegionId>();
+        service.tick(6, 65536, (pos, ignored) ->
+            splitOwners.add(OwnershipContext.current().orElseThrow().region()));
+
+        assertEquals(List.of(f.aId), splitOwners);
+        assertEquals(2, service.measurements().migratedContainers());
+        assertEquals(2, service.measurements().ownerPartitions());
     }
 
     @Test
