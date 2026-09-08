@@ -77,6 +77,42 @@ public final class FullFinishingScoreboard {
     public void playerUuidRemoved(UUID id) {
         require(); byUuid.remove(id); directoryRevision++; service.changed(FullFinishingServices.Kind.CONNECTIONS);
     }
+    /** Retains the exact live connection/listener identities selected by the original player
+     * list. This is a validation receipt only; packet production remains on the entity owner and
+     * the original listener performs the send in its original synchronous order. */
+    public TrackingCut trackingCut(List<ServerPlayer> actualPlayers) {
+        FullFinishingServices.requireServer(server, FullFinishingServices.Kind.CONNECTIONS);
+        var result = new ArrayList<TrackingSession>(actualPlayers.size());
+        var unique = Collections.newSetFromMap(new IdentityHashMap<ServerPlayer, Boolean>());
+        for (ServerPlayer player : actualPlayers) {
+            if (!unique.add(player)) throw FullFinishingServices.failure(
+                new ChunkProtocolException("tracking player directory contains a duplicate alias"));
+            Session session = session(player, false);
+            if (session == null || session.state != State.LIVE || session.player != player
+                    || session.listener != player.connection)
+                throw FullFinishingServices.failure(
+                    new ChunkProtocolException("tracking player lacks a current live connection session"));
+            result.add(new TrackingSession(session.id, player, session.listener, session.uuid));
+        }
+        return new TrackingCut(directoryRevision, List.copyOf(result));
+    }
+
+    public void requireTrackingSession(TrackingCut cut, TrackingSession receipt) {
+        FullFinishingServices.requireServer(server, FullFinishingServices.Kind.CONNECTIONS);
+        if (cut.directoryRevision != directoryRevision || !cut.sessions.contains(receipt))
+            throw FullFinishingServices.failure(new ChunkProtocolException("tracking connection cut became stale"));
+        Session session = sessions.values().stream().filter(value -> value.id == receipt.sessionId).findFirst().orElse(null);
+        if (session == null || session.state != State.LIVE || session.player != receipt.player
+                || session.listener != receipt.listener || !Objects.equals(session.uuid, receipt.uuid)
+                || receipt.player.connection != receipt.listener)
+            throw FullFinishingServices.failure(new ChunkProtocolException("tracking connection identity changed"));
+    }
+
+    public record TrackingCut(long directoryRevision, List<TrackingSession> sessions) {
+        public TrackingCut { sessions = List.copyOf(sessions); }
+    }
+    public record TrackingSession(long sessionId, ServerPlayer player,
+                                  ServerGamePacketListenerImpl listener, UUID uuid) { }
     private Session session(ServerPlayer player, boolean create) {
         if (!create && (player == null || player.connection == null)) return null;
         if (!(player.connection instanceof ConnectionAccess access))

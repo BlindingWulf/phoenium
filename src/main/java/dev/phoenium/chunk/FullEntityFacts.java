@@ -168,6 +168,35 @@ public final class FullEntityFacts {
     public Cut observe(ServerLevel world) {
         try (var turn = service.referenceAccess()) { return cut(world); }
     }
+    /** Exact owner-published routing receipt for one alias already selected by an original
+     * service directory. The returned pointer is retained only together with its incarnation,
+     * fact identity, and routing revision; it grants no authority to dereference the alias. */
+    public Candidate trackingCandidate(ServerLevel world, Entity alias) {
+        Objects.requireNonNull(alias, "alias");
+        FullFinishingServices.requireWorld(world, FullFinishingServices.Kind.ENTITY_REGISTRY);
+        candidateMetadata.lock();
+        try {
+            Fact fact = alias instanceof Access access ? access.phoenium$referenceFact() : null;
+            Route route = routes.get(alias);
+            if (fact == null || fact.alias != alias || fact.world != world || route == null
+                    || fact.incarnation != ((Access) alias).phoenium$entityIncarnation())
+                throw new ChunkProtocolException("tracking alias lacks current owner-published identity and route");
+            return new Candidate(alias, fact, route.position, route.revision);
+        } finally { candidateMetadata.unlock(); }
+    }
+
+    public boolean validTrackingCandidate(Candidate candidate) {
+        Objects.requireNonNull(candidate, "candidate");
+        FullFinishingServices.requireWorld(candidate.fact.world, FullFinishingServices.Kind.ENTITY_REGISTRY);
+        candidateMetadata.lock();
+        try {
+            if (!(candidate.alias instanceof Access access)
+                    || access.phoenium$referenceFact() != candidate.fact
+                    || access.phoenium$entityIncarnation() != candidate.fact.incarnation) return false;
+            Route route = routes.get(candidate.alias);
+            return Objects.equals(route, new Route(candidate.position, candidate.routingRevision));
+        } finally { candidateMetadata.unlock(); }
+    }
     Estimate estimate(ServerLevel world) {
         try (var turn = service.referenceAccess()) {
             FullFinishingServices.requireWorld(world, FullFinishingServices.Kind.ENTITY_REGISTRY);

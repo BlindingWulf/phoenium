@@ -3,7 +3,10 @@ package dev.phoenium.service;
 import dev.phoenium.chunk.FullFinishingServices;
 import dev.phoenium.core.WorldId;
 import dev.phoenium.mixin.RegionalLevelTicksAccess;
+import dev.phoenium.mixin.RegionalChunkMapAccess;
+import dev.phoenium.mixin.RegionalPlayerMapAccess;
 import dev.phoenium.mixin.RegionalServerLevelAccess;
+import dev.phoenium.ownership.ObjectOwnershipRegistry;
 import dev.phoenium.topology.RegionDirectory;
 import dev.phoenium.topology.RegionalStateMigration;
 import java.util.IdentityHashMap;
@@ -15,6 +18,7 @@ import java.util.function.BiConsumer;
 import net.minecraft.core.BlockPos;
 import net.minecraft.network.protocol.game.ClientboundBlockEventPacket;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.server.level.ChunkMap;
 import net.minecraft.world.level.BlockEventData;
 import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.level.block.Block;
@@ -27,12 +31,15 @@ import net.minecraft.world.ticks.ScheduledTick;
 public final class RegionalWorldServices implements RegionalStateMigration {
     private final RegionDirectory directory;
     private final RegionalServiceDispatcher dispatcher;
+    private final ObjectOwnershipRegistry objects;
     private final Map<ServerLevel, WorldServices> worlds = new IdentityHashMap<>();
     private final Map<LevelTicks<?>, TickBinding<?>> ticks = new IdentityHashMap<>();
 
-    public RegionalWorldServices(RegionDirectory directory, RegionalServiceDispatcher dispatcher) {
+    public RegionalWorldServices(RegionDirectory directory, RegionalServiceDispatcher dispatcher,
+                                 ObjectOwnershipRegistry objects) {
         this.directory = Objects.requireNonNull(directory, "directory");
         this.dispatcher = Objects.requireNonNull(dispatcher, "dispatcher");
+        this.objects = Objects.requireNonNull(objects, "objects");
     }
 
     @SuppressWarnings("unchecked")
@@ -55,13 +62,26 @@ public final class RegionalWorldServices implements RegionalStateMigration {
         var originalEvents = ((RegionalServerLevelAccess) level).phoenium$getBlockEvents();
         events.bootstrap(List.copyOf(originalEvents));
         originalEvents.clear();
-        WorldServices services = new WorldServices(level, blocks, fluids, events);
+        var tracking = new RegionalTrackingService(world, level, directory, dispatcher, objects);
+        ChunkMap chunkMap = level.getChunkSource().chunkMap;
+        tracking.reconcileSource(((RegionalChunkMapAccess) chunkMap).phoenium$getTrackedEntities());
+        WorldServices services = new WorldServices(level, blocks, fluids, events, tracking, chunkMap);
         worlds.put(level, services);
         ticks.put(blockTicks, new TickBinding<>(services, blocks));
         ticks.put(fluidTicks, new TickBinding<>(services, fluids));
     }
 
     public synchronized RegionalServiceDispatcher dispatcher() { return dispatcher; }
+
+    public void initializeTracking() {
+        List<WorldServices> snapshot;
+        synchronized (this) { snapshot = List.copyOf(worlds.values()); }
+        for (WorldServices services : snapshot) {
+            FullFinishingServices.requireWorld(services.level(), FullFinishingServices.Kind.TRACKER);
+            FullFinishingServices.requireServer(services.level().getServer(), FullFinishingServices.Kind.CONNECTIONS);
+            services.tracking().initialize();
+        }
+    }
 
     @SuppressWarnings("unchecked")
     public synchronized <T> void containerAdded(LevelTicks<T> owner, ChunkPos pos, LevelChunkTicks<T> container) {
@@ -166,6 +186,123 @@ public final class RegionalWorldServices implements RegionalStateMigration {
         return true;
     }
 
+    public boolean runTracking(ChunkMap map) {
+        RegionalChunkMapAccess access = (RegionalChunkMapAccess) map;
+        ServerLevel level = access.phoenium$getLevel();
+        WorldServices services;
+        synchronized (this) { services = worlds.get(level); }
+        if (services == null) return false;
+        if (services.chunkMap() != map) throw new IllegalStateException("regional tracker ChunkMap identity changed");
+        FullFinishingServices.requireWorld(level, FullFinishingServices.Kind.TRACKER);
+        FullFinishingServices.requireServer(level.getServer(), FullFinishingServices.Kind.CONNECTIONS);
+        List<net.minecraft.server.level.ServerPlayer> active = List.copyOf(
+            ((RegionalPlayerMapAccess) access.phoenium$getPlayerMap()).phoenium$invokeAllPlayers());
+        services.tracking().tick(map, active, List.copyOf(level.players()));
+        return true;
+    }
+
+    public boolean addTrackingEntity(ChunkMap map, net.minecraft.world.entity.Entity entity, Runnable original) {
+        RegionalChunkMapAccess access = (RegionalChunkMapAccess) map;
+        WorldServices services;
+        synchronized (this) { services = worlds.get(access.phoenium$getLevel()); }
+        if (services == null) return false;
+        if (services.chunkMap() != map) throw new IllegalStateException("regional tracker ChunkMap identity changed");
+        FullFinishingServices.requireWorld(services.level(), FullFinishingServices.Kind.TRACKER);
+        FullFinishingServices.requireServer(services.level().getServer(), FullFinishingServices.Kind.CONNECTIONS);
+        services.tracking().addEntity(map, entity, original);
+        return true;
+    }
+
+    public boolean addTrackingPlayers(ChunkMap map, Object tracker, List<net.minecraft.server.level.ServerPlayer> players) {
+        RegionalChunkMapAccess access = (RegionalChunkMapAccess) map;
+        WorldServices services;
+        synchronized (this) { services = worlds.get(access.phoenium$getLevel()); }
+        if (services == null) return false;
+        services.tracking().addPlayers(tracker, players);
+        return true;
+    }
+
+    public boolean addTrackingPlayer(ChunkMap map, Object tracker,
+                                     net.minecraft.server.level.ServerPlayer player, Runnable original) {
+        RegionalChunkMapAccess access = (RegionalChunkMapAccess) map;
+        WorldServices services;
+        synchronized (this) { services = worlds.get(access.phoenium$getLevel()); }
+        if (services == null) return false;
+        services.tracking().addPlayer(tracker, player, original);
+        return true;
+    }
+
+    public boolean removeTrackingEntity(ChunkMap map, net.minecraft.world.entity.Entity entity, Runnable original) {
+        RegionalChunkMapAccess access = (RegionalChunkMapAccess) map;
+        WorldServices services;
+        synchronized (this) { services = worlds.get(access.phoenium$getLevel()); }
+        if (services == null) return false;
+        FullFinishingServices.requireWorld(services.level(), FullFinishingServices.Kind.TRACKER);
+        FullFinishingServices.requireServer(services.level().getServer(), FullFinishingServices.Kind.CONNECTIONS);
+        services.tracking().removeEntity(map, entity, original);
+        return true;
+    }
+
+    public boolean removeTrackingPlayer(ChunkMap map, Object tracker,
+                                        net.minecraft.server.level.ServerPlayer player, Runnable original) {
+        RegionalChunkMapAccess access = (RegionalChunkMapAccess) map;
+        WorldServices services;
+        synchronized (this) { services = worlds.get(access.phoenium$getLevel()); }
+        if (services == null) return false;
+        services.tracking().removePlayer(tracker, player, original);
+        return true;
+    }
+
+    public boolean moveTrackingPlayer(ChunkMap map, net.minecraft.server.level.ServerPlayer player, Runnable original) {
+        RegionalChunkMapAccess access = (RegionalChunkMapAccess) map;
+        WorldServices services;
+        synchronized (this) { services = worlds.get(access.phoenium$getLevel()); }
+        if (services == null) return false;
+        FullFinishingServices.requireWorld(services.level(), FullFinishingServices.Kind.TRACKER);
+        FullFinishingServices.requireServer(services.level().getServer(), FullFinishingServices.Kind.CONNECTIONS);
+        services.tracking().movePlayer(map, player, original);
+        return true;
+    }
+
+    public boolean movedTrackingPlayers(ChunkMap map, Object tracker, List<net.minecraft.server.level.ServerPlayer> players) {
+        RegionalChunkMapAccess access = (RegionalChunkMapAccess) map;
+        WorldServices services;
+        synchronized (this) { services = worlds.get(access.phoenium$getLevel()); }
+        if (services == null) return false;
+        services.tracking().movedPlayerUpdates(tracker, players);
+        return true;
+    }
+
+    public boolean movedTrackingPlayer(ChunkMap map, Object tracker,
+                                       net.minecraft.server.level.ServerPlayer player, Runnable original) {
+        RegionalChunkMapAccess access = (RegionalChunkMapAccess) map;
+        WorldServices services;
+        synchronized (this) { services = worlds.get(access.phoenium$getLevel()); }
+        if (services == null) return false;
+        services.tracking().movedPlayerUpdate(tracker, player, original);
+        return true;
+    }
+
+    public void trackingSourceAdded(ChunkMap map, net.minecraft.world.entity.Entity entity) {
+        RegionalChunkMapAccess access = (RegionalChunkMapAccess) map;
+        WorldServices services;
+        synchronized (this) { services = worlds.get(access.phoenium$getLevel()); }
+        if (services == null) return;
+        if (services.chunkMap() != map) throw new IllegalStateException("regional tracker source map changed");
+        FullFinishingServices.requireWorld(services.level(), FullFinishingServices.Kind.TRACKER);
+        services.tracking().sourceAdded(access.phoenium$getTrackedEntities(), entity);
+    }
+
+    public void trackingSourceRemoved(ChunkMap map, net.minecraft.world.entity.Entity entity) {
+        RegionalChunkMapAccess access = (RegionalChunkMapAccess) map;
+        WorldServices services;
+        synchronized (this) { services = worlds.get(access.phoenium$getLevel()); }
+        if (services == null) return;
+        if (services.chunkMap() != map) throw new IllegalStateException("regional tracker source map changed");
+        FullFinishingServices.requireWorld(services.level(), FullFinishingServices.Kind.TRACKER);
+        services.tracking().sourceRemoved(access.phoenium$getTrackedEntities(), entity);
+    }
+
     public synchronized WorldServices world(ServerLevel level) {
         return Objects.requireNonNull(worlds.get(level), "unbound regional world services");
     }
@@ -175,7 +312,7 @@ public final class RegionalWorldServices implements RegionalStateMigration {
         Map<ServerLevel, WorldMigration> plans = new IdentityHashMap<>();
         worlds.forEach((level, services) -> plans.put(level, new WorldMigration(
             services.blockTicks().planMigration(proposed), services.fluidTicks().planMigration(proposed),
-            services.events().planMigration(proposed))));
+            services.events().planMigration(proposed), services.tracking().planMigration(proposed))));
         return published -> {
             if (!published.equals(proposed)) throw new IllegalStateException("regional world-service migration view changed");
             synchronized (RegionalWorldServices.this) {
@@ -186,6 +323,7 @@ public final class RegionalWorldServices implements RegionalStateMigration {
                     services.blockTicks().installMigration(plan.blocks(), published);
                     services.fluidTicks().installMigration(plan.fluids(), published);
                     services.events().installMigration(plan.events(), published);
+                    services.tracking().installMigration(plan.tracking(), published);
                 });
             }
         };
@@ -198,9 +336,11 @@ public final class RegionalWorldServices implements RegionalStateMigration {
 
     public record WorldServices(ServerLevel level, RegionalScheduledTickService<Block> blockTicks,
                                 RegionalScheduledTickService<Fluid> fluidTicks,
-                                RegionalBlockEventService<BlockEventData> events) { }
+                                RegionalBlockEventService<BlockEventData> events,
+                                RegionalTrackingService tracking, ChunkMap chunkMap) { }
     private record TickBinding<T>(WorldServices world, RegionalScheduledTickService<T> service) { }
     private record WorldMigration(RegionalScheduledTickService.MigrationPlan blocks,
                                   RegionalScheduledTickService.MigrationPlan fluids,
-                                  RegionalBlockEventService.MigrationPlan events) { }
+                                  RegionalBlockEventService.MigrationPlan events,
+                                  RegionalTrackingService.MigrationPlan tracking) { }
 }

@@ -79,6 +79,8 @@ public final class RegionalServiceDispatcher implements RegionalServiceExecutor 
         Set<RoutingKey> footprint = Set.copyOf(keys);
         if (footprint.isEmpty()) return;
         RoutingKey center = footprint.iterator().next();
+        for (RoutingKey key : footprint) if (!key.world().equals(center.world()))
+            throw new IllegalArgumentException("regional service closure crosses worlds");
         Predicate<Set<RoutingKey>> encloser = Objects.requireNonNull(closureEncloser,
             "regional service closure encloser is not installed");
         while (true) {
@@ -108,6 +110,8 @@ public final class RegionalServiceDispatcher implements RegionalServiceExecutor 
     public void requireCurrentClosure(Set<RoutingKey> footprint) {
         if (footprint.isEmpty()) return;
         RoutingKey center = footprint.iterator().next();
+        for (RoutingKey key : footprint) if (!key.world().equals(center.world()))
+            throw new IllegalArgumentException("regional service closure crosses worlds");
         requireCurrentOwner(center);
         requireCommonOwner(center, footprint);
     }
