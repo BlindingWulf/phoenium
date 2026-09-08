@@ -80,11 +80,13 @@ the unchanged final zero-custody assertion at FullPublishedInputBindingTest:393:
 three entries remain. Probe SHA-256 is
 `A7D06C6F853840E32F8C811F539B5B65EC579A76350F905B20B50917BF6886F8`.
 The three entries are the original clean-save source fork's lifecycle/work/custody,
-retained after completion until its real ACK. Repair `c441e0b` (Sol `264d96a`) pumps
-only already-published ACKs after the original callback at the owner-free fixture
-boundary; unfinished native writes remain retained and original exceptions remain
-primary. The 46-test focused gate passes; the unchanged zero-custody assertion now
-awaits installed rerun. Sol resumes its separately packaged adverse native-write /
+retained after completion until its real ACK. Follow-up `bd505ff` (Sol `fef0746`)
+supersedes the earlier wrapper pump: after the native callback returns, the test
+proves pending=1/custody=3, enters a separate owner-free acknowledgement phase, then
+keeps pending=0/custody=0. Only published completions are pumped; unfinished native
+writes remain retained. `3f3ed40` requires the intermediate installed marker so the
+conditional path cannot silently be skipped. The 46-test focused gate passes and
+installed rerun is open. Sol resumes the separately packaged adverse native-write /
 failed-stop probe; Luna alone launches installed evidence.
 
 Earlier preserved native failures: `transform-20260908-060338` first-tick consecutive
@@ -104,13 +106,17 @@ genuine ticks, center (32,0) has ticket 33, FULL/latest full and successful full
 but tickingFuture=Unloaded. All eight halo holders have ticket 34, INACCESSIBLE,
 unloaded FULL/ticking futures; native block/entity-range and nearby checks are false.
 No current client chunk payload arrives. Both process dumps and packet/server logs
-are preserved. Luna traced the missing native movement input after /tp: ChunkMap.move
-does the remove/add player transition that supplies PLAYER_SIMULATION; a self-camera
-player tick does not provide it. Shared input correction `e2b88a4` is integrated as
-`b6db927`, using a brief actual client nudge after each teleport. The next run must
-prove lastSection/player simulation/ticking changed and the actual client received
-and applied its chunk; the nudge alone is not readiness evidence. Do not increase
-timeouts, cap 5/5 or 8/8, substitute server-only receipts or silently widen scope.
+are preserved. The movement-input hypothesis (`e2b88a4`, integrated `b6db927`) did
+not resolve readiness: `reference-nudge-5-20260908-074500` stalls at B=(7,0), despite
+actual movement/input packets. Luna now captures generic first-failure server/client
+position, lastSection, ticket types, teleport/ack state and exact native cache state.
+Lead review also found the recorded accepted FULL reference used authoritative=true
+and explicitTopology=true, whereas the shared launcher omits them. Serial means one
+gameplay worker, not one logical owner. Luna must resolve the exact frozen flag and
+native dependency semantics before changing the reference workload. Closure H/I's
+distant ordinary-tick deferral remains explicit; no new scope is silently claimed.
+Do not increase timeouts, cap distances, substitute server-only receipts or weaken
+the actual current client FULL gate.
 
 Main harness now integrates Luna's coherent test-only work through `e2b88a4`,
 including `dec8c48`, diagnostic `2a6c0f0` / `0f57111` and the first observation
