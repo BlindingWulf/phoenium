@@ -58,6 +58,33 @@ final class FullInputAcknowledgementTest {
         assertCleanup(f);
     }
 
+    @Test void holderRetirementStillAcknowledgesItsGraphAfterPublicationNotificationFails() throws Exception {
+        var f = new FullRegistrationFixture(true);
+        AutoCloseable listener = null;
+        try {
+            saved(f, ChunkPos.ZERO, false, tag(8, 8, 1));
+            f.start(ChunkPos.ZERO, ChunkStatus.FULL); f.drain();
+            var holder = f.holder(ChunkPos.ZERO); var graph = f.runtime.graph(holder);
+            assertNotNull(graph.inputReceipt()); assertFalse(graph.conversion().isDone());
+            var exact = new IllegalStateException("retiring holder publication listener failed");
+            var notices = new AtomicInteger();
+            listener = f.runtime.published.changes().subscribe(() -> {
+                if (notices.incrementAndGet() == 1) throw exact;
+            });
+            assertSame(exact, assertThrows(IllegalStateException.class, () -> f.runtime.retire(holder)));
+            assertTrue(graph.conversion().isDone(), "retirement must finish its terminal graph acknowledgement before reporting listener failure");
+            assertTrue(graph.conversion().isCompletedExceptionally());
+            assertSame(net.minecraft.server.level.GenerationChunkHolder.UNLOADED_CHUNK, graph.adjacent().join());
+            assertNull(graph.inputReceipt());
+            assertEquals(0L, f.runtime.inputs.measurements().get("consumers"));
+            assertEquals(0L, f.runtime.inputs.measurements().get("factBytes"));
+            assertEquals(0L, f.runtime.measurements().get("finishingCalls"));
+            assertFalse(f.barrier.tripped());
+            f.runtime.retire(holder);
+        } finally { if (listener != null) listener.close(); f.stop(); }
+        assertCleanup(f);
+    }
+
     @Test void failedPublicationNotificationCannotAbandonLaterOperationConsumers() throws Exception {
         var f = new FullRegistrationFixture(true);
         var neighbors = List.of(new ChunkPos(1, 0), new ChunkPos(0, 1), new ChunkPos(1, 1));

@@ -256,15 +256,17 @@ public final class FullRegistrationRuntime {
         failures.rethrow();
     }
     public void retire(GenerationChunkHolder holder) {
-        FullPublishedInputs.retired(holder);
-        ChunkHolderLifetime.retired(holder);
         List<Graph> snapshot;
         custody.gate().lock(); try { snapshot = graphs.stream().filter(graph -> graph.holder == holder).toList(); }
         finally { custody.gate().unlock(); }
-        snapshot.forEach(graph -> {
-            services.lifecycles().retireHolder(graph.lifecycle, holder);
-            graph.stop(ChunkStageAdmission.Result.SUPERSEDED, null);
-        });
+        var failures = new FullInputNotifications.Failures();
+        failures.run(() -> FullPublishedInputs.retired(holder));
+        failures.run(() -> ChunkHolderLifetime.retired(holder));
+        for (Graph graph : snapshot) {
+            failures.run(() -> services.lifecycles().retireHolder(graph.lifecycle, holder));
+            failures.run(() -> graph.stop(ChunkStageAdmission.Result.SUPERSEDED, null));
+        }
+        failures.rethrow();
     }
     public Graph graph(GenerationChunkHolder holder) {
         custody.gate().lock(); try { return graphs.stream().filter(graph -> graph.holder == holder).findFirst().orElseThrow(); }
