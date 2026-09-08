@@ -11,6 +11,12 @@ public final class FullSavedContextTestTransform {
             "net/minecraft/world/level/storage/CommandStorage", "net/minecraft/network/chat/contents/data/BlockDataSource",
             "net/minecraft/network/chat/contents/SelectorContents", "net/minecraft/network/chat/contents/ScoreContents",
             "net/minecraft/network/chat/contents/NbtContents",
+            "net/minecraft/world/entity/Entity", "net/minecraft/world/level/chunk/ChunkAccess",
+            "net/minecraft/world/level/block/entity/BeaconBlockEntity",
+            "net/minecraft/world/level/block/entity/BaseContainerBlockEntity",
+            "net/minecraft/world/level/block/entity/EnchantingTableBlockEntity",
+            "net/minecraft/world/level/block/entity/BannerBlockEntity",
+            "net/minecraft/world/level/block/entity/SkullBlockEntity",
             "net/minecraft/world/level/storage/loot/predicates/CompositeLootItemCondition");
     public static boolean supports(String name) { return TARGETS.contains(name); }
     public static void install(ClassNode node) {
@@ -22,8 +28,39 @@ public final class FullSavedContextTestTransform {
             method.instructions.add(new FieldInsnNode(Opcodes.GETFIELD, node.name, "terms", "Ljava/util/List;"));
             method.instructions.add(new InsnNode(Opcodes.ARETURN));
             node.methods.add(method);
+        } else if (node.name.endsWith("/Entity")) {
+            node.interfaces.add("dev/phoenium/chunk/FullLiveComponentInputs$EntityAccess");
+            var method = new MethodNode(Opcodes.ACC_PUBLIC, "phoenium$rawCustomName", "()Lnet/minecraft/network/chat/Component;", null, null);
+            method.instructions.add(new VarInsnNode(Opcodes.ALOAD, 0));
+            method.instructions.add(new FieldInsnNode(Opcodes.GETFIELD, node.name, "entityData", "Lnet/minecraft/network/syncher/SynchedEntityData;"));
+            method.instructions.add(new FieldInsnNode(Opcodes.GETSTATIC, node.name, "DATA_CUSTOM_NAME", "Lnet/minecraft/network/syncher/EntityDataAccessor;"));
+            method.instructions.add(new MethodInsnNode(Opcodes.INVOKEVIRTUAL, "net/minecraft/network/syncher/SynchedEntityData", "get",
+                    "(Lnet/minecraft/network/syncher/EntityDataAccessor;)Ljava/lang/Object;", false));
+            method.instructions.add(new TypeInsnNode(Opcodes.CHECKCAST, "java/util/Optional"));
+            method.instructions.add(new InsnNode(Opcodes.ACONST_NULL));
+            method.instructions.add(new MethodInsnNode(Opcodes.INVOKEVIRTUAL, "java/util/Optional", "orElse", "(Ljava/lang/Object;)Ljava/lang/Object;", false));
+            method.instructions.add(new TypeInsnNode(Opcodes.CHECKCAST, "net/minecraft/network/chat/Component"));
+            method.instructions.add(new InsnNode(Opcodes.ARETURN)); node.methods.add(method);
         } else if (node.name.endsWith("$TextDisplay")) {
+            node.interfaces.add("dev/phoenium/chunk/FullLiveComponentInputs$TextAccess");
+            var method = new MethodNode(Opcodes.ACC_PUBLIC, "phoenium$rawDisplayText", "()Lnet/minecraft/network/chat/Component;", null, null);
+            method.instructions.add(new VarInsnNode(Opcodes.ALOAD, 0));
+            method.instructions.add(new MethodInsnNode(Opcodes.INVOKEVIRTUAL, node.name, "getEntityData", "()Lnet/minecraft/network/syncher/SynchedEntityData;", false));
+            method.instructions.add(new FieldInsnNode(Opcodes.GETSTATIC, node.name, "DATA_TEXT_ID", "Lnet/minecraft/network/syncher/EntityDataAccessor;"));
+            method.instructions.add(new MethodInsnNode(Opcodes.INVOKEVIRTUAL, "net/minecraft/network/syncher/SynchedEntityData", "get",
+                    "(Lnet/minecraft/network/syncher/EntityDataAccessor;)Ljava/lang/Object;", false));
+            method.instructions.add(new TypeInsnNode(Opcodes.CHECKCAST, "net/minecraft/network/chat/Component"));
+            method.instructions.add(new InsnNode(Opcodes.ARETURN)); node.methods.add(method);
             wrap(node, "readAdditionalSaveData", "(Lnet/minecraft/world/level/storage/ValueInput;)V", "textReader");
+        } else if (node.name.endsWith("/ChunkAccess")) {
+            node.interfaces.add("dev/phoenium/chunk/FullLiveComponentInputs$ChunkAccessView");
+            fieldGetter(node, "phoenium$rawBlockEntities", "()Ljava/util/Map;", "blockEntities", "Ljava/util/Map;");
+        } else if (node.name.endsWith("/SkullBlockEntity")) {
+            node.interfaces.add("dev/phoenium/chunk/FullLiveComponentInputs$NamedBlockAccess");
+            fieldGetter(node, "phoenium$rawBlockName", "()Lnet/minecraft/network/chat/Component;", "customName", "Lnet/minecraft/network/chat/Component;");
+        } else if (node.name.endsWith("BlockEntity")) {
+            node.interfaces.add("dev/phoenium/chunk/FullLiveComponentInputs$NamedBlockAccess");
+            fieldGetter(node, "phoenium$rawBlockName", "()Lnet/minecraft/network/chat/Component;", "name", "Lnet/minecraft/network/chat/Component;");
         } else if (node.name.endsWith("/CommandStorage")) {
             wrap(node, "get", "(Lnet/minecraft/resources/Identifier;)Lnet/minecraft/nbt/CompoundTag;", "get");
             wrap(node, "set", "(Lnet/minecraft/resources/Identifier;Lnet/minecraft/nbt/CompoundTag;)V", "set");
@@ -45,6 +82,13 @@ public final class FullSavedContextTestTransform {
                     : node.name.endsWith("/ScoreContents") ? "scoreResolve" : "nbtResolve";
             wrap(node, "resolve", "(Lnet/minecraft/network/chat/ResolutionContext;I)Lnet/minecraft/network/chat/MutableComponent;", hook);
         }
+    }
+    private static void fieldGetter(ClassNode node, String methodName, String methodDesc, String fieldName, String fieldDesc) {
+        var method = new MethodNode(Opcodes.ACC_PUBLIC, methodName, methodDesc, null, null);
+        method.instructions.add(new VarInsnNode(Opcodes.ALOAD, 0));
+        method.instructions.add(new FieldInsnNode(Opcodes.GETFIELD, node.name, fieldName, fieldDesc));
+        method.instructions.add(new InsnNode(Type.getReturnType(methodDesc).getOpcode(Opcodes.IRETURN)));
+        node.methods.add(method);
     }
     private static void wrap(ClassNode node, String name, String descriptor, String hook) {
         var matches = node.methods.stream().filter(method -> method.name.equals(name) && method.desc.equals(descriptor)).toList();

@@ -204,6 +204,16 @@ public final class FullInitializedInputs {
             else if (!plan.contexts.refinementWaiting()) changed();
             return;
         }
+        if (plan.contexts != null && plan.contexts.refineLive(runtime, plan.graph, targets)) {
+            plan.evaluation = plan.contexts.unmet() != null
+                    ? new Evaluation(State.UNRESOLVED, plan.contexts.unmet(), null)
+                    : plan.contexts.refinementCapacity()
+                    ? new Evaluation(State.CAPACITY, "expanded operation acknowledgement", null)
+                    : new Evaluation(State.PENDING, "protected live component dependency refinement", null);
+            if (plan.contexts.refinementCapacity()) { plan.contexts.close(); plan.contexts = null; }
+            else if (!plan.contexts.refinementWaiting()) changed();
+            return;
+        }
         int needed = (int) targets.stream().filter(t -> t.availability == Availability.PREPARED || t.availability == Availability.PUBLISHED || t.availability == Availability.BIOMES).count();
         if (needed > limits.consumers && !expand(plan)) {
             plan.evaluation = new Evaluation(State.CAPACITY, "expanded operation acknowledgement", null); return;

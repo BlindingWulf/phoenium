@@ -977,6 +977,52 @@ class FullSavedContextInputTest {
         assertCleanup(f);
     }
 
+    @Test void liveEntityCustomNamePublishesNestedStorageBeforeOriginalSerializationAndResolution() throws Exception {
+        var f = new FullRegistrationFixture(true); var lookup = new EntityLookup<Entity>();
+        var data = new SavedDataStorage(directory, null, f.world.level.registryAccess());
+        var commandStorage = new CommandStorage(data); set(f.world.level.getServer(), MinecraftServer.class, "commandStorage", commandStorage);
+        var value = new CompoundTag(); value.putString("message", "live entity storage"); commandStorage.set(FIRST, value);
+        var candidate = EntityTypes.TEXT_DISPLAY.create(f.world.level, EntitySpawnReason.LOAD); assertNotNull(candidate);
+        candidate.setId(751); candidate.setPos(8, 8, 8); candidate.setCustomName(component(f, storageText(FIRST)));
+        lookup.add(candidate); f.world.selectorEntities.add(candidate);
+        try {
+            saved(f, ChunkPos.ZERO, false, text(entityText("@e[type=minecraft:text_display,distance=..32,limit=1]", "CustomName", true)));
+            f.start(ChunkPos.ZERO, ChunkStatus.FULL); f.drain(); var graph = f.runtime.graph(f.holder(ChunkPos.ZERO));
+            assertEquals(FullInitializedInputs.State.SATISFIED, graph.inputEvaluation().state(), graph.inputEvaluation().obligation());
+            assertTrue(graph.inputReceipt().contexts().requirements("root[0]").size() >= 3);
+            FullAuthoritativeFinishingTest.context(f); f.runtime.inputs.changed(); f.drain();
+            assertInstanceOf(ChunkStageOutcome.Applied.class, graph.finishing.outcome().join());
+            assertEquals("live entity storage", FullSavedContextTestHooks.text(
+                    assertInstanceOf(Display.TextDisplay.class, f.world.inserted.getFirst())).getString());
+            assertFalse(f.barrier.tripped());
+        } finally {
+            lookup.remove(candidate); f.stop(); FullFinishingServices.stopped(f.world.level.getServer()); data.close();
+        }
+        assertCleanup(f);
+    }
+
+    @Test void liveBeaconCustomNamePublishesNestedStorageBeforeOriginalImmediateGetter() throws Exception {
+        var f = new FullRegistrationFixture(true); var position = new BlockPos(8, 8, 8);
+        var data = new SavedDataStorage(directory, null, f.world.level.registryAccess());
+        var commandStorage = new CommandStorage(data); set(f.world.level.getServer(), MinecraftServer.class, "commandStorage", commandStorage);
+        var value = new CompoundTag(); value.putString("message", "live beacon storage"); commandStorage.set(FIRST, value);
+        var state = Blocks.BEACON.defaultBlockState(); f.input(ChunkPos.ZERO).getSection(0).setBlockState(8, 8, 8, state);
+        var beacon = new BeaconBlockEntity(position, state); beacon.setCustomName(component(f, storageText(FIRST)));
+        f.input(ChunkPos.ZERO).setBlockEntity(beacon);
+        try {
+            saved(f, ChunkPos.ZERO, false, text(blockText(position)));
+            f.start(ChunkPos.ZERO, ChunkStatus.FULL); f.drain(); var graph = f.runtime.graph(f.holder(ChunkPos.ZERO));
+            assertEquals(FullInitializedInputs.State.SATISFIED, graph.inputEvaluation().state(), graph.inputEvaluation().obligation());
+            assertTrue(graph.inputReceipt().contexts().requirements("root[0]").size() >= 3);
+            FullAuthoritativeFinishingTest.context(f); f.runtime.inputs.changed(); f.drain();
+            assertInstanceOf(ChunkStageOutcome.Applied.class, graph.finishing.outcome().join());
+            assertEquals("live beacon storage", FullSavedContextTestHooks.text(
+                    assertInstanceOf(Display.TextDisplay.class, f.world.inserted.getFirst())).getString());
+            assertFalse(f.barrier.tripped());
+        } finally { f.stop(); FullFinishingServices.stopped(f.world.level.getServer()); data.close(); }
+        assertCleanup(f);
+    }
+
     @Test void originalPersistedCommandStorageLoadsBeforeRegionalAdmissionAndIsReadWithoutConstruction() throws Exception {
         var f = new FullRegistrationFixture(true);
         var firstStore = new SavedDataStorage(directory, net.minecraft.util.datafix.DataFixers.getDataFixer(), f.world.level.registryAccess());
@@ -1112,6 +1158,11 @@ class FullSavedContextInputTest {
     private static CompoundTag entityText(String selector, String path, boolean interpret) {
         var text = new CompoundTag(); text.putString("nbt", path); text.putString("entity", selector);
         text.putBoolean("interpret", interpret); return text;
+    }
+    private static Component component(FullRegistrationFixture fixture, net.minecraft.nbt.Tag encoded) {
+        return net.minecraft.network.chat.ComponentSerialization.CODEC.parse(
+                fixture.world.level.registryAccess().createSerializationContext(net.minecraft.nbt.NbtOps.INSTANCE), encoded)
+                .result().orElseThrow();
     }
     private static CompoundTag pendingBeacon(BlockPos position, net.minecraft.nbt.Tag customName) {
         var tag = new CompoundTag(); tag.putString("id", "minecraft:beacon");

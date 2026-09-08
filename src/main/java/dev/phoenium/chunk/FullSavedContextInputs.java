@@ -10,6 +10,7 @@ import java.util.*;
 import net.minecraft.commands.arguments.NbtPathArgument;
 import net.minecraft.nbt.NbtOps;
 import net.minecraft.core.BlockPos;
+import net.minecraft.network.chat.Component;
 import net.minecraft.network.chat.ComponentSerialization;
 import net.minecraft.resources.Identifier;
 import net.minecraft.server.level.ServerLevel;
@@ -39,6 +40,32 @@ public final class FullSavedContextInputs {
         } catch (RuntimeException | Error failure) { plan.close(); throw failure; }
     }
     private record Pending(FullSavedInput.EntityFact fact, FullSavedTextInputs.NbtRead read) { }
+    private record LiveContribution(Pending pending, FullLiveComponentInputs.Snapshot snapshot) { }
+    private sealed interface LiveReceipt permits EntityLiveReceipt, BlockLiveReceipt {
+        boolean valid(FullContextReadClaim claim, FullRegistrationRuntime.Graph graph);
+    }
+    private record EntityLiveReceipt(Entity alias, FullEntityFacts.Fact fact, RoutingKey position,
+                                     FullLiveComponentInputs.Field field,
+                                     FullLiveComponentInputs.Snapshot snapshot) implements LiveReceipt {
+        @Override public boolean valid(FullContextReadClaim claim, FullRegistrationRuntime.Graph graph) {
+            claim.require(graph, position);
+            return alias instanceof FullEntityFacts.Access access && access.phoenium$referenceFact() == fact
+                    && snapshot.valid(FullLiveComponentInputs.entity(alias, field));
+        }
+    }
+    private record BlockLiveReceipt(net.minecraft.world.level.chunk.ChunkAccess chunk, BlockPos position,
+                                    BlockEntity block, FullLiveComponentInputs.Snapshot snapshot,
+                                    RoutingKey route) implements LiveReceipt {
+        @Override public boolean valid(FullContextReadClaim claim, FullRegistrationRuntime.Graph graph) {
+            claim.require(graph, route);
+            BlockEntity current = FullLiveComponentInputs.block(chunk, position);
+            return current == block && (current == null
+                    ? snapshot.root() == null : FullLiveComponentInputs.supportedBlock(current)
+                    && snapshot.valid(FullLiveComponentInputs.blockName(current)));
+        }
+    }
+    private record LiveObservation(List<LiveReceipt> receipts, List<LiveContribution> contributions,
+                                   long bytes, String unmet, boolean grew) { }
     @FunctionalInterface public interface SelectorCall<T> { T call() throws CommandSyntaxException; }
 
     public static final class Plan implements AutoCloseable {
@@ -53,6 +80,11 @@ public final class FullSavedContextInputs {
         private final Map<Identifier, FullCommandStorageInputs.Capture> storage = new LinkedHashMap<>();
         private final List<Pending> pendingBlocks = new ArrayList<>();
         private final Set<Pending> refinedBlocks = Collections.newSetFromMap(new IdentityHashMap<>());
+        private final List<Pending> pendingEntities = new ArrayList<>();
+        private final List<Pending> pendingLiveBlocks = new ArrayList<>();
+        private final Set<Pending> refinedEntities = Collections.newSetFromMap(new IdentityHashMap<>());
+        private final Set<Pending> refinedLiveBlocks = Collections.newSetFromMap(new IdentityHashMap<>());
+        private final List<LiveReceipt> liveReceipts = new ArrayList<>();
         private final Map<BlockPos, FullBlockEntityTagInputs.Capture> blockTags = new HashMap<>();
         private final Map<BlockPos, FullBlockEntityTagInputs.Absence> blockMapAbsences = new HashMap<>();
         private final Map<BlockPos, FullBlockEntityTagInputs.Absence> blockReloadAbsences = new HashMap<>();
@@ -130,6 +162,23 @@ public final class FullSavedContextInputs {
                         if (selector != null && selector.self() && read.interpreting() && read.path().equals("CustomName")) {
                             FullSavedTextInputs.decode(fact.services().customName(), world.registryAccess()).ifPresent(component ->
                                     add(fact, FullSavedTextInputs.discoverInterpreted(fact, component, read.recursionDepth()), queue));
+                            continue;
+                        }
+                        if (selector != null && selector.self() && read.interpreting() && read.path().equals("text")
+                                && fact.type().equals("minecraft:text_display")) {
+                            FullSavedTextInputs.decode(fact.services().text(), world.registryAccess()).ifPresent(component ->
+                                    add(fact, FullSavedTextInputs.discoverInterpreted(fact, component, read.recursionDepth()), queue));
+                            continue;
+                        }
+                        if (selector != null && selector.worldLimited() && read.interpreting()
+                                && (read.path().equals("CustomName") || read.path().equals("text"))) {
+                            pendingEntities.add(next);
+                            for (var savedCandidate : saved.entities()) {
+                                var source = read.path().equals("CustomName") ? savedCandidate.services().customName()
+                                        : savedCandidate.type().equals("minecraft:text_display") ? savedCandidate.services().text() : FullSavedTextInputs.Saved.EMPTY;
+                                FullSavedTextInputs.decode(source, world.registryAccess()).ifPresent(component ->
+                                        add(fact, FullSavedTextInputs.discoverInterpreted(fact, component, read.recursionDepth()), queue));
+                            }
                             continue;
                         }
                     }
@@ -212,7 +261,11 @@ public final class FullSavedContextInputs {
                     }
                 }
                 refinedBlocks.add(pending); changedPlan = true;
-                if (capture == null) continue; // Instantiated named-field producer is a separate audited source.
+                if (capture == null) {
+                    if (read.path().equals("CustomName")) pendingLiveBlocks.add(pending);
+                    else unmet = pending.fact.path() + ": live block-entity interpreted path producer pending for " + read.path();
+                    continue;
+                }
                 if (!read.path().equals("CustomName")) {
                     unmet = pending.fact.path() + ": pending block-entity interpreted path producer pending for " + read.path();
                     break;
@@ -223,6 +276,112 @@ public final class FullSavedContextInputs {
                 process(queue);
             }
             return changedPlan;
+        }
+        /** Refines audited live component fields under their exact same-world owner. The first
+         * pass measures only scalar graph sizes; capacity is reserved before the second pass
+         * detaches syntax and structural receipts. */
+        boolean refineLive(FullRegistrationRuntime runtime, FullRegistrationRuntime.Graph graph,
+                           List<FullInitializedInputs.Target> targets) {
+            List<Pending> entities = pendingEntities.stream().filter(pending -> !refinedEntities.contains(pending)).toList();
+            List<Pending> blocks = pendingLiveBlocks.stream().filter(pending -> !refinedLiveBlocks.contains(pending)).toList();
+            if (entities.isEmpty() && blocks.isEmpty()) return false;
+            refinementWaiting = false; refinementCapacity = false;
+            if (!graph.encloseContextTargets(targets)) { refinementWaiting = true; return true; }
+            var expected = directory.resolve(graph.lifecycle.chunkKey()).orElse(null);
+            if (expected == null) { refinementRetry = true; return true; }
+            Set<RoutingKey> footprint = graph.contextFootprint(targets);
+            var byPosition = new HashMap<net.minecraft.world.level.ChunkPos, FullInitializedInputs.Target>();
+            for (var target : targets) byPosition.put(target.position(), target);
+            var measured = FullContextRefinement.read(runtime, graph, expected, footprint,
+                    claim -> observeLive(claim, graph, entities, blocks, byPosition, -1L, false));
+            if (measured.state() != FullContextRefinement.State.OBSERVED) {
+                refinementWaiting = measured.state() == FullContextRefinement.State.PENDING;
+                refinementRetry = measured.state() == FullContextRefinement.State.STALE;
+                return true;
+            }
+            LiveObservation size = measured.value();
+            if (size.unmet() != null) { unmet = size.unmet(); return true; }
+            if (!reserve(size.bytes())) { refinementCapacity = true; return true; }
+            var captured = FullContextRefinement.read(runtime, graph, expected, footprint,
+                    claim -> observeLive(claim, graph, entities, blocks, byPosition, size.bytes(), true));
+            if (captured.state() != FullContextRefinement.State.OBSERVED) {
+                refinementWaiting = captured.state() == FullContextRefinement.State.PENDING;
+                refinementRetry = captured.state() == FullContextRefinement.State.STALE;
+                return true;
+            }
+            LiveObservation observation = captured.value();
+            if (observation.grew()) { refinementRetry = true; return true; }
+            if (observation.unmet() != null) { unmet = observation.unmet(); return true; }
+            bytes = Math.addExact(bytes, size.bytes()); liveReceipts.addAll(observation.receipts());
+            var queue = new ArrayDeque<Pending>();
+            for (LiveContribution contribution : observation.contributions()) {
+                add(contribution.pending.fact, contribution.snapshot.requirements(), queue);
+            }
+            refinedEntities.addAll(entities); refinedLiveBlocks.addAll(blocks); process(queue);
+            return true;
+        }
+
+        private LiveObservation observeLive(FullContextReadClaim claim, FullRegistrationRuntime.Graph graph,
+                                            List<Pending> entities, List<Pending> blocks,
+                                            Map<net.minecraft.world.level.ChunkPos, FullInitializedInputs.Target> targets,
+                                            long allowance, boolean capture) {
+            long total = 0; var receipts = new ArrayList<LiveReceipt>(); var contributions = new ArrayList<LiveContribution>();
+            if (!entities.isEmpty() && entityCut != null) for (Pending pending : entities) {
+                FullLiveComponentInputs.Field field = pending.read.path().equals("text")
+                        ? FullLiveComponentInputs.Field.DISPLAY_TEXT : FullLiveComponentInputs.Field.CUSTOM_NAME;
+                for (var candidate : entityCut.candidates()) {
+                    RoutingKey key = new RoutingKey(worldId, candidate.position().x(), candidate.position().z()); claim.require(graph, key);
+                    Component component = FullLiveComponentInputs.entity(candidate.alias(), field);
+                    var measure = FullLiveComponentInputs.measure(component, pending.read.recursionDepth());
+                    if (measure.unmet() != null) return new LiveObservation(List.of(), List.of(), total,
+                            pending.fact.path() + ": " + measure.unmet(), false);
+                    total = Math.addExact(total, Math.max(32L, measure.bytes()));
+                    if (capture) {
+                        var snapshot = FullLiveComponentInputs.capture(pending.fact, component, pending.read.recursionDepth(),
+                                Math.max(0L, Math.subtractExact(allowance, Math.subtractExact(total, Math.max(32L, measure.bytes())))));
+                        if (snapshot.unmet() != null && snapshot.unmet().contains("grew after"))
+                            return new LiveObservation(List.of(), List.of(), total, null, true);
+                        if (snapshot.unmet() != null) return new LiveObservation(List.of(), List.of(), total,
+                                pending.fact.path() + ": " + snapshot.unmet(), false);
+                        receipts.add(new EntityLiveReceipt(candidate.alias(), candidate.fact(), key, field, snapshot));
+                        contributions.add(new LiveContribution(pending, snapshot));
+                    }
+                }
+            }
+            for (Pending pending : blocks) {
+                var position = pending.read.block(); var chunkPosition = new net.minecraft.world.level.ChunkPos(position.getX() >> 4, position.getZ() >> 4);
+                var target = targets.get(chunkPosition);
+                if (target == null || target.actual() == null) continue;
+                RoutingKey key = new RoutingKey(worldId, chunkPosition.x(), chunkPosition.z()); claim.require(graph, key);
+                BlockEntity block = FullLiveComponentInputs.block(target.actual(), position);
+                if (block != null && !FullLiveComponentInputs.supportedBlock(block))
+                    return new LiveObservation(List.of(), List.of(), total,
+                            pending.fact.path() + ": instantiated block component producer is not audited for " + block.getClass().getName(), false);
+                Component component = block == null ? null : FullLiveComponentInputs.blockName(block);
+                var measure = FullLiveComponentInputs.measure(component, pending.read.recursionDepth());
+                if (measure.unmet() != null) return new LiveObservation(List.of(), List.of(), total,
+                        pending.fact.path() + ": " + measure.unmet(), false);
+                total = Math.addExact(total, Math.max(32L, measure.bytes()));
+                if (capture) {
+                    var snapshot = FullLiveComponentInputs.capture(pending.fact, component, pending.read.recursionDepth(),
+                            Math.max(0L, Math.subtractExact(allowance, Math.subtractExact(total, Math.max(32L, measure.bytes())))));
+                    if (snapshot.unmet() != null && snapshot.unmet().contains("grew after"))
+                        return new LiveObservation(List.of(), List.of(), total, null, true);
+                    if (snapshot.unmet() != null) return new LiveObservation(List.of(), List.of(), total,
+                            pending.fact.path() + ": " + snapshot.unmet(), false);
+                    receipts.add(new BlockLiveReceipt(target.actual(), position, block, snapshot, key));
+                    contributions.add(new LiveContribution(pending, snapshot));
+                }
+            }
+            return new LiveObservation(List.copyOf(receipts), List.copyOf(contributions), total, null, capture && total > allowance);
+        }
+
+        boolean validateLive(FullContextReadClaim claim, FullRegistrationRuntime.Graph graph) {
+            if (closed || refinementRetry) return false;
+            for (LiveReceipt receipt : liveReceipts) if (!receipt.valid(claim, graph)) {
+                refinementRetry = true; changed.run(); return false;
+            }
+            return true;
         }
         private boolean reserve(long addition) { return capacity.test(Math.addExact(bytes, addition)); }
         private static void close(AutoCloseable value, String message) {
@@ -242,7 +401,8 @@ public final class FullSavedContextInputs {
                 if (!ownedSelf && !identityScore && entityCut == null) {
                     var facts = FullFinishingServices.forServer(world.getServer()).entityFacts;
                     var estimate = facts.estimate(world);
-                    maximumSelectorCandidates = Math.addExact(estimate.candidates(), saved.entities().size());
+                    int conversions = (int) saved.entities().stream().filter(FullSavedInput::converts).count();
+                    maximumSelectorCandidates = Math.addExact(estimate.candidates(), Math.addExact(saved.entities().size(), conversions));
                     long charge = Math.multiplyExact(ENTITY_CANDIDATE_BYTES, maximumSelectorCandidates);
                     if (!reserve(charge)) { refinementCapacity = true; return; }
                     entityCut = facts.observe(world, estimate);
@@ -306,6 +466,7 @@ public final class FullSavedContextInputs {
             if (closed) return;
             if (claim != null) throw new ChunkProtocolException("saved contexts released before original reader exit");
             closed = true; texts.clear(); storage.clear(); pendingBlocks.clear(); refinedBlocks.clear();
+            pendingEntities.clear(); pendingLiveBlocks.clear(); refinedEntities.clear(); refinedLiveBlocks.clear(); liveReceipts.clear();
             blockTags.clear(); blockMapAbsences.clear(); blockReloadAbsences.clear();
             var waiters = List.copyOf(blockWaiters.values()); blockWaiters.clear();
             Throwable failure = null;
