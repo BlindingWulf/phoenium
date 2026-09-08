@@ -142,16 +142,22 @@ public final class FullRegistrationServerProbe implements DedicatedServerModInit
             contexts.directory = java.nio.file.Files.createTempDirectory("phoenium-full-invalid-name-probe");
             contexts.originalInvalidCustomNameDecodeDoesNotLeakIntoTheNextInterpretedEntityOccurrence();
             int registeredPredicateCases = FullRegisteredPredicateExecutionTest.runInstalled();
+            contexts.directory = java.nio.file.Files.createTempDirectory("phoenium-full-live-entity-probe");
+            contexts.liveEntityCustomNamePublishesNestedStorageBeforeOriginalSerializationAndResolution();
+            contexts.directory = java.nio.file.Files.createTempDirectory("phoenium-full-live-text-probe");
+            contexts.liveTextDisplayTextPublishesNestedStorageBeforeOriginalSerializationAndResolution();
+            contexts.directory = java.nio.file.Files.createTempDirectory("phoenium-full-live-beacon-probe");
+            contexts.liveBeaconCustomNamePublishesNestedStorageBeforeOriginalImmediateGetter();
             var completion = new FullAuthoritativeFinishingTest();
             completion.originalFinishingAndSeparatePublicationCompleteExactlyOnce(false);
             completion.originalFinishingAndSeparatePublicationCompleteExactlyOnce(true);
-            System.out.println("PHOENIUM_FULL_FINISHING_PROBE PASS cases=51 queryCases=13 serviceCases=7 d1Cases=7 contextCases=22 publicationCases=2 "
+            System.out.println("PHOENIUM_FULL_FINISHING_PROBE PASS cases=54 queryCases=13 serviceCases=7 d1Cases=7 contextCases=25 publicationCases=2 "
                     + "originalFinishing=true separatePublication=true cyclicPreparedPair=true bothPairOrders=true "
                     + "proto=true inMemoryImposter=true diskReload=false originalDifficulty=true originalCollision=true "
                     + "originalShulkerImmediate=true originalLaterRegistration=true originalMovingPiston=true "
                     + "savedVillagerOriginalBiomeCacheAlias=true originalCachedAbsentBiomeFallback=true originalReadyAbsent=true caughtQueryBarrier=true "
                     + "recursiveStorageContext=true retainedBlockNbt=true pendingBlockDependencies=true originalAbsentBlockBranch=true lazyBlockEntity=true "
-                    + "sameWorldSelector=true registeredSelectorPredicate=true earlierSavedRootSelector=true sameWorldEntityNbt=true filteredSelfSelector=true nestedSelector=true interpretedSavedCustomName=true "
+                    + "sameWorldSelector=true registeredSelectorPredicate=true earlierSavedRootSelector=true sameWorldEntityNbt=true filteredSelfSelector=true nestedSelector=true interpretedSavedCustomName=true liveEntityContext=true liveTextContext=true liveBlockContext=true "
                     + "noPrivateCacheEntries=true claimedOperationRequired=true controlledWorldEndpoints=true "
                     + "controlledLowerGenerationOutputs=true javaagent=false");
             System.out.println("PHOENIUM_FULL_REGISTERED_PREDICATE_PROBE PASS cases=" + registeredPredicateCases
