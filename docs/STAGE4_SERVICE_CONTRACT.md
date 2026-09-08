@@ -70,6 +70,13 @@ Admission of another snapshot waits at the owner-free event loop at 128 outstand
 records. Completion and release remove protocol state; no completed-save history is
 kept. This bound is not a claim about total heap use or platform capacity.
 
+The native village-siege service retains its original spawn coordinates across
+ticks. Its callback therefore encloses that stored origin even after current
+players move or leave. The pinned routine also reads difficulty at a newly created
+zombie's initial origin before placement; that original read is included in the
+finite cut. Neither the player cohort nor a timer-only observation replaces the
+stored source, and admission revalidates the same siege state before the callback.
+
 Normal flush requires zero pending writes/acknowledgements and preserves original
 storage errors. Disk inspection and restart are required evidence of saved state.
 The protocol makes no stronger durability claim than Minecraft's original storage

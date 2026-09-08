@@ -10,6 +10,7 @@ import dev.phoenium.mixin.RegionalSpawnStateAccess;
 import dev.phoenium.mixin.RegionalVisibleChunkAccess;
 import dev.phoenium.mixin.RegionalTimedCustomSpawnerAccess;
 import dev.phoenium.mixin.RegionalTraderSpawnerAccess;
+import dev.phoenium.mixin.RegionalSiegeSpawnerAccess;
 import dev.phoenium.mixin.RegionalBlockEntityTickAccess;
 import dev.phoenium.mixin.RegionalDragonFightAccess;
 import dev.phoenium.ownership.ObjectOwnershipRegistry;
@@ -156,9 +157,9 @@ public final class RegionalChunkGameplayService {
     }
     public void blockTickCallback(LevelChunk chunk, Runnable original) { chunkCallback(chunk, 1, original); }
     public void broadcastChunkCallback(LevelChunk chunk, Runnable original) { chunkCallback(chunk, 0, original); }
-    /** The pinned custom spawner set chooses terrain only relative to the current level-player
-     * cohort. Its widest path is wandering-trader meeting POI radius 48 followed by a radius-48
-     * spawn search; seven chunk keys cover that path and the final 2x3x2 space probe. */
+    /** Custom spawners select terrain from current players or the original retained siege
+     * origin. The widest player-relative path is the trader's meeting POI plus spawn search;
+     * seven chunk keys cover it and the final 2x3x2 probe. */
     public void customSpawnerCallback(CustomSpawner spawner, boolean spawnEnemies, Runnable original) {
         requireCycle(); Objects.requireNonNull(original);
         int radius = customSpawnerRadius(spawner, spawnEnemies);
@@ -167,15 +168,35 @@ public final class RegionalChunkGameplayService {
         LinkedHashSet<RoutingKey> footprint = new LinkedHashSet<>();
         TopologyPlanner planner = new TopologyPlanner();
         for (PlayerProjection player : players) footprint.addAll(planner.requiredClosure(Set.of(player.key), radius));
+        RegionalSiegeSpawnerAccess siege = spawner instanceof net.minecraft.world.entity.ai.village.VillageSiege
+            ? (RegionalSiegeSpawnerAccess) spawner : null;
+        boolean siegeSetup = siege != null && siege.phoenium$hasSetupSiege();
+        int siegeX = siege == null ? 0 : siege.phoenium$spawnX();
+        int siegeZ = siege == null ? 0 : siege.phoenium$spawnZ();
+        if (siege != null) footprint.addAll(siegeFootprint(world, siegeSetup, siegeX, siegeZ));
         RoutingKey source = players.isEmpty() ? new RoutingKey(world, 0, 0) : players.get(0).key;
         if (footprint.isEmpty()) footprint.add(source);
         dispatcher.ensureClosure(Set.copyOf(footprint));
         dispatcher.executeAndDrain(source, RegionalServiceKind.CHUNK_GAMEPLAY, ignored -> {
             dispatcher.requireCurrentClosure(Set.copyOf(footprint));
             for (PlayerProjection player : players) requireEntity(player.candidate, player.key);
+            if (siege != null && (siege.phoenium$hasSetupSiege() != siegeSetup
+                    || siege.phoenium$spawnX() != siegeX || siege.phoenium$spawnZ() != siegeZ))
+                throw new IllegalStateException("retained siege origin changed during regional admission");
             original.run();
         });
         chunkCallbacks = Math.incrementExact(chunkCallbacks);
+    }
+    static Set<RoutingKey> siegeFootprint(WorldId world, boolean setup, int x, int z) {
+        LinkedHashSet<RoutingKey> footprint = new LinkedHashSet<>();
+        // Pinned trySpawn reads difficulty at the new Zombie's initial position BEFORE
+        // snapTo. Preserve that original origin read, even when the siege is elsewhere.
+        footprint.add(new RoutingKey(world, 0, 0));
+        // findRandomSpawnPos retains spawnX/Z across ticks and offsets each by [-8, 7].
+        // Current player positions cannot replace the original stored spawn location.
+        if (setup) footprint.addAll(new TopologyPlanner().requiredClosure(
+            Set.of(new RoutingKey(world, Math.floorDiv(x, 16), Math.floorDiv(z, 16))), 1));
+        return Set.copyOf(footprint);
     }
     static int customSpawnerRadius(CustomSpawner spawner, boolean spawnEnemies) {
         if (spawner instanceof net.minecraft.world.level.levelgen.PhantomSpawner)

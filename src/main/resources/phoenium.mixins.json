@@ -17,6 +17,7 @@
     "RegionalCustomSpawnerMixin",
     "RegionalTimedCustomSpawnerAccess",
     "RegionalTraderSpawnerAccess",
+    "RegionalSiegeSpawnerAccess",
     "RegionalBlockEntityTickAccess",
     "RegionalBlockEntityTickerMixin",
     "RegionalDragonFightAccess",
