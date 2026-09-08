@@ -75,7 +75,7 @@ final class FullRegistrationFixtureSaveBridgeTest {
     }
 
     @Test
-    void controlledUnloadBoundaryAcknowledgesOnlyPublishedCompletionAndKeepsOriginalFailurePrimary() throws Exception {
+    void controlledAcknowledgementReleasesPublishedSaveCompletion() throws Exception {
         var fixture = new FullRegistrationFixture(true);
         try {
             var binding = FullRegistrationFixtureSaveBridge.find(fixture.world.level, fixture.fixtureMap);

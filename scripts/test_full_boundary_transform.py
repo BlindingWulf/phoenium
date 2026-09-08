@@ -105,6 +105,12 @@ with log.open("w") as output:
         assert not list((TARGET / "crash-reports").glob("*.txt")), "server wrote a crash report"
         assert any("Seed:" in line for line in text.splitlines()), "original seed command was not observed"
         if controlled:
+            controlled_ack = [line for line in text.splitlines()
+                              if "PHOENIUM_FULL_CONTROLLED_SAVE_ACK" in line]
+            assert len(controlled_ack) == 1, "controlled original save custody was not witnessed exactly once"
+            for name, expected in (("pendingBefore", 1), ("custodyBefore", 3)):
+                value = re.search(r"(?:^|[\s,{])" + name + r"=(\d+)(?:[\s,}]|$)", controlled_ack[0])
+                assert value and int(value.group(1)) == expected, controlled_ack[0]
             probe = [line for line in text.splitlines() if "PHOENIUM_FULL_REGISTRATION_PROBE PASS" in line]
             assert len(probe) == 1, "selected installed registration fixture did not pass exactly once"
             required_registration_fields = (
