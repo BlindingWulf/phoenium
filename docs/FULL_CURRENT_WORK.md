@@ -10,7 +10,7 @@ parallel OFF, disposable PhoeniumTest0 only. No push/release/PASS tag.
 
 Recovery `39105d25f879795dcd178fba741f1b59b2d7c782` preserves all interrupted dirty source
 as UNVERIFIED. Historical `a7b40743` / 419 tests are not current proof. Source and failed
-worlds/logs retained; no reset/stash. Main production checkpoint `9bcb6e2` includes PARTIAL
+worlds/logs retained; no reset/stash. Main production checkpoint `eff728e` includes PARTIAL
 same-world selectors/entity NBT and interpreted saved-self CustomName discovery.
 Test witness `481d5c5` proves private collision access at its actual call point; reviewed
 Luna cleanup/readiness/vault and original discard/team-transfer witnesses are integrated
@@ -138,11 +138,23 @@ Original conversion leaves four discarded Tadpole aliases in the raw visible sto
 live-1788824270895 original scoreboard traces prove add(new frog UUID)/remove(old tadpole)
 and loaded-RETURN DISCARDED witnesses; verifier counts live survivors and validates all
 four discarded aliases/transfers separately (`2c34435`). This is unchanged vanilla behavior.
-Reload still FAILS with savedReaders={} despite four suffixes. Pinned SerializableChunkData
-write459-466 writes its entity list only for PROTOCHUNK, so copyOf injection into a FULL
-record is omitted. Luna is correcting test-only legacy-root seeding at original write's
-output, before normal storage, and adding an actual r.1.0.mca payload check before restart.
-Target chunks32..35,z4 are region1,0 in dimensions/minecraft/overworld, not region2,0.
+The legacy fixture serializer omission is repaired: original FULL write's output receives
+the exact test-only roots, with overworld provenance retained on the original record.
+Luna live-1788825426799 reaches fresh AND reload FULL_LIVE_OK, but the campaign failed
+because accumulated fresh-generation log markers contaminated the reload post-check.
+Current harness scopes each boot's evidence and preserves full raw logs. A previous 3/3
+reload inventory remains an intermittent visibility concern, not disproved by a later PASS.
+
+Luna live-1788826604050 on F3CE passes fresh FULL_LIVE_OK AND reads actual
+dimensions/minecraft/overworld/region/r.1.0.mca before restart: chunks32..35,z4, FULL,
+two roots per chunk, all eight exact tag/UUID pairs. Test helper interface is outside the
+reserved Mixin package (`d426d4e`); actual header/record bounds and coordinates are checked.
+The run FAILS at normal stop before reload: retained Worker-Main generation task registers
+its next original winning step after FullRegistrationRuntime was closed by SERVER_STOPPING.
+Root source fix moves terminal runtime acknowledgement to the existing stopServer wrapper
+exit, after the original ChunkMap.hasWork drain/save/close, before named services terminate.
+No fallback/new readiness/replay. Compilation green (shutdown-placement-28); Luna owns the
+deterministic original-generation continuation regression and affected live rerun.
 
 ## Vault evidence and next work
 
@@ -184,8 +196,9 @@ the finite support preserves existing A/B ownership. Final same-artifact rerun r
    STAGE3_FULL_SELECTOR_CONTEXT_DECISION.md; async user question unanswered. D1-F forbids
    arbitrary foreign calls/cross-dimension same-world convergence. Do not enable the
    proposed all-or-release bundle without an actual answer.
-3. Luna: finish actual legacy-root serialization and persisted reload/client campaign on
-   F3CE; fresh and positive ordinary vault proof now exist. Then update to stable root/Sol
+3. Luna: validate shutdown placement, then complete fresh/disk/reload/client campaign.
+   F3CE fresh and actual pre-restart disk proof plus earlier reload/original vault proof exist.
+   Then update to stable root/Sol
    source and exact probe counters. One live owner only; no root competing live run.
 4. Final clean build, installed probes and client campaign must share recorded production
    JAR; final diff review, acceptance ledger and verified commit. No optimistic PASS.

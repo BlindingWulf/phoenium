@@ -30,7 +30,7 @@ abstract class FullFinishingSerialMixin {
     @WrapMethod(method = "stopServer()V")
     private void phoenium$stopServices(Operation<Void> original) {
         MinecraftServer server = (MinecraftServer) (Object) this;
-        try (var turn = FullFinishingServices.forServer(server).serial(FullFinishingServices.Phase.STOP)) { original.call(); }
-        finally { FullFinishingServices.stopped(server); }
+        dev.phoenium.chunk.FullServerShutdown.run(server, () -> original.call(),
+                dev.phoenium.Phoenium.liveRuntime()::stop);
     }
 }

@@ -24,7 +24,7 @@ public final class Phoenium implements DedicatedServerModInitializer {
     @Override
     public void onInitializeServer() {
         ServerLifecycleEvents.SERVER_STARTED.register(LIVE::start);
-        ServerLifecycleEvents.SERVER_STOPPING.register(server -> LIVE.stop());
+        // The stopServer wrapper acknowledges LIVE after vanilla drains retained chunk work.
         if (Boolean.getBoolean("phoenium.test.diagnostics")) {
             CommandRegistrationCallback.EVENT.register(Phoenium::registerDiagnosticsCommand);
         }
