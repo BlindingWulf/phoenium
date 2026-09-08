@@ -1967,6 +1967,7 @@ public final class Stage3ClientTest implements FabricClientGameTest {
         try {
             require(Files.isRegularFile(region), "fresh FULL region payload is missing: " + region);
             byte[] bytes = Files.readAllBytes(region);
+            require(bytes.length >= 8192, "fresh FULL region header is truncated: " + region);
             List<String> chunks = new ArrayList<>();
             for (int x = 32; x <= 35; x++) {
                 int index = (x & 31) + 32 * 4;
