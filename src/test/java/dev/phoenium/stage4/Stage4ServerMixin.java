@@ -3,10 +3,11 @@ package dev.phoenium.stage4;
 import dev.phoenium.stage4probe.Stage4Trace;
 
 import net.minecraft.server.MinecraftServer;
+import com.llamalad7.mixinextras.injector.wrapmethod.WrapMethod;
+import com.llamalad7.mixinextras.injector.wrapoperation.Operation;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
-import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
 @Mixin(MinecraftServer.class)
@@ -17,6 +18,15 @@ abstract class Stage4ServerMixin {
     @Inject(method = "saveAllChunks(ZZZ)Z", at = @At("RETURN"), require = 1)
     private void phoenium$serverSaveReturn(boolean silent, boolean flush, boolean force, CallbackInfoReturnable<Boolean> cir) { Stage4Trace.event("save.server.end", "result=" + cir.getReturnValueZ()); }
 
-    @Inject(method = "stopServer()V", at = @At("HEAD"), require = 1)
-    private void phoenium$stop(CallbackInfo ci) { Stage4Trace.serverStopped(); }
+    @WrapMethod(method = "stopServer()V")
+    private void phoenium$stop(Operation<Void> original) {
+        Stage4Trace.serverStopBeginning();
+        boolean completed = false;
+        try {
+            original.call();
+            completed = true;
+        } finally {
+            if (completed) Stage4Trace.serverStopCompleted();
+        }
+    }
 }

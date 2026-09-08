@@ -87,6 +87,21 @@ tasks.register('prepareStage4ClientServer', Sync) {
     from(tasks.named('stage4AcceptanceHarness')) { into 'mods' }
 }
 
+// Reference campaigns replace only the production mod in the disposable
+// prepared server. The shared test-only probe is retained for both modes.
+tasks.named('prepareStage4ClientServer') {
+    doLast {
+        def frozen = project.findProperty('stage4ReferenceProduction')
+        if (frozen != null) {
+            copy {
+                from(file(frozen.toString()))
+                into(layout.buildDirectory.dir('stage4-client-server').get().asFile.toPath().resolve('mods').toFile())
+                rename { 'phoenium-0.2.0-stage2.jar' }
+            }
+        }
+    }
+}
+
 loom {
     runs {
         clientGameTest {
@@ -167,12 +182,20 @@ loom {
             property 'phoenium.test.gradleTask', 'runStage4ClientGameTest'
             property 'phoenium.stage4.viewDistance', providers.gradleProperty('stage4ViewDistance').orElse('8').get()
             property 'phoenium.stage4.simulationDistance', providers.gradleProperty('stage4SimulationDistance').orElse('8').get()
+            // Explicitly select the frozen serial reference for comparator runs;
+            // the child server receives this through the client JVM property.
+            vmArg "-Dphoenium.stage4.reference=${providers.gradleProperty('stage4Reference').orElse('false').get()}"
+            def stage4RunId = providers.gradleProperty('stage4RunId').orElse('current').get()
+            def stage4EvidenceDir = providers.gradleProperty('stage4EvidenceDir')
+                    .orElse(layout.buildDirectory.dir('stage4-client-gametest/evidence/' + stage4RunId)
+                    .map { it.asFile.absolutePath }).get()
+            property 'phoenium.stage4.runId', stage4RunId
             property 'phoenium.test.serverDirectory',
                     layout.buildDirectory.dir('stage4-client-server').get().asFile.absolutePath
             property 'phoenium.stage4.tracePath',
-                    layout.buildDirectory.file('stage4-client-gametest/evidence/STAGE4-CLIENT-trace.json').get().asFile.absolutePath
+                    file(stage4EvidenceDir).toPath().resolve('STAGE4-CLIENT-trace.json').toFile().absolutePath
             property 'phoenium.client.gametest.evidence',
-                    layout.buildDirectory.file('stage4-client-gametest/evidence/STAGE4-CLIENT.json').get().asFile.absolutePath
+                    file(stage4EvidenceDir).toPath().resolve('STAGE4-CLIENT.json').toFile().absolutePath
         }
 
         stage3FullAcceptance {

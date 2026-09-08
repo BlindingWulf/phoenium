@@ -17,7 +17,12 @@ abstract class Stage4ChunkAccessMixin {
             at = @At("RETURN"), require = 1)
     private void phoenium$packedTicks(long gameTime, CallbackInfoReturnable<ChunkAccess.PackedTicks> callback) {
         ChunkAccess chunk = (ChunkAccess) (Object) this;
-        if (chunk.getPos().equals(new ChunkPos(7, 0)))
+        ChunkPos pos = chunk.getPos();
+        // Observe detached packed data for both owner cohorts.  Chunk (7,0) may
+        // legitimately be reassigned to A after the split; far B and deferred
+        // chunks provide the positive B serialization edge.
+        if ((pos.x() == 0 && pos.z() == 0) || (pos.x() == 7 && pos.z() == 0)
+                || (pos.x() == 32 && (pos.z() == 0 || pos.z() == 12)))
             Stage4Trace.packedTicks(chunk, gameTime, callback.getReturnValue());
     }
 }

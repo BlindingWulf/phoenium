@@ -304,8 +304,13 @@ public final class Stage4Trace {
         return new Result(missing.isEmpty(), missing, events.size(), output);
     }
 
-    /** Called from the real server stop hook after the command has flushed its report. */
-    public static void serverStopped() {
+    /** Records entry before the original stop method; completion is recorded only after it returns. */
+    public static void serverStopBeginning() {
+        if (active) event("server.stop.begin");
+    }
+
+    /** Called only after the original stop method returns normally. */
+    public static void serverStopCompleted() {
         if (!active) return;
         event("server.stop");
         List<String> events = snapshot();
