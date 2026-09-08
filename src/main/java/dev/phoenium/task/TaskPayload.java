@@ -5,7 +5,7 @@ import dev.phoenium.task.TaskCorrelationId;
 
 /** Closed test payload vocabulary keeps cross-owner work reviewable. */
 public sealed interface TaskPayload permits TaskPayload.Append, TaskPayload.Add, TaskPayload.Fail, TaskPayload.LiveLevelTick,
-    TaskPayload.OwnedObjectOperation, TaskPayload.ChunkCompletion {
+    TaskPayload.OwnedObjectOperation, TaskPayload.ChunkCompletion, TaskPayload.RegionalService {
     record Append(String value) implements TaskPayload { }
     record Add(long value) implements TaskPayload { }
     record Fail(String message) implements TaskPayload { }
@@ -17,4 +17,11 @@ public sealed interface TaskPayload permits TaskPayload.Append, TaskPayload.Add,
     /** Immutable producer result metadata; producer-side data has no live-world mutation authority. */
     record ChunkCompletion(String chunkKey, long requestGeneration, String completionKind,
                            TaskCorrelationId correlationId) implements TaskPayload { }
+    /**
+     * Immutable identity for one live regional-service operation. The actual body remains in the
+     * named service's bounded retained-operation table and is recovered only after owner delivery
+     * has been revalidated. Live Minecraft objects never travel through the owner inbox.
+     */
+    record RegionalService(String serviceId, long worldInstance, long operationId,
+                           String operationKind) implements TaskPayload { }
 }

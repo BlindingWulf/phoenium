@@ -13,6 +13,7 @@ import dev.phoenium.task.TaskPayload;
 import dev.phoenium.topology.RegionDirectory;
 import dev.phoenium.ownership.ObjectOperationExecutor;
 import dev.phoenium.ownership.ObjectOwnerGateway;
+import dev.phoenium.service.RegionalServiceExecutor;
 import java.util.Comparator;
 import java.util.Map;
 
@@ -27,6 +28,7 @@ public final class RegionScheduler {
     private long advances;
     private ObjectOwnerGateway objectDeliveryValidator;
     private OwnerGateway locationValidator;
+    private RegionalServiceExecutor regionalServiceExecutor;
 
     public RegionScheduler(Map<dev.phoenium.region.RegionId, RegionRuntime> runtimes, RegionDirectory directory, FailureBarrier barrier) {
         this(runtimes, directory, barrier, null, null);
@@ -47,6 +49,12 @@ public final class RegionScheduler {
     public void installObjectDeliveryValidator(ObjectOwnerGateway validator) { this.objectDeliveryValidator = validator; }
     /** Installed by the generic owner gateway; every location task revalidates at execution, never ingress only. */
     public void installLocationValidator(OwnerGateway validator) { this.locationValidator = validator; }
+    /** Installed by the sole retained regional-service dispatcher for this scheduler. */
+    public void installRegionalServiceExecutor(RegionalServiceExecutor executor) {
+        if (regionalServiceExecutor != null && regionalServiceExecutor != executor)
+            throw new IllegalStateException("regional service executor already installed");
+        regionalServiceExecutor = executor;
+    }
     public void quiesce() { if (lifecycle == SchedulerLifecycle.RUNNING) lifecycle = SchedulerLifecycle.QUIESCING; }
     /** Shutdown never drains envelopes on the caller thread; pending work stays unexecuted. */
     public void stop() { if (lifecycle != SchedulerLifecycle.FAILED) lifecycle = SchedulerLifecycle.STOPPING; }
@@ -116,6 +124,10 @@ public final class RegionScheduler {
             case TaskPayload.ChunkCompletion completion -> {
                 if (objectOperationExecutor == null) throw new IllegalStateException("chunk completion without ownership executor");
                 objectOperationExecutor.execute(runtime, completion);
+            }
+            case TaskPayload.RegionalService service -> {
+                if (regionalServiceExecutor == null) throw new IllegalStateException("regional service payload without service executor");
+                regionalServiceExecutor.execute(runtime, service);
             }
         }
     }
