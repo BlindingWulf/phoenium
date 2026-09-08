@@ -1141,81 +1141,19 @@ class FullSavedContextInputTest {
         assertCleanup(f);
     }
 
-    @Test void cachedBlockComponentRetainsTheExactCommittedEncodingInsteadOfInferringItFromTheCurrentGraph() throws Exception {
+    @Test void cachedBlockComponentContextIsExplicitUntilAllOriginalEncoderProducersAreFenced() throws Exception {
         var f = new FullRegistrationFixture(true); var position = new BlockPos(8, 8, 8);
         var state = Blocks.BEACON.defaultBlockState(); f.input(ChunkPos.ZERO).getSection(0).setBlockState(8, 8, 8, state);
-        var component = Component.translatable("%s", "Aa");
-        var ops = f.world.level.registryAccess().createSerializationContext(NbtOps.INSTANCE);
-        var oldEncoding = DataComponents.CUSTOM_NAME.codecOrThrow().encodeStart(ops, component).result().orElseThrow();
-        var translated = assertInstanceOf(TranslatableContents.class, component.getContents());
-        int oldHash = component.hashCode(); translated.getArgs()[0] = "BB";
-        assertEquals(oldHash, component.hashCode(), "the fixture deliberately retains EncoderCache.Key's hash bucket");
         var beacon = new BeaconBlockEntity(position, state);
-        beacon.setComponents(DataComponentMap.builder().set(DataComponents.CUSTOM_NAME, component).build());
+        beacon.setComponents(DataComponentMap.builder().set(DataComponents.CUSTOM_NAME, Component.literal("cached boundary")).build());
         f.input(ChunkPos.ZERO).setBlockEntity(beacon);
         try {
             saved(f, ChunkPos.ZERO, false, text(blockText(position, "\"components\".\"minecraft:custom_name\"", true)));
             f.start(ChunkPos.ZERO, ChunkStatus.FULL); f.drain(); var graph = f.runtime.graph(f.holder(ChunkPos.ZERO));
-            assertEquals(FullInitializedInputs.State.SATISFIED, graph.inputEvaluation().state(), graph.inputEvaluation().obligation());
-            var plan = graph.inputReceipt().contexts();
-            assertTrue(plan.payloadBytes() >= oldEncoding.sizeInBytes(), "the retained cache tag is charged before it is copied");
-            FullAuthoritativeFinishingTest.context(f); f.runtime.inputs.changed(); f.drain();
-            assertInstanceOf(ChunkStageOutcome.Applied.class, graph.finishing.outcome().join());
-            assertEquals("Aa", FullSavedContextTestHooks.text(
-                    assertInstanceOf(Display.TextDisplay.class, f.world.inserted.getFirst())).getString(),
-                    "the original serializer must consume its already committed cache result");
-            assertFalse(f.barrier.tripped());
-        } finally { f.stop(); FullFinishingServices.stopped(f.world.level.getServer()); }
-        assertCleanup(f);
-    }
-
-    @Test void uncachedBlockComponentPublishesCurrentSyntaxBeforeTheOriginalCacheMissEncoding() throws Exception {
-        var f = new FullRegistrationFixture(true); var position = new BlockPos(8, 8, 8);
-        var data = new SavedDataStorage(directory, net.minecraft.util.datafix.DataFixers.getDataFixer(), f.world.level.registryAccess());
-        var storage = new CommandStorage(data); set(f.world.level.getServer(), MinecraftServer.class, "commandStorage", storage);
-        var value = new CompoundTag(); value.putString("message", "uncached live component"); storage.set(FIRST, value);
-        var state = Blocks.BEACON.defaultBlockState(); f.input(ChunkPos.ZERO).getSection(0).setBlockState(8, 8, 8, state);
-        var beacon = new BeaconBlockEntity(position, state);
-        beacon.setComponents(DataComponentMap.builder().set(DataComponents.CUSTOM_NAME, component(f, storageText(FIRST))).build());
-        f.input(ChunkPos.ZERO).setBlockEntity(beacon);
-        try {
-            FullSavedContextTestHooks.clearCachedComponents();
-            saved(f, ChunkPos.ZERO, false, text(blockText(position, "components.\"minecraft:custom_name\"", true)));
-            f.start(ChunkPos.ZERO, ChunkStatus.FULL); f.drain(); var graph = f.runtime.graph(f.holder(ChunkPos.ZERO));
-            assertEquals(FullInitializedInputs.State.SATISFIED, graph.inputEvaluation().state(), graph.inputEvaluation().obligation());
-            assertTrue(graph.inputReceipt().contexts().requirements("root[0]").size() >= 3);
-            FullAuthoritativeFinishingTest.context(f); f.runtime.inputs.changed(); f.drain();
-            assertInstanceOf(ChunkStageOutcome.Applied.class, graph.finishing.outcome().join());
-            assertEquals("uncached live component", FullSavedContextTestHooks.text(
-                    assertInstanceOf(Display.TextDisplay.class, f.world.inserted.getFirst())).getString());
-            assertFalse(f.barrier.tripped());
-        } finally { f.stop(); FullFinishingServices.stopped(f.world.level.getServer()); data.close(); }
-        assertCleanup(f);
-    }
-
-    @Test void changedCachedEncodingStalesTheFinalLeaseReceiptAndRebuildsBeforeTheOriginalSerializer() throws Exception {
-        var f = new FullRegistrationFixture(true); var position = new BlockPos(8, 8, 8);
-        var state = Blocks.BEACON.defaultBlockState(); f.input(ChunkPos.ZERO).getSection(0).setBlockState(8, 8, 8, state);
-        var component = Component.translatable("%s", "Aa");
-        var ops = f.world.level.registryAccess().createSerializationContext(NbtOps.INSTANCE);
-        DataComponents.CUSTOM_NAME.codecOrThrow().encodeStart(ops, component).result().orElseThrow();
-        var translated = assertInstanceOf(TranslatableContents.class, component.getContents());
-        translated.getArgs()[0] = "BB";
-        var beacon = new BeaconBlockEntity(position, state);
-        beacon.setComponents(DataComponentMap.builder().set(DataComponents.CUSTOM_NAME, component).build());
-        f.input(ChunkPos.ZERO).setBlockEntity(beacon);
-        try {
-            saved(f, ChunkPos.ZERO, false, text(blockText(position, "components.\"minecraft:custom_name\"", true)));
-            f.start(ChunkPos.ZERO, ChunkStatus.FULL); f.drain(); var graph = f.runtime.graph(f.holder(ChunkPos.ZERO));
-            var stale = graph.inputReceipt(); assertNotNull(stale);
-            FullSavedContextTestHooks.clearCachedComponents();
-            DataComponents.CUSTOM_NAME.codecOrThrow().encodeStart(ops, component).result().orElseThrow();
-            FullAuthoritativeFinishingTest.context(f); f.runtime.inputs.changed(); f.drain();
-            assertNotSame(stale, graph.inputReceipt(), "a different committed cache result must rebuild under the final lease");
-            assertInstanceOf(ChunkStageOutcome.Applied.class, graph.finishing.outcome().join());
-            assertEquals("BB", FullSavedContextTestHooks.text(
-                    assertInstanceOf(Display.TextDisplay.class, f.world.inserted.getFirst())).getString());
-            assertFalse(f.barrier.tripped());
+            assertEquals(FullInitializedInputs.State.UNRESOLVED, graph.inputEvaluation().state());
+            assertTrue(graph.inputEvaluation().obligation().contains(
+                    "another vanilla encoder can begin an equal-key load before the original serializer"));
+            assertNull(graph.inputReceipt()); assertTrue(f.world.inserted.isEmpty()); assertFalse(f.barrier.tripped());
         } finally { f.stop(); FullFinishingServices.stopped(f.world.level.getServer()); }
         assertCleanup(f);
     }

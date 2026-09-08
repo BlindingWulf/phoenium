@@ -27,7 +27,9 @@ public abstract class FullWrappedComponentCodecMixin implements FullCachedCompon
         finally {
             try { activity.close(); }
             catch (RuntimeException | Error cleanup) {
-                if (primary != null) primary.addSuppressed(cleanup); else throw cleanup;
+                if (primary != null) {
+                    if (primary != cleanup) primary.addSuppressed(cleanup);
+                } else throw cleanup;
             }
         }
     }

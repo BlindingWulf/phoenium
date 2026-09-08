@@ -20,8 +20,10 @@ import net.minecraft.network.chat.ComponentSerialization;
 import net.minecraft.util.EncoderCache;
 import net.minecraft.world.level.block.entity.BlockEntity;
 
-/** Exact dependency evidence for the cached DataComponents CUSTOM_NAME codec. A cache
- * lookup uses getIfPresent semantics only: discovery never invokes the wrapped encoder. */
+/** Exact audit evidence for the cached DataComponents CUSTOM_NAME codec. A witness
+ * lookup never invokes the wrapped encoder or changes cache recency. The evidence is
+ * intentionally not an admitted context receipt: the process-global cache has original
+ * producers outside the regional FULL claim. */
 public final class FullCachedComponentInputs {
     private static final Class<?> EMPTY_MAP = DataComponentMap.EMPTY.getClass();
     private static final Class<?> SIMPLE_MAP = DataComponentMap.builder()
@@ -32,7 +34,8 @@ public final class FullCachedComponentInputs {
         int active;
         final LinkedHashMap<Object, Waiter> waiters = new LinkedHashMap<>();
     }
-    private static final class Waiter implements Runnable, AutoCloseable {
+    interface IdleWait extends AutoCloseable { boolean pending(); }
+    private static final class Waiter implements Runnable, IdleWait {
         private final EncoderCache cache;
         private final Object token;
         private final AtomicReference<Runnable> changed;
@@ -42,6 +45,7 @@ public final class FullCachedComponentInputs {
         @Override public void run() {
             Runnable current = changed.getAndSet(null); if (current != null) current.run();
         }
+        @Override public boolean pending() { return changed.get() != null; }
         @Override public void close() {
             changed.set(null);
             ACTIVITY_GATE.lock();
@@ -70,7 +74,8 @@ public final class FullCachedComponentInputs {
             Throwable failure = null;
             for (Waiter notice : notices) try { notice.run(); }
             catch (RuntimeException | Error next) {
-                if (failure == null) failure = next; else failure.addSuppressed(next);
+                if (failure == null) failure = next;
+                else if (failure != next) failure.addSuppressed(next);
             }
             if (failure instanceof RuntimeException runtime) throw runtime;
             if (failure instanceof Error error) throw error;
@@ -100,10 +105,8 @@ public final class FullCachedComponentInputs {
             DataResult<?> now = witness.value();
             // Eviction/soft-value collection turns the original call into a miss, whose
             // current graph is also included in this receipt. A different live entry may
-            // encode an ABA state, so it must trigger rediscovery.
-            // After this same-lease check, another encoder can only leave this exact entry,
-            // evict it, or fill an absent bucket from the lease-stable current graph. The
-            // receipt carries dependencies for both the exact hit and current miss outcomes.
+            // encode an ABA state, so it must trigger rediscovery. This is an instantaneous
+            // validity test only; it cannot close the later load-before-original-call race.
             return now == null || now == cachedResult;
         }
     }
@@ -118,7 +121,7 @@ public final class FullCachedComponentInputs {
     }
 
     /** Returns null if the encoder is already idle; otherwise registers one cancellable wake. */
-    static AutoCloseable whenIdle(EncoderCache cache, Runnable changed) {
+    static IdleWait whenIdle(EncoderCache cache, Runnable changed) {
         Object token = new Object();
         Waiter waiter = new Waiter(cache, token, changed);
         ACTIVITY_GATE.lock();
@@ -128,6 +131,20 @@ public final class FullCachedComponentInputs {
             activity.waiters.put(token, waiter);
         } finally { ACTIVITY_GATE.unlock(); }
         return waiter;
+    }
+
+    /** Read-only terminal evidence for the static encoder metadata. */
+    public record ActivityCounts(int caches, long encoders, int waiters) { }
+    public static ActivityCounts activityCounts() {
+        ACTIVITY_GATE.lock();
+        try {
+            long encoders = 0L; int waiters = 0;
+            for (Activity activity : ACTIVITIES.values()) {
+                encoders = Math.addExact(encoders, activity.active);
+                waiters = Math.addExact(waiters, activity.waiters.size());
+            }
+            return new ActivityCounts(ACTIVITIES.size(), encoders, waiters);
+        } finally { ACTIVITY_GATE.unlock(); }
     }
 
     static boolean supported(BlockEntity block) {
@@ -185,7 +202,8 @@ public final class FullCachedComponentInputs {
         var result = new Snapshot(block, map, value, current, cached, detached, measured.bytes(),
                 List.copyOf(requirements), null);
         if (!result.valid(block, registries))
-            throw new ChunkProtocolException("cached component evidence changed inside its exact regional dependency read");
+            return new Snapshot(block, map, value, null, cached, null, measured.bytes(), List.of(),
+                    "live component grew after its admitted scalar measurement (cache evidence changed)");
         return result;
     }
 

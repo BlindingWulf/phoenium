@@ -41,7 +41,7 @@ public final class FullSavedContextInputs {
     }
     private record Pending(FullSavedInput.EntityFact fact, FullSavedTextInputs.NbtRead read) { }
     private record LiveContribution(Pending pending, FullSavedTextInputs.Requirements requirements) { }
-    private sealed interface LiveReceipt permits EntityLiveReceipt, BlockLiveReceipt, CachedBlockLiveReceipt {
+    private sealed interface LiveReceipt permits EntityLiveReceipt, BlockLiveReceipt {
         boolean valid(FullContextReadClaim claim, FullRegistrationRuntime.Graph graph);
     }
     private record EntityLiveReceipt(Entity alias, FullEntityFacts.Fact fact, RoutingKey position,
@@ -62,22 +62,8 @@ public final class FullSavedContextInputs {
             return current == block && snapshot.valid(current);
         }
     }
-    private record CachedBlockLiveReceipt(net.minecraft.world.level.chunk.ChunkAccess chunk, BlockPos position,
-                                          BlockEntity block, FullCachedComponentInputs.Snapshot snapshot,
-                                          RoutingKey route, net.minecraft.core.HolderLookup.Provider registries) implements LiveReceipt {
-        @Override public boolean valid(FullContextReadClaim claim, FullRegistrationRuntime.Graph graph) {
-            claim.require(graph, route);
-            BlockEntity current = FullLiveComponentInputs.block(chunk, position);
-            return current == block && snapshot.valid(current, registries);
-        }
-    }
     private record LiveObservation(List<LiveReceipt> receipts, List<LiveContribution> contributions,
-                                   long bytes, String unmet, boolean grew, net.minecraft.util.EncoderCache waiting) {
-        private LiveObservation(List<LiveReceipt> receipts, List<LiveContribution> contributions,
-                                long bytes, String unmet, boolean grew) {
-            this(receipts, contributions, bytes, unmet, grew, null);
-        }
-    }
+                                   long bytes, String unmet, boolean grew) { }
     @FunctionalInterface public interface SelectorCall<T> { T call() throws CommandSyntaxException; }
 
     public static final class Plan implements AutoCloseable {
@@ -101,7 +87,6 @@ public final class FullSavedContextInputs {
         private final Map<BlockPos, FullBlockEntityTagInputs.Absence> blockMapAbsences = new HashMap<>();
         private final Map<BlockPos, FullBlockEntityTagInputs.Absence> blockReloadAbsences = new HashMap<>();
         private final Map<BlockPos, AutoCloseable> blockWaiters = new HashMap<>();
-        private final IdentityHashMap<net.minecraft.util.EncoderCache, AutoCloseable> cacheWaiters = new IdentityHashMap<>();
         private final List<AutoCloseable> consumers = new ArrayList<>();
         private final Runnable changed;
         private final java.util.function.LongPredicate capacity;
@@ -365,7 +350,6 @@ public final class FullSavedContextInputs {
                 return true;
             }
             LiveObservation size = measured.value();
-            if (size.waiting() != null) { refinementWaiting = true; return true; }
             if (size.grew()) { refinementRetry = true; return true; }
             if (size.unmet() != null) { unmet = size.unmet(); return true; }
             if (!reserve(size.bytes())) { refinementCapacity = true; return true; }
@@ -377,7 +361,6 @@ public final class FullSavedContextInputs {
                 return true;
             }
             LiveObservation observation = captured.value();
-            if (observation.waiting() != null) { refinementWaiting = true; return true; }
             if (observation.grew()) { refinementRetry = true; return true; }
             if (observation.unmet() != null) { unmet = observation.unmet(); return true; }
             bytes = Math.addExact(bytes, size.bytes()); liveReceipts.addAll(observation.receipts());
@@ -442,26 +425,14 @@ public final class FullSavedContextInputs {
                     return new LiveObservation(List.of(), List.of(), total, null, true);
                 BlockEntity block = FullLiveComponentInputs.block(target.actual(), position);
                 if (FullCachedComponentInputs.selected(pending.read.path())) {
-                    var measure = FullCachedComponentInputs.measure(block, pending.read.recursionDepth(), registry);
-                    if (measure.loading() != null) {
-                        if (!awaitCache(measure.loading()))
-                            return new LiveObservation(List.of(), List.of(), total, null, true);
-                        return new LiveObservation(List.of(), List.of(), total, null, false, measure.loading());
-                    }
-                    if (measure.unmet() != null) return new LiveObservation(List.of(), List.of(), total,
-                            pending.fact.path() + ": " + measure.unmet(), false);
-                    total = Math.addExact(total, measure.bytes());
-                    if (capture) {
-                        var snapshot = FullCachedComponentInputs.capture(pending.fact, block, pending.read.recursionDepth(),
-                                Math.max(0L, Math.subtractExact(allowance, Math.subtractExact(total, measure.bytes()))), registry);
-                        if (snapshot.unmet() != null && snapshot.unmet().contains("grew after"))
-                            return new LiveObservation(List.of(), List.of(), total, null, true);
-                        if (snapshot.unmet() != null) return new LiveObservation(List.of(), List.of(), total,
-                                pending.fact.path() + ": " + snapshot.unmet(), false);
-                        receipts.add(new CachedBlockLiveReceipt(target.actual(), position, block, snapshot, key, registry));
-                        for (var requirement : snapshot.requirements()) contributions.add(new LiveContribution(pending, requirement));
-                    }
-                    continue;
+                    // EncoderCache is process-global. Other original vanilla serializers can
+                    // begin an equal-key load after same-lease validation and before this
+                    // FULL's original getUnchecked call. Guava would then wait while R is held.
+                    // No current custody fence covers all of those producers, so this exact
+                    // cached field stays explicit rather than inferring safety from a snapshot.
+                    return new LiveObservation(List.of(), List.of(), total,
+                            pending.fact.path() + ": cached DataComponents custom_name context is unsupported because "
+                                    + "another vanilla encoder can begin an equal-key load before the original serializer", false);
                 }
                 FullLiveComponentInputs.BlockField field = FullLiveComponentInputs.blockField(pending.read.path());
                 if (field == null)
@@ -483,13 +454,6 @@ public final class FullSavedContextInputs {
                 }
             }
             return new LiveObservation(List.copyOf(receipts), List.copyOf(contributions), total, null, capture && total > allowance);
-        }
-
-        private boolean awaitCache(net.minecraft.util.EncoderCache cache) {
-            if (cacheWaiters.containsKey(cache)) return true;
-            AutoCloseable waiter = FullCachedComponentInputs.whenIdle(cache, changed);
-            if (waiter == null) return false;
-            cacheWaiters.put(cache, waiter); return true;
         }
 
         private static boolean validLiveTarget(FullRegistrationRuntime runtime, FullInitializedInputs.Target target) {
@@ -619,7 +583,6 @@ public final class FullSavedContextInputs {
             pendingEntities.clear(); pendingLiveBlocks.clear(); refinedEntities.clear(); refinedLiveBlocks.clear(); liveReceipts.clear();
             blockTags.clear(); blockMapAbsences.clear(); blockReloadAbsences.clear();
             var waiters = new ArrayList<AutoCloseable>(blockWaiters.values()); blockWaiters.clear();
-            waiters.addAll(cacheWaiters.values()); cacheWaiters.clear();
             Throwable failure = null;
             for (AutoCloseable waiter : waiters) try { waiter.close(); }
             catch (Throwable problem) {
