@@ -33,6 +33,7 @@ public final class RegionalBlockEventService<E> {
     private final Function<E, BlockPos> position;
     private final Map<RegionId, ArrayDeque<Event<E>>> partitions = new LinkedHashMap<>();
     private final TreeMap<Long, Event<E>> ordered = new TreeMap<>();
+    private final TreeMap<Long, Event<E>> retrying = new TreeMap<>();
     private final Set<E> deduplicated = new HashSet<>();
     private long nextSequence;
     private long cycles;
@@ -41,6 +42,7 @@ public final class RegionalBlockEventService<E> {
     private long deferred;
     private long migrated;
     private boolean cycling;
+    private boolean atCallbackBoundary;
 
     public RegionalBlockEventService(WorldId world, RegionDirectory directory,
                                      RegionalServiceDispatcher dispatcher,
@@ -55,7 +57,7 @@ public final class RegionalBlockEventService<E> {
     public synchronized boolean enqueue(E event) {
         Objects.requireNonNull(event, "event");
         RoutingKey key = key(event);
-        dispatcher.requireCurrentClosure(key, 1);
+        dispatcher.requireCurrentOwner(key);
         return enqueueOwned(event, route(key).region());
     }
 
@@ -70,72 +72,89 @@ public final class RegionalBlockEventService<E> {
         Objects.requireNonNull(originalEffect, "originalEffect");
         if (OwnershipContext.current().isPresent())
             throw new IllegalStateException("regional block-event cycle entered with owner authority");
-        List<RoutingKey> initialClosures;
         synchronized (this) {
             if (cycling) throw new IllegalStateException("nested regional block-event cycle");
-            initialClosures = ordered.values().stream().map(Event::key).distinct().toList();
-        }
-        for (RoutingKey key : initialClosures) dispatcher.ensureClosure(key, 1);
-        synchronized (this) {
-            if (cycling) throw new IllegalStateException("regional block-event cycle began during closure preflight");
+            if (!retrying.isEmpty()) throw new IllegalStateException("unfinished block-event failure settlement");
             cycling = true;
             cycles++;
         }
-        List<Event<E>> retry = new ArrayList<>();
         try {
             while (true) {
                 Event<E> selected;
                 synchronized (this) {
                     if (ordered.isEmpty()) break;
-                    selected = ordered.pollFirstEntry().getValue();
+                    selected = ordered.firstEntry().getValue();
+                    atCallbackBoundary = true;
                 }
+                // Nested events join the same vanilla cycle. Admit their actual callback halo
+                // only after the preceding owner body has committed and released its lease.
+                // All queued and deferred entries remain in the migration plan during this cut.
+                try { dispatcher.ensureClosure(selected.key(), 1); }
+                finally { synchronized (this) { atCallbackBoundary = false; } }
                 dispatcher.executeAndDrain(selected.key(), RegionalServiceKind.BLOCK_EVENT, execution -> {
                     // ObjectLinkedOpenHashSet.removeFirst removes the dedup entry before the
                     // pinned eligibility test, so an equal event may be enqueued meanwhile.
                     synchronized (this) {
+                        if (ordered.remove(selected.sequence()) != selected)
+                            throw new IllegalStateException("block-event selection changed before delivery");
                         removeFromOwner(selected, execution.runtime().id());
                         if (!deduplicated.remove(selected.event()))
                             throw new IllegalStateException("block event lost its dedup entry");
                     }
                     if (!eligible.test(selected.event())) {
-                        synchronized (this) { retry.add(selected); deferred++; }
+                        synchronized (this) {
+                            retrying.put(selected.sequence(), selected);
+                            partitions.computeIfAbsent(selected.owner(), ignored -> new ArrayDeque<>()).addLast(selected);
+                            deferred++;
+                        }
                         return;
                     }
                     originalEffect.accept(selected.event());
                     synchronized (this) { executed++; }
                 });
             }
-            for (Event<E> event : retry) {
+            while (true) {
+                Event<E> event;
+                synchronized (this) {
+                    if (retrying.isEmpty()) break;
+                    event = retrying.firstEntry().getValue();
+                }
                 RoutingKey currentKey = key(event.event());
                 dispatcher.executeAndDrain(currentKey, RegionalServiceKind.BLOCK_EVENT, execution -> {
                     synchronized (this) {
                         RegionRoute current = route(currentKey);
                         if (!current.region().equals(execution.runtime().id()))
                             throw new IllegalStateException("deferred block event reached stale owner");
+                        if (retrying.remove(event.sequence()) != event)
+                            throw new IllegalStateException("deferred block-event identity changed before requeue");
+                        removeFromOwner(event, current.region());
                         requeueDeferred(event.event(), currentKey, current.region());
                     }
                 });
             }
         } finally {
-            synchronized (this) { cycling = false; }
+            synchronized (this) { atCallbackBoundary = false; cycling = false; }
         }
     }
 
     public synchronized MigrationPlan planMigration(RegionDirectory.View published) {
-        if (OwnershipContext.current().isPresent() || cycling)
+        if (OwnershipContext.current().isPresent() || cycling && !atCallbackBoundary)
             throw new IllegalStateException("block event migration is not owner-free");
         Map<Long, RegionId> owners = new LinkedHashMap<>();
         ordered.forEach((sequence, event) -> owners.put(sequence, resolve(published, event.key()).region()));
+        retrying.forEach((sequence, event) -> owners.put(sequence, resolve(published, event.key()).region()));
         return new MigrationPlan(published.generation().value(), Map.copyOf(owners));
     }
 
     public synchronized void installMigration(MigrationPlan plan, RegionDirectory.View published) {
         if (plan.generation() != published.generation().value())
             throw new IllegalStateException("block event migration generation changed");
-        if (!plan.owners().keySet().equals(ordered.keySet()))
+        var retained = new TreeMap<>(ordered);
+        retained.putAll(retrying);
+        if (!plan.owners().keySet().equals(retained.keySet()))
             throw new IllegalStateException("block event migration pending set changed");
         Map<RegionId, ArrayDeque<Event<E>>> next = new LinkedHashMap<>();
-        for (var entry : ordered.entrySet()) {
+        for (var entry : retained.entrySet()) {
             Event<E> event = entry.getValue();
             RegionId owner = Objects.requireNonNull(plan.owners().get(entry.getKey()));
             if (!event.owner().equals(owner)) { event.owner = owner; migrated++; }
@@ -146,7 +165,7 @@ public final class RegionalBlockEventService<E> {
     }
 
     public synchronized Measurements measurements() {
-        return new Measurements(partitions.size(), ordered.size(), enqueued, executed, deferred, migrated, cycles, cycling);
+        return new Measurements(partitions.size(), ordered.size() + retrying.size(), enqueued, executed, deferred, migrated, cycles, cycling);
     }
 
     private boolean enqueueOwned(E event, RegionId owner) {
@@ -159,8 +178,9 @@ public final class RegionalBlockEventService<E> {
         return true;
     }
     private void requeueDeferred(E event, RoutingKey key, RegionId owner) {
-        if (!deduplicated.add(event))
-            throw new IllegalStateException("deferred block event collided after cycle drain");
+        // Vanilla adds the deferred list back into an ObjectLinkedOpenHashSet: equal
+        // deferred entries keep the first position and do not become a new failure.
+        if (!deduplicated.add(event)) return;
         long sequence = nextSequence = Math.incrementExact(nextSequence);
         Event<E> retained = new Event<>(sequence, key, owner, event);
         ordered.put(sequence, retained);

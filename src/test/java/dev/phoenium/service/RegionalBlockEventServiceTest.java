@@ -23,6 +23,59 @@ import org.junit.jupiter.api.Test;
 
 final class RegionalBlockEventServiceTest {
     @Test
+    void nestedBoundaryConvergenceMigratesBothQueuedAndDeferredEvents() {
+        Fixture f = new Fixture();
+        var generation = f.directory.snapshot().generation().next();
+        var routes = new LinkedHashMap<>(f.directory.snapshot().routes());
+        routes.replaceAll((key, route) -> new RegionRoute(route.region(), generation, route.ownerEpoch()));
+        for (int z = -1; z <= 1; z++) routes.put(new RoutingKey(f.world, 2, z),
+            new RegionRoute(f.bId, generation, f.b.ownerEpoch()));
+        f.directory.publish(generation, routes);
+        var enclosure = new dev.phoenium.chunk.FullRegionalEnclosure(f.directory, f.runtimes, f.gateway, null,
+            proposed -> { var plan = f.service.planMigration(proposed); return published -> f.service.installMigration(plan, published); });
+        f.liveEnclosure = enclosure;
+        f.dispatcher.installBoundaryAdvancer(enclosure::advance);
+        Event retry = new Event("retry", new BlockPos(160, 64, 0));
+        Event first = new Event("first", new BlockPos(15, 64, 0));
+        Event nested = new Event("nested", new BlockPos(16, 64, 0));
+        f.enqueue(retry); f.enqueue(first);
+        var effects = new java.util.ArrayList<String>();
+        f.service.runCycle(event -> event != retry, event -> {
+            effects.add(event.name());
+            assertFalse(Thread.holdsLock(f.service));
+            if (event == first) f.service.enqueue(nested);
+            if (event == nested) assertEquals(f.aId,
+                f.directory.resolve(new RoutingKey(f.world, 2, 0)).orElseThrow().region());
+        });
+        assertEquals(List.of("first", "nested"), effects);
+        assertEquals(1, f.service.measurements().pending());
+        assertEquals(1, f.service.measurements().ownerPartitions());
+        assertTrue(f.service.measurements().migrated() >= 1);
+        f.service.runCycle(event -> true, event -> {
+            assertEquals(f.aId, OwnershipContext.current().orElseThrow().region());
+            effects.add(event.name());
+        });
+        assertEquals(List.of("first", "nested", "retry"), effects);
+        assertEquals(0, f.service.measurements().pending());
+    }
+
+    @Test
+    void equalDeferredCopiesUseOriginalSetDeduplicationAtTheNextCycle() {
+        Fixture f = new Fixture(); Event event = new Event("equal", new BlockPos(0, 64, 0));
+        f.enqueue(event);
+        var predicates = new java.util.concurrent.atomic.AtomicInteger();
+        f.service.runCycle(selected -> {
+            if (predicates.getAndIncrement() == 0) assertTrue(f.service.enqueue(new Event("equal", event.pos())));
+            return false;
+        }, selected -> fail("ineligible event executed"));
+        assertEquals(2, predicates.get());
+        assertEquals(1, f.service.measurements().pending());
+        var seen = new java.util.ArrayList<Event>();
+        f.service.runCycle(selected -> true, seen::add);
+        assertEquals(List.of(event), seen);
+    }
+
+    @Test
     void twoOwnersKeepInsertionOrderAndNestedEventRunsInSameCycle() {
         Fixture f = new Fixture();
         Event a = new Event("a", new BlockPos(0, 64, 0));
@@ -102,6 +155,7 @@ final class RegionalBlockEventServiceTest {
         final OwnerGateway gateway;
         final RegionalServiceDispatcher dispatcher;
         final RegionalBlockEventService<Event> service;
+        dev.phoenium.chunk.FullRegionalEnclosure liveEnclosure;
         Fixture() {
             TopologyGeneration generation = new TopologyGeneration(1);
             Map<RoutingKey, RegionRoute> routes = new LinkedHashMap<>();
@@ -115,6 +169,7 @@ final class RegionalBlockEventServiceTest {
             service = new RegionalBlockEventService<>(world, directory, dispatcher, Event::pos);
         }
         boolean enclosed(java.util.Set<RoutingKey> keys) {
+            if (liveEnclosure != null) return liveEnclosure.enclose(keys);
             RegionId owner = null;
             for (RoutingKey key : keys) {
                 RegionRoute route = directory.resolve(key).orElse(null);
