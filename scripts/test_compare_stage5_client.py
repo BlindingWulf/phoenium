@@ -12,8 +12,11 @@ class ClientGateTest(unittest.TestCase):
         report['events']+=[f'{kind} contextRegion=stage3-fixture-{owner}' for kind in ('topology.body','tracking.body') for owner in ('a','b')]
         for name in ('reference','candidate'):
             p=root/name/'evidence';p.mkdir(parents=True)
+            log=root/name/'native.log'
+            log.write_text('\n'.join(f'STAGE5_TRACKER_CLOCK uuid={uuid} gameTime=100 before=0 after=1' for uuid in
+                ['00000001-0000-0002-0000-000300000004','00000005-0000-0006-0000-000700000008','00000009-0000-000a-0000-000b0000000c']))
             (p/'STAGE4-CLIENT.json').write_text(json.dumps(dict(realTcpConnection=True,microsoftAuthentication=False,serverExitCode=0,
-                viewDistance=5,simulationDistance=5,probeSha256='B'*64,productionSha256='A'*64)))
+                viewDistance=5,simulationDistance=5,probeSha256='B'*64,productionSha256='A'*64,trackingClock=True,log=str(log))))
             for phase in ('first','restart'):(p/f'production-identity-{phase}.json').write_text(json.dumps(dict(**{'pass':True},expectedSha256='A'*64,installedSha256='A'*64)))
             (p/'STAGE4-CLIENT-before-restart-trace.json').write_text(json.dumps(report))
         return root/'reference',root/'candidate'
@@ -45,5 +48,13 @@ class ClientGateTest(unittest.TestCase):
             identity=paths[1]/'evidence/production-identity-restart.json';d=json.loads(identity.read_text());d['installedSha256']='C'*64;identity.write_text(json.dumps(d))
             with patch('compare_stage5_client.restart',return_value={'result':'PASS','savedDelay':369}):
                 with self.assertRaises(ValueError):compare(*paths)
+
+    def test_missing_changed_or_duplicate_tracker_input_is_rejected(self):
+        with tempfile.TemporaryDirectory() as temp:
+            paths=self.inputs(Path(temp)); log=paths[1]/'native.log';base=log.read_text()
+            for changed in ('',base.replace('after=1','after=2'),base+'\n'+base.splitlines()[0]):
+                log.write_text(changed)
+                with patch('compare_stage5_client.restart',return_value={'result':'PASS','savedDelay':186}):
+                    with self.assertRaises(ValueError):compare(*paths)
 
 if __name__=='__main__':unittest.main()

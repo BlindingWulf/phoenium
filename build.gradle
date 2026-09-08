@@ -236,6 +236,7 @@ loom {
             vmArg "-Dphoenium.stage4.reference=${providers.gradleProperty('stage4Reference').orElse('false').get()}"
             vmArg "-Dphoenium.stage5=${stage5Mode}"
             vmArg "-Dphoenium.gameplay.workers=${providers.gradleProperty('stage5Workers').orElse('1').get()}"
+            vmArg "-Dphoenium.stage5.trackerClock=${providers.gradleProperty('stage5TrackerClock').orElse('true').get()}"
             vmArg "-Dphoenium.stage4.packetTrace=${providers.gradleProperty('stage4PacketTrace').orElse('false').get()}"
             def stage4RunId = providers.gradleProperty('stage4RunId').orElse('current').get()
             def stage4EvidenceDir = providers.gradleProperty('stage4EvidenceDir')

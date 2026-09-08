@@ -244,3 +244,17 @@ This strengthens the native lifecycle gate and makes the offered reload input ex
 The Stage 4 comparator is restored byte-for-byte to its original unpack requirement;
 the Stage 5 client wrapper now requires BOTH that original path and restart validation.
 Missing original unpack remains a negative test. No production code changed.
+
+`controls-client5-c` proves the completed-unload repair: frozen/candidate-one match
+all 133 ordered events and exact saved delay 186. Candidate-two native TCP, health,
+MCA, restart deadline and natural overlap pass, but comparison correctly rejects one
+additional reference zero-delta Pos packet. Native ServerEntity.tickCount advances on
+frozen-world frames and emits a periodic position packet each 60 calls; variable
+client waits offered different tracking clocks. No packet is removed or normalized.
+The next explicit comparison input offers one unchanged original sendChanges body
+per native world tick to the three fixture entities. This opt-in TEST-ONLY clock
+neither changes native counters nor packets; it records every offered original call
+and requires exact per-UUID clocks as well as unchanged ordered packet comparison.
+Unrestricted native client runs remain separate lifecycle evidence. Full acceptance,
+benchmarks and production omit this fixture clock. `-Pstage5TrackerClock=false`
+retains the unrestricted client path. New benchmark/client source remains pending build.

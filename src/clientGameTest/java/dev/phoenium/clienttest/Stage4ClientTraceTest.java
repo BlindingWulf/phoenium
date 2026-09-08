@@ -73,7 +73,8 @@ public final class Stage4ClientTraceTest implements FabricClientGameTest {
                     + trace.getParent().resolve("client-packets.log").toAbsolutePath());
             if (stage5) {
                 command.add("-Dphoenium.stage5.probe=true");
-            command.add("-Dphoenium.stage5.centers=0,24");
+                command.add("-Dphoenium.stage5.centers=0,24");
+                command.add("-Dphoenium.stage5.trackerClock=" + System.getProperty("phoenium.stage5.trackerClock", "true"));
                 command.add("-Dphoenium.stage5.evidence=" + trace.getParent().resolve("gameplay").toAbsolutePath());
                 command.add("-Dphoenium.gameplay.workers=" + System.getProperty("phoenium.gameplay.workers", "1"));
                 command.add("-Dphoenium.gameplay.trace=true");
@@ -712,6 +713,8 @@ public final class Stage4ClientTraceTest implements FabricClientGameTest {
             "  \"simulationDistance\": " + simulationDistance + ",\n" +
             "  \"productionSha256\": \"" + productionSha + "\",\n" +
             "  \"probeSha256\": \"" + probeSha + "\",\n" +
+            "  \"trackingClock\": " + (Boolean.getBoolean("phoenium.stage5")
+                && Boolean.parseBoolean(System.getProperty("phoenium.stage5.trackerClock", "true"))) + ",\n" +
             "  \"restartUnpackReceipt\": " + jsonString(unpackReceipt) + ",\n" +
             "  \"restartBeforeReceipt\": " + jsonString(beforeReceipt) + ",\n" +
             "  \"restartDeadlineReceipt\": " + jsonString(deadlineReceipt) + ",\n" +
