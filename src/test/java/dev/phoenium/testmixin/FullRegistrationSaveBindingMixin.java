@@ -37,7 +37,15 @@ abstract class FullRegistrationSaveBindingMixin {
         finishing.registerWorld(level);
         try (var turn = finishing.serial(FullFinishingServices.Phase.SERVER_TASK);
              var scope = FullRegistrationFixtureSaveBridge.enter(binding)) {
-            original.call(coordinator, map, level, holder, expectedSave, position, body);
+            Throwable failure = null;
+            try {
+                original.call(coordinator, map, level, holder, expectedSave, position, body);
+            } catch (RuntimeException | Error problem) {
+                failure = problem;
+                throw problem;
+            } finally {
+                FullRegistrationFixtureSaveBridge.acknowledgeCompleted(binding, failure);
+            }
         }
     }
 

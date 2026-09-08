@@ -73,4 +73,39 @@ final class FullRegistrationFixtureSaveBridgeTest {
                 () -> FullFinishingServices.forServer(fixture.world.level.getServer()),
                 "fixture teardown must retire its synthetic server service identity");
     }
+
+    @Test
+    void controlledUnloadBoundaryAcknowledgesOnlyPublishedCompletionAndKeepsOriginalFailurePrimary() throws Exception {
+        var fixture = new FullRegistrationFixture(true);
+        try {
+            var binding = FullRegistrationFixtureSaveBridge.find(fixture.world.level, fixture.fixtureMap);
+            var releases = new AtomicInteger();
+            var attempt = fixture.saveCoordinator.begin(new RegionalSaveCoordinator.Source() {
+                public RoutingKey key() { return binding.key(ChunkPos.ZERO); }
+                public boolean current() { return true; }
+                public void restoreDirty() { fail("clean attempt restored dirty state"); }
+                public void release() { releases.incrementAndGet(); }
+            });
+            assertFalse(attempt.markSaved(() -> false));
+            attempt.finishBody();
+            assertEquals(1, fixture.saveCoordinator.pending());
+            FullRegistrationFixtureSaveBridge.acknowledgeCompleted(binding, null);
+            assertEquals(0, fixture.saveCoordinator.pending());
+            assertEquals(1, releases.get());
+
+            var original = new IllegalStateException("unchanged unload body failed");
+            var acknowledgement = new IllegalArgumentException("owner acknowledgement failed");
+            var failed = fixture.saveCoordinator.begin(new RegionalSaveCoordinator.Source() {
+                public RoutingKey key() { return binding.key(ChunkPos.ZERO); }
+                public boolean current() { return true; }
+                public void restoreDirty() { }
+                public void release() { throw acknowledgement; }
+            });
+            assertFalse(failed.markSaved(() -> false));
+            failed.finishBody();
+            FullRegistrationFixtureSaveBridge.acknowledgeCompleted(binding, original);
+            assertArrayEquals(new Throwable[]{acknowledgement}, original.getSuppressed());
+            assertEquals(0, fixture.saveCoordinator.pending());
+        } finally { fixture.stop(); }
+    }
 }
