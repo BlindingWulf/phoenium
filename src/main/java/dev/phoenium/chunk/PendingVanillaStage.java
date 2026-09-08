@@ -48,6 +48,11 @@ public final class PendingVanillaStage<I, O> {
     boolean reserveFullLocked() { return full == null || full.reserveLocked(kind); }
     void unreserveFullLocked() { if (full != null) full.unreserveLocked(kind); }
     void awaitFullEvidence() { if (full != null) full.awaitEvidence(kind); }
+    boolean contextInputReadyLocked(Object holder) {
+        return full != null && kind == ChunkStageKind.FULL_FINISH && full.holder == holder
+                && inputBound && !invoked && continuation != null && !outcome.isDone()
+                && full.inputActive() && full.prepared().orElse(null) == input;
+    }
 
     public PendingVanillaStage(ChunkCustodyModel custody, ChunkCustodyModel.LifecycleId lifecycle,
                                ChunkCustodyModel.WorkId work, ChunkCustodyModel.StageId stage,
@@ -80,7 +85,7 @@ public final class PendingVanillaStage<I, O> {
     ChunkStageAdmission.Result deliveryControl() {
         custody.gate().lock();
         try {
-            if (outcome.isDone() || custody.hasActiveClaimLocked(stage)) return null;
+            if (outcome.isDone() || custody.hasActiveUseLocked(stage)) return null;
             var state = custody.stageState(stage).orElse(null);
             if (state == ChunkCustodyModel.StageState.APPLIED || state == ChunkCustodyModel.StageState.FAILED_VANILLA
                     || state == ChunkCustodyModel.StageState.FAILED_BARRIER) return null;
@@ -190,7 +195,7 @@ public final class PendingVanillaStage<I, O> {
             // A duplicate delivery did not enter this stage. Its winner may still be
             // inside the original body; only that winner's actual exit can acknowledge
             // the claim-bound light inputs and FULL service reservation.
-            if (custody.hasActiveClaimLocked(stage)) return;
+            if (custody.hasActiveUseLocked(stage)) return;
         } finally { custody.gate().unlock(); }
         if (light != null) light.stageExited(lightBatch);
         if (full != null) full.stageExited(kind);
@@ -208,7 +213,7 @@ public final class PendingVanillaStage<I, O> {
         custody.gate().lock();
         try {
             if (invoked || inputBound || published || outcome.isDone()
-                    || custody.hasActiveClaimLocked(stage)) return;
+                    || custody.hasActiveUseLocked(stage)) return;
             input = null; continuation = null; publicationLight = null; publicationReceipt = null;
             prerequisitePoi = null; prerequisitePoiId = null; prerequisiteMetadata = null;
         } finally { custody.gate().unlock(); }
@@ -225,7 +230,7 @@ public final class PendingVanillaStage<I, O> {
         custody.gate().lock();
         try {
             var state = custody.stageState(stage).orElse(null);
-            if (outcome.isDone() || custody.hasActiveClaimLocked(stage)
+            if (outcome.isDone() || custody.hasActiveUseLocked(stage)
                     || state == ChunkCustodyModel.StageState.APPLIED || state == ChunkCustodyModel.StageState.FAILED_VANILLA
                     || state == ChunkCustodyModel.StageState.FAILED_BARRIER) return;
             custody.disarmLocked(stage,result == ChunkStageAdmission.Result.SUPERSEDED

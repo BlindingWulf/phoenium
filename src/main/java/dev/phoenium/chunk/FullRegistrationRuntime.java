@@ -790,13 +790,13 @@ public final class FullRegistrationRuntime {
             }
             // An already claimed suffix still owns its saved/context/query inputs. Reentrant
             // shutdown must wait for that exact invocation's exit before acknowledging them.
-            if (!custody.hasActiveClaim(work)) acknowledgeInputs();
+            if (!custody.hasActiveUse(work)) acknowledgeInputs();
             preparation.control(reason); finishing.control(reason); publication.control(reason); settle();
         }
         private void settle() {
             Stopped terminal;
             custody.gate().lock(); try {
-                if (custody.hasActiveClaim(work)) return;
+                if (custody.hasActiveUse(work)) return;
                 terminal = stopped;
             } finally { custody.gate().unlock(); }
             if (terminal != null) {
@@ -814,7 +814,7 @@ public final class FullRegistrationRuntime {
         private void cleanup() {
             custody.gate().lock();
             try {
-                if (cleaned || consumers != 0 || custody.hasActiveClaim(work)
+                if (cleaned || consumers != 0 || custody.hasActiveUse(work)
                         || !registrationSettled || !attached || !adjacent.isDone() || !returned.isDone() || !retention.isDone()
                         || !invocation.producer.finished || !invocation.producer.generation.writers.isEmpty()) return;
                 cleaned = true; graphs.remove(this); returnedIndex.remove(returned, this);
@@ -827,6 +827,14 @@ public final class FullRegistrationRuntime {
             else services.releaseFinishedWork(work, holder);
             if (clock != null) clock.forget(this);
             cleanupGenerations();
+        }
+        void contextReadExited() {
+            Stopped terminal;
+            custody.gate().lock(); try { terminal = stopped; } finally { custody.gate().unlock(); }
+            if (terminal != null) {
+                preparation.control(terminal.reason); finishing.control(terminal.reason); publication.control(terminal.reason);
+            }
+            settle();
         }
     }
     public record FullResult(CompletableFuture<ChunkAccess> returned, ChunkAccess value, Throwable failure) { }

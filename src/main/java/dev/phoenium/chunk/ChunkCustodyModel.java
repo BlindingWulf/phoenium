@@ -55,6 +55,9 @@ public final class ChunkCustodyModel {
     private final Map<StageId, StageState> stages = new HashMap<>();
     private final Map<StageId, DeliveryDisposition> dispositions = new HashMap<>();
     private final Map<LifecycleSlot, StageId> claims = new HashMap<>();
+    /** A dependency observation pins its source without claiming/executing the FULL stage. */
+    private final Map<LifecycleSlot, ContextUse> contextUses = new HashMap<>();
+    record ContextUse(StageId stage, Object holder, Object identity) { }
     private final Map<LifecycleId, Integer> lifetimeUses = new HashMap<>();
     void retainLifecycle(LifecycleId id) {
         gate.lock(); try { requireLive(id); lifetimeUses.merge(id, 1, Integer::sum); } finally { gate.unlock(); }
@@ -182,12 +185,46 @@ public final class ChunkCustodyModel {
         stages.put(id, StageState.CLAIMED);
         return true;
     }
-    boolean targetClaimedLocked(StageId id) { return claims.containsKey(slot(id.work().lifecycle())); }
+    boolean targetClaimedLocked(StageId id) {
+        var target = slot(id.work().lifecycle());
+        return claims.containsKey(target) || contextUses.containsKey(target);
+    }
     boolean hasActiveClaimLocked(StageId id) { return id.equals(claims.get(slot(id.work().lifecycle()))); }
+    boolean hasActiveUseLocked(StageId id) {
+        var use = contextUses.get(slot(id.work().lifecycle()));
+        return hasActiveClaimLocked(id) || use != null && use.stage().equals(id);
+    }
     boolean hasActiveClaim(WorkId work) {
         gate.lock();
         try { return claims.values().stream().anyMatch(stage -> stage.work().equals(work)); }
         finally { gate.unlock(); }
+    }
+    boolean hasActiveUse(WorkId work) {
+        gate.lock();
+        try {
+            return claims.values().stream().anyMatch(stage -> stage.work().equals(work))
+                    || contextUses.values().stream().anyMatch(use -> use.stage().work().equals(work));
+        } finally { gate.unlock(); }
+    }
+    ContextUse beginContextUseLocked(StageId stage, Object holder) {
+        if (!gate.isHeldByCurrentThread()) throw new ChunkProtocolException("context admission lacks custody fence");
+        if (stage.kind() != ChunkStageKind.FULL_FINISH)
+            throw new ChunkProtocolException("context observation is not correlated with FULL finishing");
+        var lifecycle = lifecycleById.get(stage.work().lifecycle());
+        var state = stages.get(stage);
+        if (!admissionsOpen || !metadataEntitledLocked(stage.work()) || lifecycle == null
+                || lifecycle.holderEvidence != holder || targetClaimedLocked(stage)
+                || state != null && state != StageState.READY && state != StageState.QUEUED) return null;
+        var use = new ContextUse(stage, holder, new Object());
+        contextUses.put(slot(stage.work().lifecycle()), use);
+        return use;
+    }
+    boolean hasContextUseLocked(ContextUse use) {
+        return contextUses.get(slot(use.stage().work().lifecycle())) == use;
+    }
+    void endContextUseLocked(ContextUse use) {
+        if (!gate.isHeldByCurrentThread() || !contextUses.remove(slot(use.stage().work().lifecycle()), use))
+            throw new ChunkProtocolException("wrong or repeated context observation acknowledgement");
     }
     void releaseClaimLocked(StageId id) { claims.remove(slot(id.work().lifecycle()), id); }
     boolean isEligibleLocked(StageId id) {
@@ -218,7 +255,8 @@ public final class ChunkCustodyModel {
             LifecycleRecord record = lifecycleById.get(id);
             return record != null && record.state == LifecycleState.RETIRED
                 && !lifetimeUses.containsKey(id)
-                && claims.values().stream().noneMatch(stage -> stage.work().lifecycle().equals(id));
+                && claims.values().stream().noneMatch(stage -> stage.work().lifecycle().equals(id))
+                && contextUses.values().stream().noneMatch(use -> use.stage().work().lifecycle().equals(id));
         } finally { gate.unlock(); }
     }
     public void releaseRetiredLifecycle(LifecycleId id) {
@@ -237,7 +275,7 @@ public final class ChunkCustodyModel {
         gate.lock(); try {
             WorkRecord work = works.get(id);
             if (work == null || work.state == WorkState.ACTIVE
-                    || claims.values().stream().anyMatch(stage -> stage.work().equals(id)))
+                    || hasActiveUse(id))
                 throw new ChunkProtocolException("work cleanup before terminal acknowledgment");
             stages.keySet().removeIf(stage -> stage.work().equals(id));
             dispositions.keySet().removeIf(stage -> stage.work().equals(id));
@@ -246,7 +284,7 @@ public final class ChunkCustodyModel {
         } finally { gate.unlock(); }
     }
     public int retainedEntries() {
-        gate.lock(); try { return lifecycles.size() + lifecycleById.size() + works.size() + demands.size() + stages.size() + dispositions.size() + claims.size() + lifetimeUses.size(); }
+        gate.lock(); try { return lifecycles.size() + lifecycleById.size() + works.size() + demands.size() + stages.size() + dispositions.size() + claims.size() + contextUses.size() + lifetimeUses.size(); }
         finally { gate.unlock(); }
     }
     private LifecycleSlot slot(LifecycleId id) { return new LifecycleSlot(id.worldInstanceSequence(), id.chunkKey()); }

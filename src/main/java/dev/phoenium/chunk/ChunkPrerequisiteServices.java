@@ -67,7 +67,7 @@ public final class ChunkPrerequisiteServices {
     /** Only the completed execution leaves; the exact resident holder and other work survive. */
     public void settleFinishedExecution(ChunkCustodyModel.WorkId work, Object holderEvidence) {
         if (!lifecycles.holderMatches(work.lifecycle(), holderEvidence)) throw new ChunkProtocolException("settled execution lost holder evidence");
-        if (custody.hasActiveClaim(work) || custody.hasActiveDemand(work)) throw new ChunkProtocolException("execution still has unacknowledged use");
+        if (custody.hasActiveUse(work) || custody.hasActiveDemand(work)) throw new ChunkProtocolException("execution still has unacknowledged use");
         works.retireWork(work, false);
         works.releaseRetiredWork(work);
         tryReleaseRetiredLifecycle(work.lifecycle());

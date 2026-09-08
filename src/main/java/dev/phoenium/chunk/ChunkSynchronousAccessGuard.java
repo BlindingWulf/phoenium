@@ -26,17 +26,24 @@ public final class ChunkSynchronousAccessGuard {
     static Invocation forClaim(ChunkStageClaim claim) {
         Objects.requireNonNull(claim).require(claim.stage());
         if (INVOCATION.get() != null) throw new ChunkProtocolException("overlapping synchronous chunk query fault scope");
-        Invocation invocation = new Invocation(claim);
+        Invocation invocation = new Invocation(() -> claim.require(claim.stage()));
+        INVOCATION.set(invocation);
+        return invocation;
+    }
+    static Invocation forContextRead(FullContextReadClaim claim) {
+        Objects.requireNonNull(claim).requireActive();
+        if (INVOCATION.get() != null) throw new ChunkProtocolException("overlapping synchronous context query fault scope");
+        Invocation invocation = new Invocation(claim::requireActive);
         INVOCATION.set(invocation);
         return invocation;
     }
 
     static final class Invocation implements AutoCloseable {
-        private ChunkStageClaim claim;
+        private Runnable requireAuthority;
         private ChunkProtocolException failure;
-        private Invocation(ChunkStageClaim claim) { this.claim = claim; }
+        private Invocation(Runnable requireAuthority) { this.requireAuthority = requireAuthority; }
         private void record(ChunkProtocolException observed) {
-            claim.require(claim.stage());
+            requireAuthority.run();
             if (failure == null) failure = observed;
         }
         /** Vanilla may catch/wrap the thrown marker while retaining its committed mutation prefix. */
@@ -47,7 +54,7 @@ public final class ChunkSynchronousAccessGuard {
         }
         @Override public void close() {
             INVOCATION.remove();
-            claim = null;
+            requireAuthority = null;
             failure = null;
         }
     }

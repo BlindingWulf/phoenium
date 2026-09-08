@@ -44,7 +44,7 @@ public final class ChunkStageAdmission {
             if (!pending.belongsTo(custody)) return breachLocked(pending.stage(), null,
                     new ChunkProtocolException("foreign custody in route delivery"));
             var state = custody.stageState(pending.stage()).orElse(null);
-            if (custody.hasActiveClaimLocked(pending.stage()) || state == ChunkCustodyModel.StageState.APPLIED
+            if (custody.hasActiveUseLocked(pending.stage()) || state == ChunkCustodyModel.StageState.APPLIED
                     || state == ChunkCustodyModel.StageState.FAILED_VANILLA) return result(Result.DUPLICATE);
             if (pending.outcome().isDone()) return result(Result.DUPLICATE);
             if (!custody.admissionsOpenLocked()) return result(Result.SHUTDOWN);
