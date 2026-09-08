@@ -10,11 +10,13 @@ parallel OFF, disposable PhoeniumTest0 only. No push/release/PASS tag.
 
 Recovery `39105d25f879795dcd178fba741f1b59b2d7c782` preserves all interrupted dirty source
 as UNVERIFIED. Historical `a7b40743` / 419 tests are not current proof. Source and failed
-worlds/logs retained; no reset/stash. Main production checkpoint `eff728e` includes PARTIAL
+worlds/logs retained; no reset/stash. Main production checkpoint `2519af0` includes PARTIAL
 same-world selectors/entity NBT and interpreted saved-self CustomName discovery.
 Test witness `481d5c5` proves private collision access at its actual call point; reviewed
 Luna cleanup/readiness/vault and original discard/team-transfer witnesses are integrated
-through `2c34435`. No final clean build or same-artifact complete acceptance yet.
+through `2c34435`. Main recovery HEAD before this note is `35a64cb`. The intermediate
+artifact below passed installed and complete fresh/disk/reload acceptance; final clean
+build and same-artifact saved-vault acceptance still await the remaining context bindings.
 
 Lead retains selected Astra/Max and existing service_tier="default". Supported spawn
 fields selected Sol as gpt-5.6-sol/high and Luna as gpt-5.6-luna/high, fork_turns=none.
@@ -87,6 +89,31 @@ Focused logs/XML above: main run/full-resume/session-20260907/. No focused/histo
 result substitutes for installed and actual persisted-disk proof.
 
 ## Latest installed/client evidence
+
+**Current intermediate PASS:** Luna `run/full-production-integration/transform-20260907-193547`
+and `run/full-authoritative/live-1788827773577` use production SHA256
+`9CB35ECA0F3AD2FBF4B9B427E6116BC8CB139F08D5A4B605B6C39D399DFA1C5B`.
+Installed registration8/input21/published18/finishing45/query13/service7/D1=7/context16/
+publication2 all PASS; controlled probe SHA256
+`F67E724CEC33E7B44B7F5D92D05C2D7AFBB08E8E9B195C74BA7F1261E9811D24`.
+The complete real campaign has passed=true, freshExit=reloadExit=0, seed
+-3756904132830500134, world FULL-LIVE-1788827773669. Both original FULL_LIVE_OK witnesses:
+sources4/savedReaders8/villagers4/frogs4/teams=true/separatePublication=true/bedChecks4/
+collisionQueries8/immediateShulkerReads8/privateNeighbors4; fresh ADMITTED_PROTO, reload
+ADMITTED_IMPOSTER. Actual pre-restart overworld r.1.0.mca records [32..35,4] each contain
+FULL status and two exact legacy entity roots; both boots have real offline TCP chunk
+receipt. Root independently reviewed the manifest and both stopped diagnostics: holders,
+graphs, returned indexes, input plans/consumers/edges/notifications, publication records,
+lifecycle/work/custody records all zero; barriers/fallback/ownershipViolations/unleased zero.
+This predates Sol's pending-tag refinements; it is not final context completeness proof.
+
+`64071e9` places runtime terminal acknowledgement after the original stop/drain body;
+the actual original generation continuation regression is integrated through `f9f128b`.
+Luna's affected 48-test selection passed. `35a64cb` adds helper-specific original-stop /
+acknowledgement / named-cleanup failure ordering, exact exception identity and independent
+cleanup; 1/1 focused test passed. `d7513c3` makes prepared servers rebuild the controlled
+probe and records its source artifact hash, following preserved stale-probe failure
+transform-20260907-193132. Neither is permission to weaken strict probe counters.
 
 Luna run/full-production-integration/transform-20260907-171759 controlled installed PASS:
 registration8, input21, published18, finishing34/query13/service7/D1=7/context5/publication2.
@@ -191,22 +218,30 @@ wrong target [2272,7,-496] (lead confused block coordinates with chunk coordinat
 Corrected target/readiness and support routes are integrated in `744bf17`/`da7d80e`;
 the finite support preserves existing A/B ownership. Final same-artifact rerun remains.
 
-1. Sol: block-NBT IMMEDIATE creation, filtered self, nested selector scopes, recursive
-   interpreted block/entity contexts. First three are now integrated; active work is typed
-   versioned dependency-only facts for audited interpreted sources, including every
-   contributing writer/mutable alias and a possible phased retained-block context pass.
-   No virtual gameplay callbacks under metadata lock; no early serialization or replay.
-   Registered predicate footprints remain a separate missing contributor.
-2. Cross-world saved-selector authority **approval pending**. Concrete proposal:
+1. Sol checkpoint `11164a3` -> `5f53d69` -> `443817a` (supersedes d087761) is awaiting
+   root integration: exact pending-tag occurrence custody, shared source lifetime,
+   consumption lease, retained original parsed block list, independent acknowledgements,
+   capacity before copies. Broad 87 tests/4 suites and harness passed before the final
+   waiter/retain fixes; final focused context suite 38/38 passed. Probe now51/context22.
+   Root review followup: do not retain every closed retry waiter in the plan; remove
+   per-lookup full parsed occurrence-list copies; audit never-run callback retirement.
+   Sol then owns same-world registered predicate context footprints and the original
+   earlier-root insertion/later-selector observation regression. No live runs in Sol.
+2. Root owns typed owner-held live-component refinement and pre-invocation validation
+   design. Existing FULL claim has no pre-invocation retry rollback; a separate typed
+   read claim must preserve the original continuation and release owners before demand.
+   Raw MutableComponent siblings and TranslatableContents argument arrays require a
+   real vanilla writer/alias audit. Luna is doing that read-only pinned-source audit.
+   No virtual serialization, predicate evaluation or RNG is moved into discovery.
+3. Cross-world saved-selector authority **approval pending**. Concrete proposal:
    STAGE3_FULL_SELECTOR_CONTEXT_DECISION.md; async user question unanswered. D1-F forbids
    arbitrary foreign calls/cross-dimension same-world convergence. Do not enable the
    proposed all-or-release bundle without an actual answer.
-3. Luna: validate shutdown placement, then complete fresh/disk/reload/client campaign.
-   F3CE fresh and actual pre-restart disk proof plus earlier reload/original vault proof exist.
-   Then update to stable root/Sol
-   source and exact probe counters. One live owner only; no root competing live run.
-4. Final clean build, installed probes and client campaign must share recorded production
+4. Luna: after a stable integrated context snapshot, own final clean build + installed
+   probe + fresh/disk/reload/client + positive saved-vault campaign on the same artifact.
+   One live owner only; no root competing live run.
+5. Final clean build, installed probes and client campaign must share recorded production
    JAR; final diff review, acceptance ledger and verified commit. No optimistic PASS.
 
-Latest supported account-wide weekly usage:35% used (start1%); reserve7% (start7%).
+Latest supported account-wide weekly usage:38% used (start1%); reserve7% (start7%).
 Per-worker/task tokens unknown. No usage reset or additional spending.
