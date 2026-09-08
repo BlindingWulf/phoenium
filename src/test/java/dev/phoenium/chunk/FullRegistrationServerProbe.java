@@ -163,7 +163,7 @@ public final class FullRegistrationServerProbe implements DedicatedServerModInit
                     + "controlledLowerGenerationOutputs=true javaagent=false");
             System.out.println("PHOENIUM_FULL_REGISTERED_PREDICATE_PROBE PASS cases=" + registeredPredicateCases
                     + " originalSelector=true valueCheck=true nestedStorageValue=true storageCapture=true "
-                    + "scoreboardContext=true positionalEnvironment=true randomChance=true "
+                    + "scoreboardContext=true positionalEnvironment=true biomeRoute=true randomChance=true "
                     + "noEarlyStorageRead=true originalRandomDraws=1 javaagent=false");
         } catch (Throwable failure) {
             System.err.println("PHOENIUM_FULL_FINISHING_PROBE FAIL " + failure);

@@ -110,8 +110,8 @@ final class FullRegisteredPredicateExecutionTest {
         runRegistered(new EnvironmentAttributeCheck<>(EnvironmentAttributes.VILLAGER_ACTIVITY,
                 EnvironmentAttributes.VILLAGER_ACTIVITY.defaultValue()), "environment candidate",
                 (fixture, candidate) -> { }, FullRegisteredPredicateExecutionTest::installBiomeEnvironment,
-                (fixture, candidate) -> assertTrue(fixture.world.biomeReads > 0,
-                        "original positional environment sampler must consume the biome route"));
+                (fixture, candidate) -> assertEquals(1, fixture.world.biomeReads,
+                        "original positional environment sampler must consume one retained BIOMES route"));
     }
 
     @Test void registeredRandomChanceUsesExactlyOneOriginalRandomDraw() throws Exception {
@@ -141,19 +141,29 @@ final class FullRegisteredPredicateExecutionTest {
     }
 
     private static void installBiomeEnvironment(FullRegistrationFixture fixture, Entity ignored) throws Exception {
-        var plains = fixture.world.level.registryAccess().lookupOrThrow(
-                net.minecraft.core.registries.Registries.BIOME).getOrThrow(
-                net.minecraft.world.level.biome.Biomes.PLAINS);
-        var biomeManager = new net.minecraft.world.level.biome.BiomeManager((x, y, z) -> {
-            fixture.world.biomeReads++;
-            return plains;
-        }, 0L);
+        // Use vanilla's original biome layer and LevelReader route. The layer must reach
+        // LevelReader.getNoiseBiome -> getChunk(BIOMES,false), rather than a test BiomeManager
+        // lambda that could return a biome without consuming the retained BIOMES input.
+        var biomeManager = new net.minecraft.world.level.biome.BiomeManager(fixture.world.level::getNoiseBiome, 0L);
         var builder = EnvironmentAttributeSystem.builder();
-        builder.addPositionalLayer(EnvironmentAttributes.VILLAGER_ACTIVITY, (base, position, interpolator) -> {
-            fixture.world.biomeReads++;
-            var biome = biomeManager.getNoiseBiomeAtPosition(position.x(), position.y(), position.z());
-            return biome.value().getAttributes().applyModifier(EnvironmentAttributes.VILLAGER_ACTIVITY, base);
-        });
+        var original = EnvironmentAttributeSystem.class.getDeclaredMethod("addBiomeLayerForAttribute",
+                EnvironmentAttributeSystem.Builder.class, net.minecraft.world.attribute.EnvironmentAttribute.class,
+                net.minecraft.world.level.biome.BiomeManager.class);
+        original.setAccessible(true);
+        original.invoke(null, builder, EnvironmentAttributes.VILLAGER_ACTIVITY, biomeManager);
+        var graph = fixture.runtime.graph(fixture.holder(ChunkPos.ZERO));
+        var biomeTarget = graph.inputReceipt().targets().stream()
+                .filter(target -> target.purposes().contains(FullInitializedInputs.Purpose.ENVIRONMENT))
+                .findFirst().orElseThrow();
+        assertNotNull(biomeTarget.biomes(), "registered positional environment must retain a BIOMES input");
+        fixture.world.queryEndpoint = args -> {
+            if (args[2] == ChunkStatus.BIOMES) {
+                assertFalse((boolean) args[3], "environment route must preserve LevelReader's BIOMES,false request");
+                fixture.world.biomeReads++;
+                return biomeTarget.biomes().actual();
+            }
+            return fixture.world.borrow(fixture.world.work, (int) args[0], (int) args[1]);
+        };
         fixture.world.level.setEnvironmentAttributes(builder.build());
     }
 

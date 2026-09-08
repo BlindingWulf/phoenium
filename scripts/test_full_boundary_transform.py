@@ -178,7 +178,7 @@ with log.open("w") as output:
             )
             required_registered_predicate_fields = (
                 "cases=5", "originalSelector=true", "valueCheck=true", "nestedStorageValue=true",
-                "storageCapture=true", "scoreboardContext=true", "positionalEnvironment=true",
+                "storageCapture=true", "scoreboardContext=true", "positionalEnvironment=true", "biomeRoute=true",
                 "randomChance=true", "noEarlyStorageRead=true", "originalRandomDraws=1", "javaagent=false",
             )
             assert all(field in registered_predicate_probe[0] for field in required_registered_predicate_fields), (

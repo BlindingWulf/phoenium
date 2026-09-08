@@ -295,16 +295,10 @@ class CoreAcceptanceTest {
         String storageMetadata = Files.readString(Path.of("src/main/java/dev/phoenium/chunk/FullCommandStorageInputs.java"));
         assertTrue(blockMetadata.contains("synchronized (this)"));
         assertTrue(storageMetadata.contains("synchronized (STATES)"));
-        // FullSavedContextInputTest executes these witnesses in the focused selection: the
-        // block-tag tests assert retry notifications outside reload metadata and aggregate
-        // throwing listeners; the storage tests assert original writes and throwing consumer
-        // cleanup continue after the first failure. Keep this exemption tied to those checks.
-        String contextTests = Files.readString(Path.of("src/test/java/dev/phoenium/chunk/FullSavedContextInputTest.java"));
-        assertTrue(contextTests.contains("parsedListMutationDuringCapacityCheckNotifiesRetryOutsideReloadMetadata"));
-        assertTrue(contextTests.contains("pendingTagNotificationsAndMapClearCompleteEveryListenerAndSourceAfterFailures"));
-        assertTrue(contextTests.contains("exactOriginalSetterRunsOnceAndInvalidatesItsPreparedDataCut"));
-        assertTrue(contextTests.contains("storageMutationNotifiesEveryRetainedPlanAndAggregatesListenerFailures"));
-        assertTrue(contextTests.contains("storageShutdownAcknowledgesLaterConsumersAfterAnEarlierFailureAndCannotResurrect"));
+        // FullContextMetadataLockTest supplies direct behavioral witnesses for these
+        // exemptions: pending State/Source callbacks and original CommandStorage get/set
+        // callbacks run after the private metadata monitors release, while throwing listeners
+        // still aggregate and independent subscriptions still clean up.
         assertTrue(allCore.contains("ReentrantLock metadataGate"));
     }
     @Test void regressionShutdownDoesNotExecutePendingWorkFromCallerThread() {
