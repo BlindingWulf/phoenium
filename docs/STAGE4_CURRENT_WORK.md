@@ -8,7 +8,7 @@ closure H/I. Stage 5 OFF; one gameplay worker; parallel gameplay OFF.
 - Original main: `890d38614e001ae115cb419b653e6b566c8a4d53`.
 - Frozen executable: `c31b3f42a5bcc06c9d3bae7b475337f225e9bd06`.
 - Frozen production SHA-256: `017EE8ED612D238894FFA5A1DC019BA8B0E31124B0B5171D08CC0D8993C1B534`.
-- Main: `stage4/regional-world-services`, checkout `Phoenium`; integration `b4a0622`.
+- Main: `stage4/regional-world-services`, checkout `Phoenium`; integration `7aeb63d`.
 - Production source remains `42bb3445e9e02741419b0890ddf08efa32e356d7`.
 - Candidate production SHA-256: `6016F943D9DCB59817F90EC6CBB9BC41B2EF73DAB8EDE7D4AF3556F8A7E6D1A8`.
 - Historical `Phoenium-full-luna` / `Phoenium-full-sol` and failed worlds/logs preserved.
@@ -111,15 +111,16 @@ then separate native step commands and before/deadline/after checks (powered/cal
 0,1,1 at trigger-1, trigger, trigger+1). POWERED diagnostics are guarded. Generic
 runner derives effect acceptance from all strong phase PASS receipts.
 
-**Luna must finish these concrete review findings before the next live run:**
-client awaitLog currently accepts phase prefixes even when pass=false and eligibility
-prefix even when false; require the positive result. Repeated teleport PREPARED and
-COMPLETED waits scan old log receipts; use a new cursor/occurrence or unique ID. The
-client flow writes paths but does not yet invoke strict MCA acceptance or compare
-its exact saved t to native unpack delay; connect that gate to actual client evidence.
-These are test harness corrections, not accepted restart results. Keep one writer.
+Review findings are repaired in `05e3f59` / `7aeb63d` (Luna `cd3dea3` / `8f55ea0`):
+each teleport and reload phase requires a fresh log cursor; eligibility=true and
+phase pass=true must occur on the same new marker line. Exact unpack and phase
+receipts are saved in client evidence. `scripts/validate_stage4_client_restart.py`
+reuses the strict MCA parser and requires exact saved t == native unpack delay,
+trigger == unpack currentTick + t, and all three phase passes. Python syntax and
+client compilation pass. No installed restart PASS yet. Luna must invoke this
+validator on actual client evidence as a mandatory campaign gate.
 
-Then Luna executes one corrected frozen 5/5 reference, fixes actual connected
+Luna now executes one corrected frozen 5/5 reference, fixes actual connected
 failures, and advances the paired candidate and unchanged 8/8 campaign. Preserve
 all failures; no longer waits, capped distances, server-only receipts or weakened
 current-client FULL gates. Actual A/B service and save bodies, planned pending-work
