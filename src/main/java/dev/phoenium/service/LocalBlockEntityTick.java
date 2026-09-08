@@ -19,16 +19,14 @@ public final class LocalBlockEntityTick {
         var map = ((dev.phoenium.mixin.LocalRecipeManagerAccess) level.recipeAccess()).phoenium$recipes();
         RecipePolicy policy = recipePolicy;
         if (policy != null && policy.map().get() == map) return policy.safe();
-        boolean safe = true;
-        for (var holder : map.values()) {
-            var recipe = holder.value(); var type = recipe.getType(); var implementation = recipe.getClass();
-            if (type == net.minecraft.world.item.crafting.RecipeType.SMELTING)
-                safe &= implementation == net.minecraft.world.item.crafting.SmeltingRecipe.class;
-            else if (type == net.minecraft.world.item.crafting.RecipeType.BLASTING)
-                safe &= implementation == net.minecraft.world.item.crafting.BlastingRecipe.class;
-            else if (type == net.minecraft.world.item.crafting.RecipeType.SMOKING)
-                safe &= implementation == net.minecraft.world.item.crafting.SmokingRecipe.class;
-        }
+        // Use the native immutable type index; eligibility must not invoke unrelated
+        // or unreviewed recipe callbacks, including a virtual getType implementation.
+        boolean safe = map.byType(net.minecraft.world.item.crafting.RecipeType.SMELTING).stream()
+            .allMatch(holder -> holder.value().getClass() == net.minecraft.world.item.crafting.SmeltingRecipe.class)
+            && map.byType(net.minecraft.world.item.crafting.RecipeType.BLASTING).stream()
+            .allMatch(holder -> holder.value().getClass() == net.minecraft.world.item.crafting.BlastingRecipe.class)
+            && map.byType(net.minecraft.world.item.crafting.RecipeType.SMOKING).stream()
+            .allMatch(holder -> holder.value().getClass() == net.minecraft.world.item.crafting.SmokingRecipe.class);
         recipePolicy = new RecipePolicy(new java.lang.ref.WeakReference<>(map), safe);
         return safe;
     }
