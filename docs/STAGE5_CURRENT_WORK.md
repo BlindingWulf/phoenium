@@ -273,3 +273,14 @@ frozen cut. Original fluid callbacks remain deferred; exact saved arrays stay st
 No production change, no deadline normalization, no early/fabricated FULL readiness.
 The sequential remaining-campaign runner stopped immediately on that comparator
 failure; unrestricted final clients, later lifecycle repeats and benchmarks are pending.
+
+`controls-client8-b` preserves the corrected native save arrays. Frozen/candidate1/2
+pass; candidate4 FAIL differs only in exact A/B packet ordering. Raw IDs were A44/B45
+in the frozen run versus A42/B43 in candidate4, so native Int2ObjectOpenHashMap traversal
+changed despite matching fixture UUIDs, call clocks and game time. The next clocked
+fixture assigns three explicit positive native IDs via Entity.setId after original
+NBT load and BEFORE any native publication. Their native HashCommon.mix values1/2/3
+stabilize hash-table inputs across capacities; original iteration is never sorted.
+The wrapper now requires exact UUID/numeric-ID inputs before invoking the unchanged
+ordered comparator. Occupied or already published identities fail. Unrestricted
+clients keep ordinary ID allocation. This is a test input repair, not production code.

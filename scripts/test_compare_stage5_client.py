@@ -3,11 +3,14 @@ import copy,json,tempfile,unittest
 from pathlib import Path
 from unittest.mock import patch
 from test_compare_stage4_trace import BASE
-from compare_stage5_client import compare
+from compare_stage5_client import compare,FIXTURE_IDS
 
 class ClientGateTest(unittest.TestCase):
     def inputs(self,root):
         report=copy.deepcopy(BASE);report['missing']=[]
+        report['events']=[event.replace('entityId=17','entityId=340573321') for event in report['events']]
+        report['events'] += [f'tracking.pair recipient=player entityId={identity} uuid={uuid} gameTime=100'
+            for uuid,identity in list(FIXTURE_IDS.items())[1:]]
         report['events']+=['topology.merge current=true','topology.split current=true','block.deferred pending=true']
         report['events']+=[f'{kind} contextRegion=stage3-fixture-{owner}' for kind in ('topology.body','tracking.body') for owner in ('a','b')]
         for name in ('reference','candidate'):
@@ -38,6 +41,7 @@ class ClientGateTest(unittest.TestCase):
             changes=[lambda d:d['events'].__setitem__(6,d['events'][6].replace('xa=1','xa=2')),
                 lambda d:d['events'].__setitem__(slice(5,7),list(reversed(d['events'][5:7]))),
                 lambda d:d['events'].pop(),lambda d:d.update(result='PARTIAL'),
+                lambda d:d.update(events=[e.replace('entityId=340573321','entityId=340573322') for e in d['events']]),
                 lambda d:d.update(events=[e for e in d['events'] if not e.startswith('tick.native.unpack ')])]
             for change in changes:
                 d=copy.deepcopy(base);change(d);p.write_text(json.dumps(d))

@@ -12,6 +12,10 @@ from compare_stage4_trace import load
 from compare_stage5_gameplay import require
 from validate_stage4_client_restart import validate as restart
 
+FIXTURE_IDS={'00000001-0000-0002-0000-000300000004':340573321,
+    '00000005-0000-0006-0000-000700000008':681146642,
+    '00000009-0000-000a-0000-000b0000000c':1021719963}
+
 def tracker_clock(client, origin):
     require(client['trackingClock'] is True, 'client comparison requires its declared tracker input clock')
     pattern=re.compile(r'STAGE5_TRACKER_CLOCK uuid=([0-9a-f-]+) gameTime=(\d+) before=(\d+) after=(\d+)')
@@ -21,9 +25,18 @@ def tracker_clock(client, origin):
         require(not rows or value[0]>rows[-1][0], 'duplicate or reversed offered native tracker tick')
         require(value[2]>value[1], 'original tracker body did not advance its own clock')
         rows.append(value)
-    expected={'00000001-0000-0002-0000-000300000004','00000005-0000-0006-0000-000700000008','00000009-0000-000a-0000-000b0000000c'}
-    require(set(clocks)==expected, 'missing or foreign original tracker clock coverage')
+    require(set(clocks)==set(FIXTURE_IDS), 'missing or foreign original tracker clock coverage')
     return clocks
+
+def fixture_identities(report):
+    observed={}
+    for event in report['events']:
+        if event.startswith(('tracking.pair ','tracking.remove ','tracking.delivered ')):
+            uuid=re.search(r'\buuid=([0-9a-f-]+)',event).group(1)
+            identity=int(re.search(r'\bentityId=(\d+)',event).group(1))
+            require(FIXTURE_IDS.get(uuid)==identity,'changed native fixture ID/hash-table input')
+            observed[uuid]=identity
+    require(observed==FIXTURE_IDS,'missing fixed native fixture identity coverage')
 
 def compare(reference,candidate):
     roots=[Path(reference),Path(candidate)]; streams=[]; receipts=[]; probes=[]; clocks=[]
@@ -40,6 +53,7 @@ def compare(reference,candidate):
         disk=restart(evidence/'STAGE4-CLIENT.json');require(disk['result']=='PASS','native saved tick/unpack/deadline failed')
         receipts.append(dict(viewDistance=client['viewDistance'],simulationDistance=client['simulationDistance'],savedDelay=disk['savedDelay']))
         report,stream=load(evidence/'STAGE4-CLIENT-before-restart-trace.json')
+        fixture_identities(report)
         clocks.append(tracker_clock(client,report['startedAt']))
         require(report['result']=='PASS' and not report['missing'],'client trace lacks required original effects or ownership')
         for marker in ('topology.merge','topology.split','block.deferred'):
