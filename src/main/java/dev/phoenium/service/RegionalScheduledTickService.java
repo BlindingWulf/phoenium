@@ -47,6 +47,7 @@ public final class RegionalScheduledTickService<T> {
     private final RegionalServiceKind collectKind;
     private final RegionalServiceKind runKind;
     private final LongPredicate tickCheck;
+    private final Object enclosingRegistryMonitor;
     private final Map<RegionId, Map<Long, ContainerState<T>>> partitions = new LinkedHashMap<>();
     private final Map<Long, ContainerState<T>> containers = new LinkedHashMap<>();
     // The production binding supplies LevelTicks' actual fields. Native clear/copy/query
@@ -66,10 +67,18 @@ public final class RegionalScheduledTickService<T> {
     public RegionalScheduledTickService(WorldId world, RegionDirectory directory,
                                         RegionalServiceDispatcher dispatcher,
                                         LongPredicate tickCheck, boolean blockTicks) {
+        this(world, directory, dispatcher, tickCheck, blockTicks, null);
+    }
+
+    RegionalScheduledTickService(WorldId world, RegionDirectory directory,
+                                 RegionalServiceDispatcher dispatcher,
+                                 LongPredicate tickCheck, boolean blockTicks,
+                                 Object enclosingRegistryMonitor) {
         this.world = Objects.requireNonNull(world, "world");
         this.directory = Objects.requireNonNull(directory, "directory");
         this.dispatcher = Objects.requireNonNull(dispatcher, "dispatcher");
         this.tickCheck = Objects.requireNonNull(tickCheck, "tickCheck");
+        this.enclosingRegistryMonitor = enclosingRegistryMonitor;
         this.collectKind = blockTicks ? RegionalServiceKind.COLLECT_SCHEDULED_BLOCK_TICK
                                       : RegionalServiceKind.COLLECT_SCHEDULED_FLUID_TICK;
         this.runKind = blockTicks ? RegionalServiceKind.RUN_SCHEDULED_BLOCK_TICK
@@ -90,20 +99,33 @@ public final class RegionalScheduledTickService<T> {
         originalCycleBound = true;
     }
 
-    public synchronized void bootstrap(Map<Long, LevelChunkTicks<T>> initial) {
-        if (!containers.isEmpty()) throw new IllegalStateException("scheduled tick service already bootstrapped");
+    public void bootstrap(Map<Long, LevelChunkTicks<T>> initial) {
+        synchronized (this) {
+            if (!containers.isEmpty()) throw new IllegalStateException("scheduled tick service already bootstrapped");
+        }
         initial.forEach(this::addContainer);
     }
 
-    public synchronized void addContainer(long chunkKey, LevelChunkTicks<T> container) {
+    public void addContainer(long chunkKey, LevelChunkTicks<T> container) {
         Objects.requireNonNull(container, "container");
-        if (containers.containsKey(chunkKey)) throw new IllegalStateException("duplicate regional tick container " + key(chunkKey));
         RegionId owner = route(chunkKey).region();
         ContainerState<T> state = new ContainerState<>(chunkKey, owner, container);
-        containers.put(chunkKey, state);
-        partitions.computeIfAbsent(owner, ignored -> new LinkedHashMap<>()).put(chunkKey, state);
-        ScheduledTick<T> head = container.peek();
-        if (head != null) nextTickForContainer.put(chunkKey, head.triggerTick());
+        boolean observeHead;
+        synchronized (this) {
+            if (containers.containsKey(chunkKey))
+                throw new IllegalStateException("duplicate regional tick container " + key(chunkKey));
+            containers.put(chunkKey, state);
+            partitions.computeIfAbsent(owner, ignored -> new LinkedHashMap<>()).put(chunkKey, state);
+            observeHead = !originalCycleBound;
+        }
+        if (observeHead) {
+            requireNativeCallbackUnlocked();
+            ScheduledTick<T> head = container.peek();
+            synchronized (this) {
+                requireRegisteredState(state);
+                if (head != null) nextTickForContainer.put(chunkKey, head.triggerTick());
+            }
+        }
     }
 
     public synchronized void removeContainer(long chunkKey, LevelChunkTicks<T> expected) {
@@ -119,13 +141,24 @@ public final class RegionalScheduledTickService<T> {
     }
 
     /** Called after vanilla's real container applies its deduplication rule. */
-    public synchronized void scheduled(long chunkKey, LevelChunkTicks<T> expected) {
-        ContainerState<T> state = containers.get(chunkKey);
-        if (state == null) return; // unloaded scheduling retains vanilla's original warning/no-op
-        if (state.container() != expected) throw new IllegalStateException("regional tick scheduled through foreign container");
-        ScheduledTick<T> head = state.container().peek();
-        if (head == null) nextTickForContainer.remove(chunkKey);
-        else nextTickForContainer.put(chunkKey, head.triggerTick());
+    public void scheduled(long chunkKey, LevelChunkTicks<T> expected) {
+        ContainerState<T> state;
+        synchronized (this) {
+            state = containers.get(chunkKey);
+            if (state == null) return; // unloaded scheduling retains vanilla's original warning/no-op
+            if (state.container() != expected)
+                throw new IllegalStateException("regional tick scheduled through foreign container");
+            // LevelTicks' installed onTickAdded callback has already performed its one native peek
+            // and updated the bound map. The production tail hook only authenticates identity.
+            if (originalCycleBound) return;
+        }
+        requireNativeCallbackUnlocked();
+        ScheduledTick<T> head = expected.peek();
+        synchronized (this) {
+            requireRegisteredState(state);
+            if (head == null) nextTickForContainer.remove(chunkKey);
+            else nextTickForContainer.put(chunkKey, head.triggerTick());
+        }
     }
 
     /** Producer gate invoked before the real persistent container is mutated. */
@@ -174,6 +207,7 @@ public final class RegionalScheduledTickService<T> {
                 long[] future = {Long.MIN_VALUE};
                 dispatcher.executeAndDrain(key(indexed.chunkKey), collectKind, execution -> {
                     synchronized (this) { requireCurrentState(state, execution.runtime().id()); }
+                    requireNativeCallbackUnlocked();
                     ScheduledTick<T> head = state.container().peek();
                     if (head == null) future[0] = Long.MAX_VALUE;
                     else if (head.triggerTick() > currentTick) future[0] = head.triggerTick();
@@ -201,20 +235,34 @@ public final class RegionalScheduledTickService<T> {
                 ContainerState<T> state = selected.state();
                 dispatcher.executeAndDrain(key(state.chunkKey()), collectKind, execution -> {
                     synchronized (this) { requireCurrentState(state, execution.runtime().id()); }
+                    requireNativeCallbackUnlocked();
                     ScheduledTick<T> polled = state.container().poll();
                     if (polled != selected.head())
                         throw new IllegalStateException("scheduled tick head changed after eligibility " + key(state.chunkKey()));
                     synchronized (this) {
+                        requireCurrentState(state, execution.runtime().id());
                         toRunThisTick.add(polled); collectedCount++;
-                        Eligible<T> nextBest = ready.peek();
-                        ScheduledTick<T> nextOther = nextBest == null ? null : nextBest.head();
-                        while (collectedSize() < maxTicksToProcess) {
-                            ScheduledTick<T> next = state.container().peek();
-                            if (next == null || next.triggerTick() > currentTick
-                                    || nextOther != null && ScheduledTick.INTRA_TICK_DRAIN_ORDER.compare(next, nextOther) > 0) break;
-                            state.container().poll(); toRunThisTick.add(next); collectedCount++;
-                        }
+                    }
+                    Eligible<T> nextBest = ready.peek();
+                    ScheduledTick<T> nextOther = nextBest == null ? null : nextBest.head();
+                    while (collectedSize() < maxTicksToProcess) {
+                        synchronized (this) { requireCurrentState(state, execution.runtime().id()); }
+                        requireNativeCallbackUnlocked();
                         ScheduledTick<T> next = state.container().peek();
+                        if (next == null || next.triggerTick() > currentTick
+                                || nextOther != null && ScheduledTick.INTRA_TICK_DRAIN_ORDER.compare(next, nextOther) > 0) break;
+                        requireNativeCallbackUnlocked();
+                        state.container().poll();
+                        synchronized (this) {
+                            requireCurrentState(state, execution.runtime().id());
+                            toRunThisTick.add(next); collectedCount++;
+                        }
+                    }
+                    synchronized (this) { requireCurrentState(state, execution.runtime().id()); }
+                    requireNativeCallbackUnlocked();
+                    ScheduledTick<T> next = state.container().peek();
+                    synchronized (this) {
+                        requireCurrentState(state, execution.runtime().id());
                         if (next != null) {
                             if (next.triggerTick() <= currentTick && collectedSize() < maxTicksToProcess)
                                 ready.add(new Eligible<>(state, next));
@@ -276,10 +324,20 @@ public final class RegionalScheduledTickService<T> {
         Set<RoutingKey> destinationKeys = areaKeys(destination);
         footprint.addAll(offset == null ? destinationKeys
             : new dev.phoenium.topology.TopologyPlanner().requiredClosure(destinationKeys, 1));
+        boolean refreshUnboundModel;
+        synchronized (this) { refreshUnboundModel = !originalCycleBound; }
         Runnable body = () -> {
             dispatcher.requireCurrentClosure(footprint);
-            try { original.run(); }
-            finally { refreshArea(destination); }
+            try {
+                requireNativeCallbackUnlocked();
+                original.run();
+            }
+            finally {
+                // The production binding shares LevelTicks' native scheduling index. clearArea
+                // performs its own exact two peeks and copyAreaFrom updates through onTickAdded;
+                // another service peek would change the original observation count.
+                if (refreshUnboundModel) refreshArea(destination);
+            }
         };
         if (footprint.isEmpty()) { original.run(); return; }
         if (OwnershipContext.current().isPresent()) body.run();
@@ -301,17 +359,26 @@ public final class RegionalScheduledTickService<T> {
         return keys;
     }
 
-    private synchronized void refreshArea(BoundingBox area) {
-        for (int x = area.minX() >> 4; x <= area.maxX() >> 4; x++)
-            for (int z = area.minZ() >> 4; z <= area.maxZ() >> 4; z++) {
-                ContainerState<T> state = containers.get(ChunkPos.pack(x, z));
-                if (state != null) {
-                    dispatcher.requireCurrentOwner(key(state.chunkKey()));
-                    ScheduledTick<T> head = state.container().peek();
-                    if (head == null) nextTickForContainer.remove(state.chunkKey());
-                    else nextTickForContainer.put(state.chunkKey(), head.triggerTick());
+    private void refreshArea(BoundingBox area) {
+        List<ContainerState<T>> affected = new ArrayList<>();
+        synchronized (this) {
+            for (int x = area.minX() >> 4; x <= area.maxX() >> 4; x++)
+                for (int z = area.minZ() >> 4; z <= area.maxZ() >> 4; z++) {
+                    ContainerState<T> state = containers.get(ChunkPos.pack(x, z));
+                    if (state != null) affected.add(state);
                 }
+        }
+        for (ContainerState<T> state : affected) {
+            dispatcher.requireCurrentOwner(key(state.chunkKey()));
+            synchronized (this) { requireRegisteredState(state); }
+            requireNativeCallbackUnlocked();
+            ScheduledTick<T> head = state.container().peek();
+            synchronized (this) {
+                requireRegisteredState(state);
+                if (head == null) nextTickForContainer.remove(state.chunkKey());
+                else nextTickForContainer.put(state.chunkKey(), head.triggerTick());
             }
+        }
     }
 
     /**
@@ -356,12 +423,22 @@ public final class RegionalScheduledTickService<T> {
     }
 
     private synchronized int collectedSize() { return toRunThisTick.size(); }
+    private void requireNativeCallbackUnlocked() {
+        if (Thread.holdsLock(this))
+            throw new IllegalStateException("scheduled tick native callback retained service metadata monitor");
+        if (enclosingRegistryMonitor != null && Thread.holdsLock(enclosingRegistryMonitor))
+            throw new IllegalStateException("scheduled tick native callback retained world registry monitor");
+    }
     private ContainerState<T> requireCurrentState(ContainerState<T> selected, RegionId executingOwner) {
+        ContainerState<T> state = requireRegisteredState(selected);
+        if (!state.owner().equals(executingOwner))
+            throw new IllegalStateException("scheduled tick partition owner changed before collection");
+        return state;
+    }
+    private ContainerState<T> requireRegisteredState(ContainerState<T> selected) {
         ContainerState<T> state = containers.get(selected.chunkKey());
         if (state == null || state != selected)
             throw new IllegalStateException("stale scheduled tick selection " + key(selected.chunkKey()));
-        if (!state.owner().equals(executingOwner))
-            throw new IllegalStateException("scheduled tick partition owner changed before collection");
         return state;
     }
     private synchronized List<PendingIndex> pendingIndexSnapshot() {

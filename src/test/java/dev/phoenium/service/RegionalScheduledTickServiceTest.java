@@ -27,6 +27,68 @@ import net.minecraft.world.ticks.TickPriority;
 import org.junit.jupiter.api.Test;
 
 final class RegionalScheduledTickServiceTest {
+    @Test void nativeContainerProbesAndDrainsNeverRunUnderServiceMetadataMonitor() {
+        Fixture f = new Fixture();
+        @SuppressWarnings("unchecked") RegionalScheduledTickService<Object>[] retained = new RegionalScheduledTickService[1];
+        var trace = new java.util.ArrayList<String>();
+        Object registryMonitor = new Object();
+        LevelChunkTicks<Object> container = new LevelChunkTicks<>() {
+            private void unlocked(String call) {
+                assertNotNull(retained[0]);
+                assertFalse(Thread.holdsLock(retained[0]), call + " retained service metadata monitor");
+                assertFalse(Thread.holdsLock(registryMonitor), call + " retained registry metadata monitor");
+                trace.add(call);
+            }
+            @Override public ScheduledTick<Object> peek() { unlocked("peek"); return super.peek(); }
+            @Override public ScheduledTick<Object> poll() { unlocked("poll"); return super.poll(); }
+        };
+        var service = new RegionalScheduledTickService<Object>(f.world, f.directory, f.dispatcher,
+            ignored -> true, true, registryMonitor);
+        retained[0] = service;
+        var original = new LevelTicks<Object>(ignored -> true);
+        try { bindOriginalCycle(service, original); }
+        catch (ReflectiveOperationException failure) { throw new AssertionError(failure); }
+        original.addContainer(new ChunkPos(0, 0), container);
+        service.addContainer(f.aChunk, container);
+        Object type = new Object();
+        original.schedule(tick(type, BlockPos.ZERO, 1, TickPriority.NORMAL, 1));
+        service.scheduled(f.aChunk, container);
+        var output = new java.util.ArrayList<Object>();
+        service.tick(1, 10, (position, selected) -> output.add(selected));
+
+        assertEquals(List.of(type), output);
+        assertEquals(List.of("peek", "peek", "peek", "poll", "peek", "peek"), trace);
+    }
+
+    @Test void productionAreaMutationKeepsNativeTwoProbeContractOutsideBothMonitors() throws Exception {
+        Fixture f = new Fixture();
+        @SuppressWarnings("unchecked") RegionalScheduledTickService<Object>[] retained = new RegionalScheduledTickService[1];
+        var trace = new java.util.ArrayList<String>(); Object registryMonitor = new Object();
+        LevelChunkTicks<Object> container = new LevelChunkTicks<>() {
+            @Override public ScheduledTick<Object> peek() {
+                assertFalse(Thread.holdsLock(retained[0]), "area peek retained service metadata monitor");
+                assertFalse(Thread.holdsLock(registryMonitor), "area peek retained registry metadata monitor");
+                trace.add("peek"); return super.peek();
+            }
+        };
+        var service = new RegionalScheduledTickService<Object>(f.world, f.directory, f.dispatcher,
+            ignored -> true, true, registryMonitor);
+        retained[0] = service;
+        var original = new LevelTicks<Object>(ignored -> true);
+        bindOriginalCycle(service, original);
+        original.addContainer(new ChunkPos(0, 0), container);
+        service.addContainer(f.aChunk, container);
+        original.schedule(tick(new Object(), BlockPos.ZERO, 20, TickPriority.NORMAL, 1));
+        service.scheduled(f.aChunk, container);
+        trace.clear();
+
+        var area = new net.minecraft.world.level.levelgen.structure.BoundingBox(0, 0, 0, 0, 255, 0);
+        service.mutateArea(service, area, null, () -> original.clearArea(area));
+
+        assertEquals(List.of("peek", "peek"), trace);
+        assertEquals(0, container.count());
+    }
+
     @Test
     void eligibilityProbesEveryDueContainerBeforeZeroLimitInPrimitiveIndexOrder() {
         var expected = new java.util.ArrayList<Long>();
@@ -260,7 +322,7 @@ final class RegionalScheduledTickServiceTest {
 
     @SuppressWarnings("unchecked")
     private static void bindOriginalCycle(RegionalScheduledTickService<Object> service,
-                                          LevelTicks<Object> original) throws Exception {
+            LevelTicks<Object> original) throws ReflectiveOperationException {
         var pending = LevelTicks.class.getDeclaredField("toRunThisTick"); pending.setAccessible(true);
         var ran = LevelTicks.class.getDeclaredField("alreadyRunThisTick"); ran.setAccessible(true);
         var queries = LevelTicks.class.getDeclaredField("toRunThisTickSet"); queries.setAccessible(true);

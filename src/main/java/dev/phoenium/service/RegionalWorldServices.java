@@ -64,9 +64,9 @@ public final class RegionalWorldServices implements RegionalStateMigration {
             var blockAccess = (RegionalLevelTicksAccess<Block>) blockTicks;
             var fluidAccess = (RegionalLevelTicksAccess<Fluid>) fluidTicks;
             var blocks = new RegionalScheduledTickService<Block>(world, directory, dispatcher,
-                blockAccess.phoenium$getTickCheck(), true);
+                blockAccess.phoenium$getTickCheck(), true, this);
             var fluids = new RegionalScheduledTickService<Fluid>(world, directory, dispatcher,
-                fluidAccess.phoenium$getTickCheck(), false);
+                fluidAccess.phoenium$getTickCheck(), false, this);
             blocks.bindOriginalCycle(blockAccess.phoenium$getNextTickForContainer(), blockAccess.phoenium$getToRunThisTick(),
                 blockAccess.phoenium$getAlreadyRunThisTick(), blockAccess.phoenium$getToRunThisTickSet());
             fluids.bindOriginalCycle(fluidAccess.phoenium$getNextTickForContainer(), fluidAccess.phoenium$getToRunThisTick(),
@@ -192,13 +192,15 @@ public final class RegionalWorldServices implements RegionalStateMigration {
     }
 
     @SuppressWarnings("unchecked")
-    public synchronized <T> void containerAdded(LevelTicks<T> owner, ChunkPos pos, LevelChunkTicks<T> container) {
-        TickBinding<T> binding = (TickBinding<T>) ticks.get(owner);
+    public <T> void containerAdded(LevelTicks<T> owner, ChunkPos pos, LevelChunkTicks<T> container) {
+        TickBinding<T> binding;
+        synchronized (this) { binding = (TickBinding<T>) ticks.get(owner); }
         if (binding != null) binding.service().addContainer(pos.pack(), container);
     }
     @SuppressWarnings("unchecked")
-    public synchronized <T> void containerRemoved(LevelTicks<T> owner, ChunkPos pos, LevelChunkTicks<T> container) {
-        TickBinding<T> binding = (TickBinding<T>) ticks.get(owner);
+    public <T> void containerRemoved(LevelTicks<T> owner, ChunkPos pos, LevelChunkTicks<T> container) {
+        TickBinding<T> binding;
+        synchronized (this) { binding = (TickBinding<T>) ticks.get(owner); }
         if (binding != null) binding.service().removeContainer(pos.pack(), container);
     }
     @SuppressWarnings("unchecked")
@@ -241,8 +243,9 @@ public final class RegionalWorldServices implements RegionalStateMigration {
     }
 
     @SuppressWarnings("unchecked")
-    public synchronized <T> void scheduled(LevelTicks<T> owner, long chunkKey, LevelChunkTicks<T> container) {
-        TickBinding<T> binding = (TickBinding<T>) ticks.get(owner);
+    public <T> void scheduled(LevelTicks<T> owner, long chunkKey, LevelChunkTicks<T> container) {
+        TickBinding<T> binding;
+        synchronized (this) { binding = (TickBinding<T>) ticks.get(owner); }
         if (binding != null) binding.service().scheduled(chunkKey, container);
     }
     @SuppressWarnings("unchecked")

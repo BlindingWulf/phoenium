@@ -25,6 +25,12 @@ final class RegionalWorldServiceLifetimeTest {
     @Test void bindingConstructionCannotRetainTheRegistryMonitorAcrossNativeBootstrap() throws Exception {
         assertFalse(Modifier.isSynchronized(
             RegionalWorldServices.class.getMethod("bind", ServerLevel.class).getModifiers()));
+        assertFalse(Modifier.isSynchronized(RegionalWorldServices.class.getMethod("containerAdded",
+            LevelTicks.class, ChunkPos.class, net.minecraft.world.ticks.LevelChunkTicks.class).getModifiers()));
+        assertFalse(Modifier.isSynchronized(RegionalWorldServices.class.getMethod("containerRemoved",
+            LevelTicks.class, ChunkPos.class, net.minecraft.world.ticks.LevelChunkTicks.class).getModifiers()));
+        assertFalse(Modifier.isSynchronized(RegionalWorldServices.class.getMethod("scheduled",
+            LevelTicks.class, long.class, net.minecraft.world.ticks.LevelChunkTicks.class).getModifiers()));
     }
 
     @Test
