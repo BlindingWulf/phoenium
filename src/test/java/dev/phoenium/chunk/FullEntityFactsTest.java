@@ -176,6 +176,33 @@ final class FullEntityFactsTest {
             }
         }
     }
+    @Test void trackerRefreshUsesCommittedMovementButCannotAdoptReplacementEntity() throws Exception {
+        try (var f = new FullServiceOperationFixture()) {
+            ServerLevel world = f.world();
+            LivingEntity entity = target(world, UUID.randomUUID(), 112, new AtomicInteger());
+            set(entity, Entity.class, "position", net.minecraft.world.phys.Vec3.ZERO);
+            set(entity, Entity.class, "blockPosition", net.minecraft.core.BlockPos.ZERO);
+            set(entity, Entity.class, "chunkPosition", new net.minecraft.world.level.ChunkPos(0, 0));
+            set(entity, Entity.class, "firstTick", true);
+            var lookup = new EntityLookup<Entity>(); lookup.add(entity);
+            try (var turn = f.service.serial(FullFinishingServices.Phase.SERVER_TASK)) {
+                var retained = f.service.entityFacts.trackingCandidate(world, entity);
+                entity.setPosRaw(33.125, 65.75, -17.5);
+                assertThrows(ChunkProtocolException.class, () -> f.service.entityFacts.trackingPassengers(retained));
+                var current = f.service.entityFacts.refreshTrackingCandidate(retained);
+                assertEquals(new net.minecraft.world.level.ChunkPos(2, -2), current.position());
+                assertEquals(retained.fact().incarnation(), current.fact().incarnation());
+                assertTrue(f.service.entityFacts.validTrackingCandidate(current));
+                assertTrue(f.service.entityFacts.trackingPassengers(current).isEmpty());
+                lookup.remove(entity);
+                assertThrows(ChunkProtocolException.class, () -> f.service.entityFacts.refreshTrackingCandidate(current));
+                LivingEntity replacement = target(world, entity.getUUID(), 112, new AtomicInteger());
+                lookup.add(replacement);
+                assertThrows(ChunkProtocolException.class, () -> f.service.entityFacts.refreshTrackingCandidate(current));
+            }
+        }
+    }
+
     @Test void malformedRetainedPassengerGraphFailsBeforeTrackingCallback() {
         Object vehicle = new Object(), passenger = new Object();
         Map<Object, List<Object>> direct = new IdentityHashMap<>();

@@ -70,6 +70,7 @@ public final class Stage4ClientTraceTest implements FabricClientGameTest {
             command.add("-jar");
             command.add("fabric-server-launch.jar");
             command.add("nogui");
+            verifyInstalledProduction(directory, trace, "first", candidate);
             server = new ProcessBuilder(command).directory(directory.toFile()).redirectErrorStream(true)
                 .redirectOutput(ProcessBuilder.Redirect.appendTo(log.toFile())).start();
             waitForReady(context, server, log);
@@ -228,6 +229,7 @@ public final class Stage4ClientTraceTest implements FabricClientGameTest {
             for (int index = 0; index < restartCommand.size(); index++)
                 if (restartCommand.get(index).startsWith("-Dphoenium.stage4.tracePath="))
                     restartCommand.set(index, "-Dphoenium.stage4.tracePath=" + restartTrace.toAbsolutePath());
+            verifyInstalledProduction(directory, trace, "restart", candidate);
             server = new ProcessBuilder(restartCommand).directory(directory.toFile()).redirectErrorStream(true)
                 .redirectOutput(ProcessBuilder.Redirect.appendTo(restartLog.toFile())).start();
             waitForReady(context, server, restartLog);
@@ -293,6 +295,23 @@ public final class Stage4ClientTraceTest implements FabricClientGameTest {
         }
     }
 
+    private static void verifyInstalledProduction(Path directory, Path trace, String phase,
+                                                  boolean candidate) throws IOException {
+        String frozen = "017EE8ED612D238894FFA5A1DC019BA8B0E31124B0B5171D08CC0D8993C1B534";
+        String expected = System.getProperty("phoenium.stage4.expectedProductionSha256", "");
+        Path installed = directory.resolve("mods/phoenium-0.2.0-stage2.jar");
+        String actual = sha256(installed);
+        boolean pass = expected.matches("[0-9A-F]{64}") && expected.equals(actual)
+            && (candidate ? !actual.equals(frozen) : actual.equals(frozen));
+        Files.writeString(trace.resolveSibling("production-identity-" + phase + ".json"),
+            "{\"phase\":" + jsonString(phase) + ",\"candidate\":" + candidate
+                + ",\"expectedSha256\":" + jsonString(expected) + ",\"installedSha256\":"
+                + jsonString(actual) + ",\"installed\":" + jsonString(installed.toAbsolutePath().toString())
+                + ",\"pass\":" + pass + "}\n", StandardOpenOption.CREATE_NEW);
+        if (!pass) throw new IllegalStateException("Stage 4 production identity rejected before " + phase
+            + " server startup: expected=" + expected + " installed=" + actual + " candidate=" + candidate);
+    }
+
     private static void waitForClientFull(ClientGameTestContext context, int timeoutTicks) {
         int radius = clientSimulationDistance();
         context.waitFor(client -> {
@@ -305,8 +324,10 @@ public final class Stage4ClientTraceTest implements FabricClientGameTest {
         }, timeoutTicks);
     }
 
-    private static void waitForClientChunks(ClientGameTestContext context, int[][] chunks, int timeoutTicks) {
+    private static void waitForClientChunks(ClientGameTestContext context, Process server, Path log,
+                                             int[][] chunks, int timeoutTicks) {
         for (int tick = 0; tick < timeoutTicks; tick++) {
+            requireHealthyServer(server, log);
             boolean applied = context.computeOnClient(client -> {
                 if (client.level == null) return false;
                 for (int[] chunk : chunks) {
@@ -352,7 +373,7 @@ public final class Stage4ClientTraceTest implements FabricClientGameTest {
             START_TIMEOUT_TICKS, null);
         command(server, "tp " + USER + " " + x + ".5 " + y + " " + z + ".5");
         nudgeAfterTeleport(context);
-        waitForClientChunks(context, expectedChunks, START_TIMEOUT_TICKS);
+        waitForClientChunks(context, server, log, expectedChunks, START_TIMEOUT_TICKS);
         long completedOffset = logSize(log);
         command(server, "stage4trace complete-teleport");
         awaitLogAfter(context, server, log, "STAGE4_TRACE_TELEPORT_TOPOLOGY_COMPLETED", completedOffset,
@@ -443,6 +464,7 @@ public final class Stage4ClientTraceTest implements FabricClientGameTest {
 
     private static void awaitLog(ClientGameTestContext context, Process server, Path log, String token, int timeoutTicks) {
         for (int tick = 0; tick < timeoutTicks; tick++) {
+            requireHealthyServer(server, log);
             if (!server.isAlive()) throw new AssertionError("server exited before barrier " + token + ": " + read(log));
             if (read(log).contains(token)) return;
             context.waitTick();
@@ -458,6 +480,7 @@ public final class Stage4ClientTraceTest implements FabricClientGameTest {
     private static void awaitLogAfter(ClientGameTestContext context, Process server, Path log,
                                       String token, long offset, int timeoutTicks, String required) {
         for (int tick = 0; tick < timeoutTicks; tick++) {
+            requireHealthyServer(server, log);
             if (!server.isAlive()) throw new AssertionError("server exited before barrier " + token + ": " + read(log));
             String contents = read(log);
             int begin = (int) Math.min(offset, contents.length());
@@ -466,6 +489,13 @@ public final class Stage4ClientTraceTest implements FabricClientGameTest {
             context.waitTick();
         }
         throw new AssertionError("server did not reach fresh barrier " + token + " required=" + required + ": " + log);
+    }
+
+    private static void requireHealthyServer(Process server, Path log) {
+        String contents = read(log);
+        if (!server.isAlive() || contents.contains("live tick failure; simulation remains fenced")
+                || contents.contains("Encountered an unexpected exception"))
+            throw new AssertionError("server failed during Stage 4 workload; evidence=" + log);
     }
 
     private static String read(Path path) {

@@ -56,6 +56,32 @@ def stage3ServerBase = file('.stage2-server-live1').exists()
         ? file('.stage2-server-live1')
         : file('../Phoenium-full-luna/.stage2-server-live1')
 
+def stage4FrozenSha256 = '017EE8ED612D238894FFA5A1DC019BA8B0E31124B0B5171D08CC0D8993C1B534'
+def stage4Sha256 = { File source ->
+    if (!source.isFile()) throw new GradleException("Missing production artifact: ${source}")
+    def digest = java.security.MessageDigest.getInstance('SHA-256')
+    source.withInputStream { input ->
+        byte[] buffer = new byte[1024 * 1024]
+        int count
+        while ((count = input.read(buffer)) >= 0) if (count > 0) digest.update(buffer, 0, count)
+    }
+    digest.digest().encodeHex().toString().toUpperCase(java.util.Locale.ROOT)
+}
+def stage4SelectedProduction = providers.provider {
+    boolean reference = providers.gradleProperty('stage4Reference').orElse('false').get().toBoolean()
+    def frozen = providers.gradleProperty('stage4ReferenceProduction').orNull
+    if (reference != (frozen != null))
+        throw new GradleException('Reference mode requires stage4Reference=true AND stage4ReferenceProduction; candidate mode allows neither reference input.')
+    reference ? file(frozen) : tasks.named('jar').get().archiveFile.get().asFile
+}
+def stage4ExpectedSha256 = {
+    def actual = stage4Sha256(stage4SelectedProduction.get())
+    if (providers.gradleProperty('stage4Reference').orElse('false').get().toBoolean()
+            && actual != stage4FrozenSha256)
+        throw new GradleException("Frozen Stage 3 source hash mismatch: expected ${stage4FrozenSha256}, got ${actual}")
+    actual
+}
+
 tasks.register('prepareStage3ClientServer', Sync) {
     description = 'Prepare an ignored, disposable external Fabric server for Stage 3 client evidence.'
     group = 'verification'
@@ -88,25 +114,26 @@ tasks.register('prepareStage4ClientServer', Sync) {
     inputs.property('stage4ServerDirectory', serverDirectory)
     inputs.property('stage4ReferenceProduction', providers.gradleProperty('stage4ReferenceProduction').orElse(''))
     into serverDirectory.map { file(it) }
-    from(tasks.named('prepareStage3ClientServer'))
+    from(tasks.named('prepareStage3ClientServer')) { exclude 'mods/phoenium-*.jar' }
+    from(stage4SelectedProduction) {
+        into 'mods'
+        rename { 'phoenium-0.2.0-stage2.jar' }
+    }
     from(tasks.named('stage4AcceptanceHarness')) { into 'mods' }
+    doFirst { stage4ExpectedSha256() }
 }
 
-// Reference campaigns replace only the production mod in the disposable
-// prepared server. The shared test-only probe is retained for both modes.
-tasks.named('prepareStage4ClientServer') {
+// Verify even when Sync was up to date, before the client and both child servers launch.
+tasks.register('verifyStage4ClientServerProduction') {
+    dependsOn tasks.named('prepareStage4ClientServer')
     doLast {
-        def frozen = project.findProperty('stage4ReferenceProduction')
-        if (frozen != null) {
-            def targetDirectory = project.providers.gradleProperty('stage4ServerDirectory')
-                    .orElse(project.layout.buildDirectory.dir('stage4-client-server')
-                    .map { it.asFile.absolutePath }).get()
-            copy {
-                from(file(frozen.toString()))
-                into(project.file(targetDirectory).toPath().resolve('mods').toFile())
-                rename { 'phoenium-0.2.0-stage2.jar' }
-            }
-        }
+        def targetDirectory = providers.gradleProperty('stage4ServerDirectory')
+                .orElse(layout.buildDirectory.dir('stage4-client-server').map { it.asFile.absolutePath }).get()
+        def installed = file(targetDirectory).toPath().resolve('mods/phoenium-0.2.0-stage2.jar').toFile()
+        def expected = stage4ExpectedSha256()
+        def actual = stage4Sha256(installed)
+        if (actual != expected) throw new GradleException("Installed Stage 4 production mismatch: expected ${expected}, got ${actual}")
+        logger.lifecycle("STAGE4_PRODUCTION_VERIFIED sha256=${actual} installed=${installed.absolutePath}")
     }
 }
 
@@ -204,7 +231,7 @@ loom {
                     .orElse(layout.buildDirectory.dir('stage4-client-server')
                     .map { it.asFile.absolutePath }).get()
             property 'phoenium.stage4.runId', stage4RunId
-            property 'phoenium.test.serverDirectory', stage4ServerDirectory
+            property 'phoenium.test.serverDirectory', file(stage4ServerDirectory).absolutePath
             property 'phoenium.stage4.tracePath',
                     file(stage4EvidenceDir).toPath().resolve('STAGE4-CLIENT-trace.json').toFile().absolutePath
             property 'phoenium.client.gametest.evidence',
@@ -306,7 +333,8 @@ tasks.named('runStage3ClientGameTest') {
 }
 
 tasks.named('runStage4ClientGameTest') {
-    dependsOn tasks.named('prepareStage4ClientServer')
+    dependsOn tasks.named('verifyStage4ClientServerProduction')
+    doFirst { systemProperty 'phoenium.stage4.expectedProductionSha256', stage4ExpectedSha256() }
 }
 
 tasks.named('runStage3ChunkTrace') {

@@ -422,7 +422,11 @@ public final class RegionalChunkGameplayService {
             published.position(), candidate.fact().spectator());
     }
     private void requireEntity(FullEntityFacts.Candidate candidate, RoutingKey key) {
-        var binding = objects.current(candidate.fact().uuid().toString()).orElseThrow();
+        String objectId = candidate.fact().uuid().toString();
+        var binding = objects.current(objectId).orElseThrow(() -> new IllegalStateException(
+            "spawn-state candidate lacks regional lifecycle ownership id=" + objectId
+                + " runtimeId=" + candidate.fact().runtimeId() + " type=" + candidate.fact().type()
+                + " route=" + key.x() + "," + key.z()));
         objects.requireCurrentOwner(binding.objectId(), binding.objectEpoch(), directory.resolve(key).orElseThrow().region());
         dispatcher.requireCurrentOwner(key);
         if (!finishing.entityFacts.validTrackingCandidate(candidate))

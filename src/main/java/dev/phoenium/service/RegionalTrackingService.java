@@ -330,6 +330,7 @@ public final class RegionalTrackingService {
             List<Entry> currentEntries;
             synchronized (this) { currentEntries = index.values(); }
             for (Entry entry : currentEntries) {
+                refreshCandidate(entry);
                 if (candidateChunk(entry.key, maximumTrackingRange, sourceKey)) {
                     selectedTrackers.add(entry.tracker);
                     footprint.addAll(publishedRange(entry.candidate).footprint);
@@ -410,8 +411,11 @@ public final class RegionalTrackingService {
         Set<Object> selectedTrackers = java.util.Collections.newSetFromMap(new IdentityHashMap<>());
         if (entity instanceof ServerPlayer player) {
             PlayerReceipt removedPlayer = requirePlayer(players, player);
-            for (Entry entry : entries) if (entry.seenConnections.contains(removedPlayer.session.listener())) {
-                selectedTrackers.add(entry.tracker); footprint.addAll(publishedRange(entry.candidate).footprint);
+            for (Entry entry : entries) {
+                refreshCandidate(entry);
+                if (entry.seenConnections.contains(removedPlayer.session.listener())) {
+                    selectedTrackers.add(entry.tracker); footprint.addAll(publishedRange(entry.candidate).footprint);
+                }
             }
         }
         if (OwnershipContext.current().isPresent()) dispatcher.requireCurrentClosure(footprint);
@@ -463,6 +467,7 @@ public final class RegionalTrackingService {
         Set<ServerPlayer> selectedPlayers = java.util.Collections.newSetFromMap(new IdentityHashMap<>());
         Object playerTracker = null;
         for (Entry entry : entries) {
+            refreshCandidate(entry);
             if (entry.entity == player) {
                 synchronized (this) {
                     entry.candidate = moving.candidate;
@@ -576,6 +581,16 @@ public final class RegionalTrackingService {
             result.put(session.player(), new PlayerReceipt(session, candidate, key(candidate)));
         }
         return result;
+    }
+    private void refreshCandidate(Entry entry) {
+        FullEntityFacts.Candidate current = finishing.entityFacts.refreshTrackingCandidate(entry.candidate);
+        RoutingKey key = key(current);
+        synchronized (this) {
+            entry.candidate = current;
+            entry.key = key;
+            entry.owner = route(key).region();
+            index.update(entry.id, key, entry.owner);
+        }
     }
     private void refreshProjection(Entry entry) {
         entry.effectiveRange = publishedRange(entry.candidate).effectiveRange;

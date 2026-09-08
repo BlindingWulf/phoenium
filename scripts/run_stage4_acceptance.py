@@ -380,7 +380,7 @@ def copy_server(source, target, production, probe, extras):
     for item in (source / "mods").iterdir():
         if item.suffix == ".jar" and not item.name.startswith(("phoenium-", "full-live-probe", "stage4-acceptance")):
             shutil.copy2(item, mods / item.name)
-    shutil.copy2(production, mods / production.name)
+    shutil.copy2(production, mods / "phoenium-0.2.0-stage2.jar")
     shutil.copy2(probe, mods / "stage4-acceptance-probe.jar")
     for extra in extras:
         shutil.copy2(extra, mods / extra.name)
@@ -430,12 +430,29 @@ def capture_thread_dump(server, process, label):
     return str(output)
 
 
-def run_process(server, trace_path=None, drive=False, explicit_topology=False, topology_lifecycle=False):
+FROZEN_PRODUCTION_SHA256 = "017EE8ED612D238894FFA5A1DC019BA8B0E31124B0B5171D08CC0D8993C1B534"
+
+
+def verify_production(server, expected_sha256, reference, phase):
+    installed = server / "mods" / "phoenium-0.2.0-stage2.jar"
+    actual = sha256(installed)
+    passed = actual == expected_sha256 and (
+        actual == FROZEN_PRODUCTION_SHA256 if reference else actual != FROZEN_PRODUCTION_SHA256)
+    receipt = {"phase": phase, "reference": reference, "expectedSha256": expected_sha256,
+               "installedSha256": actual, "installed": str(installed.resolve()), "pass": passed}
+    with (server / f"production-identity-{phase}.json").open("x", encoding="utf-8") as output:
+        json.dump(receipt, output, indent=2)
+    if not passed:
+        raise RuntimeError(f"Production artifact rejected before {phase} startup: {receipt}")
+
+
+def run_process(server, trace_path=None, drive=False, explicit_topology=False, topology_lifecycle=False,
+                expected_sha256=None, reference=False):
     java = Path(os.environ.get("JAVA_HOME", "")) / "bin" / ("java.exe" if os.name == "nt" else "java")
     if not java.exists():
         java = Path(shutil.which("java") or "java")
     properties = ["-Xmx2G", "-Dphoenium.test.diagnostics=true",
-                  "-Dphoenium.stage4.candidate=" + str(bool(explicit_topology)).lower()]
+                  "-Dphoenium.stage4.candidate=" + str(not reference).lower()]
     if not drive:
         # Restart must enter the native frozen clock before the first ordinary world tick.  The
         # test-only probe observes this property at SERVER_STARTED, before the saved future
@@ -475,6 +492,7 @@ def run_process(server, trace_path=None, drive=False, explicit_topology=False, t
         peak_rss = rss if peak_rss is None else max(peak_rss, rss)
 
     with log_path.open("w", encoding="utf-8") as log:
+        verify_production(server, expected_sha256, reference, "first" if drive else "restart")
         process = subprocess.Popen(command, cwd=server, stdin=subprocess.PIPE,
                                    stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                                    text=True, bufsize=1)
@@ -626,6 +644,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--prepared", type=Path, required=True)
     parser.add_argument("--production", type=Path, required=True)
+    parser.add_argument("--reference", action="store_true", help="require the exact frozen Stage 3 production hash")
     parser.add_argument("--probe", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--extra-mod", action="append", type=Path, default=[])
@@ -647,6 +666,9 @@ def main():
     for path in (args.prepared, args.production, args.probe):
         if not path.exists():
             raise SystemExit(f"missing input: {path}")
+    expected_sha256 = sha256(args.production)
+    if args.reference and expected_sha256 != FROZEN_PRODUCTION_SHA256:
+        raise SystemExit(f"Frozen reference source hash mismatch: {expected_sha256}")
     args.output.mkdir(parents=True)
     server = args.output / "server"
     copy_server(args.prepared, server, args.production, args.probe, args.extra_mod)
@@ -663,7 +685,8 @@ def main():
         shutil.copytree(args.world_source, server / args.world)
     trace = args.output / "trace.json"
     first = run_process(server, trace, drive=True, explicit_topology=args.explicit_topology,
-                        topology_lifecycle=args.topology_lifecycle)
+                        topology_lifecycle=args.topology_lifecycle,
+                        expected_sha256=expected_sha256, reference=args.reference)
     world = server / args.world
     mca_snapshot = args.output / "pre-restart-world"
     snapshot_files = snapshot_mca(world, mca_snapshot)
@@ -674,7 +697,8 @@ def main():
     pending = pending_tick_readback(before_restart, expected_tick)
     (args.output / "pending-tick-readback.json").write_text(json.dumps(pending, indent=2) + "\n", encoding="utf-8")
     second = run_process(server, drive=False, explicit_topology=args.explicit_topology,
-                         topology_lifecycle=args.topology_lifecycle)
+                         topology_lifecycle=args.topology_lifecycle,
+                         expected_sha256=expected_sha256, reference=args.reference)
     try:
         trace_report = json.loads(trace.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):

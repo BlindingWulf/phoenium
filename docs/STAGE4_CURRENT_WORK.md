@@ -1,3 +1,43 @@
+# Stage 4 finishing session — sole main-checkout owner
+
+Stage 4 remains **PARTIAL**, Stage 5 OFF, one gameplay worker, parallel gameplay OFF.
+This section supersedes the historical worker assignments and next-step instructions below.
+The session began from clean `2b3080b`; all newer work is preserved. No agents are running.
+
+- Repaired entity lifecycle publication at native `ServerLevel$EntityCallbacks.onTrackingStart`
+  HEAD, after `EntityLookup.add` and before original tracker registration. Chunk-loaded and
+  world-generation entities no longer bypass ownership publication. Exact native target tests pass.
+- Candidate `B49929D25177C4F5714506D4D0863095FDA12A67DFE21EEDC4195D3067E89247`
+  passed the former spawn-state failure and B FULL in `run/stage4/finish-candidate-5-b`.
+  It then exposed `tracking vehicle relation source became stale` in `ChunkMap.move`.
+  This is preserved production failure evidence, not a healthy run.
+- Repaired tracker selection at the existing add/move/remove callbacks to refresh current
+  owner-published routes while retaining exact entity identity/incarnation. Native movement and
+  replacement rejection regression included. Focused suite: 26 tests, 6 suites, zero failures.
+- Last built production: `FA0EA80AA37483D9A92C977C494704468A1597BFF6562EC8D91F5E3FA565E5E4`.
+  Installed acceptance of this repair is next; it is not yet the final artifact.
+- Gradle Sync now selects one production input directly. The former nested copy action is gone.
+  Pre-client and pre-server/restart checks require installed==selected SHA; reference additionally
+  requires frozen `017EE8ED...B534`, and candidate rejects that frozen hash. Each child startup
+  writes an immutable phase identity JSON before ProcessBuilder. Python runner has the same gate.
+- First local attempt `finish-candidate-5-a` rejected before server startup because the existing
+  harness interpreted a relative server directory against the client working directory. Gradle
+  now passes the absolute directory. This was harness evidence only.
+- Client waits now fail promptly on the actual server failure barrier, preserving diagnostic dumps.
+
+Resume candidate command (use a fresh run ID/directory for each attempt):
+
+```powershell
+.\gradlew.bat runStage4ClientGameTest -Pstage4RunId=finish-candidate-5-c -Pstage4ServerDirectory=run/stage4/finish-candidate-5-c -Pstage4EvidenceDir=run/stage4/finish-candidate-5-c/evidence -Pstage4ViewDistance=5 -Pstage4SimulationDistance=5 -Pstage4PacketTrace=true --no-daemon --console=plain
+```
+
+Remaining: candidate connected failures; trustworthy frozen selection negative/positive checks;
+shared 5/5 and 8/8 reference/candidate workloads, exact immutable MCA/restart validation,
+comparison, final complete suite, same-artifact installed FULL/affected Stage 3 regressions,
+adverse shutdown, packaging and terminal-state audit. Do not freeze until these pass.
+
+---
+
 # Stage 4 current execution — 2026-09-08
 
 **PARTIAL.** Historical Stage 3 is **STAGE3_SERIAL_CORRECTNESS_FROZEN** within

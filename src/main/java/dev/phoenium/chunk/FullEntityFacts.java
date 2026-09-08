@@ -311,6 +311,23 @@ public final class FullEntityFacts {
         relationRevisions.remove(entity);
     }
 
+    /** Refreshes a retained tracker's published route without admitting a new entity lifetime.
+     * Original entity movement may publish after the previous tracker cycle and before a player
+     * insertion/movement/removal callback. The old position is not a current selection receipt. */
+    public Candidate refreshTrackingCandidate(Candidate retained) {
+        Objects.requireNonNull(retained, "retained");
+        FullFinishingServices.requireWorld(retained.fact.world, FullFinishingServices.Kind.ENTITY_REGISTRY);
+        candidateMetadata.lock();
+        try {
+            Candidate current = candidateLocked(retained.fact.world, retained.alias, "retained tracker");
+            if (current.fact.incarnation != retained.fact.incarnation
+                    || current.fact.runtimeId != retained.fact.runtimeId
+                    || !current.fact.uuid.equals(retained.fact.uuid))
+                throw new ChunkProtocolException("retained tracker entity lifetime changed");
+            return current;
+        } finally { candidateMetadata.unlock(); }
+    }
+
     public List<Candidate> trackingPassengers(Candidate vehicle) {
         Objects.requireNonNull(vehicle, "vehicle");
         FullFinishingServices.requireWorld(vehicle.fact.world, FullFinishingServices.Kind.ENTITY_REGISTRY);
