@@ -296,6 +296,21 @@ tasks.register('fullAcceptanceHarness', Jar) {
         it.name.startsWith('junit-') || it.name.startsWith('opentest4j-') || it.name.startsWith('apiguardian-')
     }.collect { zipTree(it) } }) { exclude 'META-INF/**', 'module-info.class' }
 }
+
+// Disposable Stage 4 installed-service trace harness. It is intentionally a
+// separate artifact so adding its probes cannot alter the frozen FULL probe.
+tasks.register('stage4AcceptanceHarness', Jar) {
+    description = 'Build the disposable Stage 4 scheduled-tick/event/tracking/save trace harness.'
+    dependsOn tasks.named('compileTestJava')
+    archiveFileName = 'stage4-acceptance-probe.jar'
+    destinationDirectory = layout.buildDirectory.dir('test-harness')
+    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+    from(sourceSets.test.output.classesDirs) {
+        include 'dev/phoenium/stage4/**'
+        include 'dev/phoenium/stage4probe/**'
+    }
+    from('src/stage4AcceptanceHarness/resources')
+}
 tasks.register('prepareFullAcceptanceServer', Copy) {
     dependsOn tasks.named('prepareStage3ClientServer'), tasks.named('fullAcceptanceHarness')
     from(tasks.named('fullAcceptanceHarness'))

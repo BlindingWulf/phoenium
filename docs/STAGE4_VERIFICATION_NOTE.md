@@ -107,3 +107,34 @@ live campaign was started for this baseline.
 * `historical-hash-checks.json`: frozen artifacts and key historical manifest/
   log checks, all matching.
 
+## Installed fixture extension
+
+The test-only `stage4AcceptanceHarness` task builds
+`build/test-harness/stage4-acceptance-probe.jar`. Its disposable Fabric
+entrypoint drives two explicit regions (A `(70,65,8)`, chunk `(4,0)`; B
+`(85,65,8)`, chunk `(5,0)`) at seed `444444`, view/simulation `8/8`. The fixture
+uses registered vanilla note blocks and water, records the real scheduled tick
+producer/consumer callbacks, nested block-event enqueue/dispatch, entity
+pair/remove hooks, actual save hooks, and normal stop. Forced chunk tickets keep
+both regions active while the test runs. `scripts/run_stage4_acceptance.py`
+copies a prepared server into a fresh output directory, installs the selected
+JARs, drives `stage4trace run`, `save-all flush`, `stage4trace finish`, and
+`stop`, inspects region-file chunk records before a restart, then starts and
+stops the same world again. The runner defaults to no explicit Stage 3 topology
+property because that startup path can stall while preparing a fresh spawn;
+future integrated runs should set the topology mode required by the candidate.
+
+The frozen Stage 3 production JAR produced a deterministic ordered reference
+trace at `run/stage4/acceptance-reference-20260908-0645/` with 35 fixture
+events, including block ticks in A/B, three fluid callbacks, deduplicated
+schedule input, one long lived pending block tick, nested event dispatch, three
+save pairs, and normal stop. Both first and restart processes exited 0; four MCA
+region files containing 802 chunk records were inspected before restart, with
+the chunk NBT tick tags present. The restart verification command observed the
+fixture blocks and water state after reload. With no client connected, tracking
+pair/remove remains the only expected missing acceptance marker, so the report
+is `PARTIAL`. `scripts/compare_stage4_trace.py` normalizes only run-specific
+clock values and object identities, retaining event order and all meaningful
+payload fields; comparing the reference against an independent repeat produced
+identical 35-event digests and correctly retained `PARTIAL` because tracking
+was not exercised.

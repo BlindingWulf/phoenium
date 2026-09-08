@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  "id": "phoenium-stage4-acceptance",
+  "version": "1.0.0",
+  "name": "Disposable Stage 4 regional service trace",
+  "environment": "server",
+  "entrypoints": { "server": ["dev.phoenium.stage4probe.Stage4AcceptanceProbe"] },
+  "mixins": ["stage4-acceptance.mixins.json"],
+  "depends": { "phoenium": "*", "fabric-command-api-v2": "*" }
+}
