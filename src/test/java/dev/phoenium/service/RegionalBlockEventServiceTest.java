@@ -46,18 +46,22 @@ final class RegionalBlockEventServiceTest {
     @Test
     void ineligibleEventsMoveBehindNestedAndPreserveDedup() {
         Fixture f = new Fixture();
-        Event deferred = new Event("deferred", new BlockPos(0, 64, 0));
-        Event run = new Event("run", new BlockPos(160, 64, 0));
+        Event deferred = new Event("deferred", new BlockPos(160, 64, 0));
+        Event equalNested = new Event("deferred", new BlockPos(160, 64, 0));
+        Event run = new Event("run", new BlockPos(161, 64, 0));
         f.enqueue(deferred);
         f.enqueue(run);
         var seen = new java.util.ArrayList<String>();
-        f.service.runCycle(event -> event != deferred, event -> seen.add(event.name()));
+        f.service.runCycle(event -> event != deferred, event -> {
+            seen.add(event.name());
+            if (event == run) assertTrue(f.service.enqueue(equalNested));
+        });
 
-        assertEquals(List.of("run"), seen);
+        assertEquals(List.of("run", "deferred"), seen);
         assertEquals(1, f.service.measurements().pending());
         assertFalse(f.enqueue(deferred));
         f.service.runCycle(event -> true, event -> seen.add(event.name()));
-        assertEquals(List.of("run", "deferred"), seen);
+        assertEquals(List.of("run", "deferred", "deferred"), seen);
     }
 
     @Test
@@ -66,9 +70,10 @@ final class RegionalBlockEventServiceTest {
         Event event = new Event("move", new BlockPos(0, 64, 0));
         f.enqueue(event);
         TopologyGeneration next = f.directory.snapshot().generation().next();
-        f.directory.publish(next, Map.of(
-            f.aKey, new RegionRoute(f.bId, next, f.b.ownerEpoch()),
-            f.bKey, new RegionRoute(f.bId, next, f.b.ownerEpoch())));
+        Map<RoutingKey, RegionRoute> movedRoutes = new LinkedHashMap<>();
+        f.directory.snapshot().routes().keySet().forEach(key ->
+            movedRoutes.put(key, new RegionRoute(f.bId, next, f.b.ownerEpoch())));
+        f.directory.publish(next, movedRoutes);
         var plan = f.service.planMigration(f.directory.snapshot());
         f.service.installMigration(plan, f.directory.snapshot());
         var owners = new java.util.ArrayList<RegionId>();
@@ -98,13 +103,30 @@ final class RegionalBlockEventServiceTest {
         final RegionalServiceDispatcher dispatcher;
         final RegionalBlockEventService<Event> service;
         Fixture() {
-            directory.publish(new TopologyGeneration(1), Map.of(
-                aKey, new RegionRoute(aId, new TopologyGeneration(1), a.ownerEpoch()),
-                bKey, new RegionRoute(bId, new TopologyGeneration(1), b.ownerEpoch())));
+            TopologyGeneration generation = new TopologyGeneration(1);
+            Map<RoutingKey, RegionRoute> routes = new LinkedHashMap<>();
+            halo(routes, aKey, new RegionRoute(aId, generation, a.ownerEpoch()));
+            halo(routes, bKey, new RegionRoute(bId, generation, b.ownerEpoch()));
+            directory.publish(generation, routes);
             scheduler = new RegionScheduler(runtimes, directory, barrier);
             gateway = new OwnerGateway(directory, runtimes, scheduler);
             dispatcher = new RegionalServiceDispatcher("events", 1, directory, runtimes, gateway, scheduler);
+            dispatcher.installClosureEncloser(this::enclosed);
             service = new RegionalBlockEventService<>(world, directory, dispatcher, Event::pos);
+        }
+        boolean enclosed(java.util.Set<RoutingKey> keys) {
+            RegionId owner = null;
+            for (RoutingKey key : keys) {
+                RegionRoute route = directory.resolve(key).orElse(null);
+                if (route == null) return false;
+                if (owner == null) owner = route.region(); else if (!owner.equals(route.region())) return false;
+            }
+            return true;
+        }
+        static void halo(Map<RoutingKey, RegionRoute> routes, RoutingKey center, RegionRoute route) {
+            for (int x = center.x() - 1; x <= center.x() + 1; x++)
+                for (int z = center.z() - 1; z <= center.z() + 1; z++)
+                    routes.put(new RoutingKey(center.world(), x, z), route);
         }
         boolean enqueue(Event event) {
             boolean[] result = {false};

@@ -102,6 +102,9 @@ public final class LiveTickPhaseBoundary {
         chunk.instructions.insertBefore(copied, new VarInsnNode(Opcodes.ALOAD, cacheState));
         chunk.instructions.set(copied, new MethodInsnNode(Opcodes.INVOKESTATIC, PHASES, "finishCache",
                 "(L" + CACHE + ";" + BOOL + "ZL" + CACHE_STATE + ";)V", false));
+        chunk.instructions.add(new VarInsnNode(Opcodes.ALOAD, chunkState));
+        chunk.instructions.add(new VarInsnNode(Opcodes.ALOAD, 0));
+        chunk.instructions.add(new MethodInsnNode(Opcodes.INVOKEVIRTUAL, LEVEL_STATE, "finishChunk", "(L" + LEVEL + ";)V", false));
         chunk.instructions.add(new InsnNode(Opcodes.RETURN));
         chunk.maxLocals = cacheState + 1;
 
@@ -131,24 +134,52 @@ public final class LiveTickPhaseBoundary {
         int boundary = original.instructions.indexOf(pop) + 1;
         require(original.instructions.indexOf(unique(original, "net/minecraft/world/level/TicketStorage", "purgeStaleTickets", "(Lnet/minecraft/server/level/ChunkMap;)V")) < boundary,
                 "ticket-purge prefix moved");
-        require(original.instructions.indexOf(unique(original, CACHE, "tickChunks", "()V")) > boundary,
+        MethodInsnNode chunkGameplay = unique(original, CACHE, "tickChunks", "()V");
+        MethodInsnNode tracking = unique(original, "net/minecraft/server/level/ChunkMap", "tick", "()V");
+        require(original.instructions.indexOf(chunkGameplay) > boundary,
                 "chunk gameplay moved into readiness");
+        int maintenanceBoundary = boundaryAtConstant(original, "unload");
+        require(original.instructions.indexOf(chunkGameplay) < original.instructions.indexOf(tracking)
+                && original.instructions.indexOf(tracking) < maintenanceBoundary, "chunk tracking/maintenance order changed");
         checkCut(original, boundary, Set.of(0, 1, 2, 3));
+        checkCut(original, maintenanceBoundary, Set.of(0, 1, 2, 3));
         MethodNode before = portion(original, "phoenium$prepareChunkTick", "(" + BOOL + "Z)L" + CACHE_STATE + ";", 0, boundary);
         before.instructions.add(new TypeInsnNode(Opcodes.NEW, CACHE_STATE)); before.instructions.add(new InsnNode(Opcodes.DUP));
         before.instructions.add(new VarInsnNode(Opcodes.ALOAD, 0)); before.instructions.add(new VarInsnNode(Opcodes.ALOAD, 1));
         before.instructions.add(new VarInsnNode(Opcodes.ILOAD, 2)); before.instructions.add(new VarInsnNode(Opcodes.ALOAD, 3));
         before.instructions.add(new MethodInsnNode(Opcodes.INVOKESPECIAL, CACHE_STATE, "<init>", "(L" + CACHE + ";" + BOOL + "Z" + PROFILER + ")V", false));
         before.instructions.add(new InsnNode(Opcodes.ARETURN));
-        MethodNode after = portion(original, "phoenium$finishChunkTick", "(L" + CACHE_STATE + ";)V", boundary, original.instructions.size());
+        MethodNode after = portion(original, "phoenium$finishChunkTick", "(L" + CACHE_STATE + ";)V", boundary, maintenanceBoundary);
         int state = original.maxLocals;
-        InsnList locals = new InsnList(); locals.add(new VarInsnNode(Opcodes.ALOAD, 1)); locals.add(new VarInsnNode(Opcodes.ASTORE, state));
-        consume(locals, CACHE_STATE, CACHE, state);
-        restore(locals, CACHE_STATE, state, "haveTime", BOOL, 1, Opcodes.ASTORE);
-        restore(locals, CACHE_STATE, state, "tickChunks", "Z", 2, Opcodes.ISTORE);
-        restore(locals, CACHE_STATE, state, "profiler", PROFILER, 3, Opcodes.ASTORE);
-        after.instructions.insert(locals); after.maxLocals = state + 1;
-        node.interfaces.add(PHASES + "$CacheAccess"); node.methods.add(before); node.methods.add(after);
+        after.instructions.insert(cacheLocals(state, "beginGameplay"));
+        MethodInsnNode copiedTracking = unique(after, "net/minecraft/server/level/ChunkMap", "tick", "()V");
+        AbstractInsnNode trackingField = previous(copiedTracking), trackingReceiver = previous(trackingField);
+        require(trackingField instanceof FieldInsnNode field && field.owner.equals(CACHE) && field.name.equals("chunkMap")
+                && variable(trackingReceiver, Opcodes.ALOAD, 0), "chunk tracking receiver changed");
+        after.instructions.remove(trackingReceiver); after.instructions.remove(trackingField); after.instructions.remove(copiedTracking);
+        cachePhaseEnd(after.instructions, state, "finishGameplay");
+        after.maxLocals = state + 1;
+        retainLocalAcrossFrames(after, state, CACHE_STATE);
+
+        MethodNode maintenance = portion(original, "phoenium$finishChunkMaintenance", "(L" + CACHE_STATE + ";)V",
+                maintenanceBoundary, original.instructions.size());
+        int maintenanceState = original.maxLocals;
+        InsnList maintenanceLocals = cacheLocals(maintenanceState, "beginMaintenance");
+        LabelNode noTracking = new LabelNode();
+        maintenanceLocals.add(new VarInsnNode(Opcodes.ILOAD, 2));
+        maintenanceLocals.add(new JumpInsnNode(Opcodes.IFEQ, noTracking));
+        maintenanceLocals.add(new VarInsnNode(Opcodes.ALOAD, 0));
+        maintenanceLocals.add(new FieldInsnNode(Opcodes.GETFIELD, CACHE, "chunkMap", "Lnet/minecraft/server/level/ChunkMap;"));
+        maintenanceLocals.add(new MethodInsnNode(Opcodes.INVOKEVIRTUAL, "net/minecraft/server/level/ChunkMap", "tick", "()V", false));
+        maintenanceLocals.add(noTracking);
+        maintenanceLocals.add(new FrameNode(Opcodes.F_NEW, 5,
+            new Object[] { CACHE, "java/util/function/BooleanSupplier", Opcodes.INTEGER,
+                "net/minecraft/util/profiling/ProfilerFiller", CACHE_STATE }, 0, new Object[] { }));
+        maintenance.instructions.insert(maintenanceLocals);
+        cachePhaseEnd(maintenance.instructions, maintenanceState, "finishMaintenance");
+        maintenance.maxLocals = maintenanceState + 1;
+        retainLocalAcrossFrames(maintenance, maintenanceState, CACHE_STATE);
+        node.interfaces.add(PHASES + "$CacheAccess"); node.methods.add(before); node.methods.add(after); node.methods.add(maintenance);
     }
     private static MethodNode original(ClassNode node, String descriptor) {
         require(node.methods.stream().noneMatch(method -> method.name.startsWith("phoenium$beforeScheduledTicks")
@@ -188,6 +219,21 @@ public final class LiveTickPhaseBoundary {
     private static void restore(InsnList out, String state, int local, String name, String type, int target, int opcode) {
         out.add(new VarInsnNode(Opcodes.ALOAD, local)); out.add(new MethodInsnNode(Opcodes.INVOKEVIRTUAL, state, name, "()" + type, false));
         out.add(new VarInsnNode(opcode, target));
+    }
+    private static InsnList cacheLocals(int stateLocal, String phaseMethod) {
+        InsnList locals = new InsnList();
+        locals.add(new VarInsnNode(Opcodes.ALOAD, 1)); locals.add(new VarInsnNode(Opcodes.ASTORE, stateLocal));
+        locals.add(new VarInsnNode(Opcodes.ALOAD, stateLocal)); locals.add(new VarInsnNode(Opcodes.ALOAD, 0));
+        locals.add(new MethodInsnNode(Opcodes.INVOKEVIRTUAL, CACHE_STATE, phaseMethod, "(L" + CACHE + ";)V", false));
+        restore(locals, CACHE_STATE, stateLocal, "haveTime", BOOL, 1, Opcodes.ASTORE);
+        restore(locals, CACHE_STATE, stateLocal, "tickChunks", "Z", 2, Opcodes.ISTORE);
+        restore(locals, CACHE_STATE, stateLocal, "profiler", PROFILER, 3, Opcodes.ASTORE);
+        return locals;
+    }
+    private static void cachePhaseEnd(InsnList out, int stateLocal, String phaseMethod) {
+        out.add(new VarInsnNode(Opcodes.ALOAD, stateLocal)); out.add(new VarInsnNode(Opcodes.ALOAD, 0));
+        out.add(new MethodInsnNode(Opcodes.INVOKEVIRTUAL, CACHE_STATE, phaseMethod, "(L" + CACHE + ";)V", false));
+        out.add(new InsnNode(Opcodes.RETURN));
     }
     private static InsnList levelLocals(int stateLocal, String phaseMethod) {
         InsnList locals = new InsnList();

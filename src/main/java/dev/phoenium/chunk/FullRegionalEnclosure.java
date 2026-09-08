@@ -27,6 +27,9 @@ public final class FullRegionalEnclosure {
         if (OwnershipContext.current().isPresent()) return false;
         return coordinator.advance();
     }
+    public void installStateMigration(RegionalStateMigration stateMigration) {
+        coordinator.installStateMigration(stateMigration);
+    }
     public boolean enclose(Set<RoutingKey> keys) {
         if (OwnershipContext.current().isPresent()) throw new ChunkProtocolException("FULL enclosure requested inside an owner claim");
         if (coordinator.hasPendingConvergence() || coordinator.hasPendingTransition()) { advance(); return false; }

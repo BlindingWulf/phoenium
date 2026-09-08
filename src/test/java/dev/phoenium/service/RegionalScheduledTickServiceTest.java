@@ -21,6 +21,7 @@ import java.util.Map;
 import net.minecraft.core.BlockPos;
 import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.ticks.LevelChunkTicks;
+import net.minecraft.world.ticks.LevelTicks;
 import net.minecraft.world.ticks.ScheduledTick;
 import net.minecraft.world.ticks.TickPriority;
 import org.junit.jupiter.api.Test;
@@ -46,6 +47,7 @@ final class RegionalScheduledTickServiceTest {
         service.tick(8, 65536, (pos, type) -> {
             var owner = OwnershipContext.current().orElseThrow().region();
             order.add(owner.value() + ":" + (type == early ? "early" : "normal"));
+            assertFalse(service.willTickThisTick(pos, type));
             if (type == early) assertTrue(service.willTickThisTick(b.pos(), normal));
         });
 
@@ -54,6 +56,37 @@ final class RegionalScheduledTickServiceTest {
         assertEquals(2, service.measurements().executed());
         assertFalse(f.a.leases().hasActiveLease());
         assertFalse(f.b.leases().hasActiveLease());
+    }
+
+    @Test
+    void dueSelectionMatchesPinnedLevelTicksWhenFuturePriorityWouldSortFirst() {
+        Fixture f = new Fixture();
+        var service = f.service(key -> true);
+        var oracle = new LevelTicks<Object>(key -> true);
+        var oracleA = new LevelChunkTicks<Object>();
+        var oracleB = new LevelChunkTicks<Object>();
+        oracle.addContainer(new ChunkPos(0, 0), oracleA);
+        oracle.addContainer(new ChunkPos(10, 0), oracleB);
+        Object future = new Object(), dueLow = new Object(), dueNormal = new Object();
+        var ticks = List.of(
+            tick(future, new BlockPos(0, 64, 0), 100, TickPriority.EXTREMELY_HIGH, 1),
+            tick(dueLow, new BlockPos(160, 64, 0), 5, TickPriority.LOW, 2),
+            tick(dueNormal, new BlockPos(1, 64, 0), 5, TickPriority.NORMAL, 3));
+        for (ScheduledTick<Object> tick : ticks) {
+            (ChunkPos.pack(tick.pos()) == f.aChunk ? f.aTicks : f.bTicks).schedule(tick);
+            oracle.schedule(tick);
+        }
+        service.scheduled(f.aChunk, f.aTicks);
+        service.scheduled(f.bChunk, f.bTicks);
+        var expected = new java.util.ArrayList<BlockPos>();
+        var actual = new java.util.ArrayList<BlockPos>();
+
+        oracle.tick(5, 65536, (pos, ignored) -> expected.add(pos.immutable()));
+        service.tick(5, 65536, (pos, ignored) -> actual.add(pos.immutable()));
+
+        assertEquals(expected, actual);
+        assertEquals(List.of(new BlockPos(1, 64, 0), new BlockPos(160, 64, 0)), actual);
+        assertEquals(1, f.aTicks.count());
     }
 
     @Test
@@ -104,9 +137,10 @@ final class RegionalScheduledTickServiceTest {
         f.aTicks.schedule(tick(type, new BlockPos(0, 64, 0), 5, TickPriority.NORMAL, 1));
         service.scheduled(f.aChunk, f.aTicks);
         TopologyGeneration next = f.directory.snapshot().generation().next();
-        f.directory.publish(next, Map.of(
-            f.aKey, new RegionRoute(f.bId, next, f.b.ownerEpoch()),
-            f.bKey, new RegionRoute(f.bId, next, f.b.ownerEpoch())));
+        Map<RoutingKey, RegionRoute> movedRoutes = new LinkedHashMap<>();
+        f.directory.snapshot().routes().keySet().forEach(key ->
+            movedRoutes.put(key, new RegionRoute(f.bId, next, f.b.ownerEpoch())));
+        f.directory.publish(next, movedRoutes);
 
         var plan = service.planMigration(f.directory.snapshot());
         service.installMigration(plan, f.directory.snapshot());
@@ -116,6 +150,22 @@ final class RegionalScheduledTickServiceTest {
         assertEquals(List.of(f.bId), owners);
         assertEquals(1, service.measurements().migratedContainers());
         assertEquals(1, service.measurements().ownerPartitions());
+    }
+
+    @Test
+    void producerMutationRequiresTheCurrentChunkOwnerBeforeContainerWrite() {
+        Fixture f = new Fixture();
+        var service = f.service(key -> true);
+        var tick = tick(new Object(), new BlockPos(0, 64, 0), 1, TickPriority.NORMAL, 1);
+
+        assertThrows(IllegalStateException.class, () -> service.requireScheduleOwner(f.aChunk, f.aTicks));
+        f.dispatcher.executeAndDrain(f.aKey, RegionalServiceKind.RUN_SCHEDULED_BLOCK_TICK, ignored -> {
+            service.requireScheduleOwner(f.aChunk, f.aTicks);
+            f.aTicks.schedule(tick);
+            assertThrows(IllegalStateException.class, () -> service.requireScheduleOwner(f.bChunk, f.bTicks));
+        });
+
+        assertEquals(1, f.aTicks.count());
     }
 
     private static ScheduledTick<Object> tick(Object type, BlockPos pos, long time, TickPriority priority, long subTick) {
@@ -141,12 +191,29 @@ final class RegionalScheduledTickServiceTest {
         final OwnerGateway gateway;
         final RegionalServiceDispatcher dispatcher;
         Fixture() {
-            directory.publish(new TopologyGeneration(1), Map.of(
-                aKey, new RegionRoute(aId, new TopologyGeneration(1), a.ownerEpoch()),
-                bKey, new RegionRoute(bId, new TopologyGeneration(1), b.ownerEpoch())));
+            TopologyGeneration generation = new TopologyGeneration(1);
+            Map<RoutingKey, RegionRoute> routes = new LinkedHashMap<>();
+            halo(routes, aKey, new RegionRoute(aId, generation, a.ownerEpoch()));
+            halo(routes, bKey, new RegionRoute(bId, generation, b.ownerEpoch()));
+            directory.publish(generation, routes);
             scheduler = new RegionScheduler(runtimes, directory, barrier);
             gateway = new OwnerGateway(directory, runtimes, scheduler);
             dispatcher = new RegionalServiceDispatcher("ticks", 1, directory, runtimes, gateway, scheduler);
+            dispatcher.installClosureEncloser(this::enclosed);
+        }
+        boolean enclosed(java.util.Set<RoutingKey> keys) {
+            RegionId owner = null;
+            for (RoutingKey key : keys) {
+                RegionRoute route = directory.resolve(key).orElse(null);
+                if (route == null) return false;
+                if (owner == null) owner = route.region(); else if (!owner.equals(route.region())) return false;
+            }
+            return true;
+        }
+        static void halo(Map<RoutingKey, RegionRoute> routes, RoutingKey center, RegionRoute route) {
+            for (int x = center.x() - 1; x <= center.x() + 1; x++)
+                for (int z = center.z() - 1; z <= center.z() + 1; z++)
+                    routes.put(new RoutingKey(center.world(), x, z), route);
         }
         RegionalScheduledTickService<Object> service(java.util.function.LongPredicate eligibility) {
             var service = new RegionalScheduledTickService<Object>(world, directory, dispatcher, eligibility, true);

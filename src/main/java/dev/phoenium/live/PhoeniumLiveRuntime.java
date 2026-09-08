@@ -167,6 +167,11 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
         regionalServices = new RegionalWorldServices(directory, regionalDispatcher);
         initializeRegionalSaves(regionalDispatcher);
         for (ServerLevel level : server.getAllLevels()) regionalServices.bind(level);
+        if (fullEnclosure == null)
+            fullEnclosure = new dev.phoenium.chunk.FullRegionalEnclosure(directory, runtimes, gateway, objects, regionalServices);
+        else fullEnclosure.installStateMigration(regionalServices);
+        regionalDispatcher.installBoundaryAdvancer(fullEnclosure::advance);
+        regionalDispatcher.installClosureEncloser(fullEnclosure::enclose);
         state = State.RUNNING;
         ChunkRuntimeTrace.start();
         for (ServerLevel level : server.getAllLevels()) refreshEntityBindings(level);
@@ -279,6 +284,8 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
                 queueTickPhase(pending, live, PendingTick.Step.CACHE_OWNER);
             }
             case BLOCK_EVENTS_COORDINATOR -> {
+                LiveTickPhases.finishCacheMaintenance(pending.levelState.cache(), pending.cacheState);
+                pending.levelState.finishMaintenance(pending.level());
                 phases.phoenium$runBlockEvents(pending.levelState);
                 queueTickPhase(pending, live, PendingTick.Step.FINAL_OWNER);
             }
@@ -439,6 +446,9 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
     public <T> void regionalTickScheduled(LevelTicks<T> owner, long chunkKey, LevelChunkTicks<T> container) {
         if (regionalServices != null) regionalServices.scheduled(owner, chunkKey, container);
     }
+    public <T> boolean scheduleRegionalTick(LevelTicks<T> owner, net.minecraft.world.ticks.ScheduledTick<T> tick) {
+        return regionalServices != null && regionalServices.schedule(owner, tick);
+    }
     public <T> Boolean regionalWillTickThisTick(LevelTicks<T> owner, BlockPos pos, T type) {
         return regionalServices == null ? null : regionalServices.willTickThisTick(owner, pos, type);
     }
@@ -463,7 +473,10 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
                 // has no queued owner work; this gateway is only its mailbox revalidator.
                 var topologyScheduler = new RegionScheduler(runtimes, directory, barrier, this, this);
                 var topologyGateway = new OwnerGateway(directory, runtimes, topologyScheduler);
-                fullEnclosure = new dev.phoenium.chunk.FullRegionalEnclosure(directory, runtimes, topologyGateway, objects, regionalServices);
+                fullEnclosure = regionalServices == null
+                    ? new dev.phoenium.chunk.FullRegionalEnclosure(directory, runtimes, topologyGateway, objects)
+                    : new dev.phoenium.chunk.FullRegionalEnclosure(directory, runtimes, topologyGateway, objects, regionalServices);
+                if (regionalDispatcher != null) regionalDispatcher.installBoundaryAdvancer(fullEnclosure::advance);
             }
             return new dev.phoenium.chunk.FullRegistrationRuntime(world, authority,
                     dev.phoenium.chunk.FullInitializedInputs.Limits.production(), fullEnclosure);

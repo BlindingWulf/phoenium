@@ -30,10 +30,14 @@ import net.minecraft.world.ticks.ScheduledTick;
  * and dispatch: no unchanged world-global {@code LevelTicks.tick} call remains on the live path.
  */
 public final class RegionalScheduledTickService<T> {
-    private static final Comparator<Head<?>> HEAD_ORDER = (left, right) -> {
+    private static final Comparator<Head<?>> INTRA_ORDER = (left, right) -> {
         int tick = ScheduledTick.INTRA_TICK_DRAIN_ORDER.compare(left.tick(), right.tick());
         if (tick != 0) return tick;
         return Long.compare(left.chunkKey(), right.chunkKey());
+    };
+    private static final Comparator<Head<?>> DUE_ORDER = (left, right) -> {
+        int trigger = Long.compare(left.tick().triggerTick(), right.tick().triggerTick());
+        return trigger != 0 ? trigger : INTRA_ORDER.compare(left, right);
     };
 
     private final WorldId world;
@@ -44,7 +48,8 @@ public final class RegionalScheduledTickService<T> {
     private final LongPredicate tickCheck;
     private final Map<RegionId, Map<Long, ContainerState<T>>> partitions = new LinkedHashMap<>();
     private final Map<Long, ContainerState<T>> containers = new LinkedHashMap<>();
-    private final TreeSet<Head<T>> heads = new TreeSet<>(headComparator());
+    /** Persistent eligibility index. Trigger time leads so future priority cannot hide due work. */
+    private final TreeSet<Head<T>> headsByDueTime = new TreeSet<>(dueComparator());
     private final List<Collected<T>> collected = new ArrayList<>();
     private final Set<TickIdentity<T>> remainingThisCycle = new HashSet<>();
     private long cycle;
@@ -101,6 +106,20 @@ public final class RegionalScheduledTickService<T> {
         refreshHead(state);
     }
 
+    /** Producer gate invoked before the real persistent container is mutated. */
+    public synchronized void requireScheduleOwner(long chunkKey, LevelChunkTicks<T> expected) {
+        ContainerState<T> state = containers.get(chunkKey);
+        if (state == null) return; // preserve vanilla's unloaded-position warning/no-op path
+        if (state.container() != expected)
+            throw new IllegalStateException("regional tick scheduled through foreign container");
+        RegionRoute current = route(chunkKey);
+        if (!current.region().equals(state.owner()))
+            throw new IllegalStateException("regional tick producer reached stale owner partition");
+        dispatcher.requireCurrentClosure(key(chunkKey), 1);
+    }
+    RegionalServiceKind producerKind() { return collectKind; }
+    WorldId world() { return world; }
+
     /**
      * Collects the same globally ordered cohort before invoking any callback, so
      * willTickThisTick observes all not-yet-run entries and callback-created ticks wait until the
@@ -111,17 +130,31 @@ public final class RegionalScheduledTickService<T> {
         if (OwnershipContext.current().isPresent())
             throw new IllegalStateException("regional scheduled-tick cycle entered with owner authority");
         if (maxTicksToProcess < 0) throw new IllegalArgumentException("negative scheduled tick limit");
+        List<RoutingKey> dueClosures = new ArrayList<>();
         synchronized (this) {
             if (cycling) throw new IllegalStateException("nested regional scheduled-tick cycle");
+            for (Head<T> head : headsByDueTime) {
+                if (head.tick().triggerTick() > currentTick) break;
+                dueClosures.add(key(head.chunkKey()));
+            }
+        }
+        for (RoutingKey key : dueClosures) dispatcher.ensureClosure(key, 1);
+        synchronized (this) {
+            if (cycling) throw new IllegalStateException("regional scheduled-tick cycle began during closure preflight");
             cycling = true;
             cycle++;
         }
-        List<Head<T>> skipped = new ArrayList<>();
+        TreeSet<Head<T>> ready = new TreeSet<>(headComparator());
         try {
+            synchronized (this) {
+                for (Head<T> head : headsByDueTime) {
+                    if (head.tick().triggerTick() > currentTick) break;
+                    ready.add(head);
+                }
+            }
             while (collectedSize() < maxTicksToProcess) {
-                Head<T> head = takeDueHead(currentTick);
+                Head<T> head = ready.pollFirst();
                 if (head == null) break;
-                boolean[] accepted = {false};
                 dispatcher.executeAndDrain(key(head.chunkKey()), collectKind, execution -> {
                     ContainerState<T> state;
                     synchronized (this) {
@@ -136,12 +169,11 @@ public final class RegionalScheduledTickService<T> {
                         remainingThisCycle.add(TickIdentity.of(polled));
                         collectedCount++;
                         refreshHead(state);
+                        if (state.head != null && state.head.tick().triggerTick() <= currentTick)
+                            ready.add(state.head);
                     }
-                    accepted[0] = true;
                 });
-                if (!accepted[0]) skipped.add(head);
             }
-            synchronized (this) { heads.addAll(skipped); }
 
             for (int index = 0; ; index++) {
                 Collected<T> entry;
@@ -153,16 +185,13 @@ public final class RegionalScheduledTickService<T> {
                     RegionRoute current = route(entry.chunkKey());
                     if (!current.region().equals(execution.runtime().id()))
                         throw new IllegalStateException("collected scheduled tick reached stale owner");
+                    synchronized (this) { remainingThisCycle.remove(TickIdentity.of(entry.tick())); }
                     output.accept(entry.tick().pos(), entry.tick().type());
-                    synchronized (this) {
-                        remainingThisCycle.remove(TickIdentity.of(entry.tick()));
-                        executedCount++;
-                    }
+                    synchronized (this) { executedCount++; }
                 });
             }
         } finally {
             synchronized (this) {
-                heads.addAll(skipped);
                 collected.clear();
                 remainingThisCycle.clear();
                 cycling = false;
@@ -213,15 +242,11 @@ public final class RegionalScheduledTickService<T> {
     }
 
     public synchronized Measurements measurements() {
-        return new Measurements(partitions.size(), containers.size(), heads.size(), collected.size(),
+        return new Measurements(partitions.size(), containers.size(), headsByDueTime.size(), collected.size(),
             collectedCount, executedCount, migratedContainers, cycle, cycling);
     }
 
     private synchronized int collectedSize() { return collected.size(); }
-    private synchronized Head<T> takeDueHead(long currentTick) {
-        if (heads.isEmpty() || heads.first().tick().triggerTick() > currentTick) return null;
-        return heads.pollFirst();
-    }
     private ContainerState<T> requireCurrentState(Head<T> head, RegionId executingOwner) {
         ContainerState<T> state = containers.get(head.chunkKey());
         if (state == null || state.container() != head.container() || state.headVersion() != head.version())
@@ -237,12 +262,12 @@ public final class RegionalScheduledTickService<T> {
         if (tick != null) {
             Head<T> next = new Head<>(state.chunkKey(), state.owner(), state.container(), tick, state.headVersion());
             state.head = next;
-            heads.add(next);
+            headsByDueTime.add(next);
         }
     }
     private void removeHead(ContainerState<T> state) {
         if (state.head != null) {
-            heads.remove(state.head);
+            headsByDueTime.remove(state.head);
             state.head = null;
         }
     }
@@ -262,7 +287,9 @@ public final class RegionalScheduledTickService<T> {
         return route;
     }
     @SuppressWarnings({"unchecked", "rawtypes"})
-    private static <T> Comparator<Head<T>> headComparator() { return (Comparator) HEAD_ORDER; }
+    private static <T> Comparator<Head<T>> headComparator() { return (Comparator) INTRA_ORDER; }
+    @SuppressWarnings({"unchecked", "rawtypes"})
+    private static <T> Comparator<Head<T>> dueComparator() { return (Comparator) DUE_ORDER; }
 
     private static final class ContainerState<T> {
         private final long chunkKey;

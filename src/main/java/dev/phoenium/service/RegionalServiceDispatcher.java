@@ -16,7 +16,9 @@ import dev.phoenium.topology.RoutingKey;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import java.util.function.BooleanSupplier;
+import java.util.function.Predicate;
 
 /**
  * The one synchronous bridge from original Minecraft service calls to leased regional execution.
@@ -39,6 +41,7 @@ public final class RegionalServiceDispatcher implements RegionalServiceExecutor 
     private long nextOperation;
     private long nextSequence;
     private BooleanSupplier boundaryAdvancer = () -> false;
+    private Predicate<Set<RoutingKey>> closureEncloser;
 
     public RegionalServiceDispatcher(String serviceId, long worldInstance, RegionDirectory directory,
                                      Map<RegionId, RegionRuntime> runtimes, OwnerGateway gateway,
@@ -58,11 +61,58 @@ public final class RegionalServiceDispatcher implements RegionalServiceExecutor 
         this.boundaryAdvancer = Objects.requireNonNull(boundaryAdvancer, "boundaryAdvancer");
     }
 
+    public void installClosureEncloser(Predicate<Set<RoutingKey>> closureEncloser) {
+        if (this.closureEncloser != null && this.closureEncloser != closureEncloser)
+            throw new IllegalStateException("regional service closure encloser already installed");
+        this.closureEncloser = Objects.requireNonNull(closureEncloser, "closureEncloser");
+    }
+
+    /** Owner-free preflight that converges a finite chunk halo before any original callback runs. */
+    public void ensureClosure(RoutingKey center, int radius) {
+        if (OwnershipContext.current().isPresent())
+            throw new IllegalStateException("regional service closure requested under owner authority");
+        if (radius < 0) throw new IllegalArgumentException("negative regional service closure radius");
+        Predicate<Set<RoutingKey>> encloser = Objects.requireNonNull(closureEncloser,
+            "regional service closure encloser is not installed");
+        Set<RoutingKey> footprint = new dev.phoenium.topology.TopologyPlanner()
+            .requiredClosure(Set.of(center), radius);
+        while (!encloser.test(footprint)) {
+            long generation = directory.snapshot().generation().value();
+            long attempts = scheduler.deliveryAttempts();
+            boolean advanced = boundaryAdvancer.getAsBoolean();
+            if (directory.snapshot().generation().value() == generation
+                    && scheduler.deliveryAttempts() == attempts && !advanced)
+                throw new IllegalStateException("regional service closure cannot progress for " + center);
+            if (scheduler.failureBarrier().tripped())
+                throw new IllegalStateException("regional service closure failed at topology barrier");
+        }
+        requireCommonOwner(center, footprint);
+    }
+
+    /** Revalidation for nested producer effects after the owner-free closure was admitted. */
+    public void requireCurrentClosure(RoutingKey center, int radius) {
+        requireCurrentOwner(center);
+        Set<RoutingKey> footprint = new dev.phoenium.topology.TopologyPlanner()
+            .requiredClosure(Set.of(center), radius);
+        requireCommonOwner(center, footprint);
+    }
+
+    private void requireCommonOwner(RoutingKey center, Set<RoutingKey> footprint) {
+        RegionRoute source = directory.resolve(center).orElseThrow(
+            () -> new IllegalStateException("regional service closure source became unresolved"));
+        for (RoutingKey key : footprint) {
+            RegionRoute route = directory.resolve(key).orElseThrow(
+                () -> new IllegalStateException("regional service closure key is unresolved " + key));
+            if (!route.region().equals(source.region()) || !route.generation().equals(source.generation()))
+                throw new IllegalStateException("regional service closure retained foreign owner " + key);
+        }
+    }
+
     public Handle submit(RoutingKey key, RegionalServiceKind kind, RegionalServiceWork body) {
         Objects.requireNonNull(key, "key");
         Objects.requireNonNull(kind, "kind");
         Objects.requireNonNull(body, "body");
-        if (!scheduler.lifecycle().acceptsSimulationWork())
+        if (!scheduler.acceptsSimulationWork())
             throw new IllegalStateException("regional service admission after scheduler stop");
         RegionRoute route = directory.resolve(key).orElseThrow(() -> new IllegalArgumentException("unknown regional service key " + key));
         long operationId = nextOperation = Math.incrementExact(nextOperation);
@@ -117,6 +167,23 @@ public final class RegionalServiceDispatcher implements RegionalServiceExecutor 
 
     public void executeAndDrain(RoutingKey key, RegionalServiceKind kind, RegionalServiceWork body) {
         drain(submit(key, kind, body));
+    }
+
+    /** Validates an original producer mutation that is already executing inside an owner body. */
+    public void requireCurrentOwner(RoutingKey key) {
+        Objects.requireNonNull(key, "key");
+        var active = OwnershipContext.current().orElseThrow(
+            () -> new IllegalStateException("regional service producer has no owner context"));
+        RegionRoute current = directory.resolve(key).orElseThrow(
+            () -> new IllegalStateException("regional service producer key became unresolved"));
+        if (!current.region().equals(active.region()))
+            throw new IllegalStateException("regional service producer reached foreign owner "
+                + active.region() + " expected " + current.region());
+        RegionRuntime runtime = Objects.requireNonNull(runtimes.get(active.region()),
+            "regional service producer runtime");
+        runtime.leases().requireCurrent(active.lease());
+        if (!current.ownerEpoch().equals(runtime.ownerEpoch()))
+            throw new IllegalStateException("regional service producer runtime owner epoch is stale");
     }
 
     @Override

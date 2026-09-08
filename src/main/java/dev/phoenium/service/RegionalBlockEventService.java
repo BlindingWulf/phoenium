@@ -55,11 +55,8 @@ public final class RegionalBlockEventService<E> {
     public synchronized boolean enqueue(E event) {
         Objects.requireNonNull(event, "event");
         RoutingKey key = key(event);
-        RegionRoute route = route(key);
-        var active = OwnershipContext.current().orElseThrow(() -> new IllegalStateException("block event enqueue has no owner"));
-        if (!active.region().equals(route.region()))
-            throw new IllegalStateException("block event enqueue crossed regional ownership " + key);
-        return enqueueOwned(event, route.region());
+        dispatcher.requireCurrentClosure(key, 1);
+        return enqueueOwned(event, route(key).region());
     }
 
     /** Initial world-load binding at an owner-free boundary, before service admission opens. */
@@ -73,8 +70,14 @@ public final class RegionalBlockEventService<E> {
         Objects.requireNonNull(originalEffect, "originalEffect");
         if (OwnershipContext.current().isPresent())
             throw new IllegalStateException("regional block-event cycle entered with owner authority");
+        List<RoutingKey> initialClosures;
         synchronized (this) {
             if (cycling) throw new IllegalStateException("nested regional block-event cycle");
+            initialClosures = ordered.values().stream().map(Event::key).distinct().toList();
+        }
+        for (RoutingKey key : initialClosures) dispatcher.ensureClosure(key, 1);
+        synchronized (this) {
+            if (cycling) throw new IllegalStateException("regional block-event cycle began during closure preflight");
             cycling = true;
             cycles++;
         }
@@ -87,14 +90,17 @@ public final class RegionalBlockEventService<E> {
                     selected = ordered.pollFirstEntry().getValue();
                 }
                 dispatcher.executeAndDrain(selected.key(), RegionalServiceKind.BLOCK_EVENT, execution -> {
-                    synchronized (this) { removeFromOwner(selected, execution.runtime().id()); }
+                    // ObjectLinkedOpenHashSet.removeFirst removes the dedup entry before the
+                    // pinned eligibility test, so an equal event may be enqueued meanwhile.
+                    synchronized (this) {
+                        removeFromOwner(selected, execution.runtime().id());
+                        if (!deduplicated.remove(selected.event()))
+                            throw new IllegalStateException("block event lost its dedup entry");
+                    }
                     if (!eligible.test(selected.event())) {
                         synchronized (this) { retry.add(selected); deferred++; }
                         return;
                     }
-                    // The pinned set removes the event before its callback, allowing an equal nested
-                    // event to enqueue and execute later in the same cycle.
-                    synchronized (this) { deduplicated.remove(selected.event()); }
                     originalEffect.accept(selected.event());
                     synchronized (this) { executed++; }
                 });
@@ -153,6 +159,8 @@ public final class RegionalBlockEventService<E> {
         return true;
     }
     private void requeueDeferred(E event, RoutingKey key, RegionId owner) {
+        if (!deduplicated.add(event))
+            throw new IllegalStateException("deferred block event collided after cycle drain");
         long sequence = nextSequence = Math.incrementExact(nextSequence);
         Event<E> retained = new Event<>(sequence, key, owner, event);
         ordered.put(sequence, retained);

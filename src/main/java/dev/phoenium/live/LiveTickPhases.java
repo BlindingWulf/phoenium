@@ -22,6 +22,7 @@ public final class LiveTickPhases {
     public interface CacheAccess {
         CacheState phoenium$prepareChunkTick(BooleanSupplier haveTime, boolean tickChunks);
         void phoenium$finishChunkTick(CacheState state);
+        void phoenium$finishChunkMaintenance(CacheState state);
     }
 
     public static final class LevelState {
@@ -58,7 +59,9 @@ public final class LiveTickPhases {
         public void finishMiddle(ServerLevel expected, ServerChunkCache cache) {
             require(expected, Phase.MIDDLE_RUNNING, true); this.cache = Objects.requireNonNull(cache); phase = Phase.MIDDLE_COMPLETE;
         }
-        public void consumeChunk(ServerLevel expected) { require(expected, Phase.MIDDLE_COMPLETE, true); phase = Phase.CHUNK_COMPLETE; }
+        public void consumeChunk(ServerLevel expected) { require(expected, Phase.MIDDLE_COMPLETE, true); phase = Phase.CHUNK_RUNNING; }
+        public void finishChunk(ServerLevel expected) { require(expected, Phase.CHUNK_RUNNING, true); phase = Phase.CHUNK_GAMEPLAY_COMPLETE; }
+        public void finishMaintenance(ServerLevel expected) { require(expected, Phase.CHUNK_GAMEPLAY_COMPLETE, false); phase = Phase.CHUNK_COMPLETE; }
         public void beginBlockEvents(ServerLevel expected) { require(expected, Phase.CHUNK_COMPLETE, false); phase = Phase.BLOCK_EVENTS_RUNNING; }
         public void finishBlockEvents(ServerLevel expected) { require(expected, Phase.BLOCK_EVENTS_RUNNING, false); phase = Phase.BLOCK_EVENTS_COMPLETE; }
         public void consumeFinal(ServerLevel expected) { require(expected, Phase.BLOCK_EVENTS_COMPLETE, true); phase = Phase.COMPLETE; }
@@ -68,14 +71,15 @@ public final class LiveTickPhases {
                 throw new IllegalStateException("wrong, repeated, or authority-invalid level tick phase " + phase + " expected " + expectedPhase);
         }
         private enum Phase { PREFIX_COMPLETE, SCHEDULED_RUNNING, SCHEDULED_COMPLETE, MIDDLE_RUNNING,
-            MIDDLE_COMPLETE, CHUNK_COMPLETE, BLOCK_EVENTS_RUNNING, BLOCK_EVENTS_COMPLETE, COMPLETE }
+            MIDDLE_COMPLETE, CHUNK_RUNNING, CHUNK_GAMEPLAY_COMPLETE, CHUNK_COMPLETE,
+            BLOCK_EVENTS_RUNNING, BLOCK_EVENTS_COMPLETE, COMPLETE }
     }
     public static final class CacheState {
         private final ServerChunkCache cache;
         private final BooleanSupplier haveTime;
         private final boolean tickChunks;
         private final ProfilerFiller profiler;
-        private boolean consumed;
+        private Phase phase = Phase.PREPARED;
         public CacheState(ServerChunkCache cache, BooleanSupplier haveTime, boolean tickChunks, ProfilerFiller profiler) {
             if (OwnershipContext.current().isPresent()) throw new IllegalStateException("chunk readiness prefix still owns a region");
             this.cache = Objects.requireNonNull(cache); this.haveTime = Objects.requireNonNull(haveTime);
@@ -84,16 +88,25 @@ public final class LiveTickPhases {
         public BooleanSupplier haveTime() { return haveTime; }
         public boolean tickChunks() { return tickChunks; }
         public ProfilerFiller profiler() { return profiler; }
-        public void consume(ServerChunkCache expected) {
-            if (expected != cache || consumed || OwnershipContext.current().isEmpty())
-                throw new IllegalStateException("wrong, repeated or unowned chunk tick suffix");
-            consumed = true;
+        public void beginGameplay(ServerChunkCache expected) { require(expected, Phase.PREPARED, true); phase = Phase.GAMEPLAY_RUNNING; }
+        public void finishGameplay(ServerChunkCache expected) { require(expected, Phase.GAMEPLAY_RUNNING, true); phase = Phase.GAMEPLAY_COMPLETE; }
+        public void beginMaintenance(ServerChunkCache expected) { require(expected, Phase.GAMEPLAY_COMPLETE, false); phase = Phase.MAINTENANCE_RUNNING; }
+        public void finishMaintenance(ServerChunkCache expected) { require(expected, Phase.MAINTENANCE_RUNNING, false); phase = Phase.COMPLETE; }
+        public void consume(ServerChunkCache expected) { beginGameplay(expected); finishGameplay(expected); }
+        private void require(ServerChunkCache expected, Phase expectedPhase, boolean owned) {
+            if (expected != cache || phase != expectedPhase || OwnershipContext.current().isPresent() != owned)
+                throw new IllegalStateException("wrong, repeated, or authority-invalid chunk tick phase " + phase + " expected " + expectedPhase);
         }
+        private enum Phase { PREPARED, GAMEPLAY_RUNNING, GAMEPLAY_COMPLETE, MAINTENANCE_RUNNING, COMPLETE }
     }
     /** Replaces only the copied suffix's original ServerChunkCache.tick invocation. */
     public static void finishCache(ServerChunkCache cache, BooleanSupplier haveTime, boolean tickChunks, CacheState state) {
         if (state.cache != cache || state.haveTime != haveTime || state.tickChunks != tickChunks)
             throw new IllegalStateException("chunk tick continuation changed original arguments");
         ((CacheAccess) cache).phoenium$finishChunkTick(state);
+    }
+    public static void finishCacheMaintenance(ServerChunkCache cache, CacheState state) {
+        if (state.cache != cache) throw new IllegalStateException("chunk maintenance changed original cache");
+        ((CacheAccess) cache).phoenium$finishChunkMaintenance(state);
     }
 }

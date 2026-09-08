@@ -44,6 +44,7 @@ public final class RegionScheduler {
     }
     public int workerCount() { return 1; }
     public SchedulerLifecycle lifecycle() { return lifecycle; }
+    public boolean acceptsSimulationWork() { return lifecycle.acceptsSimulationWork() && !barrier.tripped(); }
     public FailureBarrier failureBarrier() { return barrier; }
     public long advances() { return advances; }
     /** Includes stale drops and reroutes as well as successful bodies; used only for event-loop progress. */
@@ -62,20 +63,22 @@ public final class RegionScheduler {
     /** Shutdown never drains envelopes on the caller thread; pending work stays unexecuted. */
     public void stop() { if (lifecycle != SchedulerLifecycle.FAILED) lifecycle = SchedulerLifecycle.STOPPING; }
     public void advanceOne() {
-        if (!lifecycle.acceptsSimulationWork()) return;
+        if (!acceptsSimulationWork()) return;
         runtimes.values().stream().filter(runtime -> runtime.lifecycle() == RegionLifecycle.READY && !runtime.transitioning() && runtime.inboxSize() > 0)
             .sorted(Comparator.comparing(RegionRuntime::id)).findFirst().ifPresent(this::runOne);
     }
     public boolean runOne(RegionRuntime runtime) {
-        if (!lifecycle.acceptsSimulationWork() || runtime.transitioning()) return false;
+        if (!acceptsSimulationWork() || runtime.transitioning()) return false;
         RegionTaskEnvelope envelope = runtime.poll().orElse(null);
         if (envelope == null) return false;
+        if (!acceptsSimulationWork()) { runtime.requeueFirst(envelope); return false; }
         deliveryAttempts++;
         if (envelope.payload() instanceof TaskPayload.OwnedObjectOperation) {
             if (objectDeliveryValidator == null || !objectDeliveryValidator.revalidateForExecution(runtime, envelope)) return true;
         } else {
             if (locationValidator == null || !locationValidator.revalidateLocationForExecution(runtime, envelope)) return true;
         }
+        if (!acceptsSimulationWork()) { runtime.requeueFirst(envelope); return false; }
         try (RegionLease lease = runtime.leases().acquire(); OwnershipContext.Scope ignored = OwnershipContext.enter(runtime.id(), lease.epoch(), OperationCategory.OWNER_TASK)) {
             runtime.transitionTo(RegionLifecycle.TICKING);
             lease.requireCurrent();
@@ -91,7 +94,7 @@ public final class RegionScheduler {
     }
     /** Tick work has exactly the same lease/context mechanism as owner-envelope work. */
     public void runTick(RegionRuntime runtime) {
-        if (!lifecycle.acceptsSimulationWork() || runtime.transitioning()) return;
+        if (!acceptsSimulationWork() || runtime.transitioning()) return;
         try (RegionLease lease = runtime.leases().acquire(); OwnershipContext.Scope ignored = OwnershipContext.enter(runtime.id(), lease.epoch(), OperationCategory.TICK)) {
             runtime.transitionTo(RegionLifecycle.TICKING);
             lease.requireCurrent();
@@ -104,7 +107,7 @@ public final class RegionScheduler {
         }
     }
     public void snapshot(RegionRuntime runtime, Runnable sink) {
-        if (!lifecycle.acceptsSimulationWork()) return;
+        if (!acceptsSimulationWork()) return;
         try (RegionLease lease = runtime.leases().acquire(); OwnershipContext.Scope ignored = OwnershipContext.enter(runtime.id(), lease.epoch(), OperationCategory.SAVE_SNAPSHOT)) {
             sink.run();
         } catch (Throwable failure) {

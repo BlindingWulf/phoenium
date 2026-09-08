@@ -32,6 +32,7 @@ final class LiveTickPhaseBoundaryTest {
         actual.addAll(calls(named(cache, "phoenium$prepareChunkTick")));
         actual.addAll(calls(named(cache, "phoenium$finishChunkTick")));
         actual.addAll(calls(named(level, "phoenium$afterChunkTick")));
+        actual.addAll(calls(named(cache, "phoenium$finishChunkMaintenance")));
         actual.addAll(calls(named(level, "phoenium$runBlockEvents")));
         actual.addAll(calls(named(level, "phoenium$finishLevelTick")));
         assertEquals(expected, actual, "Control preparation and resumed gameplay retain the original complete call order");

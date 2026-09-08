@@ -1,5 +1,6 @@
 package dev.phoenium.service;
 
+import dev.phoenium.chunk.FullFinishingServices;
 import dev.phoenium.core.WorldId;
 import dev.phoenium.mixin.RegionalLevelTicksAccess;
 import dev.phoenium.mixin.RegionalServerLevelAccess;
@@ -7,6 +8,7 @@ import dev.phoenium.topology.RegionDirectory;
 import dev.phoenium.topology.RegionalStateMigration;
 import java.util.IdentityHashMap;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.function.BiConsumer;
@@ -19,6 +21,7 @@ import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.material.Fluid;
 import net.minecraft.world.ticks.LevelChunkTicks;
 import net.minecraft.world.ticks.LevelTicks;
+import net.minecraft.world.ticks.ScheduledTick;
 
 /** Connected per-server registry for actual Minecraft scheduled ticks and block events. */
 public final class RegionalWorldServices implements RegionalStateMigration {
@@ -47,6 +50,9 @@ public final class RegionalWorldServices implements RegionalStateMigration {
         blocks.bootstrap(new LinkedHashMap<>(blockAccess.phoenium$getAllContainers()));
         fluids.bootstrap(new LinkedHashMap<>(fluidAccess.phoenium$getAllContainers()));
         var events = new RegionalBlockEventService<BlockEventData>(world, directory, dispatcher, BlockEventData::pos);
+        var originalEvents = ((RegionalServerLevelAccess) level).phoenium$getBlockEvents();
+        events.bootstrap(List.copyOf(originalEvents));
+        originalEvents.clear();
         WorldServices services = new WorldServices(level, blocks, fluids, events);
         worlds.put(level, services);
         ticks.put(blockTicks, new TickBinding<>(services, blocks));
@@ -66,6 +72,28 @@ public final class RegionalWorldServices implements RegionalStateMigration {
         if (binding != null) binding.service().removeContainer(pos.pack(), container);
     }
     @SuppressWarnings("unchecked")
+    public <T> boolean schedule(LevelTicks<T> owner, ScheduledTick<T> tick) {
+        TickBinding<T> binding;
+        synchronized (this) { binding = (TickBinding<T>) ticks.get(owner); }
+        if (binding == null) return false;
+        FullFinishingServices.requireWorld(binding.world().level(), FullFinishingServices.Kind.TICK_LIST);
+        long chunkKey = ChunkPos.pack(tick.pos());
+        LevelChunkTicks<T> container = ((RegionalLevelTicksAccess<T>) owner).phoenium$getAllContainers().get(chunkKey);
+        if (container == null) return false;
+        if (dev.phoenium.ownership.OwnershipContext.current().isPresent()) {
+            binding.service().requireScheduleOwner(chunkKey, container);
+            return false;
+        }
+        var key = new dev.phoenium.topology.RoutingKey(binding.service().world(),
+            ChunkPos.getX(chunkKey), ChunkPos.getZ(chunkKey));
+        dispatcher.ensureClosure(key, 1);
+        dispatcher.executeAndDrain(key, binding.service().producerKind(), ignored -> {
+            binding.service().requireScheduleOwner(chunkKey, container);
+            owner.schedule(tick);
+        });
+        return true;
+    }
+    @SuppressWarnings("unchecked")
     public synchronized <T> void scheduled(LevelTicks<T> owner, long chunkKey, LevelChunkTicks<T> container) {
         TickBinding<T> binding = (TickBinding<T>) ticks.get(owner);
         if (binding != null) binding.service().scheduled(chunkKey, container);
@@ -73,13 +101,16 @@ public final class RegionalWorldServices implements RegionalStateMigration {
     @SuppressWarnings("unchecked")
     public synchronized <T> Boolean willTickThisTick(LevelTicks<T> owner, BlockPos pos, T type) {
         TickBinding<T> binding = (TickBinding<T>) ticks.get(owner);
-        return binding == null ? null : binding.service().willTickThisTick(pos, type);
+        if (binding == null) return null;
+        FullFinishingServices.requireWorld(binding.world().level(), FullFinishingServices.Kind.TICK_LIST);
+        return binding.service().willTickThisTick(pos, type);
     }
     @SuppressWarnings("unchecked")
     public <T> boolean runScheduled(LevelTicks<T> owner, long currentTick, int maxTicks, BiConsumer<BlockPos, T> output) {
         TickBinding<T> binding;
         synchronized (this) { binding = (TickBinding<T>) ticks.get(owner); }
         if (binding == null) return false;
+        FullFinishingServices.requireWorld(binding.world().level(), FullFinishingServices.Kind.TICK_LIST);
         binding.service().tick(currentTick, maxTicks, output);
         return true;
     }
@@ -88,7 +119,15 @@ public final class RegionalWorldServices implements RegionalStateMigration {
         WorldServices services;
         synchronized (this) { services = worlds.get(level); }
         if (services == null) return false;
-        services.events().enqueue(event);
+        FullFinishingServices.requireWorld(level, FullFinishingServices.Kind.TICK_LIST);
+        if (dev.phoenium.ownership.OwnershipContext.current().isPresent()) services.events().enqueue(event);
+        else {
+            var key = new dev.phoenium.topology.RoutingKey(services.blockTicks().world(),
+                event.pos().getX() >> 4, event.pos().getZ() >> 4);
+            dispatcher.ensureClosure(key, 1);
+            dispatcher.executeAndDrain(key, RegionalServiceKind.BLOCK_EVENT,
+                ignored -> services.events().enqueue(event));
+        }
         return true;
     }
 
@@ -96,8 +135,10 @@ public final class RegionalWorldServices implements RegionalStateMigration {
         WorldServices services;
         synchronized (this) { services = worlds.get(level); }
         if (services == null) return false;
+        FullFinishingServices.requireWorld(level, FullFinishingServices.Kind.TICK_LIST);
         services.events().runCycle(event -> level.shouldTickBlocksAt(event.pos()), event -> {
             if (((RegionalServerLevelAccess) level).phoenium$invokeDoBlockEvent(event)) {
+                FullFinishingServices.requireServer(level.getServer(), FullFinishingServices.Kind.CONNECTIONS);
                 level.getServer().getPlayerList().broadcast(null, event.pos().getX(), event.pos().getY(),
                     event.pos().getZ(), 64.0, level.dimension(),
                     new ClientboundBlockEventPacket(event.pos(), event.block(), event.paramA(), event.paramB()));

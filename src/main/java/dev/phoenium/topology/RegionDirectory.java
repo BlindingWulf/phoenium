@@ -82,8 +82,12 @@ public final class RegionDirectory {
         change = new PendingChange(affected, defaultWorlds);
         if (!pending.compareAndSet(null, change)) throw new IllegalStateException("directory change already pending");
         }
-        changed();
         return change;
+    }
+    /** Coordinator dispatches this only after every participant has closed admission and its own gate is released. */
+    void signalChangeStarted(PendingChange change) {
+        if (pending.get() != change) throw new IllegalStateException("wrong directory change start signal");
+        changed();
     }
 
     /** Detach after reconciliation, while the coordinator still excludes a new proposal. */
@@ -115,6 +119,11 @@ public final class RegionDirectory {
     }
     /** A world default represents a deliberate temporary whole-world region, never an implicit thread fallback. */
     public void publish(TopologyGeneration generation, Map<RoutingKey, RegionRoute> routes, Map<dev.phoenium.core.WorldId, RegionRoute> worldDefaults) {
+        publishForTransition(generation, routes, worldDefaults);
+        changed();
+    }
+    /** Atomic transition publication without observer dispatch; the coordinator signals after releasing its gate. */
+    View publishForTransition(TopologyGeneration generation, Map<RoutingKey, RegionRoute> routes, Map<dev.phoenium.core.WorldId, RegionRoute> worldDefaults) {
         Objects.requireNonNull(generation, "generation");
         routes.forEach((key, route) -> {
             if (!key.world().equals(route.region().world())) throw new IllegalArgumentException("route crosses world identity");
@@ -130,6 +139,10 @@ public final class RegionDirectory {
             if (generation.value() <= view.get().generation().value()) throw new IllegalStateException("directory generations must increase");
             view.set(replacement);
         }
+        return replacement;
+    }
+    void signalPublication(View replacement) {
+        if (view.get() != replacement) throw new IllegalStateException("wrong topology publication signal");
         changed();
     }
     public record View(TopologyGeneration generation, Map<RoutingKey, RegionRoute> routes, Map<dev.phoenium.core.WorldId, RegionRoute> worldDefaults) {

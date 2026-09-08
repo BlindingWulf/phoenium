@@ -20,14 +20,14 @@ public final class OwnerGateway {
     /** Exposed only to install typed delivery revalidation; it is not a task execution escape hatch. */
     public RegionScheduler scheduler() { return scheduler; }
     public Delivery submit(RegionTaskEnvelope envelope) {
-        if (!scheduler.lifecycle().acceptsSimulationWork()) return Delivery.REJECTED_SCHEDULER_STOPPED;
+        if (!scheduler.acceptsSimulationWork()) return Delivery.REJECTED_SCHEDULER_STOPPED;
         RegionRoute route = directory.resolve(envelope.routingKey()).orElseThrow(() -> new IllegalArgumentException("unknown routing key " + envelope.routingKey()));
         boolean stale = !route.generation().equals(envelope.expectedGeneration()) || !route.ownerEpoch().equals(envelope.expectedOwnerEpoch());
         if (stale && envelope.admissionPolicy() == AdmissionPolicy.REJECT) return Delivery.REJECTED_STALE;
         RegionTaskEnvelope current = stale ? envelope.rerouted(route.generation(), route.ownerEpoch()) : envelope;
         RegionRuntime runtime = runtimes.get(route.region());
         if (runtime == null) return Delivery.REJECTED_STALE;
-        if (runtime.transitioning()) {
+        if (runtime.transitioning() || directory.pendingChange(current.routingKey()).isPresent()) {
             if (current.admissionPolicy() == AdmissionPolicy.REJECT) return Delivery.REJECTED_TRANSITION;
             runtime.defer(current);
             return Delivery.DEFERRED;

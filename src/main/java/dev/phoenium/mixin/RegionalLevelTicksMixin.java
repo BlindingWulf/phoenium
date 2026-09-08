@@ -29,6 +29,11 @@ abstract class RegionalLevelTicksMixin<T> {
         if (container != null) Phoenium.liveRuntime().regionalTickContainerRemoved((LevelTicks<T>) (Object) this, pos, container);
     }
 
+    @Inject(method = "schedule", at = @At("HEAD"), cancellable = true)
+    private void phoenium$requireTickScheduleOwner(ScheduledTick<T> tick, CallbackInfo ci) {
+        if (Phoenium.liveRuntime().scheduleRegionalTick((LevelTicks<T>) (Object) this, tick)) ci.cancel();
+    }
+
     @Inject(method = "schedule", at = @At("TAIL"))
     private void phoenium$tickScheduled(ScheduledTick<T> tick, CallbackInfo ci) {
         var access = (RegionalLevelTicksAccess<T>) this;

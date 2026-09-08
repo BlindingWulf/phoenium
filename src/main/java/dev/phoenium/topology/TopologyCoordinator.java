@@ -20,9 +20,10 @@ public final class TopologyCoordinator {
     private Convergence pendingConvergence;
     private RegionDirectory.PendingChange directoryChange;
     private Runnable publicationWindowProbe;
-    private final RegionalStateMigration stateMigration;
+    private RegionalStateMigration stateMigration;
     private boolean migrationInProgress;
     private boolean migrationFailed;
+    private boolean admissionClosing;
 
     /**
      * Deterministic, non-blocking seam invoked under the metadata gate between the directory
@@ -31,6 +32,21 @@ public final class TopologyCoordinator {
      * coordinator.
      */
     public void setPublicationWindowProbe(Runnable probe) { this.publicationWindowProbe = probe; }
+
+    /** Installs live regional state for an enclosure constructed during pre-start FULL bootstrap. */
+    public void installStateMigration(RegionalStateMigration migration) {
+        Objects.requireNonNull(migration, "migration");
+        metadataGate.lock();
+        try {
+            if (stateMigration == migration) return;
+            if (stateMigration != RegionalStateMigration.NONE)
+                throw new IllegalStateException("regional topology migration installed twice");
+            if (pending != null || pendingConvergence != null || directoryChange != null
+                    || admissionClosing || migrationInProgress || migrationFailed)
+                throw new IllegalStateException("regional topology migration installed during transition");
+            stateMigration = migration;
+        } finally { metadataGate.unlock(); }
+    }
 
     public TopologyCoordinator(RegionDirectory directory, Map<dev.phoenium.region.RegionId, RegionRuntime> runtimes, OwnerGateway gateway) {
         this(directory, runtimes, gateway, null, RegionalStateMigration.NONE);
@@ -51,10 +67,9 @@ public final class TopologyCoordinator {
         try {
             if (pending != null) throw new IllegalStateException("topology transition already pending");
             if (pendingConvergence != null) throw new IllegalStateException("topology admission closed while convergence is pending: " + pendingConvergence.reason());
-            transition.participants().forEach(id -> runtime(id).beginTransition());
-            directoryChange = directory.beginChange(transition.owners().keySet(), transition.participants());
             pending = transition;
         } finally { metadataGate.unlock(); }
+        tryCloseAdmission();
     }
     /**
      * Records incompatible candidate closures as pending convergence. The published directory is
@@ -68,13 +83,13 @@ public final class TopologyCoordinator {
         try {
             if (pending != null) throw new IllegalStateException("topology transition already pending");
             if (pendingConvergence != null) throw new IllegalStateException("convergence already pending");
-            proposal.participants().forEach(id -> runtime(id).beginTransition());
-            directoryChange = directory.beginChange(proposal.owners().keySet(), proposal.participants());
             pendingConvergence = new Convergence(conflictedKeys, proposal, Objects.requireNonNull(reason, "reason"));
         } finally { metadataGate.unlock(); }
+        tryCloseAdmission();
     }
     /** Called by the scheduler's event loop. It never blocks on a region. */
     public boolean advance() {
+        if (!tryCloseAdmission()) return false;
         RegionDirectory.PendingChange completed = null;
         Transition transition;
         RegionDirectory.View proposed;
@@ -110,18 +125,19 @@ public final class TopologyCoordinator {
         try {
             if (transition.participants().stream().map(this::runtime).anyMatch(runtime -> runtime.leases().hasActiveLease()))
                 throw new IllegalStateException("participant lease appeared while topology admission was closed");
-            directory.publish(proposed.generation(), proposed.routes(), proposed.worldDefaults());
-            // Publication window: the directory already commits the new generation while the
-            // derived object ledger still names the old owner. ReconcileTopology runs only after
-            // this seam, so inside it no object has any owner (stale A = 0, premature B = 0).
-            if (publicationWindowProbe != null) publicationWindowProbe.run();
-            if (objects != null) objects.reconcileTopology();
+            proposed = directory.publishForTransition(proposed.generation(), proposed.routes(), proposed.worldDefaults());
         } catch (Throwable failure) {
             failMigration(failure, transition);
             throw failure;
         } finally { metadataGate.unlock(); }
 
         try {
+            directory.signalPublication(proposed);
+            // Publication window: the directory already commits the new generation while the
+            // derived object ledger still names the old owner. No coordinator metadata gate is
+            // held across this test callback or object-ledger reconciliation.
+            if (publicationWindowProbe != null) publicationWindowProbe.run();
+            if (objects != null) objects.reconcileTopology();
             RegionDirectory.View published = directory.snapshot();
             if (!published.equals(proposed)) throw new IllegalStateException("published topology view differs from prepared migration");
             prepared.install(published);
@@ -130,28 +146,80 @@ public final class TopologyCoordinator {
             throw failure;
         }
 
+        try {
+            if (!directory.snapshot().equals(proposed))
+                throw new IllegalStateException("topology changed before regional state install acknowledgement");
+            for (var id : transition.participants()) {
+                RegionRuntime runtime = runtime(id);
+                runtime.finishTransition(runtime.ownerEpoch().next());
+            }
+        } catch (Throwable failure) {
+            failMigration(failure, transition);
+            throw failure;
+        }
+
         metadataGate.lock();
         try {
-            if (!directory.snapshot().equals(proposed)) throw new IllegalStateException("topology changed before regional state install acknowledgement");
-            transition.participants().forEach(id -> runtime(id).finishTransition(runtime(id).ownerEpoch().next()));
-            transition.participants().forEach(id -> gateway.releaseTransitionMailbox(runtime(id)));
             pending = null;
             pendingConvergence = null;
             completed = directoryChange;
             directory.finishChange(completed);
             directoryChange = null;
             migrationInProgress = false;
-            migrationFailed = true;
-            return true;
+            migrationFailed = false;
         } finally {
             metadataGate.unlock();
-            if (completed != null) directory.signalChange(completed);
         }
+        for (var id : transition.participants()) gateway.releaseTransitionMailbox(runtime(id));
+        directory.signalChange(completed);
+        return true;
+    }
+    private boolean tryCloseAdmission() {
+        Transition transition;
+        metadataGate.lock();
+        try {
+            if (migrationFailed || migrationInProgress) return false;
+            if (directoryChange != null) return true;
+            if (admissionClosing) return false;
+            transition = pending != null ? pending : pendingConvergence != null ? pendingConvergence.proposal() : null;
+            if (transition == null) return false;
+            admissionClosing = true;
+        } finally { metadataGate.unlock(); }
+
+        RegionDirectory.PendingChange change;
+        try {
+            change = directory.beginChange(transition.owners().keySet(), transition.participants());
+        } catch (Throwable failure) {
+            metadataGate.lock(); try { admissionClosing = false; } finally { metadataGate.unlock(); }
+            failMigration(failure, transition);
+            throw failure;
+        }
+        if (change == null) {
+            metadataGate.lock(); try { admissionClosing = false; } finally { metadataGate.unlock(); }
+            return false;
+        }
+        try {
+            transition.participants().forEach(id -> runtime(id).beginTransition());
+        } catch (Throwable failure) {
+            metadataGate.lock(); try { admissionClosing = false; } finally { metadataGate.unlock(); }
+            failMigration(failure, transition);
+            throw failure;
+        }
+        metadataGate.lock();
+        try {
+            if ((pending != transition && (pendingConvergence == null || pendingConvergence.proposal() != transition)) || directoryChange != null)
+                throw new IllegalStateException("topology proposal changed while admission closure was prepared");
+            directoryChange = change;
+            admissionClosing = false;
+        } finally { metadataGate.unlock(); }
+        directory.signalChangeStarted(change);
+        return true;
     }
     private void failMigration(Throwable failure, Transition transition) {
         metadataGate.lock();
         try {
             migrationInProgress = false;
+            migrationFailed = true;
             dev.phoenium.core.OwnerEpoch epoch = transition.participants().stream().findFirst()
                 .map(this::runtime).map(RegionRuntime::ownerEpoch).orElse(new OwnerEpoch(0));
             gateway.scheduler().failureBarrier().trip(failure, directory.snapshot().generation(), epoch, null);

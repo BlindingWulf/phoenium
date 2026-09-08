@@ -44,6 +44,7 @@ public final class RegionRuntime {
     public void beginTransition() { if (lifecycle == RegionLifecycle.DEAD) throw new IllegalStateException("dead region transition"); transitioning = true; }
     public void finishTransition(OwnerEpoch nextEpoch) { ownerEpoch = nextEpoch; transitioning = false; }
     public void enqueue(RegionTaskEnvelope envelope) { inbox.addLast(envelope); }
+    public void requeueFirst(RegionTaskEnvelope envelope) { inbox.addFirst(envelope); }
     public void defer(RegionTaskEnvelope envelope) { transitionMailbox.addLast(envelope); }
     public Optional<RegionTaskEnvelope> poll() { return Optional.ofNullable(inbox.pollFirst()); }
     public Optional<RegionTaskEnvelope> pollTransitionMailbox() { return Optional.ofNullable(transitionMailbox.pollFirst()); }
