@@ -20,8 +20,8 @@ in `Phoenium-stage4-luna` (harness and sole broad/live verification owner). Back
 runtime identity and task/worker token accounting are unavailable. No additional
 Astra, paid API, reset, account change, remote publication or personal client account.
 
-Account-wide Codex usage began at 35% used / 65% remaining; latest adverse-probe
-integration reading is 92% used / 8% remaining. Reserve remained 7% used / 93%
+Account-wide Codex usage began at 35% used / 65% remaining; latest installed adverse
+review reading is 93% used / 7% remaining. Reserve remained 7% used / 93%
 remaining. Intermediate readings are preserved in this file's Git history; these
 are shared account windows, not task consumption.
 
@@ -33,7 +33,7 @@ are shared account windows, not task consumption.
 | Block events | Per-owner ordered/deferred queues, original dispatch and nested producers, complete migration | Positive ordered event/recipient results and pending-work merge/split |
 | Tracking | Actual tracker partitions and original pairing/removal/sends; published position, session and passenger/vehicle receipts | Current real-client FULL, packets, withdrawal and migration |
 | Save cuts | Selected-holder retention, batch/operation cuts, original snapshot detached for I/O, current-owner acknowledgement/dirty restore | Final-artifact MCA/restart and affected lifecycle under pressure |
-| Shutdown | Admission close, admitted-work drain, retained-write settlement, independent native resource cleanup with failures preserved | Final normal/adverse installed pending-work stop |
+| Shutdown | Admission close, admitted-work drain, retained-write settlement, independent native resource cleanup with failures preserved | Installed native pending-write failure PASS; final real-client normal/reload stop open |
 | Global services | Existing named services, explicit metadata and owner-free I/O protocols; finite native callback enclosures | Final reached-path audit and all dependent installed gates |
 
 Contract and pinned-source provenance: `docs/STAGE4_SERVICE_CONTRACT.md`. No broad
@@ -85,8 +85,17 @@ the original write completion, pending=0, failedSettlements=1, stopped runtime a
 zero leases; RETURN still proves closure. Strict wait/write/cleanup order and
 cycle-safe exception traversal are covered by 29 focused tests, all PASS. Reviewed
 probe SHA-256 is `01F5B32A770196482058AC5977CFB9A2E89EFA19BEB46D3F954753783BE21B17`.
-Luna alone launches the installed run. Sol now owns the bounded frozen/native
-movement source diagnosis described below; no second live campaign is running.
+Installed `run/stage4/adverse-native-20260908-0810` PASS on production `6016F943...`:
+one original selected write remains pending at the exact callback failure; original
+write success precedes terminal ACK and all 15/15 exact cleanup entries. The exception
+identity survives; native resource sets close 3/3/3/4/1/1, and save, dispatcher,
+lease, entity, scoreboard and named-service custody reach zero. FailedSettlements=1
+is expected and no successful/durable-save claim is made. The probe starts before
+ordinary world ticks; its two genuine owner operations and native write are the
+positive execution evidence, not a normal-run health claim. Exactly one PASS marker;
+log SHA-256 `AF8C991976CDBAE9B684048E411B6E3E30795F094F8AA62CFED7EA873B6BF526`.
+Sol now owns the bounded frozen/native movement source diagnosis below; Luna alone
+coordinates live runs and the remaining MCA/restart harness work.
 
 Earlier preserved native failures: `transform-20260908-060338` first-tick consecutive
 coordinator phases, repaired `00ce944`; `transform-20260908-064318` superclass-close
@@ -152,7 +161,8 @@ Lead review requires the following remaining corrections:
 
 Final reference/candidate 5/5 and 8/8, strict timing/order/effects comparator, actual
 MCA/restart, two-owner migration, affected FULL fresh/reload/packet/service/saved-vault,
-pressure/failure settlement and comparable light elapsed/RSS measurements remain
+pressure coverage beyond the passing installed failed-stop case, and comparable
+light elapsed/RSS measurements remain
 open. The old 14.718 s / 672 MB checkpoint is not a final paired overhead result.
 
 Internal commits are recovery points, not stopping instructions. Continue connected
