@@ -1,6 +1,5 @@
 package dev.phoenium.mixin;
 
-import java.util.List;
 import java.util.Set;
 import net.minecraft.core.SectionPos;
 import net.minecraft.server.level.ServerEntity;
@@ -18,7 +17,5 @@ public interface RegionalTrackedEntityAccess {
     @Accessor("lastSectionPos") SectionPos phoenium$getLastSectionPos();
     @Accessor("lastSectionPos") void phoenium$setLastSectionPos(SectionPos position);
     @Accessor("seenBy") Set<ServerPlayerConnection> phoenium$getSeenBy();
-    @Invoker("getEffectiveRange") int phoenium$invokeEffectiveRange();
-    @Invoker("updatePlayers") void phoenium$invokeUpdatePlayers(List<ServerPlayer> players);
     @Invoker("updatePlayer") void phoenium$invokeUpdatePlayer(ServerPlayer player);
 }

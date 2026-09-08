@@ -2,6 +2,7 @@ package dev.phoenium.chunk;
 
 import java.util.*;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.function.Function;
 import java.util.function.Supplier;
 import net.minecraft.core.Holder;
 import net.minecraft.server.MinecraftServer;
@@ -32,6 +33,7 @@ public final class FullEntityFacts {
     private final IdentityHashMap<ServerLevel, LinkedHashMap<Integer, Entity>> candidates = new IdentityHashMap<>();
     private final IdentityHashMap<ServerLevel, Long> candidateRevisions = new IdentityHashMap<>();
     private final IdentityHashMap<Entity, Route> routes = new IdentityHashMap<>();
+    private final IdentityHashMap<Entity, List<Entity>> passengerRelations = new IdentityHashMap<>();
     private final java.util.concurrent.locks.ReentrantLock candidateMetadata = new java.util.concurrent.locks.ReentrantLock();
     private long routingSequence;
     private long published, insertions, removals;
@@ -96,6 +98,7 @@ public final class FullEntityFacts {
             facts.routingSequence = routeRevision; facts.candidateRevisions.put(fact.world, worldRevision);
         } finally { facts.candidateMetadata.unlock(); }
         facts.service.changed(FullFinishingServices.Kind.ENTITY_REGISTRY);
+        passengersChanged(entity);
     }
     /** Original remove(key) is unconditional; retain that prefix even for a displaced same UUID. */
     public static void removed(Entity entity, UUID originalKey) {
@@ -122,6 +125,7 @@ public final class FullEntityFacts {
                 if (ordered.isEmpty()) facts.candidates.remove(fact.world);
             }
             facts.routes.remove(entity); facts.candidateRevisions.put(fact.world, worldRevision);
+            facts.passengerRelations.remove(entity);
         } finally { facts.candidateMetadata.unlock(); }
         facts.service.changed(FullFinishingServices.Kind.ENTITY_REGISTRY);
     }
@@ -168,6 +172,19 @@ public final class FullEntityFacts {
     public Cut observe(ServerLevel world) {
         try (var turn = service.referenceAccess()) { return cut(world); }
     }
+    /** Exact addPassenger/removePassenger writer publishes only direct retained aliases. Reading
+     * an indirect passenger here would traverse a descendant before its owner had been enclosed;
+     * the retained direct graph is expanded and revalidated without dereferencing those aliases. */
+    public static void passengersChanged(Entity vehicle) {
+        Fact fact = vehicle instanceof Access access ? access.phoenium$referenceFact() : null;
+        if (fact == null) return;
+        List<Entity> passengers = List.copyOf(vehicle.getPassengers());
+        var facts = FullFinishingServices.forServer(fact.server).entityFacts;
+        facts.candidateMetadata.lock();
+        try { facts.passengerRelations.put(vehicle, passengers); }
+        finally { facts.candidateMetadata.unlock(); }
+        facts.service.changed(FullFinishingServices.Kind.TRACKER);
+    }
     /** Exact owner-published routing receipt for one alias already selected by an original
      * service directory. The returned pointer is retained only together with its incarnation,
      * fact identity, and routing revision; it grants no authority to dereference the alias. */
@@ -196,6 +213,51 @@ public final class FullEntityFacts {
             Route route = routes.get(candidate.alias);
             return Objects.equals(route, new Route(candidate.position, candidate.routingRevision));
         } finally { candidateMetadata.unlock(); }
+    }
+
+    public List<Candidate> trackingPassengers(Candidate vehicle) {
+        Objects.requireNonNull(vehicle, "vehicle");
+        FullFinishingServices.requireWorld(vehicle.fact.world, FullFinishingServices.Kind.ENTITY_REGISTRY);
+        candidateMetadata.lock();
+        try {
+            if (!(vehicle.alias instanceof Access access) || access.phoenium$referenceFact() != vehicle.fact
+                    || !Objects.equals(routes.get(vehicle.alias), new Route(vehicle.position, vehicle.routingRevision)))
+                throw new ChunkProtocolException("tracking vehicle relation source became stale");
+            List<Entity> aliases = orderedDescendants(vehicle.alias,
+                alias -> passengerRelations.getOrDefault(alias, List.of()));
+            var result = new ArrayList<Candidate>(aliases.size());
+            for (Entity alias : aliases) {
+                Fact fact = alias instanceof Access passenger ? passenger.phoenium$referenceFact() : null;
+                Route route = routes.get(alias);
+                if (fact == null || fact.alias != alias || fact.world != vehicle.fact.world || route == null
+                        || fact.incarnation != ((Access) alias).phoenium$entityIncarnation())
+                    throw new ChunkProtocolException("tracking passenger lacks current owner-published identity and route");
+                result.add(new Candidate(alias, fact, route.position, route.revision));
+            }
+            return List.copyOf(result);
+        } finally { candidateMetadata.unlock(); }
+    }
+    /** Matches Entity.getIndirectPassengers' direct-child then descendant order while rejecting
+     * malformed cycles in the retained identity graph. Package-visible for a focused order proof. */
+    static <E> List<E> orderedDescendants(E root, Function<E, List<E>> children) {
+        Objects.requireNonNull(root, "root"); Objects.requireNonNull(children, "children");
+        var result = new ArrayList<E>();
+        Set<E> visiting = Collections.newSetFromMap(new IdentityHashMap<>());
+        Set<E> emitted = Collections.newSetFromMap(new IdentityHashMap<>());
+        visiting.add(root);
+        appendDescendants(root, children, visiting, emitted, result);
+        return List.copyOf(result);
+    }
+    private static <E> void appendDescendants(E parent, Function<E, List<E>> children,
+                                               Set<E> visiting, Set<E> emitted, List<E> result) {
+        for (E child : List.copyOf(children.apply(parent))) {
+            if (child == null) throw new ChunkProtocolException("null passenger relation alias");
+            if (!visiting.add(child)) throw new ChunkProtocolException("cyclic passenger relation alias");
+            if (!emitted.add(child)) throw new ChunkProtocolException("duplicate passenger relation alias");
+            result.add(child);
+            appendDescendants(child, children, visiting, emitted, result);
+            visiting.remove(child);
+        }
     }
     Estimate estimate(ServerLevel world) {
         try (var turn = service.referenceAccess()) {
@@ -314,7 +376,7 @@ public final class FullEntityFacts {
     void close() {
         directories.clear();
         candidateMetadata.lock();
-        try { candidates.clear(); candidateRevisions.clear(); routes.clear(); }
+        try { candidates.clear(); candidateRevisions.clear(); routes.clear(); passengerRelations.clear(); }
         finally { candidateMetadata.unlock(); }
     }
 }

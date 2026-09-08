@@ -106,7 +106,11 @@ public final class RegionalTrackingService {
         if (tracker == null) return; // vanilla deliberately does not track zero-range/dragon-part entities
         if (access(tracker).phoenium$getEntity() != entity)
             throw new IllegalStateException("successful tracker insertion has no exact source identity " + id);
-        int effectiveRange = access(tracker).phoenium$invokeEffectiveRange();
+        AddPlan add = activeAdd.get();
+        RangeProjection relation = add != null && add.entity == entity
+            ? add.sourceRelation : prepareRange(candidate);
+        requireRelation(relation);
+        int effectiveRange = relation.effectiveRange;
         Set<Object> seenConnections = Set.copyOf(access(tracker).phoenium$getSeenBy());
         synchronized (this) {
             if (cycling) throw new IllegalStateException("tracker source changed during regional cycle");
@@ -166,6 +170,7 @@ public final class RegionalTrackingService {
         for (Entry entry : entries) {
             FullEntityFacts.Candidate candidate = finishing.entityFacts.trackingCandidate(level, entry.entity);
             RoutingKey key = key(candidate);
+            RangeProjection relation = prepareRange(candidate);
             Preview[] captured = new Preview[1];
             dispatcher.executeAndDrain(key, RegionalServiceKind.TRACKING_UPDATE, ignored -> {
                 requireEntityOwner(candidate, key);
@@ -182,7 +187,7 @@ public final class RegionalTrackingService {
                     seenConnections.add(connection);
                 });
                 captured[0] = new Preview(key, now, !now.equals(tracker.phoenium$getLastSectionPos()),
-                    tracker.phoenium$invokeEffectiveRange(), Set.copyOf(seen), Set.copyOf(seenConnections), candidate);
+                    relation.effectiveRange, Set.copyOf(seen), Set.copyOf(seenConnections), candidate, relation);
             });
             previews.put(entry, Objects.requireNonNull(captured[0]));
             synchronized (this) {
@@ -198,7 +203,7 @@ public final class RegionalTrackingService {
         for (Entry entry : entries) {
             Preview preview = previews.get(entry);
             LinkedHashSet<RoutingKey> footprint = new LinkedHashSet<>();
-            footprint.add(preview.key);
+            footprint.addAll(preview.relation.footprint);
             for (ServerPlayer player : levelPlayers) {
                 PlayerReceipt receipt = requirePlayer(players, player);
                 if (preview.seen.contains(player) || candidate(preview, receipt.key)) footprint.add(receipt.key);
@@ -227,6 +232,7 @@ public final class RegionalTrackingService {
                 dispatcher.executeAndDrain(preview.key, RegionalServiceKind.TRACKING_UPDATE, ignored -> {
                     requireEntityOwner(preview.candidate, preview.key);
                     requireEntry(entry, preview.candidate);
+                    requireRelation(preview.relation);
                     RegionalTrackedEntityAccess tracker = access(entry.tracker);
                     if (preview.sectionChanged) {
                         for (PlayerReceipt player : candidates) {
@@ -251,6 +257,7 @@ public final class RegionalTrackingService {
                 dispatcher.executeAndDrain(preview.key, RegionalServiceKind.TRACKING_PAIR, ignored -> {
                     requireEntityOwner(preview.candidate, preview.key);
                     requireEntry(entry, preview.candidate);
+                    requireRelation(preview.relation);
                     for (PlayerReceipt player : candidates) {
                         requirePlayer(player, connectionCut);
                         access(entry.tracker).phoenium$invokeUpdatePlayer(player.session.player());
@@ -273,12 +280,12 @@ public final class RegionalTrackingService {
         List<Entry> entries;
         synchronized (this) { entries = index.values(); }
         for (Entry entry : entries) {
-            int[] range = new int[1];
+            RangeProjection relation = prepareRange(entry.candidate);
             var seen = new java.util.concurrent.atomic.AtomicReference<Set<Object>>();
             dispatcher.executeAndDrain(entry.key, RegionalServiceKind.TRACKING_UPDATE, ignored -> {
                 requireEntityOwner(entry.candidate, entry.key);
                 requireEntry(entry, entry.candidate);
-                range[0] = access(entry.tracker).phoenium$invokeEffectiveRange();
+                requireRelation(relation);
                 Set<Object> exact = java.util.Collections.newSetFromMap(new IdentityHashMap<>());
                 exact.addAll(access(entry.tracker).phoenium$getSeenBy());
                 if (!listeners.containsAll(exact))
@@ -286,7 +293,7 @@ public final class RegionalTrackingService {
                 seen.set(Set.copyOf(exact));
             });
             synchronized (this) {
-                entry.effectiveRange = range[0];
+                entry.effectiveRange = relation.effectiveRange;
                 entry.seenConnections = Objects.requireNonNull(seen.get());
             }
         }
@@ -305,10 +312,11 @@ public final class RegionalTrackingService {
         if (entity instanceof ServerPlayer player && !connectionPlayers.contains(player)) connectionPlayers.add(player);
         FullFinishingScoreboard.TrackingCut connectionCut = finishing.scoreboard.trackingCut(connectionPlayers);
         Map<ServerPlayer, PlayerReceipt> players = playerReceipts(connectionCut);
-        int sourceRange = captureRange(entity, sourceKey);
+        RangeProjection sourceRelation = prepareRange(source);
+        int sourceRange = sourceRelation.effectiveRange;
         var selectedPlayers = java.util.Collections.newSetFromMap(new IdentityHashMap<ServerPlayer, Boolean>());
         LinkedHashSet<RoutingKey> footprint = new LinkedHashSet<>();
-        footprint.add(sourceKey);
+        footprint.addAll(sourceRelation.footprint);
         for (ServerPlayer player : levelPlayers) {
             PlayerReceipt receipt = requirePlayer(players, player);
             if (candidateChunk(sourceKey, sourceRange, receipt.key)) {
@@ -324,17 +332,18 @@ public final class RegionalTrackingService {
             for (Entry entry : currentEntries) {
                 if (candidateChunk(entry.key, maximumTrackingRange, sourceKey)) {
                     selectedTrackers.add(entry.tracker);
-                    footprint.add(entry.key);
+                    footprint.addAll(publishedRange(entry.candidate).footprint);
                 }
             }
         }
 
         if (OwnershipContext.current().isPresent()) dispatcher.requireCurrentClosure(footprint);
         else dispatcher.ensureClosure(footprint);
-        AddPlan plan = new AddPlan(entity, source, sourceKey, connectionCut, players,
+        AddPlan plan = new AddPlan(entity, source, sourceKey, sourceRelation, connectionCut, players,
             Set.copyOf(selectedPlayers), Set.copyOf(selectedTrackers));
         Runnable body = () -> {
             dispatcher.requireCurrentOwner(sourceKey);
+            requireRelation(sourceRelation);
             if (!finishing.entityFacts.validTrackingCandidate(source))
                 throw new IllegalStateException("addEntity source identity changed before original body");
             activeAdd.set(plan);
@@ -368,6 +377,7 @@ public final class RegionalTrackingService {
             .orElseThrow(() -> new IllegalStateException("addEntity reverse pairing tracker is not retained"));
         requireEntityOwner(entry.candidate, entry.key);
         requireEntry(entry, entry.candidate);
+        requireRelation(publishedRange(entry.candidate));
         finishing.scoreboard.requireTrackingSession(plan.connections,
             plan.players.get(player).session);
         original.run();
@@ -390,7 +400,8 @@ public final class RegionalTrackingService {
         List<Entry> entries;
         synchronized (this) { entries = index.values(); }
         Entry sourceEntry = entries.stream().filter(value -> value.entity == entity).findFirst().orElse(null);
-        LinkedHashSet<RoutingKey> footprint = new LinkedHashSet<>(); footprint.add(sourceKey);
+        RangeProjection sourceRelation = prepareRange(source);
+        LinkedHashSet<RoutingKey> footprint = new LinkedHashSet<>(sourceRelation.footprint);
         if (sourceEntry != null) for (Object listener : sourceEntry.seenConnections) {
             PlayerReceipt receipt = Objects.requireNonNull(listeners.get(listener),
                 "removed tracker retains a connection outside the live session cut");
@@ -400,14 +411,15 @@ public final class RegionalTrackingService {
         if (entity instanceof ServerPlayer player) {
             PlayerReceipt removedPlayer = requirePlayer(players, player);
             for (Entry entry : entries) if (entry.seenConnections.contains(removedPlayer.session.listener())) {
-                selectedTrackers.add(entry.tracker); footprint.add(entry.key);
+                selectedTrackers.add(entry.tracker); footprint.addAll(publishedRange(entry.candidate).footprint);
             }
         }
         if (OwnershipContext.current().isPresent()) dispatcher.requireCurrentClosure(footprint);
         else dispatcher.ensureClosure(footprint);
-        RemovePlan plan = new RemovePlan(entity, cut, players, Set.copyOf(selectedTrackers));
+        RemovePlan plan = new RemovePlan(entity, sourceRelation, cut, players, Set.copyOf(selectedTrackers));
         Runnable body = () -> {
             dispatcher.requireCurrentOwner(sourceKey);
+            requireRelation(sourceRelation);
             activeRemove.set(plan);
             try { original.run(); }
             finally { activeRemove.remove(); }
@@ -426,6 +438,7 @@ public final class RegionalTrackingService {
             .orElseThrow(() -> new IllegalStateException("removeEntity tracker is not retained"));
         requireEntityOwner(entry.candidate, entry.key);
         requireEntry(entry, entry.candidate);
+        requireRelation(publishedRange(entry.candidate));
         finishing.scoreboard.requireTrackingSession(plan.connections, plan.players.get(player).session);
         original.run();
         refreshProjection(entry);
@@ -444,7 +457,8 @@ public final class RegionalTrackingService {
         players.values().forEach(receipt -> listeners.put(receipt.session.listener(), receipt));
         List<Entry> entries;
         synchronized (this) { entries = index.values(); }
-        LinkedHashSet<RoutingKey> footprint = new LinkedHashSet<>(); footprint.add(moving.key);
+        RangeProjection movingRelation = prepareRange(moving.candidate);
+        LinkedHashSet<RoutingKey> footprint = new LinkedHashSet<>(movingRelation.footprint);
         Set<Object> selectedTrackers = java.util.Collections.newSetFromMap(new IdentityHashMap<>());
         Set<ServerPlayer> selectedPlayers = java.util.Collections.newSetFromMap(new IdentityHashMap<>());
         Object playerTracker = null;
@@ -457,7 +471,7 @@ public final class RegionalTrackingService {
                     index.update(entry.id, entry.key, entry.owner);
                 }
                 playerTracker = entry.tracker;
-                int currentRange = captureRange(entry.entity, moving.key);
+                int currentRange = movingRelation.effectiveRange;
                 for (ServerPlayer candidate : level.players()) {
                     PlayerReceipt receipt = requirePlayer(players, candidate);
                     if (entry.seenConnections.contains(receipt.session.listener())
@@ -467,15 +481,16 @@ public final class RegionalTrackingService {
                 }
             } else if (entry.seenConnections.contains(moving.session.listener())
                     || candidateChunk(entry.key, maximumTrackingRange, moving.key)) {
-                selectedTrackers.add(entry.tracker); footprint.add(entry.key);
+                selectedTrackers.add(entry.tracker); footprint.addAll(publishedRange(entry.candidate).footprint);
             }
         }
         if (OwnershipContext.current().isPresent()) dispatcher.requireCurrentClosure(footprint);
         else dispatcher.ensureClosure(footprint);
-        MovePlan plan = new MovePlan(player, playerTracker, cut, players,
+        MovePlan plan = new MovePlan(player, playerTracker, movingRelation, cut, players,
             Set.copyOf(selectedPlayers), Set.copyOf(selectedTrackers));
         Runnable body = () -> {
             dispatcher.requireCurrentOwner(moving.key);
+            requireRelation(movingRelation);
             activeMove.set(plan);
             try { original.run(); }
             finally { activeMove.remove(); }
@@ -488,6 +503,7 @@ public final class RegionalTrackingService {
         MovePlan plan = Objects.requireNonNull(activeMove.get(), "unprepared move updatePlayers call");
         if (trackerIdentity != plan.playerTracker)
             throw new IllegalStateException("move updatePlayers names a foreign player tracker");
+        requireRelation(plan.playerRelation);
         for (ServerPlayer player : originalPlayers) if (plan.selectedPlayers.contains(player)) {
             PlayerReceipt receipt = requirePlayer(plan.players, player);
             requirePlayer(receipt, plan.connections);
@@ -510,6 +526,7 @@ public final class RegionalTrackingService {
             .orElseThrow(() -> new IllegalStateException("move tracker is not retained"));
         requireEntityOwner(entry.candidate, entry.key);
         requireEntry(entry, entry.candidate);
+        requireRelation(publishedRange(entry.candidate));
         finishing.scoreboard.requireTrackingSession(plan.connections, plan.players.get(player).session);
         original.run();
         refreshProjection(entry);
@@ -561,7 +578,7 @@ public final class RegionalTrackingService {
         return result;
     }
     private void refreshProjection(Entry entry) {
-        entry.effectiveRange = access(entry.tracker).phoenium$invokeEffectiveRange();
+        entry.effectiveRange = publishedRange(entry.candidate).effectiveRange;
         entry.seenConnections = Set.copyOf(access(entry.tracker).phoenium$getSeenBy());
     }
     private void reorderSource(Int2ObjectMap<Object> source) {
@@ -570,18 +587,31 @@ public final class RegionalTrackingService {
             order.add(new RegionalTrackingPartitions.Identity(item.getIntKey(), item.getValue()));
         index.reorder(order);
     }
-    private int captureRange(Entity entity, RoutingKey key) {
-        int[] range = new int[1];
-        Runnable capture = () -> {
-            dispatcher.requireCurrentOwner(key);
-            int effective = entity.getType().clientTrackingRange() * 16;
-            for (Entity passenger : entity.getIndirectPassengers())
-                effective = Math.max(effective, passenger.getType().clientTrackingRange() * 16);
-            range[0] = level.getServer().getScaledTrackingDistance(effective);
-        };
-        if (OwnershipContext.current().isPresent()) capture.run();
-        else dispatcher.executeAndDrain(key, RegionalServiceKind.TRACKING_UPDATE, ignored -> capture.run());
-        return range[0];
+    private RangeProjection prepareRange(FullEntityFacts.Candidate source) {
+        RangeProjection projection = publishedRange(source);
+        if (OwnershipContext.current().isPresent()) dispatcher.requireCurrentClosure(projection.footprint);
+        else dispatcher.ensureClosure(projection.footprint);
+        return projection;
+    }
+    private RangeProjection publishedRange(FullEntityFacts.Candidate source) {
+        LinkedHashSet<RoutingKey> footprint = new LinkedHashSet<>();
+        footprint.add(key(source));
+        int effective = source.fact().type().clientTrackingRange() * 16;
+        List<FullEntityFacts.Candidate> passengers = finishing.entityFacts.trackingPassengers(source);
+        for (FullEntityFacts.Candidate passenger : passengers) {
+            footprint.add(key(passenger));
+            effective = Math.max(effective, passenger.fact().type().clientTrackingRange() * 16);
+        }
+        return new RangeProjection(source, level.getServer().getScaledTrackingDistance(effective),
+            Set.copyOf(footprint), passengers);
+    }
+    private void requireRelation(RangeProjection projection) {
+        dispatcher.requireCurrentClosure(projection.footprint);
+        if (!finishing.entityFacts.validTrackingCandidate(projection.source))
+            throw new IllegalStateException("tracking relation source identity changed");
+        for (FullEntityFacts.Candidate passenger : projection.passengers)
+            if (!finishing.entityFacts.validTrackingCandidate(passenger))
+                throw new IllegalStateException("tracking passenger identity changed");
     }
     private static PlayerReceipt requirePlayer(Map<ServerPlayer, PlayerReceipt> players, ServerPlayer player) {
         return Objects.requireNonNull(players.get(player), "player is absent from retained tracking connection cut");
@@ -620,12 +650,18 @@ public final class RegionalTrackingService {
     }
     private record Preview(RoutingKey key, SectionPos section, boolean sectionChanged,
                            int effectiveRange, Set<ServerPlayer> seen, Set<Object> seenConnections,
-                           FullEntityFacts.Candidate candidate) { }
+                           FullEntityFacts.Candidate candidate, RangeProjection relation) { }
+    private record RangeProjection(FullEntityFacts.Candidate source, int effectiveRange,
+                                   Set<RoutingKey> footprint,
+                                   List<FullEntityFacts.Candidate> passengers) {
+        RangeProjection { footprint = Set.copyOf(footprint); passengers = List.copyOf(passengers); }
+    }
     private record PlayerReceipt(FullFinishingScoreboard.TrackingSession session,
                                  FullEntityFacts.Candidate candidate, RoutingKey key) { }
     private record Source(int id, Object tracker, Entity entity, FullEntityFacts.Candidate candidate,
                           RoutingKey key, RegionId owner) { }
     private record AddPlan(Entity entity, FullEntityFacts.Candidate source, RoutingKey sourceKey,
+                           RangeProjection sourceRelation,
                            FullFinishingScoreboard.TrackingCut connections,
                            Map<ServerPlayer, PlayerReceipt> players,
                            Set<ServerPlayer> selectedPlayers, Set<Object> selectedTrackers) {
@@ -635,11 +671,12 @@ public final class RegionalTrackingService {
             selectedTrackers = Set.copyOf(selectedTrackers);
         }
     }
-    private record RemovePlan(Entity entity, FullFinishingScoreboard.TrackingCut connections,
+    private record RemovePlan(Entity entity, RangeProjection sourceRelation,
+                              FullFinishingScoreboard.TrackingCut connections,
                               Map<ServerPlayer, PlayerReceipt> players, Set<Object> selectedTrackers) {
         RemovePlan { players = Map.copyOf(players); selectedTrackers = Set.copyOf(selectedTrackers); }
     }
-    private record MovePlan(ServerPlayer player, Object playerTracker,
+    private record MovePlan(ServerPlayer player, Object playerTracker, RangeProjection playerRelation,
                             FullFinishingScoreboard.TrackingCut connections,
                             Map<ServerPlayer, PlayerReceipt> players,
                             Set<ServerPlayer> selectedPlayers, Set<Object> selectedTrackers) {

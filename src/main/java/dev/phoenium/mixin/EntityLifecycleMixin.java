@@ -22,4 +22,9 @@ abstract class EntityLifecycleMixin {
     private void phoenium$removed(Entity.RemovalReason reason, CallbackInfo ci) {
         Phoenium.liveRuntime().onEntityRemoved((Entity) (Object) this);
     }
+
+    @Inject(method = {"addPassenger", "removePassenger"}, at = @At("TAIL"), require = 2)
+    private void phoenium$passengerRelation(Entity passenger, CallbackInfo ci) {
+        FullEntityFacts.passengersChanged((Entity) (Object) this);
+    }
 }

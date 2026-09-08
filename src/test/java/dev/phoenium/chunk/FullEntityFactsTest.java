@@ -134,4 +134,18 @@ final class FullEntityFactsTest {
             f.full(claim -> { assertEquals(next, entity.getUUID()); assertEquals(next.toString(), entity.getScoreboardName()); assertEquals(101, entity.getId()); });
         }
     }
+    @Test void retainedDirectPassengerGraphExpandsInVanillaIndirectOrderWithoutAliasReads() {
+        Object vehicle = new Object(), first = new Object(), grandchild = new Object(), second = new Object();
+        Map<Object, List<Object>> direct = new IdentityHashMap<>();
+        direct.put(vehicle, List.of(first, second)); direct.put(first, List.of(grandchild));
+        assertEquals(List.of(first, grandchild, second),
+            FullEntityFacts.orderedDescendants(vehicle, node -> direct.getOrDefault(node, List.of())));
+    }
+    @Test void malformedRetainedPassengerGraphFailsBeforeTrackingCallback() {
+        Object vehicle = new Object(), passenger = new Object();
+        Map<Object, List<Object>> direct = new IdentityHashMap<>();
+        direct.put(vehicle, List.of(passenger)); direct.put(passenger, List.of(vehicle));
+        assertThrows(ChunkProtocolException.class,
+            () -> FullEntityFacts.orderedDescendants(vehicle, node -> direct.getOrDefault(node, List.of())));
+    }
 }
