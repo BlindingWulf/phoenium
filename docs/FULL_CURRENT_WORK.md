@@ -10,7 +10,7 @@ Older contributor-only stop/approval-pending passages in historical records are 
 ## Current source and owners
 
 Authoritative checkout: C:/Users/Admin/Downloads/Project PHOENIUM/Phoenium, branch main.
-Source immediately before this note: efa9271. Main is clean at the checkpoint.
+Final integrated test/source checkpoint: 23140507f2bf84454b1742cddfab330fe386f3df. Main is clean.
 Final source freeze and artifact campaign are pending the last Sol cleanup and Luna
 harness correction. Do not report any intermediate artifact as final evidence.
 
@@ -22,7 +22,7 @@ nickname-based identity claim, recursive delegation, additional Astra or tier ov
 | Owner | Isolated checkout / branch | Active outcome |
 | --- | --- | --- |
 | Root | Phoenium / main | Review/integrate final bounded changes, verify evidence, A–L closure report |
-| /root/sol_services | Phoenium-full-sol / recovery/full-services-sol | Remove audit-only production cache hooks after accepting explicit cached-context boundary |
+| /root/sol_services | Phoenium-full-sol / recovery/full-services-sol | Complete; final stack integrated, no cache instrumentation remains |
 | /root/luna_harness | Phoenium-full-luna / recovery/full-harness-luna | Strict current markers, per-world zero cleanup and exact disk payload proof; then sole clean build/installed/client/vault campaign owner |
 
 No parallel root or Sol server/client/full clean build. Focused root tests use their own
@@ -52,7 +52,7 @@ view/simulation5, offline PhoeniumTest0, disposable local worlds only.
   live-inherited-adapters-61:62 saved-context PASS; installed rerun still required.
 * ffbe476/efa9271 integrate actual new installed direct command/sign/mannequin calls,
   pending command/sign positives, entity-property/location and structure cases.
-  Current intended finishing marker75 = query14/service7/D1=7/context33/publication2
+  Final finishing marker65 = query14/service7/D1=7/context35/publication2
   plus registered numeric5 and entity-property3; see actual marker subdivisions.
 
 Evidence root: run/full-resume/session-20260907/ in main. Failed -55/-59 compiler
@@ -61,13 +61,13 @@ are not final integrated proof. An ignored closure-narrative.md assembles C/D/H/
 
 ## Last bounded decisions and next commands
 
-Sol stack b312283/8e6ecc2/84eb590 is NOT integrated yet. Review proved cached
+Sol stack b312283/8e6ecc2/84eb590/414bd0c is integrated as54f18db/c435e21/bdf9f3a/8de1c03. Review proved cached
 DataComponents CUSTOM_NAME cannot be admitted safely: a process-wide equal-key encoder
 can begin loading after final validation, making original getUnchecked wait under R.
 The latest user permits explicit deferred scope; no new all-producer/global fence.
-Root requested removal of now-unused production Guava cache witnesses, key accessors,
+Final8de1c03 removes now-unused production Guava cache witnesses, key accessors,
 encoder hooks and metadata. Keep minimal path classification/rejection and meaningful
-positive direct-field/negative cached-field tests. Integrate only the completed stack.
+positive direct-field/negative cached-field tests. Root context merge-62:76 PASS (context64/pending12).
 
 Luna d5170f1 is NOT integrated yet. It makes teardown/disk proof stricter but root found
 that custody/work/lifecycle counters belong on CHUNK_BINDING, not FULL STOPPED. Correct
