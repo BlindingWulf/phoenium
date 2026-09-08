@@ -16,6 +16,7 @@ import dev.phoenium.topology.RoutingKey;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Objects;
+import java.util.function.BooleanSupplier;
 
 /**
  * The one synchronous bridge from original Minecraft service calls to leased regional execution.
@@ -37,6 +38,7 @@ public final class RegionalServiceDispatcher implements RegionalServiceExecutor 
     private final Map<Long, Pending> pending = new LinkedHashMap<>();
     private long nextOperation;
     private long nextSequence;
+    private BooleanSupplier boundaryAdvancer = () -> false;
 
     public RegionalServiceDispatcher(String serviceId, long worldInstance, RegionDirectory directory,
                                      Map<RegionId, RegionRuntime> runtimes, OwnerGateway gateway,
@@ -51,6 +53,11 @@ public final class RegionalServiceDispatcher implements RegionalServiceExecutor 
         scheduler.installRegionalServiceExecutor(this);
     }
 
+    /** Installs the live topology coordinator's owner-free, non-blocking boundary advance. */
+    public void installBoundaryAdvancer(BooleanSupplier boundaryAdvancer) {
+        this.boundaryAdvancer = Objects.requireNonNull(boundaryAdvancer, "boundaryAdvancer");
+    }
+
     public Handle submit(RoutingKey key, RegionalServiceKind kind, RegionalServiceWork body) {
         Objects.requireNonNull(key, "key");
         Objects.requireNonNull(kind, "kind");
@@ -58,9 +65,10 @@ public final class RegionalServiceDispatcher implements RegionalServiceExecutor 
         if (!scheduler.lifecycle().acceptsSimulationWork())
             throw new IllegalStateException("regional service admission after scheduler stop");
         RegionRoute route = directory.resolve(key).orElseThrow(() -> new IllegalArgumentException("unknown regional service key " + key));
-        long operationId = ++nextOperation;
-        long sequence = ++nextSequence;
-        Pending retained = new Pending(key, kind, body);
+        long operationId = nextOperation = Math.incrementExact(nextOperation);
+        long sequence = nextSequence = Math.incrementExact(nextSequence);
+        Handle handle = new Handle(serviceId, worldInstance, operationId, kind);
+        Pending retained = new Pending(key, kind, body, handle);
         pending.put(operationId, retained);
         TaskPayload.RegionalService payload = new TaskPayload.RegionalService(serviceId, worldInstance, operationId, kind.name());
         RegionTaskEnvelope envelope = new RegionTaskEnvelope("regional-service:" + kind.name(), payload, key,
@@ -78,7 +86,7 @@ public final class RegionalServiceDispatcher implements RegionalServiceExecutor 
             pending.remove(operationId);
             throw new IllegalStateException("regional service admission rejected: " + delivery);
         }
-        return new Handle(serviceId, worldInstance, operationId, kind);
+        return handle;
     }
 
     /** Drives the existing serial scheduler until this exact operation commits or the barrier trips. */
@@ -86,16 +94,23 @@ public final class RegionalServiceDispatcher implements RegionalServiceExecutor 
         requireHandle(handle);
         if (OwnershipContext.current().isPresent())
             throw new IllegalStateException("cannot drain regional service while owner authority is active");
-        while (pending.containsKey(handle.operationId())) {
-            long before = scheduler.advances();
+        while (handle.state == Outcome.PENDING) {
+            long before = scheduler.deliveryAttempts();
             scheduler.advanceOne();
-            if (!pending.containsKey(handle.operationId())) break;
-            if (scheduler.failureBarrier().tripped()) {
-                Pending failed = pending.remove(handle.operationId());
-                Throwable cause = scheduler.failureBarrier().record().map(record -> record.cause()).orElse(null);
-                throw new RegionalServiceFailure("regional service failed " + handle, cause, failed);
+            if (handle.state == Outcome.COMPLETE) return;
+            if (handle.state == Outcome.FAILED) {
+                pending.remove(handle.operationId());
+                Throwable cause = handle.failure;
+                // Preserve the original unchecked callback identity for vanilla callers and catch
+                // sites. Only a checked callback failure needs a cause-preserving bridge because
+                // the synchronous drain API itself has no checked throws clause.
+                if (cause instanceof RuntimeException runtime) throw runtime;
+                if (cause instanceof Error error) throw error;
+                throw new RegionalServiceFailure("regional service failed " + handle, cause, handle.kind());
             }
-            if (scheduler.advances() == before)
+            if (handle.state == Outcome.ABANDONED)
+                throw new IllegalStateException("regional service was abandoned without acknowledgement: " + handle);
+            if (scheduler.deliveryAttempts() == before && !boundaryAdvancer.getAsBoolean())
                 throw new IllegalStateException("regional service cannot progress at current topology boundary: " + handle);
         }
     }
@@ -110,18 +125,25 @@ public final class RegionalServiceDispatcher implements RegionalServiceExecutor 
             throw new IllegalStateException("foreign regional service identity " + operation);
         Pending retained = pending.get(operation.operationId());
         if (retained == null) throw new IllegalStateException("missing or repeated regional service operation " + operation.operationId());
+        var active = OwnershipContext.current().orElseThrow(() -> new IllegalStateException("regional service execution has no owner context"));
+        if (!active.region().equals(runtime.id())) throw new IllegalStateException("regional service context names foreign owner");
+        runtime.leases().requireCurrent(active.lease());
         if (!retained.kind().name().equals(operation.operationKind()))
             throw new IllegalStateException("regional service operation kind changed in transit");
         RegionRoute current = directory.resolve(retained.key()).orElseThrow(() -> new IllegalStateException("regional service key became unresolved"));
         if (!current.region().equals(runtime.id()))
             throw new IllegalStateException("regional service reached foreign owner " + runtime.id() + " expected " + current.region());
+        if (!current.ownerEpoch().equals(runtime.ownerEpoch()))
+            throw new IllegalStateException("regional service runtime owner epoch is stale");
         try {
             retained.body().run(new Execution(serviceId, worldInstance, operation.operationId(), retained.kind(), retained.key(), runtime));
         } catch (Exception | Error failure) {
+            retained.handle().failed(failure);
             throw failure;
         }
         if (pending.remove(operation.operationId()) != retained)
             throw new IllegalStateException("regional service operation identity changed during execution");
+        retained.handle().complete();
     }
 
     public int pendingCount() { return pending.size(); }
@@ -131,6 +153,7 @@ public final class RegionalServiceDispatcher implements RegionalServiceExecutor 
     /** Stop admission cleanup; retained bodies are released without executing them from the caller. */
     public int abandonPending() {
         int abandoned = pending.size();
+        pending.values().forEach(value -> value.handle().abandoned());
         pending.clear();
         return abandoned;
     }
@@ -139,9 +162,7 @@ public final class RegionalServiceDispatcher implements RegionalServiceExecutor 
         Objects.requireNonNull(handle, "handle");
         if (!serviceId.equals(handle.serviceId()) || worldInstance != handle.worldInstance())
             throw new IllegalArgumentException("foreign regional service handle " + handle);
-        Pending retained = pending.get(handle.operationId());
-        if (retained != null && retained.kind() != handle.kind())
-            throw new IllegalArgumentException("regional service handle kind mismatch");
+        if (handle.owner != this) throw new IllegalArgumentException("foreign regional service handle instance");
     }
     private static String requireText(String value, String name) {
         Objects.requireNonNull(value, name);
@@ -149,8 +170,30 @@ public final class RegionalServiceDispatcher implements RegionalServiceExecutor 
         return value;
     }
 
-    private record Pending(RoutingKey key, RegionalServiceKind kind, RegionalServiceWork body) { }
-    public record Handle(String serviceId, long worldInstance, long operationId, RegionalServiceKind kind) { }
+    private record Pending(RoutingKey key, RegionalServiceKind kind, RegionalServiceWork body, Handle handle) { }
+    public final class Handle {
+        private final RegionalServiceDispatcher owner = RegionalServiceDispatcher.this;
+        private final String serviceId;
+        private final long worldInstance;
+        private final long operationId;
+        private final RegionalServiceKind kind;
+        private Outcome state = Outcome.PENDING;
+        private Throwable failure;
+        private Handle(String serviceId, long worldInstance, long operationId, RegionalServiceKind kind) {
+            this.serviceId = serviceId; this.worldInstance = worldInstance; this.operationId = operationId; this.kind = kind;
+        }
+        public String serviceId() { return serviceId; }
+        public long worldInstance() { return worldInstance; }
+        public long operationId() { return operationId; }
+        public RegionalServiceKind kind() { return kind; }
+        public boolean completed() { return state == Outcome.COMPLETE; }
+        public boolean failed() { return state == Outcome.FAILED; }
+        private void complete() { if (state != Outcome.PENDING) throw new IllegalStateException("service handle already terminal"); state = Outcome.COMPLETE; }
+        private void failed(Throwable failure) { this.failure = failure; state = Outcome.FAILED; }
+        private void abandoned() { if (state == Outcome.PENDING) state = Outcome.ABANDONED; }
+        @Override public String toString() { return serviceId + "/" + worldInstance + "/" + operationId + "/" + kind; }
+    }
+    private enum Outcome { PENDING, COMPLETE, FAILED, ABANDONED }
     public record Execution(String serviceId, long worldInstance, long operationId, RegionalServiceKind kind,
                             RoutingKey key, RegionRuntime runtime) { }
 
@@ -161,9 +204,9 @@ public final class RegionalServiceDispatcher implements RegionalServiceExecutor 
 
     public static final class RegionalServiceFailure extends IllegalStateException {
         private final RegionalServiceKind kind;
-        private RegionalServiceFailure(String message, Throwable cause, Pending failed) {
+        private RegionalServiceFailure(String message, Throwable cause, RegionalServiceKind failedKind) {
             super(message, cause);
-            this.kind = failed == null ? null : failed.kind();
+            this.kind = failedKind;
         }
         public RegionalServiceKind kind() { return kind; }
     }

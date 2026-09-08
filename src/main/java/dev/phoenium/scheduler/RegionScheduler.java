@@ -26,6 +26,7 @@ public final class RegionScheduler {
     private final ObjectOperationExecutor objectOperationExecutor;
     private SchedulerLifecycle lifecycle = SchedulerLifecycle.RUNNING;
     private long advances;
+    private long deliveryAttempts;
     private ObjectOwnerGateway objectDeliveryValidator;
     private OwnerGateway locationValidator;
     private RegionalServiceExecutor regionalServiceExecutor;
@@ -45,6 +46,8 @@ public final class RegionScheduler {
     public SchedulerLifecycle lifecycle() { return lifecycle; }
     public FailureBarrier failureBarrier() { return barrier; }
     public long advances() { return advances; }
+    /** Includes stale drops and reroutes as well as successful bodies; used only for event-loop progress. */
+    public long deliveryAttempts() { return deliveryAttempts; }
     /** Installed by the typed object gateway; validation remains at envelope delivery, never ingress only. */
     public void installObjectDeliveryValidator(ObjectOwnerGateway validator) { this.objectDeliveryValidator = validator; }
     /** Installed by the generic owner gateway; every location task revalidates at execution, never ingress only. */
@@ -67,6 +70,7 @@ public final class RegionScheduler {
         if (!lifecycle.acceptsSimulationWork() || runtime.transitioning()) return false;
         RegionTaskEnvelope envelope = runtime.poll().orElse(null);
         if (envelope == null) return false;
+        deliveryAttempts++;
         if (envelope.payload() instanceof TaskPayload.OwnedObjectOperation) {
             if (objectDeliveryValidator == null || !objectDeliveryValidator.revalidateForExecution(runtime, envelope)) return true;
         } else {

@@ -56,13 +56,21 @@ final class RegionalServiceDispatcherTest {
         f.directory.publish(next, Map.of(
             f.aKey, new RegionRoute(f.bId, next, f.b.ownerEpoch()),
             f.bKey, new RegionRoute(f.bId, next, f.b.ownerEpoch())));
-        assertTrue(f.scheduler.runOne(f.a));
-        assertTrue(owners.isEmpty());
-        assertEquals(1, dispatcher.pendingCount());
-
         dispatcher.drain(handle);
         assertEquals(List.of(f.bId), owners);
         assertEquals(0, dispatcher.pendingCount());
+    }
+
+    @Test
+    void directExecutorCallCannotBypassLeaseAndOwnerContext() {
+        Fixture f = new Fixture();
+        var dispatcher = f.dispatcher();
+        var handle = dispatcher.submit(f.aKey, RegionalServiceKind.SAVE_CAPTURE, execution -> { });
+        var route = f.directory.resolve(f.aKey).orElseThrow();
+        var payload = new dev.phoenium.task.TaskPayload.RegionalService(dispatcher.serviceId(), dispatcher.worldInstance(),
+            handle.operationId(), handle.kind().name());
+        assertThrows(IllegalStateException.class, () -> dispatcher.execute(f.a, payload));
+        assertEquals(1, dispatcher.abandonPending());
     }
 
     @Test
@@ -86,10 +94,9 @@ final class RegionalServiceDispatcherTest {
         var handle = dispatcher.submit(f.aKey, RegionalServiceKind.RUN_SCHEDULED_BLOCK_TICK,
             execution -> { throw new IllegalArgumentException("tick callback failed"); });
 
-        var failure = assertThrows(RegionalServiceDispatcher.RegionalServiceFailure.class,
+        var failure = assertThrows(IllegalArgumentException.class,
             () -> dispatcher.drain(handle));
-        assertInstanceOf(IllegalArgumentException.class, failure.getCause());
-        assertEquals(RegionalServiceKind.RUN_SCHEDULED_BLOCK_TICK, failure.kind());
+        assertEquals("tick callback failed", failure.getMessage());
         assertTrue(f.barrier.tripped());
         assertEquals(0, dispatcher.pendingCount());
     }
