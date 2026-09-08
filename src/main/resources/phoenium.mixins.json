@@ -4,6 +4,12 @@
   "compatibilityLevel": "JAVA_25",
   "mixins": [
     "MinecraftServerMixin",
+    "FailedStopMinecraftServerMixin",
+    "FailedStopServerChunkCacheMixin",
+    "FailedStopPersistentEntitySectionManagerMixin",
+    "FailedStopSavedDataStorageMixin",
+    "FailedStopServerLevelMixin",
+    "FailedStopChunkMapMixin",
     "RegionalLevelTicksAccess",
     "RegionalLevelTicksMixin",
     "RegionalServerLevelAccess",
