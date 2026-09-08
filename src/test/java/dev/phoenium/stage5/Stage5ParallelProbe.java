@@ -59,7 +59,10 @@ public final class Stage5ParallelProbe implements DedicatedServerModInitializer 
     private static void demand(ServerLevel level) {
         level.getServer().tickRateManager().setFrozen(true);
         for (int center : CENTERS) for (int x = center - 1; x <= center + 1; x++) for (int z = -1; z <= 1; z++)
-            level.setChunkForced(x, z, true);
+            // Publish the original native ticket without ServerLevel.setChunkForced's
+            // eager getChunk wait. The event loop must produce and acknowledge FULL
+            // before preparation can read or place anything in these chunks.
+            level.getChunkSource().updateChunkForced(new net.minecraft.world.level.ChunkPos(x, z), true);
         demandPending = true;
         System.out.println("STAGE5_DEMANDED nativeForcedChunks=36");
     }
