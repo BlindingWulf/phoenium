@@ -168,7 +168,13 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
             directory, runtimes, gateway, scheduler);
         regionalServices = new RegionalWorldServices(directory, regionalDispatcher, objects);
         initializeRegionalSaves(regionalDispatcher);
-        for (ServerLevel level : server.getAllLevels()) regionalServices.bind(level);
+        // Reload can populate the native tracker map before SERVER_STARTED. Bootstrap
+        // reads its real published entity facts under the same named service turn used
+        // by later tracking initialization, before any regional callback is admitted.
+        try (var turn = dev.phoenium.chunk.FullFinishingServices.forServer(server)
+                .serial(dev.phoenium.chunk.FullFinishingServices.Phase.SERVER_TASK)) {
+            for (ServerLevel level : server.getAllLevels()) regionalServices.bind(level);
+        }
         if (fullEnclosure == null)
             fullEnclosure = new dev.phoenium.chunk.FullRegionalEnclosure(directory, runtimes, gateway, objects, regionalServices);
         else fullEnclosure.installStateMigration(regionalServices);

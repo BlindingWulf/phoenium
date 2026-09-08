@@ -498,7 +498,7 @@ public final class Stage4ClientTraceTest implements FabricClientGameTest {
             if (!server.isAlive()) return;
             context.waitTick();
         }
-        Path stopDump = Path.of(System.getProperty("phoenium.stage4.serverDirectory", "run/stage4"))
+        Path stopDump = Path.of(System.getProperty("phoenium.test.serverDirectory"))
             .resolve("thread-dumps/server-before-stop-timeout-" + server.pid() + ".txt");
         captureThreadDump(server, stopDump);
         server.destroyForcibly();

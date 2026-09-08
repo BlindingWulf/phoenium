@@ -465,6 +465,12 @@ public final class FullRuntimeAcceptanceProbe implements DedicatedServerModIniti
             if (entity instanceof Frog) frogs++; else if (entity instanceof Villager) villagers++;
             else throw new IllegalStateException("unexpected surviving saved root " + entity);
         }
+        // Native entity-storage visibility can lag the chunk's ticking future, especially
+        // while saved forced chunks finish before SERVER_STARTED. Keep polling the actual
+        // inventory within the client's existing bounded deadline; all eight survivors
+        // and every original reader/transfer check are still mandatory for FULL_LIVE_OK.
+        if (frogs < 4 || villagers < 4)
+            return "FULL_LIVE_PENDING phase=" + phase() + " frogs=" + frogs + " villagers=" + villagers;
         if (!inventoryLogged) {
             inventoryLogged = true;
             for (Entity entity : fixtureEntities)

@@ -4,6 +4,34 @@ Stage 4 remains **PARTIAL**, Stage 5 OFF, one gameplay worker, parallel gameplay
 This section supersedes the historical worker assignments and next-step instructions below.
 The session began from clean `2b3080b`; all newer work is preserved. No agents are running.
 
+- Recovery parent **ce3f980**, current production **28EE6B1757BB7C24D7D7A0F5AC4605969426BDC2561521E479F9C0055FDF3C94**.
+  Startup tracker bootstrap now reserves its named service turn before reading preexisting native
+  trackers. Complete suite816 tests/87 suites PASS, zero failures/errors/skips:
+  `run/stage4/final-suite-reload-bootstrap-results.json`. Packaging PASS `final-packaging-bootstrap.json`.
+  Same production: controlled FULL PASS `run/full-production-integration/transform-20260908-122103`;
+  adverse PASS `run/stage4/adverse-final-20260908-122130` (unchanged probe01F5...21B17, log7DE520...40DD1);
+  saved vault PASS `run/nonself-input-decision/saved-vault-20260908-122140`.
+- Authoritative FULL **fresh+reload PASS** in `run/full-authoritative/live-1788888418495` (G), then
+  **PASS again** in `live-1788888652522` (H) with the earlier failing F seed -5846470989536090341.
+  Both prove exact8-root MCA, ADMITTED_PROTO/ADMITTED_IMPOSTER, all4 frogs/4 rich villagers, original
+  effects/private inputs, TCP chunk receipt, both exit0 and all cleanup counts zero.
+  E had early3/3 visible inventory; F's bounded actual-inventory polling stayed3/3 and was manually
+  normally stopped after over3min. These are preserved failures, never PASS. G/H add only native
+  insertion/removal/lookup diagnostic logging and both prove4/4; no production/gameplay/input
+  relaxation. The exact visibility cause in E/F was not reproduced with H's matched seed.
+- **First unresolved blocker: healthy Stage4 stop**. Candidate5Y passed complete shared gameplay
+  on28EE... but stop timed out before original native stop. Pre-kill actual dump is
+  `run/stage4-client-gametest/run/stage4/thread-dumps/server-before-stop-timeout-10572.txt`:
+  server parked in `PhoeniumLiveRuntime.drainAdmittedWork` with no lease/monitor held. Likely terminal
+  object-envelope rejection drops its inbox entry but leaves the corresponding `packets` map entry
+  (ObjectOwnerGateway.revalidateForExecution ignores rejected submit result); confirm actual counts.
+  New test-only Stage4ShutdownDrainMixin logs the original predicate's remaining custody on the
+  server thread. Candidate5Z is running with it (`finish-candidate-5-z-launch.log`). Fixed dump path
+  property to phoenium.test.serverDirectory. Do not rerun unchanged failed candidate without this
+  diagnostic/fix. Earlier5W may be the same stop bug; retained failure is not healthy evidence.
+  Remaining: diagnose/fix stop, final5/8 client and reference8C, same-artifact regression reruns if
+  production changes, exact comparators/validators, final full-suite count/report/freeze. Stage5 OFF.
+
 - Latest integration after595d18f: native visibility now admits the exact saved entity even when
   its original reader discarded it before insertion. New actual-lookup/runtime regression PASS.
   FULL fresh next reached all8 saved reader assertions, then native chunk post-processing between
