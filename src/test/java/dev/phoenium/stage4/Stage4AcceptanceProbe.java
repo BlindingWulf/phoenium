@@ -81,6 +81,14 @@ public final class Stage4AcceptanceProbe implements DedicatedServerModInitialize
                     inspectFarDemand(context.getSource().getLevel(), "_LATE");
                     return 1;
                 }))
+                .then(Commands.literal("inspect-demand")
+                    .then(Commands.argument("chunkX", IntegerArgumentType.integer())
+                        .then(Commands.argument("chunkZ", IntegerArgumentType.integer()).executes(context -> {
+                            inspectDemand(context.getSource().getLevel(),
+                                IntegerArgumentType.getInteger(context, "chunkX"),
+                                IntegerArgumentType.getInteger(context, "chunkZ"));
+                            return 1;
+                        }))))
                 .then(Commands.literal("prepare-deferred").executes(context -> {
                     prepareChunk(context.getSource().getLevel(), REGION_DEFERRED_EVENT, "deferred");
                     return 1;
@@ -347,6 +355,64 @@ public final class Stage4AcceptanceProbe implements DedicatedServerModInitialize
             System.out.println("STAGE4_TRACE_FAR_DEMAND_ROW" + markerSuffix + " " + demand + " " + holderState);
         }
         System.out.println("STAGE4_TRACE_FAR_DEMAND_DONE" + markerSuffix + " center=" + centerX + "," + centerZ);
+    }
+
+    /**
+     * Capture the native distance prerequisite at the first client FULL miss.  This is
+     * deliberately observational: it does not add a ticket or request a chunk.  The command
+     * accepts arbitrary chunk coordinates so the same diagnostic can be reused for A/B/far
+     * points without encoding a fixture-specific assumption in the probe.
+     */
+    private static void inspectDemand(ServerLevel level, int chunkX, int chunkZ) {
+        var map = level.getChunkSource().chunkMap;
+        var distance = map.getDistanceManager();
+        var player = level.players().stream().findFirst().orElse(null);
+        String playerState = player == null ? "player=none" : "player=" + player.getX() + "," + player.getY()
+            + "," + player.getZ() + " lastSection=" + player.getLastSectionPos()
+            + " chunkTrackingView=" + player.getChunkTrackingView();
+        String connectionState = "connection=none";
+        if (player != null && player.connection != null) {
+            Object awaitingTeleport = fieldValue(player.connection, "awaitingTeleport");
+            Object awaitingPosition = fieldValue(player.connection, "awaitingPositionFromClient");
+            Object awaitingTime = fieldValue(player.connection, "awaitingTeleportTime");
+            connectionState = "connection=present awaitingTeleport=" + awaitingTeleport
+                + " awaitingPositionFromClient=" + awaitingPosition + " awaitingTeleportTime=" + awaitingTime;
+        }
+        long key = net.minecraft.world.level.ChunkPos.pack(chunkX, chunkZ);
+        ChunkHolder holder = map.getUpdatingChunkIfPresent(key);
+        String holderState = holder == null ? "holder=absent" : "holder=present ticket=" + holder.getTicketLevel()
+            + " fullStatus=" + holder.getFullStatus() + " latest=" + holder.getLatestStatus()
+            + " persisted=" + holder.getPersistedStatus() + " fullFuture=" + futureState(holder.getFullChunkFuture())
+            + " tickingFuture=" + futureState(holder.getTickingChunkFuture())
+            + " entityTickingFuture=" + futureState(holder.getEntityTickingChunkFuture());
+        String ticketState = "tickets=" + ticketSummary(map, key);
+        System.out.println("STAGE4_TRACE_DEMAND_DIAGNOSTIC chunk=" + chunkX + "," + chunkZ + " " + playerState
+            + " " + connectionState + " tracked=" + (player != null && map.isChunkTracked(player, chunkX, chunkZ))
+            + " chunkLevel=" + distance.getChunkLevel(key, true)
+            + " blockRange=" + distance.inBlockTickingRange(key)
+            + " entityRange=" + distance.inEntityTickingRange(key)
+            + " nearby=" + distance.hasPlayersNearby(key) + " " + ticketState + " " + holderState);
+    }
+
+    private static String ticketSummary(net.minecraft.server.level.ChunkMap map, long key) {
+        try {
+            var storage = privateField(map, "ticketStorage", net.minecraft.world.level.TicketStorage.class);
+            return storage.getTickets(key).stream()
+                .map(ticket -> ticket.getType() + "@" + ticket.getTicketLevel())
+                .collect(java.util.stream.Collectors.joining(",", "[", "]"));
+        } catch (Throwable failure) {
+            return "<unavailable:" + failure.getClass().getSimpleName() + ">";
+        }
+    }
+
+    private static Object fieldValue(Object target, String name) {
+        try {
+            Field field = target.getClass().getDeclaredField(name);
+            field.setAccessible(true);
+            return field.get(target);
+        } catch (Throwable failure) {
+            return "<unavailable:" + failure.getClass().getSimpleName() + ">";
+        }
     }
 
     private static String futureState(java.util.concurrent.CompletableFuture<?> future) {

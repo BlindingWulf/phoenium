@@ -51,4 +51,14 @@ public final class ClientTraceObservations {
     public static boolean receivedChunk(int x, int z) {
         synchronized (RECEIVED) { return RECEIVED_CHUNKS.contains(net.minecraft.world.level.ChunkPos.pack(x, z)); }
     }
+
+    /** Stable typed chunk coordinates for a bounded FULL miss diagnostic. */
+    public static String receivedChunksSnapshot() {
+        synchronized (RECEIVED) {
+            return RECEIVED_CHUNKS.stream().sorted()
+                .map(key -> net.minecraft.world.level.ChunkPos.getX(key) + ","
+                    + net.minecraft.world.level.ChunkPos.getZ(key))
+                .collect(java.util.stream.Collectors.joining(",", "[", "]"));
+        }
+    }
 }

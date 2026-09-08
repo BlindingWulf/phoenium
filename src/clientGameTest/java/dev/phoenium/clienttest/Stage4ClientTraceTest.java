@@ -44,22 +44,25 @@ public final class Stage4ClientTraceTest implements FabricClientGameTest {
         boolean connected = false;
         boolean candidate = !Boolean.getBoolean("phoenium.stage4.reference");
         try {
+            Files.createDirectories(trace.toAbsolutePath().getParent());
+            Files.createDirectories(log.toAbsolutePath().getParent());
             configure(directory, worldName);
             List<String> command = new ArrayList<>(List.of(Path.of(System.getProperty("java.home"), "bin",
                 System.getProperty("os.name", "").toLowerCase().contains("win") ? "java.exe" : "java").toString(),
                 "-Xmx2G", "-Dphoenium.test.diagnostics=true",
                 "-Dphoenium.stage4.candidate=" + candidate,
-                // Both modes use the same disposable Stage 4 probe and chunk support inputs.
-                // Only the candidate installs the production A/B topology; the frozen serial
-                // reference must keep its native single-owner movement path while still
-                // executing the same probe commands and clock steps.
+                // Both modes use the same accepted Stage 3 support flags and disposable Stage 4
+                // probe.  explicitTopology is the established one-worker fixture; the
+                // stage4.candidate flag alone controls calls that require the new Stage 4
+                // coordinator/authority APIs.
+                "-Dphoenium.full.authoritative=true",
+                "-Dphoenium.stage3.explicitTopology=true",
                 "-Dphoenium.test.chunkFixtureSupport=true",
                 "-Dphoenium.stage3.chunkTrace=true",
                 "-Dphoenium.stage4.tracePath=" + trace.toAbsolutePath()));
             if (Boolean.getBoolean("phoenium.stage4.packetTrace"))
                 command.add("-Dphoenium.stage4.packetTracePath="
                     + trace.getParent().resolve("client-packets.log").toAbsolutePath());
-            if (candidate) command.add("-Dphoenium.stage3.explicitTopology=true");
             command.add("-jar");
             command.add("fabric-server-launch.jar");
             command.add("nogui");
@@ -81,6 +84,8 @@ public final class Stage4ClientTraceTest implements FabricClientGameTest {
             awaitLog(context, server, log, "STAGE4_TRACE_PREPARED_POINT label=A", START_TIMEOUT_TICKS);
             command(server, "tp " + USER + " 120.5 65 8.5");
             nudgeAfterTeleport(context);
+            command(server, "stage4trace inspect-demand 7 0");
+            awaitLog(context, server, log, "STAGE4_TRACE_DEMAND_DIAGNOSTIC chunk=7,0", START_TIMEOUT_TICKS);
             waitForClientChunks(context, new int[][] {{7, 0}}, START_TIMEOUT_TICKS);
             command(server, "stage4trace prepare-b");
             awaitLog(context, server, log, "STAGE4_TRACE_PREPARED_POINT label=B", START_TIMEOUT_TICKS);
@@ -258,8 +263,23 @@ public final class Stage4ClientTraceTest implements FabricClientGameTest {
             if (applied) return;
             context.waitTick();
         }
+        String clientState = context.computeOnClient(client -> {
+            if (client.level == null || client.player == null) return "level=none";
+            StringBuilder state = new StringBuilder("player=")
+                .append(client.player.getX()).append(',').append(client.player.getY()).append(',')
+                .append(client.player.getZ()).append(" chunk=").append(client.player.chunkPosition());
+            for (int[] chunk : chunks) {
+                var loaded = client.level.getChunkSource()
+                    .getChunk(chunk[0], chunk[1], ChunkStatus.FULL, false);
+                state.append(" target=").append(chunk[0]).append(',').append(chunk[1])
+                    .append(" loaded=").append(loaded != null)
+                    .append(" packet=").append(ClientTraceObservations.receivedChunk(chunk[0], chunk[1]));
+            }
+            return state.toString();
+        });
         throw new AssertionError("client did not apply exact FULL chunks "
-            + java.util.Arrays.deepToString(chunks) + " within " + timeoutTicks + " ticks");
+            + java.util.Arrays.deepToString(chunks) + " within " + timeoutTicks + " ticks; "
+            + clientState + " received=" + ClientTraceObservations.receivedChunksSnapshot());
     }
 
     /**
