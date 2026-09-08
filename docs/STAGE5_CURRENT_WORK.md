@@ -171,3 +171,19 @@ merge/replacement/split rounds, 12 actual replacement instances and 24 stale que
 native read deliveries; natural process exit. Strict reference comparison is next.
 Full Java suite passes after the owner repair (834 tests / 88 suites); all 14 Python
 comparator negative tests pass, including the unchanged Stage 4 cases.
+
+`full-4-c` (`run/full-authoritative/live-1788902752609`) passes the original fresh and
+reload FULL/client/native-MCA gates on production 59BB31DC: eight original readers,
+four bed callbacks, eight collision/IMMEDIATE reads in each lifecycle, zero residue,
+natural exits. Fresh has valid natural local overlap; reload's observed native ticker
+ordering splits the two small cohorts into separate serial segments (no overlap), so
+it is not the final Stage 5 FULL concurrency gate. The next fixture uses four larger
+independent furnace cohorts, preserving every original FULL assertion.
+`final-client-4-8-b` passes native 8/8 TCP, saved button delay 369 and original deadline
+callbacks. Native furnace MCA/readback matches, but both furnace regions were merged:
+center 20's required halo crosses the Stage 4 split boundary at 19. The auxiliary center
+is now 24, inside B's actual closure. This corrects offered independent topology rather
+than relaxing overlap. Prepared FULL staging also needed exclusion of its existing
+Stage 4 probe before explicitly installing the selected copy; failed staging retained.
+Actual client prelaunch/restart guard checks now exercise swapped real JARs and both
+Stage 3/4 reference identities; Stage 5 candidate mode explicitly rejects either freeze.

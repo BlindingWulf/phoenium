@@ -73,7 +73,7 @@ public final class Stage4ClientTraceTest implements FabricClientGameTest {
                     + trace.getParent().resolve("client-packets.log").toAbsolutePath());
             if (stage5) {
                 command.add("-Dphoenium.stage5.probe=true");
-                command.add("-Dphoenium.stage5.centers=0,20");
+            command.add("-Dphoenium.stage5.centers=0,24");
                 command.add("-Dphoenium.stage5.evidence=" + trace.getParent().resolve("gameplay").toAbsolutePath());
                 command.add("-Dphoenium.gameplay.workers=" + System.getProperty("phoenium.gameplay.workers", "1"));
                 command.add("-Dphoenium.gameplay.trace=true");
@@ -374,7 +374,8 @@ public final class Stage4ClientTraceTest implements FabricClientGameTest {
         Path installed = directory.resolve("mods/phoenium-0.2.0-stage2.jar");
         String actual = sha256(installed);
         boolean pass = expected.matches("[0-9A-F]{64}") && expected.equals(actual)
-            && (candidate ? !actual.equals(frozen) : actual.equals(frozen));
+            && (candidate ? !actual.equals(frozen) && (!Boolean.getBoolean("phoenium.stage5")
+                || !actual.equals("017EE8ED612D238894FFA5A1DC019BA8B0E31124B0B5171D08CC0D8993C1B534")) : actual.equals(frozen));
         Files.writeString(trace.resolveSibling("production-identity-" + phase + ".json"),
             "{\"phase\":" + jsonString(phase) + ",\"candidate\":" + candidate
                 + ",\"expectedSha256\":" + jsonString(expected) + ",\"installedSha256\":"

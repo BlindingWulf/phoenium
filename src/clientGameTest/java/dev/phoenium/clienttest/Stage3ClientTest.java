@@ -1779,11 +1779,11 @@ public final class Stage3ClientTest implements FabricClientGameTest {
                 if (Boolean.getBoolean("phoenium.stage5")) {
                     active.execute("stage5 demand");
                     awaitStage5FullLog(context, active, "STAGE5_READY");
-                    active.execute(lifecycle == 1 ? "stage5 prepare 32" : "stage5 adopt 32");
+                    active.execute(lifecycle == 1 ? "stage5 prepare 128" : "stage5 adopt 128");
                     awaitStage5FullLog(context, active, lifecycle == 1 ? "STAGE5_PREPARED" : "STAGE5_ADOPTED");
                     active.execute("stage5 split");
                     awaitStage5FullLog(context, active, "STAGE5_TOPOLOGY");
-                    active.execute("stage5 measure full-warmup-" + phase + " 20");
+                    active.execute("stage5 measure full-warmup-" + phase + " 40");
                     awaitStage5FullLog(context, active, "STAGE5_MEASURED label=full-warmup-" + phase);
                     active.execute("tick unfreeze");
                 }
@@ -2276,7 +2276,8 @@ public final class Stage3ClientTest implements FabricClientGameTest {
                 if (Boolean.getBoolean("phoenium.stage5")) {
                     command.add("-Dphoenium.stage4.candidate=true");
                     command.add("-Dphoenium.stage5.probe=true");
-                    command.add("-Dphoenium.stage5.centers=0,20");
+                    command.add("-Dphoenium.stage5.centers=0,20,40,60");
+                    command.add("-Dphoenium.gameplay.callbacksPerRegion=128");
                     command.add("-Dphoenium.stage5.evidence=" + server.directory.resolve("stage5-gameplay").toAbsolutePath());
                     command.add("-Dphoenium.gameplay.workers=" + Integer.getInteger("phoenium.gameplay.workers",1));
                     command.add("-Dphoenium.gameplay.trace=true");
