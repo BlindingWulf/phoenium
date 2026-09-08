@@ -497,6 +497,7 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
             });
             for (var services : java.util.List.copyOf(chunkPrerequisiteServices.values())) failures.run(services::shutdown);
             failures.run(() -> { if (regionalServices != null) regionalServices.unbindAll(); });
+            failures.run(entityIndexLifecycle::close);
         } finally {
             chunkPrerequisiteServices.clear();
             fullRegistrations.clear();

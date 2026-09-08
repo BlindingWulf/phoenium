@@ -789,7 +789,22 @@ public final class Stage4AcceptanceProbe implements DedicatedServerModInitialize
      * command only reads and verifies it, and fails when the requested cohort is absent or
      * still incomplete.  It does not create a ticket, future, holder, or synthetic readiness.
      */
+    private record PendingFull(ServerLevel level, String label, int x, int z, long deadline) { }
+    private static PendingFull pendingFull;
     private static void awaitFullReadiness(ServerLevel level, String label, int centerX, int centerZ) {
+        if (pendingFull != null) throw new IllegalStateException("overlapping native FULL readiness waits");
+        pendingFull = new PendingFull(level, label, centerX, centerZ, System.nanoTime() + 60_000_000_000L);
+    }
+    public static void observeFullReadiness() {
+        PendingFull pending = pendingFull;
+        if (pending == null) return;
+        if (checkFullReadiness(pending.level, pending.label, pending.x, pending.z)) pendingFull = null;
+        else if (System.nanoTime() > pending.deadline) {
+            pendingFull = null;
+            throw new IllegalStateException("native demanded FULL cohort did not converge: " + pending.label);
+        }
+    }
+    private static boolean checkFullReadiness(ServerLevel level, String label, int centerX, int centerZ) {
         // Use the server's unchanged native simulation distance as the demanded
         // cohort.  The query includes one native dependency halo chunk around it.
         int simulationRadius = level.getServer().getPlayerList().getSimulationDistance();
@@ -813,14 +828,11 @@ public final class Stage4AcceptanceProbe implements DedicatedServerModInitialize
         boolean complete = receipt.current() && actual.contains(centerKey(centerX, centerZ))
             && actual.containsAll(requested) && target.stream().allMatch(holder ->
             successful(holder.getFullChunkFuture()) && successful(holder.getTickingChunkFuture()));
-        if (!complete)
-            throw new IllegalStateException("FULL readiness incomplete label=" + label
-                + " target=" + centerX + "," + centerZ + " radius=" + radius
-                + " requested=" + requested.size() + " missing=" + requested.stream().filter(key -> !actual.contains(key)).count()
-                + " candidates=" + target.size() + " allCandidates=" + receipt.count());
+        if (!complete) return false;
         Stage4Trace.fullReadiness(label, centerX, centerZ, radius, target.size(), receipt.count());
         System.out.println("STAGE4_TRACE_FULL_READY label=" + label + " center=" + centerX + "," + centerZ
             + " radius=" + radius + " target=" + target.size() + " candidates=" + receipt.count());
+        return true;
     }
 
     private static long centerKey(int x, int z) {

@@ -16,6 +16,7 @@ abstract class Stage4ServerMixin {
     @Inject(method = "tickServer", at = @At("RETURN"), require = 1)
     private void phoenium$teleportReadiness(CallbackInfo ci) {
         dev.phoenium.stage4probe.Stage4AcceptanceProbe.observeTeleportReadiness();
+        dev.phoenium.stage4probe.Stage4AcceptanceProbe.observeFullReadiness();
     }
 
     @Inject(method = "saveAllChunks(ZZZ)Z", at = @At("HEAD"), require = 1)

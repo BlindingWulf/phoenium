@@ -109,9 +109,12 @@ public final class Stage4Trace {
                                      long currentTick,
                                      List<? extends net.minecraft.world.ticks.SavedTick<?>> pendingBefore) {
         if (pendingBefore == null) return;
-        if (active) for (var saved : pendingBefore) if (fixture(saved.pos()))
+        if (active) for (var saved : pendingBefore) if (fixture(saved.pos())) {
             System.out.println("STAGE4_TRACE_FIXTURE_UNPACK pos=" + saved.pos() + " type=" + saved.type()
                 + " delay=" + saved.delay() + " currentTick=" + currentTick);
+            event("tick.native.unpack", "pos=" + saved.pos() + " type=" + saved.type()
+                + " delay=" + saved.delay() + " currentTick=" + currentTick + " priority=" + saved.priority());
+        }
         List<? extends net.minecraft.world.ticks.SavedTick<?>> pending = pendingBefore.stream()
             .filter(tick -> tick.pos().equals(Stage4AcceptanceProbe.REGION_B_FUTURE)
                 && tick.type() == net.minecraft.world.level.block.Blocks.STONE_BUTTON)
@@ -236,6 +239,22 @@ public final class Stage4Trace {
             + " uuid=" + entity.getUUID()
             + " packet=" + packet.getClass().getName() + " gameTime=" + gameTime
             + " " + authority(entity.level() instanceof ServerLevel level ? level : null, entity.blockPosition()));
+    }
+
+    public static void trackingDelivered(Entity entity, ServerPlayer recipient, Object packet) {
+        if (!relevantEntity(entity)) return;
+        var fields = new java.util.TreeMap<String, Object>();
+        for (Class<?> type = packet.getClass(); type != Object.class; type = type.getSuperclass()) {
+            for (var field : type.getDeclaredFields()) {
+                if (java.lang.reflect.Modifier.isStatic(field.getModifiers())) continue;
+                if (!field.getType().isPrimitive()) continue;
+                try { field.setAccessible(true); fields.put(field.getName(), field.get(packet)); }
+                catch (ReflectiveOperationException failure) { throw new IllegalStateException(failure); }
+            }
+        }
+        event("tracking.delivered", "recipient=" + recipient.getName().getString() + " uuid=" + entity.getUUID()
+            + " entityId=" + entity.getId() + " packet=" + packet.getClass().getName() + " fields=" + fields
+            + " gameTime=" + entity.level().getGameTime());
     }
 
     public static void trackingChanges(Entity entity) {

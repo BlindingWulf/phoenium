@@ -544,6 +544,7 @@ public final class Stage4ClientTraceTest implements FabricClientGameTest {
         }
         if (!listening) throw new AssertionError("server TCP endpoint did not become ready");
         context.runOnClient(client -> {
+            client.options.renderDistance().set(Integer.parseInt(System.getProperty("phoenium.stage4.viewDistance", "8")));
             ServerData data = new ServerData("Phoenium Stage 4", "127.0.0.1:" + PORT, ServerData.Type.OTHER);
             ConnectScreen.startConnecting(client.gui.screen(), client, ServerAddress.parseString("127.0.0.1:" + PORT), data, false, null);
         });

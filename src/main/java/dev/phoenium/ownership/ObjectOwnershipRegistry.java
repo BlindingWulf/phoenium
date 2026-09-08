@@ -19,12 +19,14 @@ public final class ObjectOwnershipRegistry {
     private final RegionDirectory directory;
     private final Map<String, ObjectOwnership> entries = new LinkedHashMap<>();
     private final ReentrantLock metadataGate = new ReentrantLock();
+    private boolean closed;
 
     public ObjectOwnershipRegistry(RegionDirectory directory) { this.directory = Objects.requireNonNull(directory, "directory"); }
 
     public ObjectOwnership admit(String objectId, OwnedObjectKind kind, RoutingKey key) {
         metadataGate.lock();
         try {
+            if (closed) throw new IllegalStateException("object registry lifetime has ended");
             ObjectOwnership previous = entries.get(objectId);
             if (previous != null && previous.state() != ObjectOwnership.State.REMOVED) throw new IllegalStateException("duplicate object ownership " + objectId);
             RegionRoute route = route(key);
@@ -155,6 +157,13 @@ public final class ObjectOwnershipRegistry {
     }
 
     public int liveCount() { return (int) entries.values().stream().filter(value -> value.state() == ObjectOwnership.State.OWNED).count(); }
+    /** Terminal metadata cleanup after the scheduler and all retained consumers settle. */
+    public void close() {
+        if (OwnershipContext.current().isPresent()) throw new IllegalStateException("object registry closed under ownership");
+        metadataGate.lock();
+        try { closed = true; entries.clear(); }
+        finally { metadataGate.unlock(); }
+    }
     public int playerCount() { return (int) entries.values().stream().filter(value -> value.kind() == OwnedObjectKind.PLAYER && value.state() == ObjectOwnership.State.OWNED).count(); }
     public java.util.List<ObjectOwnership> ownedInWorld(dev.phoenium.core.WorldId world) {
         return entries.values().stream().filter(value -> value.state() == ObjectOwnership.State.OWNED && value.routingKey().world().equals(world)).toList();

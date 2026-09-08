@@ -4,6 +4,26 @@ Stage 4 remains **PARTIAL**, Stage 5 OFF, one gameplay worker, parallel gameplay
 This section supersedes the historical worker assignments and next-step instructions below.
 The session began from clean `2b3080b`; all newer work is preserved. No agents are running.
 
+- Recovery parent `4660f7d`. Frozen `finish-reference-5-h` full campaign and strict restart/MCA
+  validator PASS. Candidate `finish-candidate-5-s` full campaign and strict restart/MCA validator
+  PASS on `54FC9B407CFAE89BA7A6E58D9F8A032092A065132DD54F0C4C7B674BB62F16D8`.
+  Normal final shutdown returned, but reported seven retained entity records. Current source
+  closes ended-server derived ownership/interaction/id ledgers only after scheduler settlement
+  and save acknowledgement; no native entities are mutated. A new lifetime regression rejects
+  republishing old identities after cleanup. Focused shutdown/Stage3 checks pass.
+- Complete suite passed on 4660f7d (`final-full-suite-visible-movement.log`); current entity cleanup
+  needs final rerun/recount. Candidate `finish-candidate-8-b` passed movement ownership through
+  far, then a one-shot native FULL readiness command failed at deferred destination; server itself
+  stayed healthy and stopped normally. Probe now polls the same full configured demanded cohort
+  across native server ticks, bounded60s, with no fabricated inputs or reduced distances. Client
+  renderDistance now explicitly uses configured viewDistance (previous saved option requested5).
+- Current candidate `finish-candidate-8-c` includes entity cleanup and shared harness corrections.
+  Shared probe now observes actual tracker connection.send receipts (recipient/UUID/packet class
+  and primitive payload) separately from empty broadcast/recipient scans. Native fixture unpack
+  is included in trace for independently validating saved-delay timing. Full callback stream and
+  raw diagnostic events remain retained. Frozen/candidate paired comparison implementation still
+  open; only genuine run-specific clock/ID and internal no-op/autosave observations may normalize.
+
 - Recovery parent `a36d4cb`. Candidate Q (5/5) production
   `D00C92B8024B786F0BFA218AAD69C36400748FC72760B12C74C3F88D1AEC0885` passed first workload
   (1089 events), first normal shutdown, and native restart deadline phases (unpack725+188=913;

@@ -13,8 +13,10 @@ import java.util.concurrent.ConcurrentHashMap;
  */
 public final class InteractionTargetIndex {
     private final Map<Key, InteractionTargetRef> current = new ConcurrentHashMap<>();
+    private volatile boolean closed;
 
     public InteractionTargetRef publish(WorldId world, int entityId, ObjectOwnership object) {
+        if (closed) throw new IllegalStateException("interaction index lifetime has ended");
         InteractionTargetRef ref = new InteractionTargetRef(world, entityId, object.objectId(), object.incarnation(),
             object.routingKey(), object.owner(), object.topologyGeneration(), object.objectEpoch());
         current.put(new Key(world, entityId), ref);
@@ -36,6 +38,7 @@ public final class InteractionTargetIndex {
     public boolean isCurrent(InteractionTargetRef ref) {
         return ref.equals(current.get(new Key(ref.world(), ref.networkEntityId())));
     }
+    public void close() { closed = true; current.clear(); }
     private record Key(WorldId world, int entityId) { }
     public static final class UnknownInteractionTargetException extends IllegalStateException {
         public UnknownInteractionTargetException(WorldId world, int entityId) {

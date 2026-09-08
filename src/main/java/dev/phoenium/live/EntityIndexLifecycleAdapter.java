@@ -60,4 +60,10 @@ public final class EntityIndexLifecycleAdapter {
         objects.remove(current.objectId());
     }
     public Integer entityId(String objectId) { return entityIds.get(objectId); }
+    /** No native entities are mutated: these are the ended server's derived identity ledgers. */
+    public void close() {
+        objects.close();
+        index.close();
+        entityIds.clear();
+    }
 }
