@@ -129,20 +129,23 @@ def expected_pending_tick(trace_path):
         report = json.loads(trace_path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
         return None
-    for event in report.get("events", []):
-        if "type=Block{" in event and "order=99" in event:
+    if not isinstance(report, dict) or report.get("world") != "minecraft:overworld":
+        return None
+    events = report.get("events", [])
+    scheduled = [event for event in events if isinstance(event, str)
+                 and event.startswith("tick.schedule type=Block{minecraft:stone_button} ")
+                 and re.search(r"\border=99(?:\s|$)", event)]
+    if len(scheduled) != 1:
+        return None
+    for event in scheduled:
+        if "type=Block{" in event:
             position = re.search(r"pos=BlockPos\{x=(-?\d+), y=(-?\d+), z=(-?\d+)\}", event)
             trigger = re.search(r"trigger=(-?\d+)", event)
             block = re.search(r"type=Block\{([^}]+)\}", event)
             priority = re.search(r"priority=([A-Z_]+)", event)
             order = re.search(r"order=(-?\d+)", event)
             if position and trigger and block and priority and order:
-                dimension = "minecraft:overworld"
-                for started in report.get("events", []):
-                    world = re.search(r"world=.*minecraft:([a-z0-9_./-]+)", started)
-                    if world:
-                        dimension = "minecraft:" + world.group(1).split("]", 1)[0]
-                        break
+                dimension = report["world"]
                 save_times = []
                 for saved in report.get("events", []):
                     saved_chunk = re.search(
@@ -154,7 +157,9 @@ def expected_pending_tick(trace_path):
                 priority_value = {"EXTREMELY_HIGH": -3, "VERY_HIGH": -2, "HIGH": -1,
                                   "NORMAL": 0, "LOW": 1, "VERY_LOW": 2,
                                   "EXTREMELY_LOW": 3}.get(priority.group(1))
-                if priority_value is None or not save_times:
+                if priority.group(1) != "LOW" or priority_value is None or not save_times:
+                    return None
+                if int(trigger.group(1)) <= save_times[-1]:
                     return None
                 return {"position": {"x": int(position.group(1)),
                                       "y": int(position.group(2)),
@@ -243,18 +248,24 @@ def inspect_mca(world, state_positions=()):
                                "knownTickTags": ["invalid-length"]})
                 continue
             payload = data[begin + 5:begin + 4 + length]
+            decoded = None
             try:
                 if compression == 1:
                     nbt = gzip.decompress(payload)
                 elif compression == 2:
                     nbt = zlib.decompress(payload)
-                else:
+                elif compression == 3:
                     nbt = payload
+                else:
+                    raise ValueError(f"unsupported region compression {compression}")
                 decoded = decode_nbt(nbt)
+                if not isinstance(decoded, dict):
+                    raise ValueError("invalid native chunk NBT")
                 known = [tag for tag in (b"block_ticks", b"fluid_ticks", b"block_events") if tag in nbt]
                 digest = hashlib.sha256(nbt).hexdigest().upper()
-            except (OSError, zlib.error):
-                known, digest = ["decode-error"], None
+            except (OSError, zlib.error, ValueError):
+                decoded = None
+                known, digest = [b"decode-error"], None
             chunks.append({"index": index, "offset": offset, "sectors": sectors,
                            "compression": compression, "nbtSha256": digest,
                            "knownTickTags": [tag.decode() for tag in known],
@@ -265,7 +276,8 @@ def inspect_mca(world, state_positions=()):
                                            for position in state_positions
                                            if (position["x"] >> 4) & 31 == index % 32
                                            and (position["z"] >> 4) & 31 == index // 32}})
-        records.append({"path": str(path), "sha256": sha256(path),
+        records.append({"path": str(path), "relativePath": path.relative_to(world).as_posix(),
+                        "sha256": sha256(path),
                         "headerSha256": hashlib.sha256(data[:8192]).hexdigest().upper(),
                         "chunks": chunks})
     return records
@@ -287,9 +299,15 @@ def pending_tick_readback(records, expected):
     result = {"status": "NO_EXPECTATION", "expected": expected, "matches": [], "records": 0}
     if expected is None:
         return result
+    expected_chunk = expected["chunk"]
+    # Minecraft 26.2 stores these native worlds under dimensions/<namespace>/<name>.
+    # The full relative path distinguishes dimensions and regions sharing a local slot.
+    namespace, dimension_name = expected["dimension"].split(":", 1)
+    expected_region = (f"dimensions/{namespace}/{dimension_name}/region/"
+                       f"r.{expected_chunk['x'] >> 5}.{expected_chunk['z'] >> 5}.mca")
     all_ticks = []
     for region in records:
-        if not region_is_dimension(region.get("path", ""), expected.get("dimension", "minecraft:overworld")):
+        if region.get("relativePath") != expected_region:
             continue
         for chunk in region.get("chunks", []):
             for tick in chunk.get("blockTicks", []):
@@ -303,7 +321,7 @@ def pending_tick_readback(records, expected):
                 all_ticks.append(item)
     result["records"] = len(all_ticks)
     expected_position = expected["position"]
-    expected_chunk = expected["chunk"]
+    identity_records = 0
     for tick in all_ticks:
         x = tick.get("x")
         z = tick.get("z")
@@ -315,7 +333,10 @@ def pending_tick_readback(records, expected):
         if tick.get("chunkIndex") != chunk_index_for(expected_chunk) \
                 or tick.get("chunkPos") != expected_chunk:
             continue
-        if tick.get("i") != expected["id"] or tick.get("p") != expected["priorityValue"] \
+        if tick.get("i") != expected["id"]:
+            continue
+        identity_records += 1
+        if tick.get("p") != expected["priorityValue"] \
                 or not isinstance(tick.get("_state"), dict) \
                 or tick["_state"].get("Name") != expected["id"] \
                 or tick["_state"].get("Properties", {}).get("powered") != "true":
@@ -328,7 +349,10 @@ def pending_tick_readback(records, expected):
         tick["chunkMatch"] = True
         tick["powered"] = isinstance(tick.get("_state"), dict) and \
             tick["_state"].get("Properties", {}).get("powered") == "true"
-    result["status"] = "PRESENT" if result["matches"] else "MISSING"
+    result["identityRecords"] = identity_records
+    result["unique"] = identity_records == 1 and len(result["matches"]) == 1
+    result["status"] = ("DUPLICATE" if identity_records > 1 else
+                        "PRESENT" if result["unique"] else "MISSING")
     result["deadlineMatch"] = any(item.get("deadlineMatch") for item in result["matches"])
     result["exactIdentity"] = any(item.get("i") == expected["id"] and
                                    item.get("p") == expected["priorityValue"] and
@@ -341,15 +365,6 @@ def pending_tick_readback(records, expected):
 
 def chunk_index_for(chunk):
     return (chunk["x"] & 31) + ((chunk["z"] & 31) * 32)
-
-
-def region_is_dimension(path, dimension):
-    normalized = str(path).replace("\\", "/").lower()
-    if dimension == "minecraft:overworld":
-        return "/dimensions/minecraft/overworld/" in normalized \
-            or ("/dimensions/" not in normalized and "/region/" in normalized)
-    namespace, name = dimension.split(":", 1)
-    return f"/dimensions/{namespace}/{name}/" in normalized
 
 
 def copy_server(source, target, production, probe, extras):
@@ -642,6 +657,7 @@ def main():
                 "mcaSnapshotFiles": snapshot_files,
                 "pendingTickReadback": str(args.output / "pending-tick-readback.json"),
                 "pendingTickGate": pending["status"] == "PRESENT" and pending.get("deadlineMatch", False)
+                                   and pending.get("unique", False)
                                    and pending.get("exactIdentity", False)
                                    and pending.get("chunkMatch", False)
                                    and pending.get("poweredState", False),
