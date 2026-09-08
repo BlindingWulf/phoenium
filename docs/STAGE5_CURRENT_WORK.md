@@ -187,3 +187,12 @@ than relaxing overlap. Prepared FULL staging also needed exclusion of its existi
 Stage 4 probe before explicitly installing the selected copy; failed staging retained.
 Actual client prelaunch/restart guard checks now exercise swapped real JARs and both
 Stage 3/4 reference identities; Stage 5 candidate mode explicitly rejects either freeze.
+
+`full-4-d` requested auxiliary center 60 outside the existing explicitly declared
+fixture domain and was correctly rejected as unroutable. The fixture now uses the
+already supported centers 0,10,20,32. `full-4-e` fresh has natural four-region overlap;
+reload has natural two-region overlap but only three of the four required frog/villager
+pairs visible. The original 8-reader/suffix witnesses exist. This remains FAIL/pending
+diagnosis, not a reason to relax the native entity count. Sol High is doing one bounded
+read-only investigation of that exact missing publication while the lead maintains
+the sequential final-control driver `scripts/run_stage5_controls.py`.

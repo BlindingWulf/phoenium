@@ -2276,7 +2276,7 @@ public final class Stage3ClientTest implements FabricClientGameTest {
                 if (Boolean.getBoolean("phoenium.stage5")) {
                     command.add("-Dphoenium.stage4.candidate=true");
                     command.add("-Dphoenium.stage5.probe=true");
-                    command.add("-Dphoenium.stage5.centers=0,20,40,60");
+                    command.add("-Dphoenium.stage5.centers=0,10,20,32");
                     command.add("-Dphoenium.gameplay.callbacksPerRegion=128");
                     command.add("-Dphoenium.stage5.evidence=" + server.directory.resolve("stage5-gameplay").toAbsolutePath());
                     command.add("-Dphoenium.gameplay.workers=" + Integer.getInteger("phoenium.gameplay.workers",1));
