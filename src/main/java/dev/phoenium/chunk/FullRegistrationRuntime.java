@@ -369,6 +369,9 @@ public final class FullRegistrationRuntime {
         private boolean inputRequested = true;
         private boolean finishingInputBound;
         private FullInitializedInputs.Evaluation lastInputEvaluation;
+        private dev.phoenium.ownership.RegionLeaseManager contextWaitManager;
+        private dev.phoenium.ownership.LeaseEpoch contextWaitEpoch;
+        private AutoCloseable contextLeaseWaiter;
 
         Graph(Invocation invocation, WorldGenContext context, ChunkAccess input, Supplier<ChunkAccess> operation,
               Function<LevelChunk, ChunkAccess> finishingOperation,
@@ -608,6 +611,20 @@ public final class FullRegistrationRuntime {
                 keys.add(new RoutingKey(authority.world(), target.position().x(), target.position().z()));
             return Set.copyOf(keys);
         }
+        void awaitContextLease(dev.phoenium.ownership.RegionLeaseManager manager) {
+            requireObservationThread();
+            var epoch = manager.currentEpoch();
+            if (contextLeaseWaiter != null && contextWaitManager == manager && epoch.equals(contextWaitEpoch)) return;
+            clearContextLeaseWaiter();
+            contextWaitManager = manager; contextWaitEpoch = epoch;
+            contextLeaseWaiter = manager.whenReleased(inputs::changed);
+        }
+        void clearContextLeaseWaiter() {
+            var waiter = contextLeaseWaiter;
+            contextLeaseWaiter = null; contextWaitManager = null; contextWaitEpoch = null;
+            if (waiter != null) try { waiter.close(); }
+            catch (Exception failure) { throw new ChunkProtocolException("context lease notification acknowledgement failed", failure); }
+        }
         /** Dependency refinement may converge prepared inputs before its final receipt exists.
          * It never waits or proposes topology while retaining an owner. */
         boolean encloseContextTargets(List<FullInitializedInputs.Target> targets) {
@@ -679,7 +696,7 @@ public final class FullRegistrationRuntime {
         void discardSavedSnapshot() {
             if (savedInput != null) { savedInput.unsubscribe(savedChanged); savedInput.discardSnapshot(); }
         }
-        void inputEvidenceReleased() { lastInputEvaluation = null; }
+        void inputEvidenceReleased() { lastInputEvaluation = null; clearContextLeaseWaiter(); }
         FullSavedInput.Snapshot savedSnapshot() { return savedInput == null ? null : savedInput.snapshot(); }
         boolean inputActive() {
             custody.gate().lock(); try { return stopped == null && !cleaned && custody.metadataEntitledLocked(work); }
@@ -812,6 +829,7 @@ public final class FullRegistrationRuntime {
                 stopped = new Stopped(this, reason, cause);
                 custody.retireWork(work, reason != ChunkStageAdmission.Result.SUPERSEDED);
             } finally { custody.gate().unlock(); }
+            clearContextLeaseWaiter();
             if (reason == ChunkStageAdmission.Result.FAILED_BARRIER) {
                 custody.closeAdmissions();
                 authority.barrier().trip(cause == null ? stopped : cause, authority.directory().snapshot().generation(),

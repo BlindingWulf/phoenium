@@ -47,7 +47,11 @@ final class FullContextRefinement {
             }
             var manager = runtime.authority.leases().get(expected.region());
             if (manager == null) throw new ChunkProtocolException("context refinement has no named owner lease manager");
-            if (manager.hasActiveLease()) return new Observation<>(State.PENDING, null);
+            if (manager.hasActiveLease()) {
+                graph.awaitContextLease(manager);
+                return new Observation<>(State.PENDING, null);
+            }
+            graph.clearContextLeaseWaiter();
             use = custody.beginContextUseLocked(graph.finishing.stage(), graph.holder);
             if (use == null) return new Observation<>(State.PENDING, null);
             try { lease = manager.acquire(); }

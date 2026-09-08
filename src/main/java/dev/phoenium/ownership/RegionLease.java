@@ -16,7 +16,8 @@ public final class RegionLease implements AutoCloseable {
     public void requireCurrent() { manager.requireCurrent(this); }
     @Override public void close() {
         if (released) throw new IllegalStateException("lease released twice: " + region + " / " + epoch);
-        manager.release(this);
+        var notices = manager.release(this);
         released = true;
+        RegionLeaseManager.notifyReleased(notices);
     }
 }
