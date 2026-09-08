@@ -167,6 +167,10 @@ Lead review requires the following remaining corrections:
   These are parser checks, not completed installed pending-tick/reload acceptance.
 - Freeze restart before a saved deadline can pass, activate observation, then step
   through actual restored execution exactly once; do not reschedule or extend it.
+  Java startup/eligibility hook `d268f96` is integrated; `676ccb5` corrects its exact
+  eligibility marker. Luna's script `9036507` is not yet accepted: it still awaits 450
+  ticks while frozen. Finish readiness+freeze ordering, actual unpack-time/deadline
+  capture, native eligibility, and before/at/after deadline checks before launch.
 - Reuse the completed real-client world and immutable pre-restart copy. The generic
   server-only driver does not satisfy the client or final restart gates.
 
