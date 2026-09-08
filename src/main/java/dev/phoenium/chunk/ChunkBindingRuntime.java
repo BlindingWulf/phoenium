@@ -183,17 +183,22 @@ public final class ChunkBindingRuntime {
     public void shutdown() {
         if (!open) return;
         open = false;
-        worlds.values().forEach(world -> world.pump.shutdown());
+        var failures = new FullInputNotifications.Failures();
+        for (var world : java.util.List.copyOf(worlds.values())) failures.run(world.pump::shutdown);
         List<ChunkLoadGraph> graphs = graphs();
-        graphs.forEach(ChunkLoadGraph::shutdown);
-        worlds.values().forEach(world -> world.authority.services().stopResidentHolders());
+        for (var graph : graphs) failures.run(graph::shutdown);
+        for (var world : java.util.List.copyOf(worlds.values())) failures.run(world.authority.services()::stopResidentHolders);
         Delivery delivery;
-        while ((delivery = deliveries.pollFirst()) != null) delivery.stage().control(ChunkStageAdmission.Result.SHUTDOWN);
+        while ((delivery = deliveries.pollFirst()) != null) {
+            Delivery terminal = delivery;
+            failures.run(() -> terminal.stage().control(ChunkStageAdmission.Result.SHUTDOWN));
+        }
         if (Boolean.getBoolean("phoenium.test.chunkBindingTrace"))
-            logger.info("PHOENIUM_CHUNK_BINDING STOPPED {}", diagnostics());
+            failures.run(() -> logger.info("PHOENIUM_CHUNK_BINDING STOPPED {}", diagnostics()));
         indexGate.lock(); try {
             if (holderGraphs.isEmpty() && returnedIndex.isEmpty() && poiIndex.isEmpty()) worlds.clear();
         } finally { indexGate.unlock(); }
+        failures.rethrow();
     }
 
     public int retainedGraphs() { indexGate.lock(); try { return holderGraphs.values().stream().mapToInt(Set::size).sum(); } finally { indexGate.unlock(); } }

@@ -13,6 +13,26 @@ import static org.junit.jupiter.api.Assertions.*;
 
 /** The terminal wrapper must retain every failure while it still closes its named services. */
 final class FullServerShutdownFailureOrderTest {
+    @Test void failedAdmittedDrainStillRunsOriginalStopWithinTheSameNamedServiceTurn() throws Exception {
+        var events = new ArrayList<String>();
+        MinecraftServer server = stub(MinecraftServer.class, List.of());
+        var drainFailure = new IllegalStateException("accepted callback failed");
+        var originalFailure = new IllegalArgumentException("original storage close failed");
+        Throwable failure = assertThrows(IllegalStateException.class, () -> FullServerShutdown.run(server,
+                () -> events.add("admission-closed"),
+                () -> {
+                    FullFinishingServices.requireServer(server, FullFinishingServices.Kind.CONNECTIONS);
+                    events.add("owned-drain"); throw drainFailure;
+                },
+                () -> {
+                    FullFinishingServices.requireServer(server, FullFinishingServices.Kind.CONNECTIONS);
+                    events.add("original-stop"); throw originalFailure;
+                }, () -> events.add("runtime-settled")));
+        assertSame(drainFailure, failure);
+        assertArrayEquals(new Throwable[]{originalFailure}, failure.getSuppressed());
+        assertEquals(List.of("admission-closed", "owned-drain", "original-stop", "runtime-settled"), events);
+        assertThrows(ChunkProtocolException.class, () -> FullFinishingServices.forServer(server));
+    }
     @Test
     void reentrantStopRetainsTheOuterDrainAndCannotTerminateServicesEarly() throws Exception {
         var events = new ArrayList<String>();

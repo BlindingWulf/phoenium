@@ -16,17 +16,17 @@ public final class FullInputNotifications {
     public int retainedListeners() { return listeners.size(); }
 
     /** A committed publication or acknowledgement does not cancel its independent siblings. */
-    static final class Failures {
-        @FunctionalInterface interface Action { void run() throws Exception; }
+    public static final class Failures {
+        @FunctionalInterface public interface Action { void run() throws Exception; }
         private Throwable first;
-        void run(Action action) {
+        public void run(Action action) {
             try { action.run(); }
             catch (Throwable failure) {
                 if (first == null) first = failure;
                 else if (first != failure) first.addSuppressed(failure);
             }
         }
-        void rethrow() {
+        public void rethrow() {
             if (first instanceof RuntimeException runtime) throw runtime;
             if (first instanceof Error error) throw error;
             if (first != null) throw new ChunkProtocolException("FULL input acknowledgement failed", first);

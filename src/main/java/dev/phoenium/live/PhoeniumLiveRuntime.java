@@ -96,6 +96,9 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
     private PendingTick pendingTick;
     private boolean explicitFixture;
     private State state = State.NEW;
+    private volatile boolean gameplayAdmissionClosed;
+    private boolean settlingRuntime;
+    private MinecraftServer serverInstance;
     private long lifecycleStarts;
     private long lifecycleStops;
     private long intercepts;
@@ -132,6 +135,7 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
 
     public void start(MinecraftServer server) {
         if (state != State.NEW) throw new IllegalStateException("Phoenium lifecycle start repeated: " + state);
+        serverInstance = Objects.requireNonNull(server);
         // Force the target class through Mixin transformation during a no-client boot.  The two
         // required injectors each declare require=1/expect=1, so selector drift is a startup
         // failure rather than a first-client surprise or an early-hook fallback.
@@ -174,7 +178,7 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
     /** Called only from the redirect around MinecraftServer.tickChildren' single ServerLevel.tick invoke. */
     public void dispatchLevelTick(ServerLevel level, BooleanSupplier shouldKeepTicking) {
         intercepts++;
-        if (!isRunning()) {
+        if (!acceptsGameplay()) {
             // The redirect deliberately consumes the call after a hard barrier. It never invokes vanilla as a fallback.
             if (scheduler != null && scheduler.lifecycle() == SchedulerLifecycle.FAILED) hardBarriers = 1;
             return;
@@ -295,20 +299,88 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
         pending.queued = true;
     }
 
+    /** New packet/tick demand stops first; original generation and save continuations keep
+     * their existing admission until vanilla has drained and closed the worlds. */
+    public void closeGameplayAdmission() {
+        if (OwnershipContext.current().isPresent()) throw new IllegalStateException("shutdown admission changed inside an owner callback");
+        gameplayAdmissionClosed = true;
+    }
+
+    public void drainAdmittedWork(MinecraftServer server) {
+        if (OwnershipContext.current().isPresent()) throw new IllegalStateException("shutdown drain retained regional authority");
+        if (!gameplayAdmissionClosed) throw new IllegalStateException("shutdown drain before gameplay admission closed");
+        if (scheduler == null) return;
+        if (pendingTick != null) throw new IllegalStateException("shutdown interrupted an unfinished original world tick");
+        server.managedBlock(() -> {
+            requireHealthySettlement();
+            pumpFullOne();
+            chunkBinding.pumpOne();
+            pumpSaveOne();
+            scheduler.advanceOne();
+            requireHealthySettlement();
+            return packets.isEmpty() && chunkRequests.isEmpty()
+                    && (regionalDispatcher == null || regionalDispatcher.pendingCount() == 0)
+                    && (regionalSaves == null || regionalSaves.pending() == 0)
+                    && runtimes.values().stream().allMatch(runtime -> runtime.inboxSize() == 0 && runtime.transitionMailboxSize() == 0);
+        });
+    }
+
+    private void requireHealthySettlement() {
+        Throwable failure = barrier.record().map(record -> record.cause()).orElse(null);
+        if (failure instanceof RuntimeException runtime) throw runtime;
+        if (failure instanceof Error error) throw error;
+        if (failure != null) throw new IllegalStateException("shutdown cannot execute past the shared failure barrier", failure);
+        if (!scheduler.lifecycle().acceptsSimulationWork())
+            throw new IllegalStateException("shutdown drain reached a stopped scheduler");
+    }
+
     public void stop() {
-        if (state == State.STOPPED) return;
-        fullRegistrations.values().forEach(dev.phoenium.chunk.FullRegistrationRuntime::shutdown);
-        logger.info("PHOENIUM_FULL STOPPED {}", fullDiagnostics());
-        chunkBinding.shutdown();
-        if (scheduler != null) { scheduler.quiesce(); scheduler.stop(); }
-        chunkPrerequisiteServices.values().forEach(ChunkPrerequisiteServices::shutdown);
-        chunkPrerequisiteServices.clear();
-        if (regionalServices != null) regionalServices.unbindAll();
-        fullRegistrations.clear();
-        state = State.STOPPED;
-        lifecycleStops++;
-        logStatus("stopped");
-        ChunkRuntimeTrace.finish();
+        if (OwnershipContext.current().isPresent()) throw new IllegalStateException("runtime cleanup retained regional authority");
+        if (state == State.STOPPED || settlingRuntime) return;
+        settlingRuntime = true;
+        closeGameplayAdmission();
+        var failures = new dev.phoenium.chunk.FullInputNotifications.Failures();
+        try {
+            failures.run(() -> {
+                if (regionalSaves == null) return;
+                if (barrier.tripped()) {
+                    if (serverInstance != null) serverInstance.managedBlock(() -> {
+                        regionalSaves.acknowledgeAfterBarrier(barrier);
+                        return regionalSaves.pending() == 0;
+                    });
+                    else regionalSaves.acknowledgeAfterBarrier(barrier);
+                } else if (serverInstance != null) dev.phoenium.save.RegionalSaveBinding.flush(serverInstance, regionalSaves);
+                regionalSaves.requireFlushed();
+            });
+            for (var full : java.util.List.copyOf(fullRegistrations.values())) failures.run(full::shutdown);
+            failures.run(() -> logger.info("PHOENIUM_FULL STOPPED {}", fullDiagnostics()));
+            failures.run(chunkBinding::shutdown);
+            failures.run(() -> { if (scheduler != null) { scheduler.quiesce(); scheduler.stop(); } });
+            failures.run(() -> {
+                int abandoned = regionalDispatcher == null ? 0 : regionalDispatcher.abandonPending();
+                int packetCount = packets.size(); packets.clear();
+                for (var request : java.util.List.copyOf(chunkRequests.values())) {
+                    chunkCustody.cancel(ChunkCustody.id(request));
+                    chunkRequests.remove(request.correlationId());
+                }
+                if (abandoned != 0 || packetCount != 0)
+                    throw new IllegalStateException("shutdown acknowledged unexecuted work after failure: services=" + abandoned + " packets=" + packetCount);
+            });
+            for (var services : java.util.List.copyOf(chunkPrerequisiteServices.values())) failures.run(services::shutdown);
+            failures.run(() -> { if (regionalServices != null) regionalServices.unbindAll(); });
+        } finally {
+            chunkPrerequisiteServices.clear();
+            fullRegistrations.clear();
+            state = State.STOPPED;
+            lifecycleStops++;
+            settlingRuntime = false;
+            failures.run(() -> logger.info("PHOENIUM_STAGE4_SHUTDOWN admissionClosed={} queuedServices={} pendingSaves={} saveState={}",
+                    gameplayAdmissionClosed, regionalDispatcher == null ? 0 : regionalDispatcher.pendingCount(),
+                    regionalSaves == null ? 0 : regionalSaves.pending(), regionalSaves == null ? java.util.Map.of() : regionalSaves.measurements()));
+            failures.run(() -> logStatus("stopped"));
+            failures.run(ChunkRuntimeTrace::finish);
+        }
+        failures.rethrow();
     }
 
     public LiveDiagnostics diagnostics() {
@@ -522,6 +594,7 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
     public void admitMovePacket(ServerGamePacketListenerImpl connection, ServerboundMovePlayerPacket packet,
                                 double lastGoodX, double lastGoodY, double lastGoodZ, boolean awaitingTeleport) {
         movementIngress++;
+        if (!acceptsGameplay()) { packetRejections++; return; }
         ServerPlayer player = connection.player;
         if (player == null) { packetRejections++; movementFootprintRejected++; return; }
         ObjectOwnership current = bindPlayer(player);
@@ -545,6 +618,7 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
     /** Resolves an immutable derived target reference, without calling ServerLevel.getEntityOrPart. */
     public void admitInteractPacket(ServerGamePacketListenerImpl connection, ServerboundInteractPacket packet) {
         interactionIngress++;
+        if (!acceptsGameplay()) { packetRejections++; return; }
         ServerPlayer player = connection.player;
         if (player == null) { packetRejections++; return; }
         ObjectOwnership playerBinding = bindPlayer(player);
@@ -569,7 +643,7 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
      */
     public void observeChunkFuture(ServerLevel level, int x, int z, ChunkStatus status,
                                    CompletableFuture<ChunkResult<ChunkAccess>> future) {
-        if (!isRunning()) return;
+        if (!acceptsGameplay()) return;
         WorldId world = worldId(level);
         if (!observedChunkFutureWorlds.add(world)) return;
         TaskCorrelationId correlation = new TaskCorrelationId(++sequence);
@@ -590,7 +664,7 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
     }
 
     private void admitChunkCompletion(ChunkWorkRequest request) {
-        if (!isRunning()) { chunkRequests.remove(request.correlationId()); return; }
+        if (!isRunning()) { chunkCustody.cancel(ChunkCustody.id(request)); chunkRequests.remove(request.correlationId()); return; }
         ChunkCompletionGateway.Delivery delivery = chunkGateway.complete(request);
         if (delivery == ChunkCompletionGateway.Delivery.QUEUED || delivery == ChunkCompletionGateway.Delivery.REROUTED_CURRENT_OWNER) {
             chunkCompletionAdmissions++;
@@ -603,7 +677,7 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
 
     private void admitPacket(ServerGamePacketListenerImpl connection, ServerPlayer player, PendingPacket packet,
                              String operationKind, ObjectOwnership prepared, AdmissionPolicy policy) {
-        if (!isRunning() || player == null) { packetRejections++; return; }
+        if (!acceptsGameplay() || player == null) { packetRejections++; return; }
         ObjectOwnership binding = prepared == null ? bindPlayer(player) : prepared;
         TaskCorrelationId correlation = new TaskCorrelationId(++sequence);
         packets.put(correlation, packet);
@@ -697,6 +771,7 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
         }
     }
     private boolean isRunning() { return state == State.RUNNING && scheduler != null && scheduler.lifecycle().acceptsSimulationWork(); }
+    private boolean acceptsGameplay() { return !gameplayAdmissionClosed && isRunning(); }
     private static WorldId worldId(ServerLevel level) { return new WorldId(level.dimension().identifier().toString()); }
     private static RegionRuntime readyRuntime(RegionId region) {
         RegionRuntime runtime = new RegionRuntime(region, new OwnerEpoch(0));

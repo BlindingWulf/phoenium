@@ -2,10 +2,12 @@ package dev.phoenium.save;
 
 import dev.phoenium.Phoenium;
 import dev.phoenium.chunk.ChunkSaveRetention;
-import dev.phoenium.chunk.ChunkBindingRuntime;
+import dev.phoenium.chunk.FullFinishingServices;
 import dev.phoenium.core.WorldId;
 import dev.phoenium.ownership.OwnershipContext;
 import dev.phoenium.topology.RoutingKey;
+import dev.phoenium.topology.RegionDirectory;
+import java.util.List;
 import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
 import java.util.function.Supplier;
@@ -21,11 +23,12 @@ import net.minecraft.world.level.chunk.storage.SerializableChunkData;
  * before conditional removal; a later source cannot borrow that older incarnation. */
 public final class RegionalSaveBinding {
     public interface MapAccess {
-        ChunkHolder phoenium$saveHolder(long position);
         ChunkHolder phoenium$pendingUnload(long position);
     }
     private static final ThreadLocal<Invocation> CURRENT = new ThreadLocal<>();
     private static final ThreadLocal<Unload> UNLOAD = new ThreadLocal<>();
+    private static final ThreadLocal<Selection> SELECTION = new ThreadLocal<>();
+    private static final ThreadLocal<Batch> BATCH = new ThreadLocal<>();
     private RegionalSaveBinding() { }
 
     /** Current invocation diagnostic only; it retains no historical source or snapshot. */
@@ -36,6 +39,7 @@ public final class RegionalSaveBinding {
 
     public static boolean save(RegionalSaveCoordinator coordinator, ChunkMap map, ServerLevel level,
                                ChunkAccess chunk, Supplier<Boolean> original) {
+        FullFinishingServices.requireWorld(level, FullFinishingServices.Kind.UNSAVED);
         RoutingKey key = key(level, chunk.getPos());
         // Bound outstanding snapshot records before allocating another. Readiness and original
         // I/O progress are pumped only outside ownership; no polling while holding a region.
@@ -47,14 +51,25 @@ public final class RegionalSaveBinding {
                 return coordinator.pending() < 128;
             });
         }
-        ChunkBindingRuntime.WorldAuthority authority = Phoenium.liveRuntime().requireChunkWorld(level);
+        Batch batch = BATCH.get();
+        // Autosave and final unload also need a cut across dirty claim and capture. An
+        // enclosing save-all reservation (or an already active exact owner) supplies it.
+        boolean enclosed = batch != null && batch.map == map && batch.cut != null;
+        try (var operationCut = enclosed || OwnershipContext.current().isPresent()
+                ? null : retainTopologyCut(coordinator, level)) {
+            return saveWithinCut(coordinator, map, level, chunk, key, original);
+        }
+    }
+
+    private static boolean saveWithinCut(RegionalSaveCoordinator coordinator, ChunkMap map, ServerLevel level,
+                                         ChunkAccess chunk, RoutingKey key, Supplier<Boolean> original) {
         Source source = coordinator.prepareSource(key, () -> {
             Unload unload = UNLOAD.get();
             if (unload != null && unload.map == map && ChunkSaveRetention.sameChunk(unload.chunk, chunk))
-                return new Source(key, chunk, unload.retention.fork(), unload);
-            ChunkHolder holder = ((MapAccess) map).phoenium$saveHolder(chunk.getPos().pack());
-            if (holder == null) throw new IllegalStateException("original save has no selected source holder");
-            return new Source(key, chunk, ChunkSaveRetention.retain(authority, holder, chunk), null);
+                return new Source(key, chunk, unload.retention.fork(), unload, null);
+            Selection selected = Objects.requireNonNull(SELECTION.get(), "original save has no selected holder scope");
+            selected.require(map, chunk);
+            return new Source(key, chunk, selected.retention.fork(), null, selected);
         });
         RegionalSaveCoordinator.Attempt attempt = coordinator.begin(source);
         Invocation before = CURRENT.get();
@@ -70,17 +85,79 @@ public final class RegionalSaveBinding {
     public static boolean markSaved(ChunkAccess chunk, Supplier<Boolean> original) {
         return invocation(chunk).attempt.markSaved(original);
     }
+    public static <T> T readSource(ChunkAccess chunk, Supplier<T> original) {
+        return invocation(chunk).attempt.readSource(original);
+    }
+    public static <T> T readSource(Supplier<T> original) {
+        return Objects.requireNonNull(CURRENT.get(), "source read outside original save").attempt.readSource(original);
+    }
+
+    /** Preserve the holder actually selected by vanilla's visible-map traversal. An updating-map
+     * lookup at a later save site is not evidence for that original source incarnation. */
+    public static <T> T selectionScope(ChunkMap map, Supplier<T> original) {
+        Selection before = SELECTION.get();
+        Selection selected = new Selection(map);
+        SELECTION.set(selected);
+        try (selected) { return original.get(); }
+        finally { if (before == null) SELECTION.remove(); else SELECTION.set(before); }
+    }
+    public static ChunkAccess select(RegionalSaveCoordinator coordinator, ChunkMap map, ServerLevel level,
+                                     ChunkHolder holder, Supplier<ChunkAccess> original) {
+        Selection selection = Objects.requireNonNull(SELECTION.get(), "holder read outside original save traversal");
+        if (selection.map != map) throw new IllegalStateException("save traversal changed chunk map");
+        selection.clear();
+        return coordinator.prepareSource(key(level, holder.getPos()), () -> {
+            FullFinishingServices.requireWorld(level, FullFinishingServices.Kind.UNSAVED);
+            ChunkAccess selected = original.get();
+            if (selected != null) {
+                selection.chunk = selected;
+                selection.retention = ChunkSaveRetention.retain(Phoenium.liveRuntime().requireChunkWorld(level), holder, selected);
+            }
+            return selected;
+        });
+    }
+    public static boolean isUnsaved(RegionalSaveCoordinator coordinator, ChunkMap map, ServerLevel level,
+                                    ChunkAccess chunk, Supplier<Boolean> original) {
+        Selection selected = Objects.requireNonNull(SELECTION.get(), "dirty read outside original save traversal");
+        return coordinator.prepareSource(key(level, chunk.getPos()), () -> {
+            selected.require(map, chunk);
+            return original.get();
+        });
+    }
+
+    /** Save-all holds an immutable topology reservation, never a gameplay lease. Original
+     * readiness settles first; capture, encoding, storage and acknowledgement run outside
+     * the directory monitor. Pending I/O records remain free to migrate after this call. */
+    public static void batch(RegionalSaveCoordinator coordinator, ChunkMap map, ServerLevel level,
+                             boolean flush, Runnable original) {
+        if (OwnershipContext.current().isPresent()) throw new IllegalStateException("save-all entered inside regional ownership");
+        Batch before = BATCH.get();
+        Batch batch = new Batch(coordinator, map, level);
+        BATCH.set(batch);
+        try (batch) {
+            if (!flush) batch.retainCut();
+            selectionScope(map, () -> { original.run(); return null; });
+        } finally { if (before == null) BATCH.remove(); else BATCH.set(before); }
+    }
+    public static List<ChunkHolder> readyBatch(ChunkMap map, List<ChunkHolder> original) {
+        Batch batch = Objects.requireNonNull(BATCH.get(), "selected save-all holders outside original batch");
+        if (batch.map != map) throw new IllegalStateException("save-all holder list changed chunk map");
+        for (ChunkHolder holder : original) batch.level.getServer().managedBlock(holder::isReadyForSaving);
+        batch.retainCut();
+        return original;
+    }
     public static SerializableChunkData capture(ServerLevel level, ChunkAccess chunk,
                                                 Supplier<SerializableChunkData> original) {
         Invocation invocation = invocation(chunk);
         if (invocation.level != level) throw new IllegalStateException("save snapshot changed world instance");
+        FullFinishingServices.requireWorld(level, FullFinishingServices.Kind.TICK_LIST);
         return invocation.attempt.capture(() -> RetainedChunkSnapshot.detach(original.get()));
     }
     public static <T> CompletableFuture<T> write(ChunkMap map, ChunkPos pos, Supplier<CompletableFuture<T>> original) {
         Invocation invocation = Objects.requireNonNull(CURRENT.get(), "write outside original save");
         if (invocation.map != map || !invocation.chunk.getPos().equals(pos))
             throw new IllegalStateException("save write changed its original source");
-        try { return invocation.attempt.submitted(original.get()); }
+        try { return invocation.attempt.submitted(FullFinishingServices.ownerFreeIo(original)); }
         catch (RuntimeException | Error failure) { invocation.attempt.failed(failure); throw failure; }
     }
 
@@ -127,6 +204,15 @@ public final class RegionalSaveBinding {
     public static RoutingKey key(ServerLevel level, ChunkPos pos) {
         return new RoutingKey(new WorldId(level.dimension().identifier().toString()), pos.x(), pos.z());
     }
+    private static RegionDirectory.SaveCut retainTopologyCut(RegionalSaveCoordinator coordinator, ServerLevel level) {
+        RegionDirectory.SaveCut[] cut = {null};
+        level.getServer().managedBlock(() -> {
+            Phoenium.liveRuntime().pumpFullOne();
+            cut[0] = coordinator.tryRetainTopologyCut();
+            return cut[0] != null;
+        });
+        return cut[0];
+    }
     private static Invocation invocation(ChunkAccess chunk) {
         Invocation invocation = Objects.requireNonNull(CURRENT.get(), "snapshot outside original save");
         if (invocation.chunk != chunk) throw new IllegalStateException("save source identity changed");
@@ -142,17 +228,51 @@ public final class RegionalSaveBinding {
             this.map = map; this.chunk = chunk; this.retention = retention;
         }
     }
+    private static final class Selection implements AutoCloseable {
+        final ChunkMap map;
+        ChunkAccess chunk;
+        ChunkSaveRetention retention;
+        boolean open = true;
+        Selection(ChunkMap map) { this.map = map; }
+        void require(ChunkMap expectedMap, ChunkAccess expectedChunk) {
+            if (!open || map != expectedMap || chunk != expectedChunk || retention == null || !retention.matches(expectedChunk))
+                throw new IllegalStateException("save lost its original selected source incarnation");
+        }
+        void clear() {
+            ChunkSaveRetention previous = retention;
+            retention = null; chunk = null;
+            if (previous != null) previous.close();
+        }
+        @Override public void close() { open = false; clear(); }
+    }
+    private static final class Batch implements AutoCloseable {
+        final RegionalSaveCoordinator coordinator;
+        final ChunkMap map;
+        final ServerLevel level;
+        RegionDirectory.SaveCut cut;
+        Batch(RegionalSaveCoordinator coordinator, ChunkMap map, ServerLevel level) {
+            this.coordinator = coordinator; this.map = map; this.level = level;
+        }
+        void retainCut() {
+            if (cut != null) throw new IllegalStateException("save-all topology cut retained twice");
+            cut = retainTopologyCut(coordinator, level);
+        }
+        @Override public void close() { if (cut != null) cut.close(); }
+    }
     private static final class Source implements RegionalSaveCoordinator.Source {
         final RoutingKey key;
         final ChunkAccess chunk;
         final ChunkSaveRetention retention;
         final Unload originalUnload;
-        Source(RoutingKey key, ChunkAccess chunk, ChunkSaveRetention retention, Unload originalUnload) {
+        final Selection originalSelection;
+        Source(RoutingKey key, ChunkAccess chunk, ChunkSaveRetention retention, Unload originalUnload, Selection originalSelection) {
             this.key = key; this.chunk = chunk; this.retention = retention; this.originalUnload = originalUnload;
+            this.originalSelection = originalSelection;
         }
         public RoutingKey key() { return key; }
         public boolean current() {
-            return retention.matches(chunk) && (retention.current() || originalUnload != null && originalUnload.open);
+            return retention.matches(chunk) && (retention.current() || originalUnload != null && originalUnload.open
+                    || originalSelection != null && originalSelection.open && originalSelection.chunk == chunk);
         }
         public void restoreDirty() { chunk.markUnsaved(); }
         public void release() { retention.close(); }

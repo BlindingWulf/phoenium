@@ -28,14 +28,18 @@ public final class ChunkPrerequisiteServices {
             if (custody.lifecycleState(lifetime.lifecycle()).orElse(null) != ChunkCustodyModel.LifecycleState.RETIRED)
                 lifecycles.retireHolder(lifetime.lifecycle(), lifetime.holder());
         } finally { custody.gate().unlock(); }
-        FullPublishedInputs.retired(lifetime.holder());
-        tryReleaseRetiredLifecycle(lifetime.lifecycle());
+        var failures = new FullInputNotifications.Failures();
+        failures.run(() -> FullPublishedInputs.retired(lifetime.holder()));
+        failures.run(() -> tryReleaseRetiredLifecycle(lifetime.lifecycle()));
+        failures.rethrow();
     }
     public void stopResidentHolders() {
-        stopPublishedInputs();
+        var failures = new FullInputNotifications.Failures();
+        failures.run(this::stopPublishedInputs);
         java.util.List<ChunkHolderLifetime> snapshot;
         custody.gate().lock(); try { snapshot = java.util.List.copyOf(residentHolders.values()); } finally { custody.gate().unlock(); }
-        snapshot.forEach(this::retireResidentHolder);
+        for (var holder : snapshot) failures.run(() -> retireResidentHolder(holder));
+        failures.rethrow();
     }
     public int residentHolderEntries() { custody.gate().lock(); try { return residentHolders.size(); } finally { custody.gate().unlock(); } }
     public FullPublishedInputs publishedInputs(net.minecraft.server.level.ServerLevel level, ChunkBindingRuntime.WorldAuthority authority) {
@@ -63,7 +67,16 @@ public final class ChunkPrerequisiteServices {
     public ChunkWorkRegistry works() { return works; } public PoiInstallService poi() { return poi; } public LightInputService light() { return light; }
     public ChunkTypeMetadataService metadata() { return metadata; } public LoadApplyPrerequisites prerequisites() { return prerequisites; }
     public void retire(ChunkCustodyModel.LifecycleId lifecycle) { poi.retire(lifecycle); light.retire(lifecycle); metadata.retire(lifecycle); }
-    public void shutdown() { stopResidentHolders(); custody.closeAdmissions(); prerequisites.shutdown(); poi.shutdown(); light.shutdown(); metadata.shutdown(); }
+    public void shutdown() {
+        var failures = new FullInputNotifications.Failures();
+        failures.run(custody::closeAdmissions);
+        failures.run(this::stopResidentHolders);
+        failures.run(prerequisites::shutdown);
+        failures.run(poi::shutdown);
+        failures.run(light::shutdown);
+        failures.run(metadata::shutdown);
+        failures.rethrow();
+    }
     /** Only the completed execution leaves; the exact resident holder and other work survive. */
     public void settleFinishedExecution(ChunkCustodyModel.WorkId work, Object holderEvidence) {
         if (!lifecycles.holderMatches(work.lifecycle(), holderEvidence)) throw new ChunkProtocolException("settled execution lost holder evidence");

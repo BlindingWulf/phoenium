@@ -36,6 +36,8 @@ public final class RegionalSaveCoordinator {
     private final ConcurrentLinkedQueue<Attempt> completed = new ConcurrentLinkedQueue<>();
     private long sequence, captures, acknowledgements, failedWrites, retiredFailures;
     private Throwable unreportedFailure;
+    private boolean recordedStopBarrier;
+    private long failedSettlements;
 
     public RegionalSaveCoordinator(RegionDirectory directory, Map<RegionId, RegionRuntime> runtimes,
                                    RegionalServiceDispatcher dispatcher) {
@@ -59,7 +61,7 @@ public final class RegionalSaveCoordinator {
     }
 
     public void unloadSource(RoutingKey key, Runnable original) {
-        owned(key, RegionalServiceKind.SAVE_ACKNOWLEDGEMENT, () -> { original.run(); return null; });
+        owned(key, RegionalServiceKind.CHUNK_UNLOAD, () -> { original.run(); return null; });
     }
 
     public RegionDirectory.SaveCut tryRetainTopologyCut() { return directory.tryRetainSaveCut(); }
@@ -71,6 +73,7 @@ public final class RegionalSaveCoordinator {
         private Object snapshot;
         private boolean dirty, submitted, bodyFinished, acknowledged, queued;
         private volatile boolean writeFinished;
+        private volatile boolean completionPublished;
         private volatile Throwable failure;
         private Attempt(long id, Source source) { this.id = id; this.source = source; }
         public Cut cut() { return cut; }
@@ -81,6 +84,14 @@ public final class RegionalSaveCoordinator {
                 requireCurrentSource();
                 dirty = original.get();
                 return dirty;
+            });
+        }
+
+        public <T> T readSource(Supplier<T> original) {
+            requireRetained();
+            return owned(source.key(), RegionalServiceKind.SAVE_CAPTURE, () -> {
+                requireCurrentSource();
+                return original.get();
             });
         }
 
@@ -111,6 +122,7 @@ public final class RegionalSaveCoordinator {
                     writeFinished = true;
                 }
                 completed.add(this);
+                completionPublished = true;
             });
             return original;
         }
@@ -129,7 +141,7 @@ public final class RegionalSaveCoordinator {
             requireRetained();
             if (bodyFinished) throw new IllegalStateException("save body finished twice");
             bodyFinished = true;
-            if (!submitted) { writeFinished = true; completed.add(this); }
+            if (!submitted) { writeFinished = true; completed.add(this); completionPublished = true; }
         }
 
         private void requireRetained() {
@@ -181,10 +193,35 @@ public final class RegionalSaveCoordinator {
     }
 
     public int pending() { return retained.size(); }
+
+    /** A hard barrier forbids the source mutation that a normal failed-write ACK would do.
+     * Keep every snapshot until the real write completes, then acknowledge terminal failure
+     * and release only protocol custody. This never converts failure into a successful flush. */
+    public boolean acknowledgeAfterBarrier(dev.phoenium.failure.FailureBarrier barrier) {
+        if (OwnershipContext.current().isPresent()) throw new IllegalStateException("failed save settlement holds regional authority");
+        Throwable stopped = barrier.record().orElseThrow(() -> new IllegalStateException("failed settlement without a hard barrier")).cause();
+        if (!recordedStopBarrier) { recordFailure(stopped); recordedStopBarrier = true; }
+        boolean progress = false;
+        for (Attempt attempt : java.util.List.copyOf(retained.values())) {
+            if (retained.get(attempt.id) != attempt) continue; // a release callback may settle a sibling
+            if (!attempt.bodyFinished || !attempt.writeFinished || !attempt.completionPublished) continue;
+            if (attempt.failure != null) recordFailure(attempt.failure);
+            Source source = attempt.source;
+            retained.remove(attempt.id);
+            completed.remove(attempt);
+            attempt.acknowledged = true;
+            attempt.source = null; attempt.snapshot = null;
+            failedSettlements++;
+            try { source.release(); } catch (RuntimeException | Error failure) { recordFailure(failure); }
+            progress = true;
+        }
+        return progress;
+    }
     public Map<String, Long> measurements() {
         return Map.of("pending", (long) retained.size(), "completedNotAcknowledged", (long) completed.size(),
                 "captures", captures, "acknowledgements", acknowledgements,
-                "failedWrites", failedWrites, "retiredFailedSources", retiredFailures);
+                "failedWrites", failedWrites, "retiredFailedSources", retiredFailures,
+                "failedSettlements", failedSettlements);
     }
     /** A normal flush cannot report success while any write or owned acknowledgement remains. */
     public void requireFlushed() {

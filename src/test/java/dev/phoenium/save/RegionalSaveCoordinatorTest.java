@@ -13,6 +13,38 @@ import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.*;
 
 class RegionalSaveCoordinatorTest {
+    @Test void hardBarrierRetainsUnfinishedWritesAndNeverRestoresDirtyStateFromTheStopCaller() {
+        Fixture f = new Fixture(); Source source = f.source();
+        var attempt = f.capture(source); var disk = new CompletableFuture<Void>();
+        attempt.submitted(disk); attempt.finishBody();
+        var barrierFailure = new IllegalStateException("failed gameplay callback");
+        f.barrier.trip(barrierFailure, f.directory.snapshot().generation(), f.a.ownerEpoch(), null);
+        assertFalse(f.saves.acknowledgeAfterBarrier(f.barrier));
+        assertEquals(1, f.saves.pending()); assertEquals(0, source.releases);
+        disk.completeExceptionally(new IllegalArgumentException("original disk failure"));
+        assertTrue(f.saves.acknowledgeAfterBarrier(f.barrier));
+        assertEquals(0, f.saves.pending()); assertEquals(1, source.releases);
+        assertEquals(0, source.restored, "a hard barrier cannot be bypassed to mutate dirty state");
+        assertEquals(0L, f.saves.measurements().get("acknowledgements"));
+        assertEquals(1L, f.saves.measurements().get("failedSettlements"));
+        assertSame(barrierFailure, assertThrows(IllegalStateException.class, f.saves::requireFlushed));
+        assertFalse(f.saves.pumpOne(), "terminal failure must leave no queued source reference");
+    }
+
+    @Test void reentrantFailedSettlementReleasesEachSourceOnceAndPreservesReleaseFailure() {
+        Fixture f = new Fixture(); Source first = f.source(), second = f.source();
+        f.capture(first).finishBody(); f.capture(second).finishBody();
+        var failure = new IllegalStateException("stop barrier");
+        var releaseFailure = new IllegalArgumentException("source release observer");
+        f.barrier.trip(failure, f.directory.snapshot().generation(), f.a.ownerEpoch(), null);
+        first.afterRelease = () -> f.saves.acknowledgeAfterBarrier(f.barrier);
+        second.afterRelease = () -> { throw releaseFailure; };
+        assertTrue(f.saves.acknowledgeAfterBarrier(f.barrier));
+        assertEquals(1, first.releases); assertEquals(1, second.releases);
+        assertEquals(0, f.saves.pending());
+        assertSame(failure, assertThrows(IllegalStateException.class, f.saves::requireFlushed));
+        assertArrayEquals(new Throwable[]{releaseFailure}, failure.getSuppressed());
+    }
     @Test void aWriteIsNotSavedUntilTheOriginalFutureAndOwnedAcknowledgementFinish() {
         Fixture f = new Fixture(); Source source = f.source();
         var attempt = f.capture(source); var disk = new CompletableFuture<Void>();
@@ -118,11 +150,12 @@ class RegionalSaveCoordinatorTest {
         final RegionRuntime a = ready(new RegionId(world, "a")), b = ready(new RegionId(world, "b"));
         final Map<RegionId, RegionRuntime> runtimes = new LinkedHashMap<>(Map.of(a.id(), a, b.id(), b));
         final RegionDirectory directory = new RegionDirectory();
+        final FailureBarrier barrier = new FailureBarrier();
         final RegionalSaveCoordinator saves;
         Fixture() {
             var generation = new TopologyGeneration(1);
             directory.publish(generation, Map.of(key, new RegionRoute(a.id(), generation, a.ownerEpoch())));
-            var scheduler = new RegionScheduler(runtimes, directory, new FailureBarrier());
+            var scheduler = new RegionScheduler(runtimes, directory, barrier);
             var gateway = new OwnerGateway(directory, runtimes, scheduler);
             saves = new RegionalSaveCoordinator(directory, runtimes,
                     new RegionalServiceDispatcher("save-test", 1, directory, runtimes, gateway, scheduler));

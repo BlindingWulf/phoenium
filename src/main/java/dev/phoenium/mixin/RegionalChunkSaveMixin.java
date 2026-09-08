@@ -8,7 +8,11 @@ import dev.phoenium.save.RegionalSaveBinding;
 import dev.phoenium.save.RetainedChunkSnapshot;
 import it.unimi.dsi.fastutil.longs.Long2ObjectLinkedOpenHashMap;
 import java.util.concurrent.CompletableFuture;
+import java.util.List;
+import java.util.function.BooleanSupplier;
+import java.util.function.Predicate;
 import java.util.function.Supplier;
+import java.util.stream.Stream;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.server.level.ChunkHolder;
 import net.minecraft.server.level.ChunkMap;
@@ -16,7 +20,9 @@ import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.level.chunk.ChunkAccess;
 import net.minecraft.world.level.chunk.LevelChunk;
+import net.minecraft.world.level.chunk.status.ChunkStatus;
 import net.minecraft.world.level.chunk.storage.SerializableChunkData;
+import net.minecraft.world.level.levelgen.structure.StructureStart;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Shadow;
 import org.spongepowered.asm.mixin.Final;
@@ -27,14 +33,61 @@ import org.spongepowered.asm.mixin.injection.At;
 @Mixin(ChunkMap.class)
 abstract class RegionalChunkSaveMixin implements RegionalSaveBinding.MapAccess {
     @Shadow @Final private ServerLevel level;
-    @Shadow @Final private Long2ObjectLinkedOpenHashMap<ChunkHolder> updatingChunkMap;
     @Shadow @Final private Long2ObjectLinkedOpenHashMap<ChunkHolder> pendingUnloads;
 
-    @Override public ChunkHolder phoenium$saveHolder(long position) {
-        ChunkHolder current = updatingChunkMap.get(position);
-        return current != null ? current : pendingUnloads.get(position);
-    }
     @Override public ChunkHolder phoenium$pendingUnload(long position) { return pendingUnloads.get(position); }
+
+    @WrapMethod(method = "saveAllChunks")
+    private void phoenium$saveBatch(boolean flush, Operation<Void> original) {
+        var coordinator = Phoenium.liveRuntime().regionalSaves();
+        if (coordinator == null) { original.call(flush); return; }
+        RegionalSaveBinding.batch(coordinator, (ChunkMap) (Object) this, level, flush, () -> original.call(flush));
+    }
+
+    @WrapOperation(method = "saveAllChunks",
+            at = @At(value = "INVOKE", target = "Ljava/util/stream/Stream;toList()Ljava/util/List;"), require = 1, expect = 1)
+    private List<ChunkHolder> phoenium$readySaveBatch(Stream<ChunkHolder> stream, Operation<List<ChunkHolder>> original) {
+        List<ChunkHolder> selected = original.call(stream);
+        return Phoenium.liveRuntime().regionalSaves() == null ? selected
+                : RegionalSaveBinding.readyBatch((ChunkMap) (Object) this, selected);
+    }
+
+    @WrapOperation(method = {"saveAllChunks", "isExistingChunkFull"},
+            at = @At(value = "INVOKE", target = "Ljava/util/concurrent/CompletableFuture;join()Ljava/lang/Object;"),
+            require = 2, expect = 2)
+    private Object phoenium$originalStorageWait(CompletableFuture<?> future, Operation<Object> original) {
+        return Phoenium.liveRuntime().regionalSaves() == null ? original.call(future)
+                : dev.phoenium.chunk.FullFinishingServices.ownerFreeIo(() -> original.call(future));
+    }
+
+    @WrapMethod(method = "saveChunkIfNeeded")
+    private boolean phoenium$selectedSave(ChunkHolder holder, long now, Operation<Boolean> original) {
+        if (Phoenium.liveRuntime().regionalSaves() == null) return original.call(holder, now);
+        return RegionalSaveBinding.selectionScope((ChunkMap) (Object) this, () -> original.call(holder, now));
+    }
+
+    @WrapMethod(method = "saveChunksEagerly")
+    private void phoenium$eagerSelection(BooleanSupplier haveTime, Operation<Void> original) {
+        if (Phoenium.liveRuntime().regionalSaves() == null) { original.call(haveTime); return; }
+        RegionalSaveBinding.selectionScope((ChunkMap) (Object) this, () -> { original.call(haveTime); return null; });
+    }
+
+    @WrapOperation(method = {"saveChunkIfNeeded", "saveChunksEagerly", "lambda$saveAllChunks$0"},
+            at = @At(value = "INVOKE", target = "Lnet/minecraft/server/level/ChunkHolder;getLatestChunk()Lnet/minecraft/world/level/chunk/ChunkAccess;"),
+            require = 3, expect = 3)
+    private ChunkAccess phoenium$originalSelectedHolder(ChunkHolder holder, Operation<ChunkAccess> original) {
+        var coordinator = Phoenium.liveRuntime().regionalSaves();
+        if (coordinator == null) return original.call(holder);
+        return RegionalSaveBinding.select(coordinator, (ChunkMap) (Object) this, level, holder, () -> original.call(holder));
+    }
+
+    @WrapOperation(method = {"saveChunkIfNeeded", "saveChunksEagerly"},
+            at = @At(value = "INVOKE", target = "Lnet/minecraft/world/level/chunk/ChunkAccess;isUnsaved()Z"), require = 2, expect = 2)
+    private boolean phoenium$selectedDirtyRead(ChunkAccess chunk, Operation<Boolean> original) {
+        var coordinator = Phoenium.liveRuntime().regionalSaves();
+        return coordinator == null ? original.call(chunk)
+                : RegionalSaveBinding.isUnsaved(coordinator, (ChunkMap) (Object) this, level, chunk, () -> original.call(chunk));
+    }
 
     @WrapMethod(method = "save(Lnet/minecraft/world/level/chunk/ChunkAccess;)Z")
     private boolean phoenium$saveSource(ChunkAccess chunk, Operation<Boolean> original) {
@@ -50,6 +103,21 @@ abstract class RegionalChunkSaveMixin implements RegionalSaveBinding.MapAccess {
     private boolean phoenium$claimDirty(ChunkAccess chunk, Operation<Boolean> original) {
         if (Phoenium.liveRuntime().regionalSaves() == null) return original.call(chunk);
         return RegionalSaveBinding.markSaved(chunk, () -> original.call(chunk));
+    }
+
+    @WrapOperation(method = "save(Lnet/minecraft/world/level/chunk/ChunkAccess;)Z",
+            at = @At(value = "INVOKE", target = "Lnet/minecraft/world/level/chunk/ChunkAccess;getPersistedStatus()Lnet/minecraft/world/level/chunk/status/ChunkStatus;"), require = 1, expect = 1)
+    private ChunkStatus phoenium$sourceStatus(ChunkAccess chunk, Operation<ChunkStatus> original) {
+        return Phoenium.liveRuntime().regionalSaves() == null ? original.call(chunk)
+                : RegionalSaveBinding.readSource(chunk, () -> original.call(chunk));
+    }
+
+    @WrapOperation(method = "save(Lnet/minecraft/world/level/chunk/ChunkAccess;)Z",
+            at = @At(value = "INVOKE", target = "Ljava/util/stream/Stream;noneMatch(Ljava/util/function/Predicate;)Z"), require = 1, expect = 1)
+    private boolean phoenium$sourceStructures(Stream<StructureStart> stream, Predicate<StructureStart> predicate,
+                                               Operation<Boolean> original) {
+        return Phoenium.liveRuntime().regionalSaves() == null ? original.call(stream, predicate)
+                : RegionalSaveBinding.readSource(() -> original.call(stream, predicate));
     }
 
     @WrapOperation(method = "save(Lnet/minecraft/world/level/chunk/ChunkAccess;)Z",

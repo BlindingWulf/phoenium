@@ -24,6 +24,11 @@ public final class FullServerShutdown {
      * metadata section contains no callback, service entry, or future completion. */
     public static void run(MinecraftServer server, Runnable closeAdmission, Runnable original,
                            Runnable acknowledgeRuntime) {
+        run(server, closeAdmission, () -> { }, original, acknowledgeRuntime);
+    }
+
+    public static void run(MinecraftServer server, Runnable closeAdmission, Runnable drainAdmitted,
+                           Runnable original, Runnable acknowledgeRuntime) {
         if (OwnershipContext.current().isPresent())
             throw new ChunkProtocolException("server stop requested from an active regional mutation");
         synchronized (METADATA) {
@@ -34,7 +39,8 @@ public final class FullServerShutdown {
             failures.run(closeAdmission::run);
             failures.run(() -> {
                 try (var turn = FullFinishingServices.forServer(server).serial(FullFinishingServices.Phase.STOP)) {
-                    original.run();
+                    failures.run(drainAdmitted::run);
+                    failures.run(original::run);
                 }
             });
             failures.run(acknowledgeRuntime::run);

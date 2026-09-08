@@ -23,7 +23,7 @@ identity and task/worker token accounting are unavailable. No recursive delegati
 additional Astra, API billing, resets, account changes, or remote publication.
 Starting account-wide usage: Codex 35% used / 65% remaining; reserve 7% used / 93%
 remaining. First dispatcher integration: Codex 38% used / 62% remaining, reserve
-7% used / 93% remaining. These are account windows, not per-task consumption.
+7% used / 93% remaining. Tick/event + save/stop integration: Codex 44% used / 56% remaining; reserve 7% used / 93% remaining. These are account windows, not per-task consumption.
 
 ## Fixed implementation and acceptance map
 
@@ -65,34 +65,38 @@ FULL receipt does not prove later holder/save/retirement boundaries.
 
 Fresh baseline PASS: 690 tests / 59 suites, no failures/errors/skips, build exit 0;
 production rebuilt to the exact frozen hash. Luna verified all ten selected historical
-artifact/manifest/log hashes. Evidence: `Phoenium-stage4-luna/run/stage4/baseline-20260908-012726`;
-details in [the verification note](STAGE4_VERIFICATION_NOTE.md). Luna now owns the
-Stage 4 installed fixture, deterministic trace comparator, real client and disk/reload
-harness. No integrated Stage 4 installed PASS exists yet.
+artifact/manifest/log hashes. Evidence: `Phoenium-stage4-luna/run/stage4/baseline-20260908-012726`.
+The current installed acceptance harness and real offline TCP client extension are
+Luna commits `4afc7ce` / `3706b50` (not yet integrated). The frozen-reference fixture
+has actual save/restart/MCA evidence and a client run at 8/8 with positive tracking
+pair/change/recipient/remove markers. Marker presence is not deterministic equivalence;
+Luna is controlling fixture timing and testing trace repeatability and restored tick effects.
 
-Integrated dispatcher commits: `45a6023` / `bc6d43c` (Sol originals `28692e3` /
-`77167ed`), explicit retained typed identity and lease validation, stale delivery
-progress, opaque outcome handles, original unchecked failure identity; five focused
-tests PASS. Save journal `feed049`: seven adverse tests PASS. Alias snapshot `eb49d38`:
-one focused test PASS after fixing the test's missing Minecraft registry bootstrap;
-the failed log/XML is preserved under `run/stage4/failed-snapshot-first`. Reentrant
-stop `41eaf2d`: three focused tests PASS, original drain/ack/cleanup ordering preserved.
-The latest main save adapter focused run (11 tests) is
-`run/stage4/save-adapters-focused-first.log`; no broad campaign repeated by lead.
+Integrated dispatcher: `45a6023` / `bc6d43c`. Original save journal/adapters:
+`feed049` / `b02ad5e`; retained topology API `5ba166a`. Initial regional tick/event
+services and resumable phases: `0a5d1b7` (Sol `80f8992`). Review identified due-time
+selection, current-cycle query, event dedup, producer ownership, and topology failure
+issues in that first patch; Sol is correcting them before installed acceptance.
 
-Actual save adapters now wrap original dirty claim, original snapshot, original write
-future, final unload source retention/mutations, and flush acknowledgement. They compile;
-the live runtime must initialize the shared dispatcher/save coordinator before new
-installed evidence. Bootstrap precedes that installation; no selected failure falls
-back. The source holder is retained before original conditional unload removal, and
-its final save borrows that genuine lineage rather than FULL subscriber eligibility.
+The lead save/stop revision now binds the actual original selected holder, save-all
+readiness/cut and per-operation autosave/unload cuts, named save/storage access,
+admission close, accepted-work scheduler drain, and failure-independent cleanup.
+Focused run `run/stage4/save-stop-final-focused-20260908.log`: 19 tests / five suites,
+zero failures/errors, including original lower-stage shutdown continuation, retained
+pending writes, source replacement, migration, reentrant release and barrier failure.
+The earlier missing-bootstrap snapshot failure is preserved under
+`run/stage4/failed-snapshot-first`. No new broad campaign has been repeated by lead.
 
-Sol is completing regional tick/event state and resumable live phases. Next unresolved
-boundary: extract the original scheduled/event conditions, clock sample and profiler
-instructions into owner-free coordination ranges without repeated observations;
-also expose original chunk maintenance/save/tracking entry without a foreign outer
-world lease. Then integrate, implement tracking/admission/drain/classification, and
-dispatch one stable source to Luna. Same-holder re-promotion is still deferred and
-must be repaired with fresh lineage if the new lifecycle fixture reaches it.
-All complete Stage 4 acceptance items remain open until evidenced; internal commits
-are recovery points, not completion or stopping gates.
+[The service contract](STAGE4_SERVICE_CONTRACT.md) classifies all existing named/shared
+services and retained save/stop lifetimes. Installed proof of those boundaries is pending.
+
+Owners and next unresolved cases: Sol finishes corrected tick/event semantics,
+owner-free cache tracking/maintenance, late migration binding, retained save-cut
+transition progress and shared-barrier checks, then implements production tracking.
+Lead owns save/stop/classification integration and actionable review. Luna owns the
+controlled installed comparator, client, real disk/reload, migration/adverse lifecycle,
+5/5 plus 8/8, affected FULL/packet/service/saved-vault and lightweight overhead campaign.
+Dispatch the next stable integrated source only after the coordinator/save-cut changes
+are compatible. No integrated Stage 4 installed PASS exists yet. Same-holder re-promotion
+remains deferred and must gain fresh genuine lineage if the new fixture reaches it.
+Internal commits remain recovery points, not completion or stopping instructions.
