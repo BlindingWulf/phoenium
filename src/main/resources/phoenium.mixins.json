@@ -50,6 +50,7 @@
     "FullSelectorPredicateMixin",
     "FullLocationPredicateMixin",
     "FullPredicateChunkMixin",
+    "FullSelectorPredicateIntRangeMixin",
     "FullFinishingConnectionMixin",
     "FullFinishingScoreboardMixin",
     "FullFinishingScoreboardStateMixin",

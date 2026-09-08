@@ -17,7 +17,8 @@ public final class FullSavedContextTestTransform {
             "net/minecraft/world/level/block/entity/EnchantingTableBlockEntity",
             "net/minecraft/world/level/block/entity/BannerBlockEntity",
             "net/minecraft/world/level/block/entity/SkullBlockEntity",
-            "net/minecraft/world/level/storage/loot/predicates/CompositeLootItemCondition");
+            "net/minecraft/world/level/storage/loot/predicates/CompositeLootItemCondition",
+            "net/minecraft/world/level/storage/loot/IntRange");
     public static boolean supports(String name) { return TARGETS.contains(name); }
     public static void install(ClassNode node) {
         if (!supports(node.name)) return;
@@ -41,6 +42,12 @@ public final class FullSavedContextTestTransform {
             method.instructions.add(new MethodInsnNode(Opcodes.INVOKEVIRTUAL, "java/util/Optional", "orElse", "(Ljava/lang/Object;)Ljava/lang/Object;", false));
             method.instructions.add(new TypeInsnNode(Opcodes.CHECKCAST, "net/minecraft/network/chat/Component"));
             method.instructions.add(new InsnNode(Opcodes.ARETURN)); node.methods.add(method);
+        } else if (node.name.endsWith("/IntRange")) {
+            node.interfaces.add("dev/phoenium/chunk/FullSelectorPredicateInputs$IntRangeAccess");
+            fieldGetter(node, "phoenium$min", "()Lnet/minecraft/world/level/storage/loot/providers/number/NumberProvider;",
+                    "min", "Lnet/minecraft/world/level/storage/loot/providers/number/NumberProvider;");
+            fieldGetter(node, "phoenium$max", "()Lnet/minecraft/world/level/storage/loot/providers/number/NumberProvider;",
+                    "max", "Lnet/minecraft/world/level/storage/loot/providers/number/NumberProvider;");
         } else if (node.name.endsWith("$TextDisplay")) {
             node.interfaces.add("dev/phoenium/chunk/FullLiveComponentInputs$TextAccess");
             var method = new MethodNode(Opcodes.ACC_PUBLIC, "phoenium$rawDisplayText", "()Lnet/minecraft/network/chat/Component;", null, null);

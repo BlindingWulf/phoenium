@@ -9,10 +9,16 @@ import net.minecraft.resources.ResourceKey;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.ReloadableServerRegistries;
 import net.minecraft.world.level.ChunkPos;
+import net.minecraft.world.attribute.EnvironmentAttribute;
+import net.minecraft.world.level.storage.loot.IntRange;
 import net.minecraft.world.level.storage.loot.providers.number.BinomialDistributionGenerator;
 import net.minecraft.world.level.storage.loot.providers.number.ConstantValue;
+import net.minecraft.world.level.storage.loot.providers.number.EnchantmentLevelProvider;
+import net.minecraft.world.level.storage.loot.providers.number.EnvironmentAttributeValue;
 import net.minecraft.world.level.storage.loot.providers.number.NumberProvider;
 import net.minecraft.world.level.storage.loot.providers.number.ScoreboardValue;
+import net.minecraft.world.level.storage.loot.providers.number.StorageValue;
+import net.minecraft.world.level.storage.loot.providers.number.Sum;
 import net.minecraft.world.level.storage.loot.providers.number.UniformGenerator;
 import net.minecraft.world.level.storage.loot.predicates.*;
 
@@ -21,31 +27,38 @@ import net.minecraft.world.level.storage.loot.predicates.*;
  * original candidate predicate at the original text-resolution point. */
 public final class FullSelectorPredicateInputs {
     public interface CompositeAccess { List<LootItemCondition> phoenium$predicateTerms(); }
+    /** Read-only access to IntRange's immutable providers; no provider is evaluated here. */
+    public interface IntRangeAccess {
+        NumberProvider phoenium$min();
+        NumberProvider phoenium$max();
+    }
     record Result(ReloadableServerRegistries.Holder registries, Set<ChunkPos> biomes,
-                  Set<ChunkPos> full, long bytes, boolean capacity, String unmet) { }
+                  Set<ChunkPos> full, Set<Identifier> storageIds,
+                  long bytes, boolean capacity, String unmet) { }
 
     private FullSelectorPredicateInputs() { }
 
     static Result discover(MinecraftServer server, String selector, Set<ChunkPos> candidateChunks,
                            java.util.function.LongPredicate capacity) {
         ReloadableServerRegistries.Holder holder = server.reloadableRegistries();
-        if (holder == null) return new Result(null, Set.of(), Set.of(), 0, false,
+        if (holder == null) return new Result(null, Set.of(), Set.of(), Set.of(), 0, false,
                 "registered selector predicate registry is unavailable");
         var lookup = holder.lookup().lookup(Registries.PREDICATE).orElse(null);
-        if (lookup == null) return new Result(holder, Set.of(), Set.of(), 0, false,
+        if (lookup == null) return new Result(holder, Set.of(), Set.of(), Set.of(), 0, false,
                 "registered selector predicate registry is unavailable");
         var visitor = new Visitor(lookup, candidateChunks, capacity);
         for (String value : FullSavedTextInputs.optionValues(selector, "predicate")) {
             String id = value.trim();
             if (id.startsWith("!")) id = id.substring(1).trim();
             Identifier location = Identifier.tryParse(id);
-            if (location == null) return new Result(holder, Set.of(), Set.of(), visitor.bytes, visitor.capacity,
+            if (location == null) return new Result(holder, Set.of(), Set.of(), Set.of(), visitor.bytes, visitor.capacity,
                     "registered selector predicate identifier changed after accepted parsing: " + value);
             visitor.reference(ResourceKey.create(Registries.PREDICATE, location));
             if (visitor.unmet != null) break;
         }
         return new Result(holder, Collections.unmodifiableSet(visitor.biomes),
-                Collections.unmodifiableSet(visitor.full), visitor.bytes, visitor.capacity, visitor.unmet);
+                Collections.unmodifiableSet(visitor.full), Collections.unmodifiableSet(visitor.storageIds),
+                visitor.bytes, visitor.capacity, visitor.unmet);
     }
 
     private static final class Visitor {
@@ -53,6 +66,8 @@ public final class FullSelectorPredicateInputs {
         private final Set<ChunkPos> candidates;
         private final Set<ResourceKey<LootItemCondition>> visiting = new HashSet<>();
         private final LinkedHashSet<ChunkPos> biomes = new LinkedHashSet<>(), full = new LinkedHashSet<>();
+        private final LinkedHashSet<Identifier> storageIds = new LinkedHashSet<>();
+        private final Set<NumberProvider> numberVisiting = Collections.newSetFromMap(new IdentityHashMap<>());
         private final java.util.function.LongPredicate capacityCheck;
         private long bytes;
         private boolean capacity;
@@ -82,7 +97,15 @@ public final class FullSelectorPredicateInputs {
             // These audited conditions either use the already-granted candidate/scalar services,
             // the same world clock/weather, absent SELECTOR parameters, or the original RNG.
             if (condition instanceof LootItemRandomChanceCondition random) { number(random.chance()); return; }
-            if (condition instanceof WeatherCheck || condition instanceof TimeCheck
+            if (condition instanceof TimeCheck time) { range(time.value()); return; }
+            if (condition instanceof ValueCheckCondition value) {
+                number(value.value()); range(value.range()); return;
+            }
+            if (condition instanceof EntityHasScoreCondition scores) {
+                for (IntRange range : scores.scores().values()) range(range);
+                return;
+            }
+            if (condition instanceof WeatherCheck
                     || condition instanceof LootItemKilledByPlayerCondition
                     || condition instanceof ExplosionCondition || condition instanceof MatchTool
                     || condition instanceof DamageSourceCondition || condition instanceof BonusLevelTableCondition
@@ -92,21 +115,58 @@ public final class FullSelectorPredicateInputs {
                 unmet = "registered entity-property selector predicate dependency producer pending";
             else if (condition instanceof EnvironmentAttributeCheck<?>)
                 unmet = "registered environment-attribute selector predicate dependency producer pending";
-            else if (condition instanceof ValueCheckCondition || condition instanceof EntityHasScoreCondition)
-                unmet = "registered dynamic numeric selector predicate dependency producer pending";
             else if (condition instanceof LootItemBlockStatePropertyCondition)
-                unmet = "registered block-state selector predicate lacks a SELECTOR block-state parameter";
+                return; // No SELECTOR block-state parameter: vanilla's original test returns false.
             else unmet = "registered selector predicate dependency producer pending for " + condition.getClass().getName();
         }
         void number(NumberProvider provider) {
-            if (provider instanceof ConstantValue || provider instanceof ScoreboardValue) return;
-            if (provider instanceof UniformGenerator uniform) {
-                number(uniform.min()); number(uniform.max()); return;
+            if (unmet != null || capacity || provider == null) return;
+            if (!numberVisiting.add(provider)) {
+                unmet = "registered selector predicate number provider graph is cyclic";
+                return;
             }
-            if (provider instanceof BinomialDistributionGenerator binomial) {
-                number(binomial.n()); number(binomial.p()); return;
+            try {
+                // These branches inspect only immutable provider shape. In particular, they never
+                // call getInt/getFloat, consume RNG, query scoreboard, or read command storage.
+                if (provider instanceof ConstantValue || provider instanceof ScoreboardValue
+                        || provider instanceof EnchantmentLevelProvider) return;
+                if (provider instanceof UniformGenerator uniform) {
+                    number(uniform.min()); number(uniform.max()); return;
+                }
+                if (provider instanceof BinomialDistributionGenerator binomial) {
+                    number(binomial.n()); number(binomial.p()); return;
+                }
+                if (provider instanceof Sum sum) {
+                    for (NumberProvider summand : sum.summands()) number(summand);
+                    return;
+                }
+                if (provider instanceof StorageValue storage) {
+                    storageIds.add(storage.storage()); return;
+                }
+                if (provider instanceof EnvironmentAttributeValue environment) {
+                    EnvironmentAttribute<?> attribute = environment.attribute();
+                    if (attribute.isPositional()) markBiomeCandidates();
+                    return;
+                }
+                unmet = "registered selector predicate number provider is unsupported: "
+                        + provider.getClass().getName();
+            } finally { numberVisiting.remove(provider); }
+        }
+        void range(IntRange range) {
+            if (range == null || unmet != null || capacity) return;
+            if (!(range instanceof IntRangeAccess access)) {
+                unmet = "registered selector predicate IntRange providers are unavailable";
+                return;
             }
-            unmet = "registered random selector predicate number provider pending for " + provider.getClass().getName();
+            number(access.phoenium$min()); number(access.phoenium$max());
+        }
+        private void markBiomeCandidates() {
+            for (ChunkPos candidate : candidates) {
+                if (biomes.contains(candidate)) continue;
+                long next = Math.addExact(bytes, 64L);
+                if (!capacityCheck.test(next)) { capacity = true; return; }
+                biomes.add(candidate); bytes = next;
+            }
         }
         void location(LocationCheck check) {
             LocationPredicate predicate = check.predicate().orElse(null);
