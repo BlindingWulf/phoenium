@@ -138,8 +138,14 @@ shared probe at worker `44e7249` is
 observation holder. The current frozen-reference run
 `run/stage4/reference-client-5-20260908-054512` starts/listens but client login times
 out after Hello. Luna is capturing both process stacks and running the independent
-installed transformed-runtime candidate probe. No client/runtime PASS is inferred
-from the successful build or a listening TCP endpoint.
+installed transformed-runtime candidate probe. The latter now has a preserved
+failure in `run/full-production-integration/transform-20260908-055335`: original
+NaturalSpawner class transformation rejects the regional nearest-player invocation
+target (zero matching calls). Sol owns that exact native descriptor repair and its
+companion distance target; Luna owns the installed rerun and separate login analysis.
+Both client/server login-stall stacks are preserved under
+`run/stage4/reference-client-5-dump-20260908-055040/thread-dumps`.
+No client/runtime PASS is inferred from the successful build or listening endpoint.
 Lead `c3cf005` rejects late producers after service termination before native mutation;
 its new focused lifetime regression passes. The genuine same-holder withdrawal /
 re-promotion repair preserves the original producer, revoked old subscriber, current
