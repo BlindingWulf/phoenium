@@ -13,8 +13,14 @@ import org.spongepowered.asm.mixin.injection.At;
  * owner-published level-player projection captured for this original chunk callback. */
 @Mixin(NaturalSpawner.class)
 abstract class RegionalNaturalSpawnerMixin {
-    @WrapOperation(method = "spawnCategoryForPosition", at = @At(value = "INVOKE",
-        target = "Lnet/minecraft/server/level/ServerLevel;getNearestPlayer(DDDDZ)Lnet/minecraft/world/entity/player/Player;"))
+    private static final String SPAWN_POSITION = "spawnCategoryForPosition(Lnet/minecraft/world/entity/MobCategory;"
+        + "Lnet/minecraft/server/level/ServerLevel;Lnet/minecraft/world/level/chunk/ChunkAccess;"
+        + "Lnet/minecraft/core/BlockPos;Lnet/minecraft/world/level/NaturalSpawner$SpawnPredicate;"
+        + "Lnet/minecraft/world/level/NaturalSpawner$AfterSpawnCallback;)V";
+
+    @WrapOperation(method = SPAWN_POSITION, at = @At(value = "INVOKE",
+        target = "Lnet/minecraft/server/level/ServerLevel;getNearestPlayer(DDDDZ)Lnet/minecraft/world/entity/player/Player;"),
+        require = 1, expect = 1)
     private static Player phoenium$nearestPlayer(ServerLevel level, double x, double y, double z,
             double range, boolean creative, Operation<Player> original) {
         if (!Phoenium.liveRuntime().regionalNaturalSpawnActive(level)) return original.call(level, x, y, z, range, creative);
@@ -22,8 +28,9 @@ abstract class RegionalNaturalSpawnerMixin {
         return Phoenium.liveRuntime().regionalNaturalSpawnPlayer(level, x, y, z);
     }
 
-    @WrapOperation(method = "spawnCategoryForPosition", at = @At(value = "INVOKE",
-        target = "Lnet/minecraft/world/entity/player/Player;distanceToSqr(DDD)D"))
+    @WrapOperation(method = SPAWN_POSITION, at = @At(value = "INVOKE",
+        target = "Lnet/minecraft/world/entity/player/Player;distanceToSqr(DDD)D"),
+        require = 1, expect = 1)
     private static double phoenium$nearestDistance(Player player, double x, double y, double z, Operation<Double> original,
             net.minecraft.world.entity.MobCategory category, ServerLevel level) {
         if (!Phoenium.liveRuntime().regionalNaturalSpawnActive(level)) return original.call(player, x, y, z);
