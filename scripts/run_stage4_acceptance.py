@@ -460,6 +460,7 @@ def run_process(server, trace_path=None, drive=False, explicit_topology=False, t
     reload_clock_frozen = False
     runner_error = None
     startup_frozen = False
+    server_ready = False
     phase_started = time.monotonic()
     peak_rss = None
 
@@ -501,9 +502,11 @@ def run_process(server, trace_path=None, drive=False, explicit_topology=False, t
                 log.flush()
                 if "STAGE4_TRACE_STARTUP_CLOCK_FROZEN" in line:
                     startup_frozen = True
-                if "Done (" in line and drive:
-                    break
-                if "Done (" in line and not drive:
+                if "Done (" in line:
+                    server_ready = True
+                # The probe's SERVER_STARTED callback and the native Done line are not ordered
+                # as an acceptance contract.  A restart may proceed only after both receipts.
+                if server_ready and (drive or startup_frozen):
                     break
             elif process.poll() is not None:
                 break
@@ -587,6 +590,7 @@ def run_process(server, trace_path=None, drive=False, explicit_topology=False, t
             "runnerError": runner_error,
             "reloadBarrierObserved": reload_barrier,
             "reloadStartupFreezeObserved": startup_frozen,
+            "serverReadyObserved": server_ready,
             "reloadClockFreezeObserved": reload_clock_frozen if not drive else False,
             "reloadUnpackObserved": any("STAGE4_TRACE_RELOAD_UNPACK" in line for line in lines),
             "reloadEffectReached": reload_effect}
