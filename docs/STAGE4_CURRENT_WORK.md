@@ -1,8 +1,47 @@
-# Stage 4 finishing session — sole main-checkout owner
+# Stage 4 frozen — authoritative handoff
 
-Stage 4 remains **PARTIAL**, Stage 5 OFF, one gameplay worker, parallel gameplay OFF.
-This section supersedes the historical worker assignments and next-step instructions below.
-The session began from clean `2b3080b`; all newer work is preserved. No agents are running.
+**PASS — STAGE4_PARALLEL_CORRECTNESS_FROZEN. All17 required gates passed.**
+Stage5 is ready but unstarted. One gameplay worker; parallel gameplay OFF.
+There is no unresolved Stage4 acceptance blocker and no further Stage4 work is authorized
+by this finishing session. The repository is clean at the freeze commit.
+
+Authoritative report: [STAGE4_CLOSURE_REPORT.md](STAGE4_CLOSURE_REPORT.md). It supersedes
+every historical assignment, partial status, planned rerun and next-step instruction below.
+
+- Branch `stage4/regional-world-services`; final HEAD resolves via
+  `git rev-parse STAGE4_PARALLEL_CORRECTNESS_FROZEN`. Production implementation:
+  `7da528d19c5cf0c63d7172111f2697b24c9fda7d`; final shared fixture:`eb7a3ac`.
+- Final artifact:`run/stage4/final-artifacts/phoenium-0.2.0-stage2.jar`, SHA256
+  **43AAC30184E5C77784D7A56590AA23A87DC86438684EB2B2F2577A197F4DD81E**.
+- Final evidence:`run/stage4/final-artifacts/acceptance-manifest.json`, all17 PASS,
+  hashes/sizes for151 evidence files, phase identity and terminal native receipts.
+- Complete suite: **818 tests /87 suites,0 failures/errors/skips**;
+  `run/stage4/final-suite-terminal-delivery-results.json`. Comparator controls8/8 PASS;
+  artifact identity controls7/7 PASS. Production packaging648 entries, all checks PASS.
+- Final5/5:`finish-candidate-5-aa` / frozen`finish-reference-5-j`, both lifecycle exits0,
+  exact MCA/restart/unpack/deadline PASS; strict123-event comparison PASS
+  `run/stage4/final43-comparison-5.json`. Matching immutable +4 clock contract retained.
+- Final8/8:`finish-candidate-8-e` / frozen`finish-reference-8-d`, both lifecycle exits0,
+  exact MCA/restart/unpack/deadline PASS; strict140-event comparison PASS
+  `run/stage4/final43-comparison-8.json`. Same corrected native save/+6 unload inputs.
+- Same final43AAC... regression PASS: FULL fresh/reload
+  `run/full-authoritative/live-1788890286215`; controlledFULL
+  `run/full-production-integration/transform-20260908-125847`; adverse
+  `run/stage4/adverse-final-20260908-125857`; saved vault
+  `run/nonself-input-decision/saved-vault-20260908-130002` (597 ticks/30 dirty/120 neighbor).
+- All healthy final candidate drains empty before cleanup. Both stops at both distances have
+  zero admitted packets/chunk requests, services, pending/unacknowledged saves, topology
+  transitions/convergence/mailboxes, leases, ownership records, violations/fallback/barriers.
+  The expected adverse failure is preserved separately with exact write acknowledgement and15/15 closes.
+- Final fix: terminal object-envelope rejection now acknowledges its exact retained packet.
+  Two focused deterministic controls fail with old behavior and pass with fix. Native frozen
+  ticket fixture issue was repaired using original save/clock operations; no production rebuild.
+- Elapsed/peak-memory observations, exact versions/flags, major fix history, limitations and
+  all recovery commands are in the closure report. Stage3 source/artifact are unchanged.
+
+## Historical finishing notes — superseded, retained as evidence
+
+The session began from clean `2b3080b`; all newer work is preserved. No agents were spawned.
 
 ## Finalization recovery — terminal packet delivery
 

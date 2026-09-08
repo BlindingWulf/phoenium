@@ -85,9 +85,10 @@ Exit criteria: transfer, packet, stale-epoch, chunk completion, and dedicated bo
 
 ## Stage 4 — regional world services
 
-**Status: in development; acceptance PARTIAL.** See the fixed
-[implementation and acceptance map](STAGE4_CURRENT_WORK.md). One gameplay worker;
-parallel gameplay remains OFF.
+**Status: complete — STAGE4_PARALLEL_CORRECTNESS_FROZEN.** All17 declared gates passed.
+See the [closure report and Stage5 handoff](STAGE4_CLOSURE_REPORT.md) and
+[current work](STAGE4_CURRENT_WORK.md). One gameplay worker; parallel gameplay
+remains OFF. Stage5 is ready but has not been started.
 
 Add per-region scheduled ticks, block events, entity tracking, save cut, shutdown coordination, and explicitly classified global services.
 

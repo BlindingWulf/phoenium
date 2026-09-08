@@ -1,5 +1,8 @@
 # Stage 4 verification note
 
+Historical baseline only. Final accepted source, artifact, runtime evidence and freeze status
+are recorded in [STAGE4_CLOSURE_REPORT.md](STAGE4_CLOSURE_REPORT.md).
+
 Recorded 2026-09-08 (America/Chicago) on `stage4/verification-luna` at source
 `890d38614e001ae115cb419b653e6b566c8a4d53`. This note records the one clean
 Stage 4 baseline and the installed-harness extension points; it does not claim
