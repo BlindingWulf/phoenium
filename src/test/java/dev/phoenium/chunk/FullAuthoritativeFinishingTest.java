@@ -115,6 +115,39 @@ class FullAuthoritativeFinishingTest {
         FullInitializedInputBindingTest.assertCleanup(f);
     }
 
+    @Test void duplicateDeliveryInsideOriginalSuffixCannotReleaseTheWinningServiceReservation() throws Exception {
+        var f = new FullRegistrationFixture(true);
+        try {
+            f.start(ChunkPos.ZERO, ChunkStatus.FULL); f.drain();
+            var graph = f.runtime.graph(f.holder(ChunkPos.ZERO));
+            var actual = graph.prepared().orElseThrow().actual();
+            var executor = new ChunkStageExecutor(new ChunkStageAdmission(f.services.custody(), f.directory,
+                    java.util.Map.of(f.ownerId, f.owner.leases()), f.barrier));
+            int[] calls = {0};
+            set(actual, LevelChunk.class, "postLoad", (LevelChunk.PostLoadProcessor) chunk -> {
+                calls[0]++;
+                var reservation = FullFinishingServices.currentReservation(f.world.level.getServer());
+                assertNotNull(reservation);
+                var route = f.directory.resolve(graph.finishing.chunk()).orElseThrow();
+                assertEquals(ChunkStageAdmission.Result.DUPLICATE,
+                        executor.execute(graph.finishing, route.region(), route.generation()));
+                assertSame(reservation, FullFinishingServices.currentReservation(f.world.level.getServer()));
+                FullFinishingServices.requireWorld(f.world.level, FullFinishingServices.Kind.ENTITY_REGISTRY);
+                assertNotNull(graph.inputReceipt());
+                assertTrue(f.owner.leases().hasActiveLease());
+                assertFalse(graph.finishing.outcome().isDone());
+            });
+            context(f); f.runtime.inputs.changed(); f.drain();
+            assertInstanceOf(ChunkStageOutcome.Applied.class, graph.finishing.outcome().join());
+            assertSame(actual, graph.adjacent().join().orElse(null));
+            assertEquals(1, calls[0]);
+            assertEquals(1L, f.runtime.measurements().get("finishingCalls"));
+            assertEquals(1L, f.runtime.measurements().get("publicationCalls"));
+            assertFalse(f.owner.leases().hasActiveLease()); assertFalse(f.barrier.tripped());
+        } finally { f.stop(); FullFinishingServices.stopped(f.world.level.getServer()); }
+        FullInitializedInputBindingTest.assertCleanup(f);
+    }
+
     @Test void reentrantShutdownInsideOriginalSuffixDefersInputAcknowledgementUntilItsClaimExits() throws Exception {
         var f = new FullRegistrationFixture(true);
         try {

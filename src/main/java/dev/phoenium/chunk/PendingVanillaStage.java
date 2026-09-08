@@ -184,7 +184,17 @@ public final class PendingVanillaStage<I, O> {
             throw failure;
         } finally { releaseInput(); }
     }
-    void stageExited() { if (light != null) light.stageExited(lightBatch); if (full != null) full.stageExited(kind); }
+    void stageExited() {
+        custody.gate().lock();
+        try {
+            // A duplicate delivery did not enter this stage. Its winner may still be
+            // inside the original body; only that winner's actual exit can acknowledge
+            // the claim-bound light inputs and FULL service reservation.
+            if (custody.hasActiveClaimLocked(stage)) return;
+        } finally { custody.gate().unlock(); }
+        if (light != null) light.stageExited(lightBatch);
+        if (full != null) full.stageExited(kind);
+    }
     private void releaseInput() {
         custody.gate().lock();
         try {
