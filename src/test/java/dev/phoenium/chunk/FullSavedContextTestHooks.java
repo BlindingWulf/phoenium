@@ -21,6 +21,14 @@ import net.minecraft.world.level.block.entity.BlockEntity;
 /** Test plumbing invokes the preserved original body exactly once through production guards. */
 public final class FullSavedContextTestHooks {
     private static final ThreadLocal<Runnable> SELECTOR_PREFIX = new ThreadLocal<>();
+    private static final ThreadLocal<Runnable> LIVE_BLOCK_PREFIX = new ThreadLocal<>();
+    public static void liveBlockPrefix() {
+        Runnable prefix = LIVE_BLOCK_PREFIX.get(); if (prefix != null) prefix.run();
+    }
+    static AutoCloseable liveBlockPrefix(Runnable prefix) {
+        if (LIVE_BLOCK_PREFIX.get() != null) throw new AssertionError("nested live block prefix");
+        LIVE_BLOCK_PREFIX.set(prefix); return () -> LIVE_BLOCK_PREFIX.remove();
+    }
     /** Reads the vanilla private display payload in both transformed and installed probes. */
     public static Component text(Display.TextDisplay entity) {
         try {

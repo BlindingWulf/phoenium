@@ -204,7 +204,16 @@ public final class FullInitializedInputs {
             else if (!plan.contexts.refinementWaiting()) changed();
             return;
         }
-        if (plan.contexts != null && plan.contexts.refineLive(runtime, plan.graph, targets)) {
+        RefinementTargets refinement = plan.contexts != null && plan.contexts.needsLiveRefinement()
+                ? retainRefinementTargets(plan, targets) : new RefinementTargets(List.of(), false, false);
+        if (refinement.capacity || refinement.pending) {
+            plan.evaluation = new Evaluation(refinement.capacity ? State.CAPACITY : State.PENDING,
+                    refinement.capacity ? "live context input consumer acknowledgement" : "live context target retention", null); return;
+        }
+        boolean refinedLive;
+        try { refinedLive = plan.contexts != null && plan.contexts.refineLive(runtime, plan.graph, targets); }
+        finally { releaseRefinementTargets(refinement.pins); }
+        if (refinedLive) {
             plan.evaluation = plan.contexts.unmet() != null
                     ? new Evaluation(State.UNRESOLVED, plan.contexts.unmet(), null)
                     : plan.contexts.refinementCapacity()
@@ -255,6 +264,36 @@ public final class FullInitializedInputs {
         if (!expand(plan)) return false;
         bytes = Math.addExact(bytes, charge - plan.factCharge); plan.factCharge = charge;
         return true;
+    }
+    /** Target evidence must survive both nonblocking owner-read phases. These temporary uses
+     * are charged like final consumers and independently acknowledged before new demand. */
+    private record RefinementTargets(List<AutoCloseable> pins, boolean capacity, boolean pending) { }
+    private RefinementTargets retainRefinementTargets(Plan plan, List<Target> targets) {
+        var eligible = targets.stream().filter(target -> target.availability == Availability.PREPARED
+                || target.availability == Availability.PUBLISHED || target.availability == Availability.BIOMES).toList();
+        if (eligible.size() > limits.consumers && !expand(plan)) return new RefinementTargets(List.of(), true, false);
+        long otherExpanded = expanded != null && expanded != plan ? expanded.pins.size() : 0;
+        if (expanded != plan && consumers - otherExpanded + eligible.size() > limits.consumers)
+            return new RefinementTargets(List.of(), true, false);
+        var retained = new ArrayList<AutoCloseable>();
+        for (var target : eligible) {
+            AutoCloseable pin = target.availability == Availability.PUBLISHED ? runtime.published.retain(target.publication)
+                    : target.availability == Availability.BIOMES ? FullBiomeInputs.retain(runtime, target)
+                    : runtime.findGraph(target.holder).map(FullRegistrationRuntime.Graph::retainPrepared).orElse(null);
+            if (pin == null) { releaseRefinementTargets(retained); changed(); return new RefinementTargets(List.of(), false, true); }
+            retained.add(pin); consumers++;
+        }
+        return new RefinementTargets(List.copyOf(retained), false, false);
+    }
+    private void releaseRefinementTargets(List<AutoCloseable> retained) {
+        var failures = new FullInputNotifications.Failures();
+        for (AutoCloseable pin : retained) failures.run(() -> {
+            try { pin.close(); }
+            catch (RuntimeException | Error failure) { throw failure; }
+            catch (Exception failure) { throw new ChunkProtocolException("live context target acknowledgement failed", failure); }
+            finally { consumers--; }
+        });
+        failures.rethrow();
     }
     private Target resolve(Plan plan, ChunkPos position, Set<Purpose> purposes, int footprint) {
         FullRegistrationRuntime.Graph source = plan.graph;

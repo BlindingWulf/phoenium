@@ -1106,6 +1106,53 @@ class FullSavedContextInputTest {
         assertCleanup(f);
     }
 
+    @Test void laterSavedSelectorChargesOneAdditionalCandidateForEachPossibleConversionProduct() throws Exception {
+        var f = new FullRegistrationFixture(true);
+        var tadpole = FullInitializedInputBindingTest.tag(8, 8, 24000);
+        tadpole.remove("AgeLocked");
+        tadpole.putString("CustomName", "converted frog");
+        var selector = new CompoundTag(); selector.putString("selector", "@e[type=minecraft:frog,distance=..32,limit=1]");
+        try {
+            var proto = f.input(ChunkPos.ZERO); proto.getEntities().clear(); proto.addEntity(tadpole); proto.addEntity(text(selector));
+            f.world.indexLegacyRoots = true;
+            f.start(ChunkPos.ZERO, ChunkStatus.FULL); f.drain(); var graph = f.runtime.graph(f.holder(ChunkPos.ZERO));
+            var contexts = graph.inputReceipt().contexts();
+            assertEquals(3, field(contexts, FullSavedContextInputs.Plan.class, "maximumSelectorCandidates"),
+                    "one saved conversion may retain its tadpole alias and add one constructed frog");
+            assertEquals(FullInitializedInputs.State.SATISFIED, graph.inputEvaluation().state());
+        } finally { f.stop(); FullFinishingServices.stopped(f.world.level.getServer()); }
+        assertCleanup(f);
+    }
+
+    @Test void reentrantLiveTargetRetirementCannotInstallTheDetachedReadAndReleasesEveryTemporaryPin() throws Exception {
+        var f = new FullRegistrationFixture(true); var source = ChunkPos.ZERO; var target = new ChunkPos(1, 0);
+        var position = new BlockPos(24, 8, 8); var state = Blocks.BEACON.defaultBlockState();
+        f.input(target).getSection(0).setBlockState(8, 8, 8, state);
+        var beacon = new BeaconBlockEntity(position, state); beacon.setCustomName(Component.literal("must not install"));
+        f.input(target).setBlockEntity(beacon);
+        var retired = new AtomicInteger(); var retiredGraph = new java.util.concurrent.atomic.AtomicReference<FullRegistrationRuntime.Graph>();
+        try (var ignored = FullSavedContextTestHooks.liveBlockPrefix(() -> {
+            if (retired.getAndIncrement() != 0) return;
+            var targetGraph = f.runtime.graph(f.holder(target));
+            retiredGraph.set(targetGraph);
+            assertTrue(targetGraph.preparedConsumers() > 0, "live observation retains the exact target preparation");
+            f.runtime.retire(targetGraph.holder);
+            assertTrue(targetGraph.prepared().isPresent(), "the target preparation stays retained until the field read exits");
+        })) {
+            saved(f, source, false, text(blockText(position)));
+            saved(f, target, false, text(new CompoundTag()));
+            f.start(source, ChunkStatus.FULL); f.start(target, ChunkStatus.FULL); f.drain();
+            var sourceGraph = f.runtime.graph(f.holder(source));
+            assertTrue(retired.get() >= 1); assertNull(sourceGraph.inputReceipt());
+            assertNotEquals(FullInitializedInputs.State.SATISFIED, sourceGraph.inputEvaluation().state());
+            assertEquals(0L, f.runtime.inputs.measurements().get("consumers"),
+                    "failed refinement and retired target acknowledge every temporary input pin");
+            assertEquals(0, retiredGraph.get().preparedConsumers());
+            assertFalse(f.owner.leases().hasActiveLease());
+        } finally { f.stop(); FullFinishingServices.stopped(f.world.level.getServer()); }
+        assertCleanup(f);
+    }
+
     @Test void originalPersistedCommandStorageLoadsBeforeRegionalAdmissionAndIsReadWithoutConstruction() throws Exception {
         var f = new FullRegistrationFixture(true);
         var firstStore = new SavedDataStorage(directory, net.minecraft.util.datafix.DataFixers.getDataFixer(), f.world.level.registryAccess());

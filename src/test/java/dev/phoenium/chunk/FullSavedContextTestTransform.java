@@ -61,7 +61,11 @@ public final class FullSavedContextTestTransform {
             wrap(node, "readAdditionalSaveData", "(Lnet/minecraft/world/level/storage/ValueInput;)V", "textReader");
         } else if (node.name.endsWith("/ChunkAccess")) {
             node.interfaces.add("dev/phoenium/chunk/FullLiveComponentInputs$ChunkAccessView");
-            fieldGetter(node, "phoenium$rawBlockEntities", "()Ljava/util/Map;", "blockEntities", "Ljava/util/Map;");
+            var method = new MethodNode(Opcodes.ACC_PUBLIC, "phoenium$rawBlockEntities", "()Ljava/util/Map;", null, null);
+            method.instructions.add(new MethodInsnNode(Opcodes.INVOKESTATIC, HOOKS, "liveBlockPrefix", "()V", false));
+            method.instructions.add(new VarInsnNode(Opcodes.ALOAD, 0));
+            method.instructions.add(new FieldInsnNode(Opcodes.GETFIELD, node.name, "blockEntities", "Ljava/util/Map;"));
+            method.instructions.add(new InsnNode(Opcodes.ARETURN)); node.methods.add(method);
         } else if (node.name.endsWith("/SkullBlockEntity")) {
             node.interfaces.add("dev/phoenium/chunk/FullLiveComponentInputs$NamedBlockAccess");
             fieldGetter(node, "phoenium$rawBlockName", "()Lnet/minecraft/network/chat/Component;", "customName", "Lnet/minecraft/network/chat/Component;");

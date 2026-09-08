@@ -119,6 +119,10 @@ public final class FullSavedContextInputs {
         boolean refinementWaiting() { return refinementWaiting; }
         boolean refinementCapacity() { return refinementCapacity; }
         boolean refinementRetry() { return refinementRetry; }
+        boolean needsLiveRefinement() {
+            return pendingEntities.stream().anyMatch(pending -> !refinedEntities.contains(pending))
+                    || pendingLiveBlocks.stream().anyMatch(pending -> !refinedLiveBlocks.contains(pending));
+        }
         public boolean valid(FullSavedInput.Snapshot current) {
             var facts = FullFinishingServices.forServer(world.getServer()).entityFacts;
             var reservation = claim == null ? null : FullFinishingServices.currentReservation(world.getServer());
@@ -295,7 +299,7 @@ public final class FullSavedContextInputs {
             var byPosition = new HashMap<net.minecraft.world.level.ChunkPos, FullInitializedInputs.Target>();
             for (var target : targets) byPosition.put(target.position(), target);
             var measured = FullContextRefinement.read(runtime, graph, expected, footprint,
-                    claim -> observeLive(claim, graph, entities, blocks, byPosition, -1L, false));
+                    claim -> observeLive(runtime, claim, graph, entities, blocks, byPosition, -1L, false));
             if (measured.state() != FullContextRefinement.State.OBSERVED) {
                 refinementWaiting = measured.state() == FullContextRefinement.State.PENDING;
                 refinementRetry = measured.state() == FullContextRefinement.State.STALE;
@@ -305,7 +309,7 @@ public final class FullSavedContextInputs {
             if (size.unmet() != null) { unmet = size.unmet(); return true; }
             if (!reserve(size.bytes())) { refinementCapacity = true; return true; }
             var captured = FullContextRefinement.read(runtime, graph, expected, footprint,
-                    claim -> observeLive(claim, graph, entities, blocks, byPosition, size.bytes(), true));
+                    claim -> observeLive(runtime, claim, graph, entities, blocks, byPosition, size.bytes(), true));
             if (captured.state() != FullContextRefinement.State.OBSERVED) {
                 refinementWaiting = captured.state() == FullContextRefinement.State.PENDING;
                 refinementRetry = captured.state() == FullContextRefinement.State.STALE;
@@ -323,16 +327,23 @@ public final class FullSavedContextInputs {
             return true;
         }
 
-        private LiveObservation observeLive(FullContextReadClaim claim, FullRegistrationRuntime.Graph graph,
+        private LiveObservation observeLive(FullRegistrationRuntime runtime, FullContextReadClaim claim,
+                                            FullRegistrationRuntime.Graph graph,
                                             List<Pending> entities, List<Pending> blocks,
                                             Map<net.minecraft.world.level.ChunkPos, FullInitializedInputs.Target> targets,
                                             long allowance, boolean capture) {
             long total = 0; var receipts = new ArrayList<LiveReceipt>(); var contributions = new ArrayList<LiveContribution>();
+            if (!entities.isEmpty() && entityCut != null
+                    && !FullFinishingServices.forServer(world.getServer()).entityFacts.valid(entityCut))
+                return new LiveObservation(List.of(), List.of(), 0L, null, true);
             if (!entities.isEmpty() && entityCut != null) for (Pending pending : entities) {
                 FullLiveComponentInputs.Field field = pending.read.path().equals("text")
                         ? FullLiveComponentInputs.Field.DISPLAY_TEXT : FullLiveComponentInputs.Field.CUSTOM_NAME;
                 for (var candidate : entityCut.candidates()) {
                     RoutingKey key = new RoutingKey(worldId, candidate.position().x(), candidate.position().z()); claim.require(graph, key);
+                    if (!(candidate.alias() instanceof FullEntityFacts.Access access)
+                            || access.phoenium$referenceFact() != candidate.fact())
+                        return new LiveObservation(List.of(), List.of(), total, null, true);
                     Component component = FullLiveComponentInputs.entity(candidate.alias(), field);
                     var measure = FullLiveComponentInputs.measure(component, pending.read.recursionDepth());
                     if (measure.unmet() != null) return new LiveObservation(List.of(), List.of(), total,
@@ -355,6 +366,8 @@ public final class FullSavedContextInputs {
                 var target = targets.get(chunkPosition);
                 if (target == null || target.actual() == null) continue;
                 RoutingKey key = new RoutingKey(worldId, chunkPosition.x(), chunkPosition.z()); claim.require(graph, key);
+                if (!validLiveTarget(runtime, target))
+                    return new LiveObservation(List.of(), List.of(), total, null, true);
                 BlockEntity block = FullLiveComponentInputs.block(target.actual(), position);
                 if (block != null && !FullLiveComponentInputs.supportedBlock(block))
                     return new LiveObservation(List.of(), List.of(), total,
@@ -376,6 +389,17 @@ public final class FullSavedContextInputs {
                 }
             }
             return new LiveObservation(List.copyOf(receipts), List.copyOf(contributions), total, null, capture && total > allowance);
+        }
+
+        private static boolean validLiveTarget(FullRegistrationRuntime runtime, FullInitializedInputs.Target target) {
+            if (runtime.visible(target.position()) != target.holder()) return false;
+            if (target.availability() == FullInitializedInputs.Availability.PUBLISHED)
+                return target.publication() != null && runtime.published.validates(target.publication());
+            if (target.availability() != FullInitializedInputs.Availability.PREPARED) return false;
+            var targetGraph = runtime.findGraph(target.holder()).orElse(null);
+            return targetGraph != null && targetGraph.work.equals(target.work())
+                    && targetGraph.prepared().map(prepared -> prepared.actual() == target.actual()
+                    && prepared.attempt().equals(target.preparationAttempt())).orElse(false);
         }
 
         boolean validateLive(FullContextReadClaim claim, FullRegistrationRuntime.Graph graph) {
