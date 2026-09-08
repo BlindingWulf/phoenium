@@ -24,6 +24,9 @@ import net.minecraft.world.level.chunk.storage.SerializableChunkData;
 public final class RegionalSaveBinding {
     public interface MapAccess {
         ChunkHolder phoenium$pendingUnload(long position);
+        ChunkHolder phoenium$visibleSaveHolder(long position);
+        void phoenium$retainVisibleSave(ChunkHolder holder, ChunkSaveRetention retention);
+        ChunkSaveRetention phoenium$borrowVisibleSave(ChunkHolder holder, ChunkAccess selected);
     }
     private static final ThreadLocal<Invocation> CURRENT = new ThreadLocal<>();
     private static final ThreadLocal<Unload> UNLOAD = new ThreadLocal<>();
@@ -111,7 +114,9 @@ public final class RegionalSaveBinding {
             ChunkAccess selected = original.get();
             if (selected != null) {
                 selection.chunk = selected;
-                selection.retention = ChunkSaveRetention.retain(Phoenium.liveRuntime().requireChunkWorld(level), holder, selected);
+                selection.retention = ((MapAccess) map).phoenium$borrowVisibleSave(holder, selected);
+                if (selection.retention == null)
+                    selection.retention = ChunkSaveRetention.retain(Phoenium.liveRuntime().requireChunkWorld(level), holder, selected);
             }
             return selected;
         });
@@ -188,10 +193,18 @@ public final class RegionalSaveBinding {
         });
         if (scope == null) { original.run(); return; }
         Unload before = UNLOAD.get(); UNLOAD.set(scope);
-        try (var retention = scope.retention) { original.run(); }
+        try { original.run(); }
         finally {
-            scope.open = false;
-            if (before == null) UNLOAD.remove(); else UNLOAD.set(before);
+            try {
+                // Vanilla can revisit this exact retired holder through the old visible map
+                // later in processUnloads. Transfer an existing use, never mint retired rights.
+                if (!scope.retention.current() && ((MapAccess) map).phoenium$visibleSaveHolder(position) == holder)
+                    ((MapAccess) map).phoenium$retainVisibleSave(holder, scope.retention.fork());
+            } finally {
+                scope.retention.close();
+                scope.open = false;
+                if (before == null) UNLOAD.remove(); else UNLOAD.set(before);
+            }
         }
     }
 

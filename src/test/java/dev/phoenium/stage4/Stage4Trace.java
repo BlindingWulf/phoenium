@@ -233,6 +233,7 @@ public final class Stage4Trace {
         if (!relevantEntity(entity) || packet == null) return;
         long gameTime = entity.level() instanceof ServerLevel level ? level.getGameTime() : -1;
         event("tracking.packet", "operation=" + operation + " entityId=" + entity.getId()
+            + " uuid=" + entity.getUUID()
             + " packet=" + packet.getClass().getName() + " gameTime=" + gameTime
             + " " + authority(entity.level() instanceof ServerLevel level ? level : null, entity.blockPosition()));
     }
@@ -244,6 +245,7 @@ public final class Stage4Trace {
         }
         long gameTime = entity.level() instanceof ServerLevel level ? level.getGameTime() : -1;
         event("tracking.changes", "entityId=" + entity.getId()
+            + " uuid=" + entity.getUUID()
             + " pos=" + entity.blockPosition() + " gameTime=" + gameTime
             + " " + authority(entity.level() instanceof ServerLevel level ? level : null, entity.blockPosition()));
     }

@@ -409,6 +409,19 @@ public final class RegionalWorldServices implements RegionalStateMigration {
         return true;
     }
 
+    public dev.phoenium.topology.LiveMovementFootprint prepareMovementTracking(
+            net.minecraft.server.level.ServerPlayer player, dev.phoenium.topology.LiveMovementFootprint movement) {
+        WorldServices services;
+        synchronized (this) { services = worlds.get(player.level()); }
+        if (services == null) throw new IllegalStateException("movement tracking world is not bound");
+        var finishing = FullFinishingServices.forServer(services.level().getServer());
+        try (var access = finishing.referenceAccess()) {
+            FullFinishingServices.requireWorld(services.level(), FullFinishingServices.Kind.TRACKER);
+            FullFinishingServices.requireServer(services.level().getServer(), FullFinishingServices.Kind.CONNECTIONS);
+            return services.tracking().prepareMovement(player, movement);
+        }
+    }
+
     public boolean moveTrackingPlayer(ChunkMap map, net.minecraft.server.level.ServerPlayer player, Runnable original) {
         RegionalChunkMapAccess access = (RegionalChunkMapAccess) map;
         WorldServices services;

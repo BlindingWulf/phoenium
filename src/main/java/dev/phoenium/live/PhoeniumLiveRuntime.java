@@ -805,6 +805,18 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
         }
         try {
             LiveMovementAdmission.Ticket ticket = LiveMovementAdmission.admit(directory, current.owner(), snapshot.footprint());
+            if (regionalServiceBound()) {
+                var footprint = regionalServices.prepareMovementTracking(player, snapshot.footprint());
+                // Enclosure may publish a legitimate merge and drain earlier accepted work.
+                // Recheck the original movement baseline before granting this packet a ticket.
+                var after = LiveMovementSnapshot.capture(player, packet, lastGoodX, lastGoodY, lastGoodZ, awaitingTeleport);
+                if (!after.classified() || !after.footprint().equals(snapshot.footprint())) {
+                    movementBootstrapDeferred++;
+                    return;
+                }
+                current = bindPlayer(player);
+                ticket = LiveMovementAdmission.admit(directory, current.owner(), footprint);
+            }
             movementFootprintAccepted++;
             admitPacket(connection, player, new PendingMove(this, connection, packet, current.objectId(), current.incarnation(), ticket),
                 "player-movement", current, AdmissionPolicy.REJECT);

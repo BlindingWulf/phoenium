@@ -17,7 +17,7 @@ abstract class Stage4ServerEntityMixin {
     private void phoenium$pair(ServerPlayer player, CallbackInfo ci) {
         if (!Stage4Trace.relevantEntity(entity)) return;
         Stage4Trace.event("tracking.pair", "recipient=" + player.getName().getString()
-            + " entityId=" + entity.getId() + " gameTime=" + player.level().getGameTime() + " "
+            + " entityId=" + entity.getId() + " uuid=" + entity.getUUID() + " gameTime=" + player.level().getGameTime() + " "
             + Stage4Trace.authority(player.level(), entity.blockPosition()));
         Stage4Trace.trackingBodyObserved(entity, "pair");
     }
@@ -26,7 +26,7 @@ abstract class Stage4ServerEntityMixin {
     private void phoenium$remove(ServerPlayer player, CallbackInfo ci) {
         if (!Stage4Trace.relevantEntity(entity)) return;
         Stage4Trace.event("tracking.remove", "recipient=" + player.getName().getString()
-            + " entityId=" + entity.getId() + " gameTime=" + player.level().getGameTime() + " "
+            + " entityId=" + entity.getId() + " uuid=" + entity.getUUID() + " gameTime=" + player.level().getGameTime() + " "
             + Stage4Trace.authority(player.level(), entity.blockPosition()));
         Stage4Trace.trackingBodyObserved(entity, "remove");
     }

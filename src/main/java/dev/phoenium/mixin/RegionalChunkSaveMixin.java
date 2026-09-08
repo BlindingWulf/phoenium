@@ -6,6 +6,7 @@ import com.llamalad7.mixinextras.injector.wrapmethod.WrapMethod;
 import dev.phoenium.Phoenium;
 import dev.phoenium.save.RegionalSaveBinding;
 import dev.phoenium.save.RetainedChunkSnapshot;
+import dev.phoenium.chunk.ChunkSaveRetention;
 import it.unimi.dsi.fastutil.longs.Long2ObjectLinkedOpenHashMap;
 import java.util.concurrent.CompletableFuture;
 import java.util.List;
@@ -28,7 +29,11 @@ import net.minecraft.world.level.levelgen.structure.StructureStart;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Shadow;
 import org.spongepowered.asm.mixin.Final;
+import org.spongepowered.asm.mixin.Unique;
 import org.spongepowered.asm.mixin.injection.At;
+import org.spongepowered.asm.mixin.injection.Inject;
+import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
+import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
 /** The original snapshot is produced once, then its remaining saved-tag aliases are
  * detached before the original background encoder can receive the data. */
@@ -36,8 +41,40 @@ import org.spongepowered.asm.mixin.injection.At;
 abstract class RegionalChunkSaveMixin implements RegionalSaveBinding.MapAccess {
     @Shadow @Final private ServerLevel level;
     @Shadow @Final private Long2ObjectLinkedOpenHashMap<ChunkHolder> pendingUnloads;
+    @Shadow private volatile Long2ObjectLinkedOpenHashMap<ChunkHolder> visibleChunkMap;
+    @Unique private final java.util.IdentityHashMap<ChunkHolder, ChunkSaveRetention> phoenium$visibleSaves = new java.util.IdentityHashMap<>();
 
     @Override public ChunkHolder phoenium$pendingUnload(long position) { return pendingUnloads.get(position); }
+    @Override public ChunkHolder phoenium$visibleSaveHolder(long position) { return visibleChunkMap.get(position); }
+    @Override public void phoenium$retainVisibleSave(ChunkHolder holder, ChunkSaveRetention retention) {
+        var previous = phoenium$visibleSaves.put(holder, retention);
+        if (previous != null) previous.close();
+    }
+    @Override public ChunkSaveRetention phoenium$borrowVisibleSave(ChunkHolder holder, ChunkAccess selected) {
+        var retained = phoenium$visibleSaves.get(holder);
+        if (retained == null) return null;
+        if (visibleChunkMap.get(holder.getPos().pack()) != holder || !retained.matches(selected))
+            throw new IllegalStateException("visible save selection lost its retained original holder");
+        return retained.fork();
+    }
+    @Inject(method = "promoteChunkMap", at = @At("RETURN"), require = 1, expect = 1)
+    private void phoenium$releaseWithdrawnVisibleSaves(CallbackInfoReturnable<Boolean> result) {
+        if (!result.getReturnValue()) return;
+        var iterator = phoenium$visibleSaves.entrySet().iterator();
+        while (iterator.hasNext()) {
+            var entry = iterator.next();
+            if (visibleChunkMap.get(entry.getKey().getPos().pack()) != entry.getKey()) {
+                var retained = entry.getValue();
+                iterator.remove(); retained.close();
+            }
+        }
+    }
+    @Inject(method = "close", at = @At("HEAD"), require = 1, expect = 1)
+    private void phoenium$closeVisibleSaves(CallbackInfo ci) {
+        var retained = java.util.List.copyOf(phoenium$visibleSaves.values());
+        phoenium$visibleSaves.clear();
+        retained.forEach(ChunkSaveRetention::close);
+    }
 
     @WrapMethod(method = "saveAllChunks")
     private void phoenium$saveBatch(boolean flush, Operation<Void> original) {

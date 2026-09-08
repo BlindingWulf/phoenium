@@ -58,6 +58,14 @@ public record LiveMovementFootprint(
         return Set.copyOf(keys);
     }
 
+    /** Additional original synchronous callbacks are fenced by the same admission ticket. */
+    public LiveMovementFootprint withCallbacks(Set<RoutingKey> additional) {
+        var callbacks = new LinkedHashSet<>(synchronousCallbackAccesses);
+        callbacks.addAll(additional);
+        return new LiveMovementFootprint(world, routingDestination, sweptCollision, stepUpCandidates,
+            supportingBlockAccesses, fluidAccesses, entityIndexAccesses, callbacks);
+    }
+
     private static List<ChunkBox> immutableBoxes(WorldId world, List<ChunkBox> boxes, String name) {
         List<ChunkBox> copy = List.copyOf(Objects.requireNonNull(boxes, name));
         if (copy.stream().anyMatch(box -> !world.equals(box.world()))) {

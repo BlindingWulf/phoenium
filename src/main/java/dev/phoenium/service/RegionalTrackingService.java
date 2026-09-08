@@ -443,6 +443,44 @@ public final class RegionalTrackingService {
         refreshProjection(entry);
     }
 
+    /** Prepare the synchronous ChunkMap.move suffix before the movement packet acquires a lease.
+     * Selection uses published facts and every possible settled chunk in the swept path. */
+    public dev.phoenium.topology.LiveMovementFootprint prepareMovement(ServerPlayer player,
+            dev.phoenium.topology.LiveMovementFootprint movement) {
+        if (OwnershipContext.current().isPresent()) throw new IllegalStateException("movement tracking preparation owns a region");
+        var source = finishing.entityFacts.trackingCandidate(level, player);
+        RangeProjection relation = publishedRange(source);
+        var footprint = new LinkedHashSet<>(relation.footprint);
+        footprint.add(movement.routingDestination());
+        List<Entry> entries;
+        synchronized (this) { entries = index.values(); }
+        for (Entry entry : entries) {
+            refreshCandidate(entry);
+            if (entry.entity == player) {
+                for (ServerPlayer recipient : level.players()) {
+                    var candidate = finishing.entityFacts.trackingCandidate(level, recipient);
+                    if (entry.seenConnections.contains(recipient.connection)
+                            || movementCandidate(key(candidate), relation.effectiveRange, movement)) footprint.add(key(candidate));
+                }
+            } else {
+                RangeProjection tracked = publishedRange(entry.candidate);
+                if (entry.seenConnections.contains(player.connection)
+                        || movementCandidate(entry.key, tracked.effectiveRange, movement)) footprint.addAll(tracked.footprint);
+            }
+        }
+        dispatcher.ensureClosure(footprint);
+        return movement.withCallbacks(footprint);
+    }
+
+    static boolean movementCandidate(RoutingKey entity, int range,
+            dev.phoenium.topology.LiveMovementFootprint movement) {
+        long radius = Math.max(1L, (range + 15L) / 16L + 1L);
+        if (candidateChunk(entity, range, movement.routingDestination())) return true;
+        return movement.sweptCollision().stream().anyMatch(box -> entity.world().equals(box.world())
+            && entity.x() >= box.minX() - radius && entity.x() <= box.maxX() + radius
+            && entity.z() >= box.minZ() - radius && entity.z() <= box.maxZ() + radius);
+    }
+
     /** Preserves ChunkMap.move's complete original suffix while replacing its world-wide tracker
      * scan with the exact retained seen/range candidate set prepared before entry. */
     public void movePlayer(ChunkMap map, ServerPlayer player, Runnable original) {

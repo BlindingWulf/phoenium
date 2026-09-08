@@ -4,6 +4,28 @@ Stage 4 remains **PARTIAL**, Stage 5 OFF, one gameplay worker, parallel gameplay
 This section supersedes the historical worker assignments and next-step instructions below.
 The session began from clean `2b3080b`; all newer work is preserved. No agents are running.
 
+- Recovery parent `a36d4cb`. Candidate Q (5/5) production
+  `D00C92B8024B786F0BFA218AAD69C36400748FC72760B12C74C3F88D1AEC0885` passed first workload
+  (1089 events), first normal shutdown, and native restart deadline phases (unpack725+188=913;
+  powered/callbacks true/0 at912, false/1 at913 and914). Final restart shutdown failed because
+  eager-save's original visible map still held an already retired holder. No final campaign PASS.
+- Candidate `finish-candidate-8-a` on those same bytes passed first workload (1756 events) and
+  first normal shutdown; restart movement reached a legitimate A tracker from B at view8 and
+  failed the incomplete movement tracking footprint. Both actual failures are preserved.
+- Original unload retention now lends an existing use to its exact still-visible retired holder;
+  native visible-map replacement or map close releases it. Eager selection borrows only that
+  exact retained source. New-source retirement rejection remains mandatory. First installed R
+  exposed IdentityHashMap entry invalidation after iterator.remove; corrected by capturing the
+  value first. `finish-candidate-5-r` is failure evidence, next candidate `finish-candidate-5-s`.
+- Movement admission first preserves original geographic admission, then encloses the exact
+  synchronous tracker/passenger/seen-recipient projection across the swept settled path before
+  obtaining its final generation-fenced ticket. Baseline is recaptured after potential draining.
+  Native move revalidates the full closure. The shared probe now includes fixture UUIDs for stable
+  cross-run entity identity. Regional/LiveMovement focused checks and two new retention/movement
+  regressions PASS (`retention-movement-regressions.log`). Final full suite still required.
+- Exact older controlled FULL directory is `run/full-production-integration/transform-20260908-111226`.
+  Prior FULL/adverse passes remain historical; repeat on eventual final production bytes.
+
 - Recovery parent `4ed718f`; next/current run **`finish-candidate-5-q`** includes current
   source-range/view-distance selection, daytime siege and pre-selection delivery repairs.
   Focused Regional/LiveTick checks pass (`run/stage4/siege-selection-focused.log`).
