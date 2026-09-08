@@ -138,3 +138,29 @@ clock values and object identities, retaining event order and all meaningful
 payload fields; comparing the reference against an independent repeat produced
 identical 35-event digests and correctly retained `PARTIAL` because tracking
 was not exercised.
+
+## Account-free client reference
+
+The installed client extension now drives the same fixture over a real TCP
+connection using the offline username `PhoeniumTest0`; no Microsoft
+authentication is requested. The focused 8/8 run completed with client and
+server exit code 0 and an ordered trace result of `PASS` with 460 events. It
+records six tracking recipient admissions, two pairings, 410 change callbacks,
+five recipient removals, two entity removals, the A/B scheduled block and
+fluid callbacks, nested block-event dispatch, the real save enter/exit pairs,
+and normal server stop. The preserved evidence bundle is
+`run/stage4/acceptance-reference-client-20260908-022205/`; its
+`reference-hashes.json` records the frozen production JAR hash
+`017EE8ED612D238894FFA5A1DC019BA8B0E31124B0B5171D08CC0D8993C1B534` and
+the test-only probe hash.
+
+The client task accepts
+`-Pstage4ViewDistance=5 -Pstage4SimulationDistance=5` for the 5/5 campaign;
+the default is 8/8. The server-only `scripts/run_stage4_acceptance.py` accepts
+matching `--view-distance` and `--simulation-distance` values and records them
+in its manifest. Both configurations remain disposable campaign preparations
+until an integrated Stage 4 source identity is dispatched. At that point the
+fixture will bind A/B to the production route seam and record
+`RegionalSaveBinding.currentCut()` at the original save capture/write edge.
+Migration, pending-save shutdown, disk tick persistence and post-reload
+effects, and the saved-vault regression remain open acceptance gates.

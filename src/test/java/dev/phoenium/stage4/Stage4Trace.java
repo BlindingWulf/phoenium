@@ -84,6 +84,8 @@ public final class Stage4Trace {
         require(events, "block.dispatch", missing);
         require(events, "tracking.pair", missing);
         require(events, "tracking.remove", missing);
+        require(events, "tracking.recipient", missing);
+        require(events, "tracking.changes", missing);
         require(events, "save.enter", missing);
         require(events, "save.exit", missing);
         if (includeStop) require(events, "server.stop", missing);

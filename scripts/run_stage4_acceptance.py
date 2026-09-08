@@ -173,6 +173,10 @@ def main():
     parser.add_argument("--world", default="stage4-trace-smoke")
     parser.add_argument("--world-source", type=Path)
     parser.add_argument("--port", type=int, default=25615)
+    parser.add_argument("--view-distance", type=int, choices=range(2, 33), default=8,
+                        help="installed server view distance (use 5 or 8 for the Stage 4 campaign)")
+    parser.add_argument("--simulation-distance", type=int, choices=range(2, 33), default=8,
+                        help="installed server simulation distance (use 5 or 8 for the Stage 4 campaign)")
     args = parser.parse_args()
     args.output = args.output.resolve()
     if args.output.exists():
@@ -188,7 +192,7 @@ def main():
         f"level-name={args.world}", "level-seed=444444", "level-type=minecraft:flat", "online-mode=false",
         "enforce-secure-profile=false", "server-ip=127.0.0.1", f"server-port={args.port}",
         "enable-rcon=false", "max-players=1", "difficulty=peaceful", "gamemode=creative",
-        "view-distance=8", "simulation-distance=8", "spawn-protection=0",
+        f"view-distance={args.view_distance}", f"simulation-distance={args.simulation_distance}", "spawn-protection=0",
         "sync-chunk-writes=true", "pause-when-empty-seconds=-1", ""]), encoding="utf-8")
     if args.world_source:
         if not (args.world_source / "level.dat").exists():
@@ -201,7 +205,7 @@ def main():
     (args.output / "mca-before-restart.json").write_text(json.dumps(before_restart, indent=2) + "\n", encoding="utf-8")
     second = run_process(server, drive=False)
     manifest = {"kind": "stage4-installed-acceptance-fixture", "world": args.world,
-                "seed": 444444, "viewDistance": 8, "simulationDistance": 8,
+                "seed": 444444, "viewDistance": args.view_distance, "simulationDistance": args.simulation_distance,
                 "productionSha256": sha256(args.production), "probeSha256": sha256(args.probe),
                 "production": str(args.production), "probe": str(args.probe),
                 "firstRun": {key: value for key, value in first.items() if key != "lines"},

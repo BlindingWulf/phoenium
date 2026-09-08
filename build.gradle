@@ -50,7 +50,11 @@ tasks.named('processClientGameTestResources') {
     duplicatesStrategy = DuplicatesStrategy.EXCLUDE
 }
 
-def stage3ServerBase = file('.stage2-server-live1')
+// The isolated verification checkout may use the preserved prepared runtime from
+// the sibling full-luna checkout; never generate or modify that source in place.
+def stage3ServerBase = file('.stage2-server-live1').exists()
+        ? file('.stage2-server-live1')
+        : file('../Phoenium-full-luna/.stage2-server-live1')
 
 tasks.register('prepareStage3ClientServer', Sync) {
     description = 'Prepare an ignored, disposable external Fabric server for Stage 3 client evidence.'
@@ -72,6 +76,15 @@ tasks.register('prepareStage3ClientServer', Sync) {
     from(tasks.named('jar')) {
         into 'mods'
     }
+}
+
+tasks.register('prepareStage4ClientServer', Sync) {
+    description = 'Prepare a disposable installed Stage 4 server with the account-free trace probe.'
+    group = 'verification'
+    dependsOn tasks.named('prepareStage3ClientServer'), tasks.named('stage4AcceptanceHarness')
+    into layout.buildDirectory.dir('stage4-client-server')
+    from(tasks.named('prepareStage3ClientServer'))
+    from(tasks.named('stage4AcceptanceHarness')) { into 'mods' }
 }
 
 loom {
@@ -132,6 +145,34 @@ loom {
             property 'phoenium.test.rconPassword', 'phoenium-stage3-client'
             property 'phoenium.client.gametest.evidence',
                     layout.buildDirectory.file('client-gametest/evidence/STAGE3-CLIENT.json').get().asFile.absolutePath
+        }
+
+        stage4ClientGameTest {
+            client()
+            name 'Phoenium Stage 4 account-free client trace'
+            source sourceSets.clientGameTest
+            runDir 'run/stage4-client-gametest'
+            vmArg '-Dfabric.client.gametest'
+            vmArg '-Dfabric.client.gametest.modid=phoenium-client-tests'
+            vmArg '-Dphoenium.test.mode=stage4client'
+            programArg '--username'
+            programArg 'PhoeniumTest0'
+            property 'phoenium.test.username', 'PhoeniumTest0'
+            property 'phoenium.test.minecraftVersion', minecraft_version
+            property 'phoenium.test.javaVersion', '25'
+            property 'phoenium.test.fabricLoaderVersion', loader_version
+            property 'phoenium.test.fabricApiVersion', fabric_version
+            property 'phoenium.test.loomVersion', loom_version
+            property 'phoenium.test.gradleVersion', '9.5.1'
+            property 'phoenium.test.gradleTask', 'runStage4ClientGameTest'
+            property 'phoenium.stage4.viewDistance', providers.gradleProperty('stage4ViewDistance').orElse('8').get()
+            property 'phoenium.stage4.simulationDistance', providers.gradleProperty('stage4SimulationDistance').orElse('8').get()
+            property 'phoenium.test.serverDirectory',
+                    layout.buildDirectory.dir('stage4-client-server').get().asFile.absolutePath
+            property 'phoenium.stage4.tracePath',
+                    layout.buildDirectory.file('stage4-client-gametest/evidence/STAGE4-CLIENT-trace.json').get().asFile.absolutePath
+            property 'phoenium.client.gametest.evidence',
+                    layout.buildDirectory.file('stage4-client-gametest/evidence/STAGE4-CLIENT.json').get().asFile.absolutePath
         }
 
         stage3FullAcceptance {
@@ -226,6 +267,10 @@ loom {
 
 tasks.named('runStage3ClientGameTest') {
     dependsOn tasks.named('prepareStage3ClientServer')
+}
+
+tasks.named('runStage4ClientGameTest') {
+    dependsOn tasks.named('prepareStage4ClientServer')
 }
 
 tasks.named('runStage3ChunkTrace') {
