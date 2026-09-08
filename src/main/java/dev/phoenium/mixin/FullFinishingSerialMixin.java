@@ -24,7 +24,11 @@ abstract class FullFinishingSerialMixin {
     @WrapMethod(method = "saveAllChunks(ZZZ)Z")
     private boolean phoenium$saveServices(boolean silent, boolean flush, boolean force, Operation<Boolean> original) {
         try (var turn = FullFinishingServices.forServer((MinecraftServer) (Object) this).serial(FullFinishingServices.Phase.SAVE)) {
-            return original.call(silent, flush, force);
+            boolean result = original.call(silent, flush, force);
+            var saves = dev.phoenium.Phoenium.liveRuntime().regionalSaves();
+            if (flush && saves != null)
+                dev.phoenium.save.RegionalSaveBinding.flush((MinecraftServer) (Object) this, saves);
+            return result;
         }
     }
     @WrapMethod(method = "stopServer()V")

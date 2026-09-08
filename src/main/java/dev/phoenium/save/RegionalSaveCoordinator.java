@@ -53,6 +53,15 @@ public final class RegionalSaveCoordinator {
         return attempt;
     }
 
+    /** Exact holder selection and retention also require the source owner's lease. */
+    public <T> T prepareSource(RoutingKey key, Supplier<T> originalSelection) {
+        return owned(key, RegionalServiceKind.SAVE_CAPTURE, originalSelection);
+    }
+
+    public void unloadSource(RoutingKey key, Runnable original) {
+        owned(key, RegionalServiceKind.SAVE_ACKNOWLEDGEMENT, () -> { original.run(); return null; });
+    }
+
     public final class Attempt {
         private final long id;
         private Source source;

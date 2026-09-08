@@ -81,6 +81,7 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
     private OwnerGateway gateway;
     private ObjectOwnerGateway objectGateway;
     private ChunkCompletionGateway chunkGateway;
+    private dev.phoenium.save.RegionalSaveCoordinator regionalSaves;
     private final ChunkCustody chunkCustody = new ChunkCustody();
     private PendingTick pendingTick;
     private boolean explicitFixture;
@@ -284,6 +285,13 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
     }
 
     public ChunkBindingRuntime chunkBinding() { return chunkBinding; }
+    public void initializeRegionalSaves(dev.phoenium.service.RegionalServiceDispatcher dispatcher) {
+        if (regionalSaves != null) throw new IllegalStateException("regional save service installed twice");
+        regionalSaves = new dev.phoenium.save.RegionalSaveCoordinator(directory, runtimes, dispatcher);
+    }
+    /** Null only before regional services are installed at the original start boundary. */
+    public dev.phoenium.save.RegionalSaveCoordinator regionalSaves() { return regionalSaves; }
+    public boolean pumpSaveOne() { return regionalSaves != null && regionalSaves.pumpOne(); }
     private final boolean authoritativeFull = Boolean.getBoolean("phoenium.full.authoritative");
     private final java.util.Map<ServerLevel, dev.phoenium.chunk.FullRegistrationRuntime> fullRegistrations = new java.util.concurrent.ConcurrentHashMap<>();
     private dev.phoenium.chunk.FullRegionalEnclosure fullEnclosure;
