@@ -29,9 +29,9 @@ remaining. First dispatcher integration: Codex 38% used / 62% remaining, reserve
 
 | Outcome | Connected implementation | Remaining acceptance |
 | --- | --- | --- |
-| Scheduled ticks | Real per-owner persistent containers, due selection, typed collection/dispatch; native clear/copy share the original current-cycle fields and finite area cut | Repair exact eligibility call/order semantics; installed deterministic two-owner migration and restored effects |
+| Scheduled ticks | Real per-owner persistent containers, due selection, typed collection/dispatch; native clear/copy share the original current-cycle fields and finite area cut | Installed deterministic two-owner migration, exact original register-then-unpack oracle and restored effects |
 | Block events | Per-owner ordered queues, original nested enqueue and dispatch, migration | Installed ordered comparator and pending-work merge/split |
-| Entity tracking | Sol implementing actual tracker partitions, original pairing/removal/update and existing entity/session receipts | Complete immediate-add preflight, integrate, actual clients and lifecycle migration |
+| Entity tracking | Integrated actual tracker partitions, original pairing/removal/update, entity/session receipts and exact source-map order | Complete passenger/active-producer preflight; actual clients, ordered packets and lifecycle migration |
 | Save cuts | Original selected-holder retention, batch/operation topology cuts, detached original snapshot, original I/O acknowledgement | Final-artifact disk records/restart, replacement/pressure and affected FULL lifecycle |
 | Shutdown | Admission close, leased admitted-work drain, independent failure settlement, terminal metadata acknowledgement | Clean final installed stop under normal and adverse pending work |
 | Global services | Established named services and explicit metadata/owner-free I/O protocols | Final integrated reached-path audit; see STAGE4_SERVICE_CONTRACT.md |
@@ -68,7 +68,7 @@ events, save and clean stop, but restart reports a foreign closure owner. Preser
 both bundles. Root repaired the nested producer overclaim: enqueue requires only the destination owner; the future callback halo is admitted when due. A regression crosses that same boundary and later executes after genuine convergence. Do not widen a valid fixture boundary simply to hide that production
 failure. No integrated Stage 4 installed PASS exists.
 
-Lead owns native tick clear/copy integration, exact eligibility repair and next
+Stable integrated production checkpoint: `34b2d0f`; tracking accessor repair `1db10ad`, exact scheduled eligibility/native index `952ce13` plus owned immutable head receipts `34b2d0f`, and block-event nested/deferred boundary `b4d23e9`. Focused scheduled/descriptor/event integration: 20 tests PASS. The installed tracker accessor failure is preserved by Luna in `integrated-installed-tracking-fixture-033157`. Genuine pending fixture `5da8152` corrects the original duplicate B/type schedule that never created a second obligation; next campaign must compare identical corrected reference inputs. Lead owns native tick clear/copy integration and next
 restart closure review, with save/stop and topology architecture. Sol owns production
 tracking and immediate-add preflight, then connected repairs. Luna is the sole broad
 build/live campaign owner: exact original oracles, controlled client comparator,
@@ -76,4 +76,3 @@ MCA pending tick deadline/readback/reached effects, real merge/split and lifecyc
 5/5 and 8/8, affected foundation regressions, and elapsed/RSS/GC-limit observations.
 Next stable campaign must include all production repairs, not an earlier JAR.
 Internal commits remain recovery points; continue until all required gates pass.
-
