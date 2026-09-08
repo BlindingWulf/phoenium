@@ -120,6 +120,13 @@ public final class Stage4ClientTraceTest implements FabricClientGameTest {
             // the deferred event still exercises native eligibility and later viewport admission.
             command(server, "stage4trace release-temporary");
             awaitLog(context, server, log, "STAGE4_TRACE_TEMPORARY_RELEASED", START_TIMEOUT_TICKS);
+            // Prove the deferred event is rejected by the native distance predicate while its
+            // far chunk is not in the player's viewport.  The later check is made only after
+            // the real deferred viewport FULL receipt, so neither result is inferred from a
+            // route label or a scheduled deadline.
+            command(server, "stage4trace check-deferred-ineligible");
+            awaitLog(context, server, log,
+                "STAGE4_TRACE_DEFERRED_ELIGIBILITY phase=before-viewport", START_TIMEOUT_TICKS);
             // Fixed UUIDs keep the client packet projection comparable across fresh reference
             // and candidate worlds; entity IDs remain deterministic because the world is fresh.
             command(server, "summon minecraft:armor_stand 8 65 8 {NoGravity:1b,Invulnerable:1b,UUID:[I;1,2,3,4],Tags:[\"stage4_trace_a\"]}");
@@ -197,6 +204,9 @@ public final class Stage4ClientTraceTest implements FabricClientGameTest {
             waitForClientChunks(context, new int[][] {{32, 12}}, START_TIMEOUT_TICKS);
             command(server, "stage4trace await-full-deferred");
             awaitLog(context, server, log, "STAGE4_TRACE_FULL_READY label=deferred", START_TIMEOUT_TICKS);
+            command(server, "stage4trace check-deferred-eligible");
+            awaitLog(context, server, log,
+                "STAGE4_TRACE_DEFERRED_ELIGIBILITY phase=after-viewport", START_TIMEOUT_TICKS);
             // Leave the original now+400 block obligation pending while allowing the migrated
             // far fluid/block (now+320) to execute under B after the split.  This is an exact
             // native frozen-clock step rather than a wall-clock/game-time deadline race.

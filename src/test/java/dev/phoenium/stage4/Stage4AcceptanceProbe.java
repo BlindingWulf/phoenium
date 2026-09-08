@@ -4,6 +4,7 @@ import dev.phoenium.Phoenium;
 import dev.phoenium.stage4probe.Stage4Trace;
 import net.fabricmc.api.DedicatedServerModInitializer;
 import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback;
+import net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents;
 import net.minecraft.commands.Commands;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
@@ -54,6 +55,16 @@ public final class Stage4AcceptanceProbe implements DedicatedServerModInitialize
      * owner is moved B -> A -> B by the lifecycle transition. */
     public static final BlockPos REGION_DEFERRED_EVENT = new BlockPos(520, 65, 200);
     @Override public void onInitializeServer() {
+        // The restart runner may opt into this test-only native clock boundary.  It is set
+        // during SERVER_STARTED, before the first ordinary world tick can consume the saved
+        // future obligation; no production runtime code observes this property.
+        ServerLifecycleEvents.SERVER_STARTED.register(server -> {
+            if (Boolean.getBoolean("phoenium.stage4.restartFreeze")) {
+                server.tickRateManager().setFrozen(true);
+                System.out.println("STAGE4_TRACE_STARTUP_CLOCK_FROZEN gameTime="
+                    + server.overworld().getGameTime());
+            }
+        });
         CommandRegistrationCallback.EVENT.register((dispatcher, access, selection) -> dispatcher.register(
             Commands.literal("stage4trace")
                 .then(Commands.literal("run").executes(context -> { arm(context.getSource().getLevel()); return 1; }))
@@ -118,6 +129,14 @@ public final class Stage4AcceptanceProbe implements DedicatedServerModInitialize
                 .then(Commands.literal("freeze").executes(context -> {
                     context.getSource().getServer().tickRateManager().setFrozen(true);
                     Stage4Trace.clockFrozen(context.getSource().getLevel());
+                    return 1;
+                }))
+                .then(Commands.literal("check-deferred-ineligible").executes(context -> {
+                    Stage4Trace.observeDeferredEligibility(context.getSource().getLevel(), "before-viewport", false);
+                    return 1;
+                }))
+                .then(Commands.literal("check-deferred-eligible").executes(context -> {
+                    Stage4Trace.observeDeferredEligibility(context.getSource().getLevel(), "after-viewport", true);
                     return 1;
                 }))
                 .then(Commands.literal("step")
@@ -189,7 +208,12 @@ public final class Stage4AcceptanceProbe implements DedicatedServerModInitialize
                         }))))
                 .then(Commands.literal("reload").executes(context -> {
                     try {
+                        if (Boolean.getBoolean("phoenium.stage4.restartFreeze")) {
+                            context.getSource().getServer().tickRateManager().setFrozen(true);
+                        }
                         Stage4Trace.beginReload(context.getSource().getLevel());
+                        if (context.getSource().getServer().tickRateManager().isFrozen())
+                            Stage4Trace.reloadClockFrozen(context.getSource().getLevel());
                     } catch (Throwable failure) {
                         System.out.println("STAGE4_TRACE_RELOAD_ERROR " + failure);
                         failure.printStackTrace(System.out);

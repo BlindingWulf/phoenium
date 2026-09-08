@@ -41,6 +41,9 @@ public final class Stage4Trace {
     private static volatile boolean trackingLifecycleRequested;
     private static volatile boolean blockRecipientRequested;
     private static volatile boolean fullReadinessRequested;
+    private static volatile boolean deferredEligibilityRequested;
+    private static volatile boolean deferredIneligibleObserved;
+    private static volatile boolean deferredEligibleObserved;
     private static final Set<Integer> changeSeen = new HashSet<>();
     private static final Map<String, BlockPos> BLOCK_PROBES = new LinkedHashMap<>();
     private static final Map<String, Integer> BLOCK_PROBE_A = new LinkedHashMap<>();
@@ -67,6 +70,9 @@ public final class Stage4Trace {
             trackingLifecycleRequested = false;
             blockRecipientRequested = false;
             fullReadinessRequested = false;
+            deferredEligibilityRequested = false;
+            deferredIneligibleObserved = false;
+            deferredEligibleObserved = false;
             changeSeen.clear();
             BLOCK_PROBES.clear();
             BLOCK_PROBE_A.clear();
@@ -101,6 +107,35 @@ public final class Stage4Trace {
     public static void clockFrozen(ServerLevel level) {
         event("clock.freeze", "gameTime=" + level.getGameTime());
         System.out.println("STAGE4_TRACE_CLOCK_FROZEN gameTime=" + level.getGameTime());
+    }
+
+    /** Records the native reload freeze after the trace has been armed. */
+    public static void reloadClockFrozen(ServerLevel level) {
+        event("clock.reload.freeze", "gameTime=" + level.getGameTime());
+        System.out.println("STAGE4_TRACE_RELOAD_CLOCK_FROZEN gameTime=" + level.getGameTime());
+    }
+
+    /**
+     * Observe the original ServerLevel block ticking predicate at a controlled boundary.
+     * This deliberately calls the native predicate itself; it neither creates a ticket nor
+     * asks the regional service for a substitute answer.  The shared reference and candidate
+     * workload use the same two observations around the real viewport transition.
+     */
+    public static boolean observeDeferredEligibility(ServerLevel level, String phase, boolean expected) {
+        boolean eligible = level.shouldTickBlocksAt(Stage4AcceptanceProbe.REGION_DEFERRED_EVENT);
+        deferredEligibilityRequested = true;
+        if (expected) deferredEligibleObserved = true;
+        else deferredIneligibleObserved = true;
+        event("block.deferred.eligibility", "phase=" + phase + " pos="
+            + Stage4AcceptanceProbe.REGION_DEFERRED_EVENT + " eligible=" + eligible
+            + " expected=" + expected + " gameTime=" + level.getGameTime());
+        System.out.println("STAGE4_TRACE_DEFERRED_ELIGIBILITY phase=" + phase + " pos="
+            + Stage4AcceptanceProbe.REGION_DEFERRED_EVENT + " eligible=" + eligible
+            + " expected=" + expected + " gameTime=" + level.getGameTime());
+        if (eligible != expected)
+            throw new IllegalStateException("deferred native eligibility mismatch phase=" + phase
+                + " expected=" + expected + " actual=" + eligible);
+        return eligible;
     }
 
     /** Arms an exact native frozen-tick receipt before requesting ServerTickRateManager steps. */
@@ -412,12 +447,18 @@ public final class Stage4Trace {
             requireContains(events, "save.serialization.ticks", "contextRegion=stage3-fixture-b", "save.owner.b", missing);
             requireContains(events, "topology.split", "fluids=Measurements[", "service.fluid.split", missing);
             require(events, "block.deferred", missing);
-            if (fullReadinessRequested) {
+        if (fullReadinessRequested) {
                 requireContains(events, "full.ready", "label=far ", "full.ready.far", missing);
                 requireContains(events, "full.ready", "label=deferred ", "full.ready.deferred", missing);
                 require(events, "clock.freeze", missing);
                 requireContains(events, "clock.step.reached", "label=post-split ", "clock.step.post-split", missing);
             }
+        }
+        if (deferredEligibilityRequested) {
+            requireContains(events, "block.deferred.eligibility", "phase=before-viewport eligible=false expected=false",
+                "block.deferred.ineligible", missing);
+            requireContains(events, "block.deferred.eligibility", "phase=after-viewport eligible=true expected=true",
+                "block.deferred.eligible", missing);
         }
         if (includeStop) require(events, "server.stop", missing);
         return missing;
