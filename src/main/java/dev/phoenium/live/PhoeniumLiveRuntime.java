@@ -451,6 +451,10 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
     public <T> boolean scheduleRegionalTick(LevelTicks<T> owner, net.minecraft.world.ticks.ScheduledTick<T> tick) {
         return regionalServices != null && regionalServices.schedule(owner, tick);
     }
+    public <T> boolean mutateRegionalTickArea(LevelTicks<T> owner, LevelTicks<T> source,
+            net.minecraft.world.level.levelgen.structure.BoundingBox area, net.minecraft.core.Vec3i offset, Runnable original) {
+        return regionalServices != null && regionalServices.mutateTickArea(owner, source, area, offset, original);
+    }
     public <T> Boolean regionalWillTickThisTick(LevelTicks<T> owner, BlockPos pos, T type) {
         return regionalServices == null ? null : regionalServices.willTickThisTick(owner, pos, type);
     }

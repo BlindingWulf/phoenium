@@ -27,100 +27,52 @@ remaining. First dispatcher integration: Codex 38% used / 62% remaining, reserve
 
 ## Fixed implementation and acceptance map
 
-| Outcome | Connected implementation boundary | Required acceptance (all pending) |
+| Outcome | Connected implementation | Remaining acceptance |
 | --- | --- | --- |
-| Regional scheduled ticks | Original block/fluid scheduling, chunk tick containers, eligibility, ordered dispatch, serializer/load | Two regions; original timing/priority/subtick order, deduplication, reached effects; migration with pending work; persisted reload |
-| Regional block events | Original ServerLevel enqueue and dispatch, nested enqueue, recipient service | Two regions; original insertion/dispatch and nested order; no event loss or duplicate through merge/split |
-| Regional entity tracking | Original ChunkMap tracking entry/membership/update/pair/remove and existing object/connection services | Actual client recipients and ordered packets; movement, removal/re-pair and topology transition |
-| Save cuts | Original save-all/autosave/unload serializer and storage acknowledgements | Coherent retained owner/topology/holder cut; dirty/replacement/failure cases; real saved records and restart; no claim beyond original flush semantics |
-| Shutdown | Original stop admission, legitimate generation/owner/service work, saves and cleanup | Pending work drains or settles under proper authority; callback/reentrant/failure ordering; terminal acknowledgement and zero true residue |
-| Global services | Existing identity, connections, clock, scoreboard, profile/cache, persistence, chunk/light/POI, topology | Explicit responsibilities/access protocols at actual producers/consumers; no duplicated authority or server-thread shortcut |
+| Scheduled ticks | Real per-owner persistent containers, due selection, typed collection/dispatch; native clear/copy share the original current-cycle fields and finite area cut | Repair exact eligibility call/order semantics; installed deterministic two-owner migration and restored effects |
+| Block events | Per-owner ordered queues, original nested enqueue and dispatch, migration | Installed ordered comparator and pending-work merge/split |
+| Entity tracking | Sol implementing actual tracker partitions, original pairing/removal/update and existing entity/session receipts | Complete immediate-add preflight, integrate, actual clients and lifecycle migration |
+| Save cuts | Original selected-holder retention, batch/operation topology cuts, detached original snapshot, original I/O acknowledgement | Final-artifact disk records/restart, replacement/pressure and affected FULL lifecycle |
+| Shutdown | Admission close, leased admitted-work drain, independent failure settlement, terminal metadata acknowledgement | Clean final installed stop under normal and adverse pending work |
+| Global services | Established named services and explicit metadata/owner-free I/O protocols | Final integrated reached-path audit; see STAGE4_SERVICE_CONTRACT.md |
 
-All six require production paths, deterministic behavioral comparison against the
-frozen serial reference/pinned original methods, installed final-JAR evidence,
-normal save/disk/restart/stop, affected foundation regressions, and one larger
-view/simulation configuration in addition to established distance 5. Preserve
-requested settings; 5 is a fixture choice, not a cap. Record lightweight overhead
-only; no scaling, Folia performance, Android, or compatibility claims.
+All six need final production Mixins/JAR, deterministic timing/order/effects, actual
+clients where relevant, real saved records/reload, baseline 5/5 and larger 8/8 without
+caps, affected FULL/packet/service/saved-vault evidence, and lightweight comparable
+overhead. Two logical regions must execute services, not merely appear at startup.
+No broad lock, unowned mutation, foreign reads, callback under metadata locks, replay,
+fake readiness, failure fallback, or safe refusal counted as feature support.
+Same-holder re-promotion remains deferred until reached; then authenticate fresh
+original lineage without repeated conversion or resurrected old evidence.
 
-## Architecture constraints and concrete dependencies
+## Verification and next unresolved case
 
-The directory, gateway, owner epochs, leases, chunk custody, and established named
-services remain authoritative. Check route/generation at body execution. Migrate
-complete declared state only at quiescent boundaries and before reopening admission;
-never replace an active operation's authority. Shared metadata gates do not cover
-original callbacks, sends, future completion, I/O, or regional execution. Preserve
-original synchronous observations, exception and RNG/order semantics. No peer-owner
-waits, broad gameplay locks, fabricated readiness, fallback, or replayed effects.
+Baseline: 690 tests / 59 suites PASS and ten historical hashes verified;
+`Phoenium-stage4-luna/run/stage4/baseline-20260908-012726`. Production rebuilt to
+exact frozen SHA above. Historical Stage 3 evidence/worlds remain immutable.
 
-Stage 3's save coordinator currently captures model logs; this is not installed
-save-cut support. Its live level tick still contains large world-global phases.
-Stage 4 must replace the selected service ownership/state at real boundaries.
-The deferred same-holder re-promotion case (closure I) is not supported evidence:
-if migration/unload/save fixtures reach it, authenticate new original publication
-lineage without repeating conversion or resurrecting invalid old receipts. Earlier
-FULL receipt does not prove later holder/save/retirement boundaries.
+Integrated source recovery points: `a1da48a` tick/event/save + installed client harness;
+`847602c` shared-barrier/topology notification and terminal ACK repair; `0d9623a`
+counts publication inside enclosure as progress (real enclosure regression).
+Focused evidence under main `run/stage4`: save/stop 19 tests; live retention/core
+34 tests; topology terminal ACK 52 tests; closure progress 15 tests. Original
+failures are retained in their named failed-* directories/logs. Current native
+clear/copy regression compares unmodified pinned LevelTicks using its actual cohort
+fields, including cancellation, copied already-run/pending entries and query behavior.
 
-## Current verification and next unresolved case
+Luna's installed `integrated-installed-20260908-025903` failed on closure progress
+and narrow fixture setup; missing pending tick records/reload effect correctly FAIL.
+Paired explicitTopology + chunkFixtureSupport flags repair the missing-route fixture.
+Subsequent `integrated-installed-repair-031256` has positive first-run block/fluid,
+events, save and clean stop, but restart reports a foreign closure owner. Preserve
+both bundles. Do not widen a valid fixture boundary simply to hide that production
+failure. No integrated Stage 4 installed PASS exists.
 
-Fresh baseline PASS: 690 tests / 59 suites, no failures/errors/skips, build exit 0;
-production rebuilt to the exact frozen hash. Luna verified all ten selected historical
-artifact/manifest/log hashes. Evidence: `Phoenium-stage4-luna/run/stage4/baseline-20260908-012726`.
-The current installed acceptance harness and real offline TCP client extension are
-Luna commits `4afc7ce` / `3706b50` (not yet integrated). The frozen-reference fixture
-has actual save/restart/MCA evidence and a client run at 8/8 with positive tracking
-pair/change/recipient/remove markers. Marker presence is not deterministic equivalence;
-Luna is controlling fixture timing and testing trace repeatability and restored tick effects.
-
-Integrated dispatcher: `45a6023` / `bc6d43c`. Original save journal/adapters:
-`feed049` / `b02ad5e`; retained topology API `5ba166a`. Initial regional tick/event
-services and resumable phases: `0a5d1b7` (Sol `80f8992`). Review identified due-time
-selection, current-cycle query, event dedup, producer ownership, and topology failure
-issues in that first patch; Sol is correcting them before installed acceptance.
-
-The lead save/stop revision now binds the actual original selected holder, save-all
-readiness/cut and per-operation autosave/unload cuts, named save/storage access,
-admission close, accepted-work scheduler drain, and failure-independent cleanup.
-Focused run `run/stage4/save-stop-final-focused-20260908.log`: 19 tests / five suites,
-zero failures/errors, including original lower-stage shutdown continuation, retained
-pending writes, source replacement, migration, reentrant release and barrier failure.
-The earlier missing-bootstrap snapshot failure is preserved under
-`run/stage4/failed-snapshot-first`. No new broad campaign has been repeated by lead.
-
-[The service contract](STAGE4_SERVICE_CONTRACT.md) classifies all existing named/shared
-services and retained save/stop lifetimes. Installed proof of those boundaries is pending.
-
-Owners and next unresolved cases: Sol finishes corrected tick/event semantics,
-owner-free cache tracking/maintenance, late migration binding, retained save-cut
-transition progress and shared-barrier checks, then implements production tracking.
-Lead owns save/stop/classification integration and actionable review. Luna owns the
-controlled installed comparator, client, real disk/reload, migration/adverse lifecycle,
-5/5 plus 8/8, affected FULL/packet/service/saved-vault and lightweight overhead campaign.
-Dispatch the next stable integrated source only after the coordinator/save-cut changes
-are compatible. No integrated Stage 4 installed PASS exists yet. Same-holder re-promotion
-remains deferred and must gain fresh genuine lineage if the new fixture reaches it.
-Internal commits remain recovery points, not completion or stopping instructions.
-Latest lead checkpoint: `89a3b56` connects retained save batches and ordered shutdown.
-Production region runtimes now keep tick counters without accumulating the model's
-completed-operation string history. A 50,000-tick focused witness plus core, save-cut
-and shutdown monitor-boundary checks pass (34 tests). The initial core source-string
-guard failure is preserved under `run/stage4/failed-core-gate-20260908`; its two new
-metadata exemptions retain direct `Thread.holdsLock` callback assertions and the
-negative broad-gameplay-lock coverage. Repaired run:
-`run/stage4/live-retention-focused-repaired-20260908.log`.
-
-Integrated implementation/harness checkpoint `a1da48a` was dispatched to Luna for
-one consolidated affected build/transformed/installed campaign while Sol implements
-tracking. It includes corrected service/topology commit `2802d7f` and named save ACK
-commit `405d8e6`; Luna is also checking equal restored tick-order ties, eligibility
-observations and clear/copy-area semantics against actual pinned LevelTicks.
-
-Subsequent lead review reproduced three topology notification/barrier defects;
-failed logs/XML are preserved under `run/stage4/failed-topology-notification-20260908`.
-Repairs propagate start/completion notification failures through the shared barrier,
-retain mailbox envelopes on stopped or failed delivery, bound each release to its
-original cohort, prevent a pending migration from advancing after another service's
-barrier, and explicitly release only immutable queue metadata at terminal acknowledgement.
-Affected core/save/dispatcher/topology run: 52 tests / six suites PASS,
-`run/stage4/topology-terminal-ack-20260908.log`. No original queued mutation is invoked
-by terminal acknowledgement. This repair must be in the final stable installed artifact.
+Lead owns native tick clear/copy integration, exact eligibility repair and next
+restart closure review, with save/stop and topology architecture. Sol owns production
+tracking and immediate-add preflight, then connected repairs. Luna is the sole broad
+build/live campaign owner: exact original oracles, controlled client comparator,
+MCA pending tick deadline/readback/reached effects, real merge/split and lifecycle,
+5/5 and 8/8, affected foundation regressions, and elapsed/RSS/GC-limit observations.
+Next stable campaign must include all production repairs, not an earlier JAR.
+Internal commits remain recovery points; continue until all required gates pass.

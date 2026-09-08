@@ -47,6 +47,8 @@ public final class RegionalWorldServices implements RegionalStateMigration {
             blockAccess.phoenium$getTickCheck(), true);
         var fluids = new RegionalScheduledTickService<Fluid>(world, directory, dispatcher,
             fluidAccess.phoenium$getTickCheck(), false);
+        blocks.bindOriginalCycle(blockAccess.phoenium$getToRunThisTick(), blockAccess.phoenium$getAlreadyRunThisTick(), blockAccess.phoenium$getToRunThisTickSet());
+        fluids.bindOriginalCycle(fluidAccess.phoenium$getToRunThisTick(), fluidAccess.phoenium$getAlreadyRunThisTick(), fluidAccess.phoenium$getToRunThisTickSet());
         blocks.bootstrap(new LinkedHashMap<>(blockAccess.phoenium$getAllContainers()));
         fluids.bootstrap(new LinkedHashMap<>(fluidAccess.phoenium$getAllContainers()));
         var events = new RegionalBlockEventService<BlockEventData>(world, directory, dispatcher, BlockEventData::pos);
@@ -93,6 +95,23 @@ public final class RegionalWorldServices implements RegionalStateMigration {
         });
         return true;
     }
+    @SuppressWarnings("unchecked")
+    public <T> boolean mutateTickArea(LevelTicks<T> owner, LevelTicks<T> source,
+            net.minecraft.world.level.levelgen.structure.BoundingBox area, net.minecraft.core.Vec3i offset, Runnable original) {
+        TickBinding<T> destinationBinding, sourceBinding;
+        synchronized (this) {
+            destinationBinding = (TickBinding<T>) ticks.get(owner);
+            sourceBinding = (TickBinding<T>) ticks.get(source);
+        }
+        if (destinationBinding == null && sourceBinding == null) return false;
+        if (destinationBinding == null || sourceBinding == null)
+            throw new IllegalStateException("tick area operation crosses bound world lifetime");
+        FullFinishingServices.requireWorld(destinationBinding.world().level(), FullFinishingServices.Kind.TICK_LIST);
+        FullFinishingServices.requireWorld(sourceBinding.world().level(), FullFinishingServices.Kind.TICK_LIST);
+        destinationBinding.service().mutateArea(sourceBinding.service(), area, offset, original);
+        return true;
+    }
+
     @SuppressWarnings("unchecked")
     public synchronized <T> void scheduled(LevelTicks<T> owner, long chunkKey, LevelChunkTicks<T> container) {
         TickBinding<T> binding = (TickBinding<T>) ticks.get(owner);

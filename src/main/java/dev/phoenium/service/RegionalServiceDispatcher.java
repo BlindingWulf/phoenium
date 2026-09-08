@@ -69,13 +69,18 @@ public final class RegionalServiceDispatcher implements RegionalServiceExecutor 
 
     /** Owner-free preflight that converges a finite chunk halo before any original callback runs. */
     public void ensureClosure(RoutingKey center, int radius) {
+        if (radius < 0) throw new IllegalArgumentException("negative regional service closure radius");
+        ensureClosure(new dev.phoenium.topology.TopologyPlanner().requiredClosure(Set.of(center), radius));
+    }
+
+    public void ensureClosure(Set<RoutingKey> keys) {
         if (OwnershipContext.current().isPresent())
             throw new IllegalStateException("regional service closure requested under owner authority");
-        if (radius < 0) throw new IllegalArgumentException("negative regional service closure radius");
+        Set<RoutingKey> footprint = Set.copyOf(keys);
+        if (footprint.isEmpty()) return;
+        RoutingKey center = footprint.iterator().next();
         Predicate<Set<RoutingKey>> encloser = Objects.requireNonNull(closureEncloser,
             "regional service closure encloser is not installed");
-        Set<RoutingKey> footprint = new dev.phoenium.topology.TopologyPlanner()
-            .requiredClosure(Set.of(center), radius);
         while (true) {
             if (scheduler.failureBarrier().tripped())
                 throw new IllegalStateException("regional service closure failed at topology barrier");
@@ -97,9 +102,13 @@ public final class RegionalServiceDispatcher implements RegionalServiceExecutor 
 
     /** Revalidation for nested producer effects after the owner-free closure was admitted. */
     public void requireCurrentClosure(RoutingKey center, int radius) {
+        requireCurrentClosure(new dev.phoenium.topology.TopologyPlanner().requiredClosure(Set.of(center), radius));
+    }
+
+    public void requireCurrentClosure(Set<RoutingKey> footprint) {
+        if (footprint.isEmpty()) return;
+        RoutingKey center = footprint.iterator().next();
         requireCurrentOwner(center);
-        Set<RoutingKey> footprint = new dev.phoenium.topology.TopologyPlanner()
-            .requiredClosure(Set.of(center), radius);
         requireCommonOwner(center, footprint);
     }
 

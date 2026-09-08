@@ -7,6 +7,7 @@ import dev.phoenium.topology.RegionDirectory;
 import dev.phoenium.topology.RegionRoute;
 import dev.phoenium.topology.RoutingKey;
 import java.util.ArrayList;
+import java.util.ArrayDeque;
 import java.util.Comparator;
 import java.util.HashSet;
 import java.util.IdentityHashMap;
@@ -16,10 +17,14 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.TreeSet;
+import java.util.Queue;
+import java.util.LinkedHashSet;
 import java.util.function.BiConsumer;
 import java.util.function.LongPredicate;
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.Vec3i;
 import net.minecraft.world.level.ChunkPos;
+import net.minecraft.world.level.levelgen.structure.BoundingBox;
 import net.minecraft.world.ticks.LevelChunkTicks;
 import net.minecraft.world.ticks.ScheduledTick;
 
@@ -50,8 +55,13 @@ public final class RegionalScheduledTickService<T> {
     private final Map<Long, ContainerState<T>> containers = new LinkedHashMap<>();
     /** Persistent eligibility index. Trigger time leads so future priority cannot hide due work. */
     private final TreeSet<Head<T>> headsByDueTime = new TreeSet<>(dueComparator());
-    private final List<Collected<T>> collected = new ArrayList<>();
-    private final Set<TickIdentity<T>> remainingThisCycle = new HashSet<>();
+    // The production binding supplies LevelTicks' actual fields. Native clear/copy/query
+    // methods therefore observe and mutate the same cohort as regional dispatch.
+    private Queue<ScheduledTick<T>> toRunThisTick = new ArrayDeque<>();
+    private List<ScheduledTick<T>> alreadyRunThisTick = new ArrayList<>();
+    private Set<ScheduledTick<?>> toRunThisTickSet =
+        new it.unimi.dsi.fastutil.objects.ObjectOpenCustomHashSet<>(ScheduledTick.UNIQUE_TICK_HASH);
+    private boolean originalCycleBound;
     private long cycle;
     private boolean cycling;
     private long collectedCount;
@@ -72,6 +82,18 @@ public final class RegionalScheduledTickService<T> {
     }
 
     /** One-time registration for already loaded persistent chunk containers. */
+    public synchronized void bindOriginalCycle(Queue<ScheduledTick<T>> pending, List<ScheduledTick<T>> ran,
+                                                Set<ScheduledTick<?>> querySet) {
+        if (originalCycleBound || cycling || !toRunThisTick.isEmpty() || !alreadyRunThisTick.isEmpty())
+            throw new IllegalStateException("regional tick cycle storage already active or bound");
+        toRunThisTick = Objects.requireNonNull(pending);
+        alreadyRunThisTick = Objects.requireNonNull(ran);
+        toRunThisTickSet = Objects.requireNonNull(querySet);
+        if (!pending.isEmpty() || !ran.isEmpty() || !querySet.isEmpty())
+            throw new IllegalStateException("cannot bind an active original tick cycle");
+        originalCycleBound = true;
+    }
+
     public synchronized void bootstrap(Map<Long, LevelChunkTicks<T>> initial) {
         if (!containers.isEmpty()) throw new IllegalStateException("scheduled tick service already bootstrapped");
         initial.forEach(this::addContainer);
@@ -165,8 +187,7 @@ public final class RegionalScheduledTickService<T> {
                     if (polled != head.tick())
                         throw new IllegalStateException("scheduled tick head changed after selection " + key(head.chunkKey()));
                     synchronized (this) {
-                        collected.add(new Collected<>(head.chunkKey(), state.owner(), polled));
-                        remainingThisCycle.add(TickIdentity.of(polled));
+                        toRunThisTick.add(polled);
                         collectedCount++;
                         refreshHead(state);
                         if (state.head != null && state.head.tick().triggerTick() <= currentTick)
@@ -175,32 +196,84 @@ public final class RegionalScheduledTickService<T> {
                 });
             }
 
-            for (int index = 0; ; index++) {
-                Collected<T> entry;
+            while (true) {
+                ScheduledTick<T> entry;
                 synchronized (this) {
-                    if (index >= collected.size()) break;
-                    entry = collected.get(index);
+                    entry = toRunThisTick.peek();
+                    if (entry == null) break;
                 }
-                dispatcher.executeAndDrain(key(entry.chunkKey()), runKind, execution -> {
-                    RegionRoute current = route(entry.chunkKey());
+                long chunkKey = ChunkPos.pack(entry.pos());
+                dispatcher.executeAndDrain(key(chunkKey), runKind, execution -> {
+                    RegionRoute current = route(chunkKey);
                     if (!current.region().equals(execution.runtime().id()))
                         throw new IllegalStateException("collected scheduled tick reached stale owner");
-                    synchronized (this) { remainingThisCycle.remove(TickIdentity.of(entry.tick())); }
-                    output.accept(entry.tick().pos(), entry.tick().type());
+                    synchronized (this) {
+                        if (toRunThisTick.poll() != entry) throw new IllegalStateException("regional tick cohort changed before delivery");
+                        if (!toRunThisTickSet.isEmpty()) toRunThisTickSet.remove(entry);
+                        alreadyRunThisTick.add(entry);
+                    }
+                    output.accept(entry.pos(), entry.type());
                     synchronized (this) { executedCount++; }
                 });
             }
         } finally {
             synchronized (this) {
-                collected.clear();
-                remainingThisCycle.clear();
+                toRunThisTick.clear();
+                alreadyRunThisTick.clear();
+                toRunThisTickSet.clear();
                 cycling = false;
             }
         }
     }
 
     public synchronized boolean willTickThisTick(BlockPos pos, T type) {
-        return remainingThisCycle.contains(new TickIdentity<>(type, pos.immutable()));
+        if (toRunThisTickSet.isEmpty() && !toRunThisTick.isEmpty()) toRunThisTickSet.addAll(toRunThisTick);
+        return toRunThisTickSet.contains(ScheduledTick.probe(type, pos));
+    }
+
+    /** Runs the original finite-area operation once under its complete source/destination cut. */
+    public void mutateArea(RegionalScheduledTickService<T> source, BoundingBox area, Vec3i offset, Runnable original) {
+        Objects.requireNonNull(source); Objects.requireNonNull(area); Objects.requireNonNull(original);
+        if (!world.equals(source.world) || dispatcher != source.dispatcher)
+            throw new IllegalArgumentException("tick area operation crosses regional world identity");
+        Set<RoutingKey> footprint = new LinkedHashSet<>(source.areaKeys(area));
+        BoundingBox destination = offset == null ? area : new BoundingBox(
+            area.minX() + offset.getX(), area.minY() + offset.getY(), area.minZ() + offset.getZ(),
+            area.maxX() + offset.getX(), area.maxY() + offset.getY(), area.maxZ() + offset.getZ());
+        Set<RoutingKey> destinationKeys = areaKeys(destination);
+        footprint.addAll(offset == null ? destinationKeys
+            : new dev.phoenium.topology.TopologyPlanner().requiredClosure(destinationKeys, 1));
+        Runnable body = () -> {
+            dispatcher.requireCurrentClosure(footprint);
+            try { original.run(); }
+            finally { refreshArea(destination); }
+        };
+        if (footprint.isEmpty()) { original.run(); return; }
+        if (OwnershipContext.current().isPresent()) body.run();
+        else {
+            dispatcher.ensureClosure(footprint);
+            dispatcher.executeAndDrain(footprint.iterator().next(), collectKind, ignored -> body.run());
+        }
+    }
+
+    private synchronized Set<RoutingKey> areaKeys(BoundingBox area) {
+        Set<RoutingKey> keys = new LinkedHashSet<>();
+        for (int x = area.minX() >> 4; x <= area.maxX() >> 4; x++)
+            for (int z = area.minZ() >> 4; z <= area.maxZ() >> 4; z++) {
+                long chunkKey = ChunkPos.pack(x, z);
+                if (containers.containsKey(chunkKey)) keys.add(key(chunkKey));
+            }
+        for (ScheduledTick<T> tick : alreadyRunThisTick) if (area.isInside(tick.pos())) keys.add(key(ChunkPos.pack(tick.pos())));
+        for (ScheduledTick<T> tick : toRunThisTick) if (area.isInside(tick.pos())) keys.add(key(ChunkPos.pack(tick.pos())));
+        return keys;
+    }
+
+    private synchronized void refreshArea(BoundingBox area) {
+        for (int x = area.minX() >> 4; x <= area.maxX() >> 4; x++)
+            for (int z = area.minZ() >> 4; z <= area.maxZ() >> 4; z++) {
+                ContainerState<T> state = containers.get(ChunkPos.pack(x, z));
+                if (state != null) { dispatcher.requireCurrentOwner(key(state.chunkKey())); refreshHead(state); }
+            }
     }
 
     /**
@@ -242,11 +315,11 @@ public final class RegionalScheduledTickService<T> {
     }
 
     public synchronized Measurements measurements() {
-        return new Measurements(partitions.size(), containers.size(), headsByDueTime.size(), collected.size(),
+        return new Measurements(partitions.size(), containers.size(), headsByDueTime.size(), toRunThisTick.size(),
             collectedCount, executedCount, migratedContainers, cycle, cycling);
     }
 
-    private synchronized int collectedSize() { return collected.size(); }
+    private synchronized int collectedSize() { return toRunThisTick.size(); }
     private ContainerState<T> requireCurrentState(Head<T> head, RegionId executingOwner) {
         ContainerState<T> state = containers.get(head.chunkKey());
         if (state == null || state.container() != head.container() || state.headVersion() != head.version())
@@ -307,14 +380,6 @@ public final class RegionalScheduledTickService<T> {
     }
     private record Head<T>(long chunkKey, RegionId owner, LevelChunkTicks<T> container,
                            ScheduledTick<T> tick, long version) { }
-    private record Collected<T>(long chunkKey, RegionId owner, ScheduledTick<T> tick) { }
-    private record TickIdentity<T>(T type, BlockPos pos) {
-        static <T> TickIdentity<T> of(ScheduledTick<T> tick) { return new TickIdentity<>(tick.type(), tick.pos().immutable()); }
-        @Override public boolean equals(Object other) {
-            return other instanceof TickIdentity<?> identity && type == identity.type && pos.equals(identity.pos);
-        }
-        @Override public int hashCode() { return 31 * System.identityHashCode(type) + pos.hashCode(); }
-    }
     public record MigrationPlan(long generation, Map<Long, RegionId> owners) {
         public MigrationPlan { owners = Map.copyOf(owners); }
     }

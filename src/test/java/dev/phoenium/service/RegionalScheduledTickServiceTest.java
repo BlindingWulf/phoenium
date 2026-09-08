@@ -28,6 +28,85 @@ import org.junit.jupiter.api.Test;
 
 final class RegionalScheduledTickServiceTest {
     @Test
+    void nativeClearAndCopySeeTheActualRegionalCurrentAndRemainingCohort() throws Exception {
+        assertEquals(nativeAreaTrace(false, false), nativeAreaTrace(true, false));
+        // clearArea intentionally leaves vanilla's already-built query set unchanged.
+        // Sharing the actual fields preserves that synchronous observation too.
+        assertEquals(nativeAreaTrace(false, true), nativeAreaTrace(true, true));
+    }
+
+    @Test
+    void nativeClearRefreshesAnIndexedHeadBeforeAnotherRegionalCycle() throws Exception {
+        Fixture f = new Fixture(); var service = f.service(key -> true);
+        var original = bindOriginalCycle(service, f);
+        Object type = new Object();
+        original.schedule(tick(type, new BlockPos(0, 64, 0), 1, TickPriority.NORMAL, 1));
+        original.schedule(tick(type, new BlockPos(1, 64, 0), 9, TickPriority.NORMAL, 2));
+        service.scheduled(f.aChunk, f.aTicks);
+        var area = new net.minecraft.world.level.levelgen.structure.BoundingBox(0, 64, 0, 0, 64, 0);
+        service.mutateArea(service, area, null, () -> original.clearArea(area));
+        service.tick(1, 65536, (pos, ignored) -> fail("cleared indexed head executed"));
+        var actual = new java.util.ArrayList<BlockPos>();
+        service.tick(9, 65536, (pos, ignored) -> actual.add(pos));
+        assertEquals(List.of(new BlockPos(1, 64, 0)), actual);
+        assertEquals(0, service.measurements().indexedHeads());
+    }
+
+    @Test
+    void activeAreaMutationRejectsForeignClosureBeforeOriginalEffects() throws Exception {
+        Fixture f = new Fixture(); var service = f.service(key -> true);
+        var original = bindOriginalCycle(service, f);
+        var area = new net.minecraft.world.level.levelgen.structure.BoundingBox(0, 64, 0, 160, 64, 0);
+        var called = new java.util.concurrent.atomic.AtomicBoolean();
+        f.dispatcher.executeAndDrain(f.aKey, RegionalServiceKind.COLLECT_SCHEDULED_BLOCK_TICK, ignored ->
+            assertThrows(IllegalStateException.class, () -> service.mutateArea(service, area, null, () -> called.set(true))));
+        assertFalse(called.get());
+    }
+
+    private static List<String> nativeAreaTrace(boolean regional, boolean clear) throws Exception {
+        Fixture f = new Fixture(); var service = f.service(key -> true);
+        LevelTicks<Object> original = bindOriginalCycle(service, f);
+        Object type = new Object();
+        for (int x = 0; x <= 3; x++)
+            original.schedule(tick(type, new BlockPos(x, 64, 0), x == 3 ? 9 : 1, TickPriority.NORMAL, x + 1));
+        service.scheduled(f.aChunk, f.aTicks);
+        var trace = new java.util.ArrayList<String>();
+        java.util.function.BiConsumer<BlockPos, Object> callback = (pos, ignored) -> {
+            trace.add("run:" + pos.getX());
+            if (pos.getX() != 0) return;
+            trace.add("before:" + original.willTickThisTick(new BlockPos(1, 64, 0), type));
+            if (clear) {
+                var area = new net.minecraft.world.level.levelgen.structure.BoundingBox(1, 64, 0, 3, 64, 0);
+                if (regional) service.mutateArea(service, area, null, () -> original.clearArea(area));
+                else original.clearArea(area);
+            }
+            trace.add("after:" + original.willTickThisTick(new BlockPos(1, 64, 0), type));
+            var area = new net.minecraft.world.level.levelgen.structure.BoundingBox(0, 64, 0, 3, 64, 0);
+            var offset = new net.minecraft.core.Vec3i(4, 0, 0);
+            if (regional) service.mutateArea(service, area, offset, () -> original.copyAreaFrom(original, area, offset));
+            else original.copyAreaFrom(original, area, offset);
+        };
+        if (regional) service.tick(1, 65536, callback); else original.tick(1, 65536, callback);
+        f.aTicks.getAll().sorted(ScheduledTick.DRAIN_ORDER).forEach(tick ->
+            trace.add("pending:" + tick.pos().getX() + ":" + tick.triggerTick() + ":" + tick.priority() + ":" + tick.subTickOrder()));
+        if (regional) service.tick(9, 65536, (pos, ignored) -> trace.add("later:" + pos.getX()));
+        else original.tick(9, 65536, (pos, ignored) -> trace.add("later:" + pos.getX()));
+        return trace;
+    }
+
+    @SuppressWarnings("unchecked")
+    private static LevelTicks<Object> bindOriginalCycle(RegionalScheduledTickService<Object> service, Fixture f) throws Exception {
+        var original = new LevelTicks<Object>(key -> true);
+        original.addContainer(new ChunkPos(0, 0), f.aTicks); original.addContainer(new ChunkPos(10, 0), f.bTicks);
+        var pending = LevelTicks.class.getDeclaredField("toRunThisTick"); pending.setAccessible(true);
+        var ran = LevelTicks.class.getDeclaredField("alreadyRunThisTick"); ran.setAccessible(true);
+        var queries = LevelTicks.class.getDeclaredField("toRunThisTickSet"); queries.setAccessible(true);
+        service.bindOriginalCycle((java.util.Queue<ScheduledTick<Object>>) pending.get(original),
+            (List<ScheduledTick<Object>>) ran.get(original), (java.util.Set<ScheduledTick<?>>) queries.get(original));
+        return original;
+    }
+
+    @Test
     void twoOwnersPreserveTimingPrioritySubtickDedupAndCohortObservation() {
         Fixture f = new Fixture();
         var service = f.service(key -> true);
