@@ -735,11 +735,14 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
     }
 
     private ChunkBindingRuntime.WorldAuthority chunkAuthority(WorldId world) {
-        Map<RegionId, dev.phoenium.ownership.RegionLeaseManager> leases = new LinkedHashMap<>();
-        runtimes.forEach((id, runtime) -> { if (id.world().equals(world)) leases.put(id, runtime.leases()); });
         LiveRegion region = Objects.requireNonNull(regions.get(world));
         return new ChunkBindingRuntime.WorldAuthority(world, region.worldInstanceSequence(),
-                Objects.requireNonNull(chunkPrerequisiteServices.get(world)), directory, leases, barrier);
+                Objects.requireNonNull(chunkPrerequisiteServices.get(world)), directory, id -> {
+                    // Registration and topology publication happen on the coordinator. Native
+                    // admission resolves the published route before consulting its owner here.
+                    RegionRuntime runtime = id.world().equals(world) ? runtimes.get(id) : null;
+                    return runtime == null ? null : runtime.leases();
+                }, barrier);
     }
 
     @Override

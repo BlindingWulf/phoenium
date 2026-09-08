@@ -24,7 +24,7 @@ public final class ChunkSaveRetention implements AutoCloseable {
         if (!active.region().equals(route.region()) || authority.services() != lifetime.services()
                 || authority.worldInstanceSequence() != lifetime.lifecycle().worldInstanceSequence())
             throw new ChunkProtocolException("save retention has a foreign world, lifetime or regional lease");
-        authority.leases().get(route.region()).requireCurrent(active.lease());
+        authority.leases().apply(route.region()).requireCurrent(active.lease());
         var services = lifetime.services();
         var custody = services.custody();
         custody.gate().lock();

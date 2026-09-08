@@ -21,6 +21,33 @@ import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.*;
 
 class ChunkRouteClassificationTest {
+    @Test void admissionCreatedBeforeSplitUsesNewOwnersActualLeaseAndRejectsOldDelivery() {
+        Fixture f = new Fixture();
+        var registry = new java.util.LinkedHashMap<RegionId, dev.phoenium.ownership.RegionLeaseManager>();
+        registry.put(f.id, f.owner.leases());
+        var executor = new ChunkStageExecutor(new ChunkStageAdmission(f.custody, f.directory, registry::get, f.barrier));
+        var generation = new TopologyGeneration(1);
+        f.directory.publish(generation, Map.of(f.key, new RegionRoute(f.id, generation, new OwnerEpoch(0))));
+        f.pump.publishAndDeliver(f.pending);
+        var nextId = new RegionId(f.world, "split-owner");
+        var next = new RegionRuntime(nextId, new OwnerEpoch(0));
+        next.transitionTo(RegionLifecycle.READY); registry.put(nextId, next.leases());
+        var runtimes = Map.of(f.id, f.owner, nextId, next);
+        var topology = new TopologyCoordinator(f.directory, runtimes,
+                new OwnerGateway(f.directory, runtimes, new RegionScheduler(runtimes, f.directory, f.barrier)));
+        topology.request(new TopologyCoordinator.Transition(Set.of(f.id, nextId), Map.of(f.key, nextId)));
+        assertTrue(topology.advance());
+        assertEquals(ChunkStageAdmission.Result.STALE_ROUTE, executor.execute(f.pending, f.id, generation));
+        assertEquals(0, f.calls); assertTrue(f.pending.retainsInputOrContinuation());
+        var route = f.directory.resolve(f.key).orElseThrow();
+        f.onCall = () -> {
+            assertTrue(next.leases().hasActiveLease()); assertFalse(f.owner.leases().hasActiveLease());
+            next.leases().requireCurrent(dev.phoenium.ownership.OwnershipContext.current().orElseThrow().lease());
+        };
+        assertEquals(ChunkStageAdmission.Result.APPLIED, executor.execute(f.pending, nextId, route.generation()));
+        assertEquals(1, f.calls); assertFalse(next.leases().hasActiveLease()); assertFalse(f.barrier.tripped());
+    }
+
     @Test void validUnroutableWorkFencesInsteadOfCancellingOrInvoking() {
         Fixture f = new Fixture();
         assertEquals(ChunkStageOwnerGateway.Delivery.REJECTED_ROUTE, f.pump.publishAndDeliver(f.pending));
@@ -153,9 +180,10 @@ class ChunkRouteClassificationTest {
         }, executor);
         final TopologyCoordinator topology;
         int calls;
+        Runnable onCall = () -> { };
         final PendingVanillaStage<Integer, Integer> pending = new PendingVanillaStage<>(custody, lifecycle, work,
                 new ChunkCustodyModel.StageId(work, ChunkStageKind.FULL_CONVERT, "prepare", 0),
-                new TaskCorrelationId(0), input -> { calls++; return input; });
+                new TaskCorrelationId(0), input -> { calls++; onCall.run(); return input; });
         Fixture() {
             owner.transitionTo(RegionLifecycle.READY);
             var runtimes = Map.of(id, owner);

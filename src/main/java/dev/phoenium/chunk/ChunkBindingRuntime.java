@@ -50,10 +50,14 @@ public final class ChunkBindingRuntime {
     }
     public record WorldAuthority(WorldId world, long worldInstanceSequence,
                                  ChunkPrerequisiteServices services, RegionDirectory directory,
-                                 Map<RegionId, RegionLeaseManager> leases, FailureBarrier barrier) {
+                                 java.util.function.Function<RegionId, RegionLeaseManager> leases, FailureBarrier barrier) {
+        public WorldAuthority(WorldId world, long worldInstanceSequence, ChunkPrerequisiteServices services,
+                              RegionDirectory directory, Map<RegionId, RegionLeaseManager> leases, FailureBarrier barrier) {
+            this(world, worldInstanceSequence, services, directory, Map.copyOf(leases)::get, barrier);
+        }
         public WorldAuthority {
             Objects.requireNonNull(world); Objects.requireNonNull(services); Objects.requireNonNull(directory);
-            Objects.requireNonNull(leases); Objects.requireNonNull(barrier); leases = Map.copyOf(leases);
+            Objects.requireNonNull(leases); Objects.requireNonNull(barrier);
             if (worldInstanceSequence < 0) throw new IllegalArgumentException("negative world instance sequence");
         }
     }

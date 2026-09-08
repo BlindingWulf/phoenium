@@ -23,15 +23,23 @@ public final class ChunkStageAdmission {
     record Execution<O>(Result result, O value, Throwable failure) { }
     private final ChunkCustodyModel custody;
     private final RegionDirectory directory;
-    private final Map<RegionId, RegionLeaseManager> leases;
+    private final java.util.function.Function<RegionId, RegionLeaseManager> leases;
     private final FailureBarrier barrier;
     private long applications;
     private long staleRoutes;
 
     public ChunkStageAdmission(ChunkCustodyModel custody, RegionDirectory directory,
                                Map<RegionId, RegionLeaseManager> leases, FailureBarrier barrier) {
+        this(custody, directory, Map.copyOf(leases)::get, barrier);
+    }
+    /** The resolver reads the authoritative registry only; it must not invoke callbacks.
+     * Dynamic owners are registered before their routes are published. Capturing a startup
+     * map here would strand valid native chunk inputs after a later split. */
+    public ChunkStageAdmission(ChunkCustodyModel custody, RegionDirectory directory,
+                               java.util.function.Function<RegionId, RegionLeaseManager> leases,
+                               FailureBarrier barrier) {
         this.custody = Objects.requireNonNull(custody); this.directory = Objects.requireNonNull(directory);
-        this.leases = Map.copyOf(leases); this.barrier = Objects.requireNonNull(barrier);
+        this.leases = Objects.requireNonNull(leases); this.barrier = Objects.requireNonNull(barrier);
     }
     public void closeAdmissions() { custody.closeAdmissions(); }
     public long applications() { return applications; }
@@ -102,7 +110,7 @@ public final class ChunkStageAdmission {
             if (route == null || !route.region().equals(deliveredOwner) || !route.generation().equals(deliveredGeneration)) {
                 staleRoutes++; return result(Result.STALE_ROUTE);
             }
-            RegionLeaseManager manager = leases.get(deliveredOwner);
+            RegionLeaseManager manager = leases.apply(deliveredOwner);
             if (manager == null) return breachLocked(stage, route, new ChunkProtocolException("no lease manager for " + deliveredOwner));
             lightRegistration = pending.lightRegistrationLocked();
             if (!pending.reserveFullLocked()) return result(Result.NOT_READY);

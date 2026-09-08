@@ -53,8 +53,9 @@ def main():
         shutil.copy2(Path("build/test-harness/stage4-adverse-stop-probe.jar"), server / "mods/stage4-adverse-stop-probe.jar")
     # Stage 4's copy helper preserves the prepared registration probe. This separate
     # workload uses only its explicitly selected probe and pinned Fabric libraries.
-    for jar in (server / "mods").glob("full-registration*.jar"):
-        jar.unlink()
+    for pattern in ("full-registration*.jar", "full-live-probe*.jar"):
+        for jar in (server / "mods").glob(pattern):
+            jar.unlink()
     evidence = output / "evidence"
     evidence.mkdir()
     world = "stage5-disposable"

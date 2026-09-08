@@ -140,3 +140,14 @@ save/MCA/restart/native scheduled deadlines; healthy/adverse shutdown with legit
 claims and writes retained to acknowledgement; server-only final packaging; identical
 artifact identity throughout final acceptance; repeatable distributed/concentrated
 benchmarks with completed work, latency, CPU/memory/GC and explicit limitations.
+
+FULL `full-4-a` on 5de466b / 7CCBA6ED failed after successful native furnace warmup:
+new FULL demand at 126,-70 was routed to a dynamically split region absent from the
+startup lease-manager snapshot. Native admission, FULL context refinement and save
+retention now resolve the authoritative registered owner after current route validation.
+A focused regression creates admission before the split, rejects the old queued route,
+then proves the original callback owns the new region's actual lease. Focused build
+passes; next FULL run uses JAR 59BB31DC058351C7F4BC9DB572FEC1DE2B298FF623614FC4CB3EAFAEB5A772D5.
+The headless runner also strips unrelated prepared FULL probes from its disposable copy.
+The bounded sequential benchmark driver is `scripts/benchmark_stage5.py`; its report
+is evidence capture only and cannot mark Stage 5 complete.
