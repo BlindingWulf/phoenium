@@ -12,15 +12,21 @@ import net.minecraft.client.multiplayer.ServerData;
 import net.minecraft.client.multiplayer.resolver.ServerAddress;
 import net.minecraft.core.BlockPos;
 import net.minecraft.network.chat.Component;
+import net.minecraft.nbt.CompoundTag;
+import net.minecraft.nbt.ListTag;
+import net.minecraft.nbt.NbtAccounter;
+import net.minecraft.nbt.NbtIo;
 import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.level.chunk.LevelChunk;
 import net.minecraft.world.level.chunk.status.ChunkStatus;
 
 import java.io.BufferedInputStream;
+import java.io.ByteArrayInputStream;
 import java.io.DataInputStream;
 import java.io.EOFException;
 import java.io.IOException;
 import java.io.OutputStream;
+import java.util.zip.InflaterInputStream;
 import java.net.InetSocketAddress;
 import java.net.Socket;
 import java.nio.ByteBuffer;
@@ -1758,6 +1764,7 @@ public final class Stage3ClientTest implements FabricClientGameTest {
             evidence.put("modules", modules);
             String world = "FULL-LIVE-" + System.currentTimeMillis();
             evidence.put("world", world);
+            Path worldRoot = directory.resolve(world);
             for (int lifecycle = 1; lifecycle <= 2; lifecycle++) {
                 String phase = lifecycle == 1 ? "fresh" : "reload";
                 active = ExternalServer.start(new ExternalServer(directory, lifecycle, world, null), false, false);
@@ -1818,12 +1825,13 @@ public final class Stage3ClientTest implements FabricClientGameTest {
                 evidence.put(phase + "RealTcpChunkReceipt", true);
                 evidence.put(phase + "Diagnostics", active.execute("phoenium diagnostics"));
                 active.execute("save-all flush");
+                if (phase.equals("fresh"))
+                    evidence.put("freshPersistedFullPayload", persistedFullFixturePayload(worldRoot));
                 disconnectClient(context); connected = false;
                 require(active.stopNormally(context), active.serverFailure("FULL normal stop timed out"));
                 String log = active.readLatestLog();
                 String processLog = active.readProcessLog();
                 String lifecycleProcessLog = currentLifecycleProcessLog(processLog);
-                Path worldRoot = directory.resolve(world);
                 long levelDatBytes = persistedLevelBytes(worldRoot);
                 require(levelDatBytes > 0, active.serverFailure(
                         "FULL lifecycle did not leave a readable on-disk level.dat: " + worldRoot));
@@ -1947,6 +1955,48 @@ public final class Stage3ClientTest implements FabricClientGameTest {
             return Files.isRegularFile(levelData) ? Files.size(levelData) : 0L;
         } catch (IOException ignored) {
             return 0L;
+        }
+    }
+
+    /** Read the actual region record after the fresh save, before the reload lifecycle starts. */
+    private static String persistedFullFixturePayload(Path worldRoot) {
+        Path region = worldRoot.resolve("dimensions/minecraft/overworld/region/r.1.0.mca");
+        try {
+            require(Files.isRegularFile(region), "fresh FULL region payload is missing: " + region);
+            byte[] bytes = Files.readAllBytes(region);
+            List<String> chunks = new ArrayList<>();
+            for (int x = 32; x <= 35; x++) {
+                int index = 2 + (x & 31) + 32 * 4;
+                int location = ((bytes[index * 4] & 0xff) << 16)
+                        | ((bytes[index * 4 + 1] & 0xff) << 8) | (bytes[index * 4 + 2] & 0xff);
+                int sectors = bytes[index * 4 + 3] & 0xff;
+                require(location > 1 && sectors > 0, "fresh FULL region record missing for chunk " + x + ",4");
+                int start = location * 4096;
+                require(start + 5 <= bytes.length, "fresh FULL region record is truncated for chunk " + x + ",4");
+                int length = ((bytes[start] & 0xff) << 24) | ((bytes[start + 1] & 0xff) << 16)
+                        | ((bytes[start + 2] & 0xff) << 8) | (bytes[start + 3] & 0xff);
+                require(length > 1 && length <= sectors * 4096 - 4,
+                        "fresh FULL region record length is invalid for chunk " + x + ",4: " + length);
+                require((bytes[start + 4] & 0xff) == 2,
+                        "fresh FULL region record is not zlib compressed for chunk " + x + ",4");
+                CompoundTag payload;
+                try (DataInputStream input = new DataInputStream(new InflaterInputStream(
+                        new ByteArrayInputStream(bytes, start + 5, length - 1)))) {
+                    payload = NbtIo.read(input, NbtAccounter.unlimitedHeap());
+                }
+                String status = payload.getStringOr("Status", "");
+                require(status.equals("full") || status.equals("minecraft:full"),
+                        "fresh FULL region record status was not full for chunk " + x + ",4: " + status);
+                ListTag entities = payload.getListOrEmpty("entities");
+                String entityText = entities.toString();
+                require(entityText.contains("phoenium_full_reload_" + x + "_0")
+                                && entityText.contains("phoenium_full_reload_" + x + "_1"),
+                        "fresh FULL region record omitted both persisted reload roots for chunk " + x + ",4");
+                chunks.add("[" + x + ",4]:status=" + status + ",legacyEntities=" + entities.size());
+            }
+            return "path=" + region + " chunks=" + chunks + " roots=8";
+        } catch (IOException failure) {
+            throw new AssertionError("Unable to inspect the fresh FULL region payload: " + region, failure);
         }
     }
 
