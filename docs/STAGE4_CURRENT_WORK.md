@@ -106,19 +106,22 @@ reading its now-cleared position. Lead's integrated phase/block-ticker/lifetime 
 passes 10 tests (`run/stage4/final-callback-integration-20260908.log`).
 `ccc2f3b` moves native service bootstrap outside the registry monitor and refreshes
 natural-spawn player receipts after admission and before use; Sol's focused gate
-passes 23 tests. Sol is idle on clean `5a0dcaf`, available for concrete reached repairs.
+passes 23 tests. Sol is completing a final related monitor audit: original container
+peek/poll calls must also run outside service and outer registry metadata monitors.
 Lead owns save/stop, provenance and integration.
 Luna alone owns broad builds/live campaigns, exact native oracles, controlled real
 client comparison, immutable MCA/reload effects, real merge/split and lifecycle, 5/5
 and 8/8, affected foundation regressions, and comparable elapsed/RSS observations.
 Her installed topology fixture requests actual coordinator merge/split (no direct
-directory publication). Harness checkpoint `cc8aec1` uses the same native-clock
-workload on the frozen and changed production JARs, real FULL receipts, original
-fluid-queue scheduling and an exact deferred callback. Remaining review corrections
-keep the migrated far ticks in the player's simulated viewport through their deadline,
-observe entity removal while it is visible, and check exact client event packets.
-The coherent final harness is pending integration; no final installed campaign has
-run. The next stable campaign must include all production repairs.
+directory publication). Integrated harness `784c710` (worker through `9f30a1c`)
+uses the same native-clock workload on both JARs, genuine FULL receipts and native
+fluid-queue inputs. It keeps far ticks in the simulated viewport through their
+deadline, observes entity removal while visible and checks exact client event packets.
+`b5cbea7` adds real A/B serializer observations, successful-return shutdown evidence,
+explicit reference selection and separate run paths. Luna is starting the independent
+frozen-reference 5/5 and 8/8 runs. Final candidate, comparison, persisted MCA/restart
+and foundation gates remain open. Preserve each prepared server/world bundle before
+another Sync preparation; verify the actual installed JAR hash on every launch.
 Lead `c3cf005` rejects late producers after service termination before native mutation;
 its new focused lifetime regression passes. The genuine same-holder withdrawal /
 re-promotion repair preserves the original producer, revoked old subscriber, current
