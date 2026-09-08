@@ -148,6 +148,10 @@ def main():
         send("stage5 " + ("split" if args.layout == "distributed" else "merge")); wait("STAGE5_TOPOLOGY")
         send(f"stage5 measure warmup {args.warmup}"); wait("STAGE5_MEASURED label=warmup", 240)
         if args.adverse:
+            # Finish ordinary generation/unload saves before the probe selects its
+            # one deliberately held native write. The probe still requires zero
+            # prior custody and exactly one newly retained attempt when armed.
+            send("save-all flush"); wait("Saved the game")
             send("stage5 adverse"); wait("PHOENIUM_ADVERSE_STOP ARMED")
             send("stage5 measure expected-failure 10")
             wait("PHOENIUM_ADVERSE_SAVE_SHUTDOWN PASS",90,True); process.wait(timeout=20)
