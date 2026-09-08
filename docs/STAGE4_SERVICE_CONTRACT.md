@@ -95,6 +95,13 @@ then releases only protocol custody and records failure; it neither restores dir
 state from an unowned caller nor reports successful flush. Remaining rejected work
 is acknowledged as unexecuted. Persistent scheduled ticks belong to actual chunk
 records; transient block-event/tracker metadata ends with the original world lifetime.
+After a failed admitted-work drain, this settlement precedes native storage closure.
+A scope confined to that failed stop omits new player/world snapshots and the unload
+loop, joins the already submitted saved-data future, and continues each independent
+native resource close. Terminal notifications use the existing connection-session
+cut and transport; they cannot invoke player/entity removal past the barrier. The
+outer invocation retains the original exception and cannot report successful save
+or shutdown. Healthy stop still executes the original drain, save and close path.
 An ended service binding retains its terminal marker. Later producer entrypoints
 reject before original mutation; clearing its maps cannot reopen the bootstrap path.
 

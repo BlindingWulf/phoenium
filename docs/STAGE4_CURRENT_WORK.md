@@ -55,7 +55,8 @@ The latest consolidated gate, at production `2d37d3a`, passes 769 tests / 72 sui
 with zero failures/errors/skips and a successful build. This gate predates the
 NaturalSpawner, phase-progress and failed-stop repairs; final verification is open.
 
-Integrated production is now `2ba0e8a` (after `00ce944`, `f793e57`). Native scheduled
+Integrated production is now `5d2efd5` (after `919e2ce`, `b5d75a8`, `2ba0e8a`,
+`00ce944`, `f793e57`). Native scheduled
 register/unpack and current-cycle clear/copy oracles remain intact; the container
 monitor repair `2d37d3a` passed the merged 22-test scheduled/lifetime gate. Selected
 chunk/entity/block-entity callbacks preserve native order and use finite current
@@ -86,11 +87,16 @@ resource closure after failed admission/drain. The exception remains primary; th
 failed-stop scope is confined to that invocation. Reentrant requests cannot replay
 work; independent close failures are retained. The 19-test stop/save/generation
 focused gate passes (`run/stage4/failed-stop-order-integration-20260908.log`).
-Sol owns the connected exact-native failure-stop hooks: omit forbidden new snapshots
-and unloads, send terminal transport notifications through existing sessions, join
-already submitted storage work, and close independent resources. This integration
-is still open. Healthy native stop retains its original path. Lead owns architecture,
-review, integration, current notes and focused checks; Sol remains explicit Sol/high.
+Sol's connected exact-native failure-stop hooks are integrated in `919e2ce`; lead
+`5d2efd5` removes an inaccessible helper from the protected Mixin package. They omit
+forbidden new snapshots and unloads, send terminal transport notifications through
+existing sessions, join submitted storage work and close independent resources.
+The merged 32-test / 8-suite focused gate passes with zero failures/errors/skips
+(`run/stage4/failure-stop-native-integration-20260908.log`). This includes the native
+siege-origin repair `b5d75a8`: original pending spawn attempts remain enclosed after
+players move or leave. Healthy native stop retains its original path. Sol is idle
+on clean `16873c5`, available for concrete production failures; lead owns review and
+integration. Luna owns the stable `5d2efd5` full/build and installed campaign.
 
 Luna alone owns broad builds and the final live campaign. Current frozen-reference
 login evidence in `run/stage4/reference-network-exception-20260908-062250` verifies
@@ -106,7 +112,7 @@ is inferred from startup, a listening endpoint, or a passing build.
 The shared acceptance harness is integrated through `08c3f0c` (failure thread dumps),
 `73095e7` (isolated launch/recipient/client observation repair), `b5cbea7` and `784c710`.
 It uses identical native-clock inputs on reference/candidate, real A/B regions,
-actual coordinator merge/split, authenticated FULL/readiness receipts, exact event
+actual coordinator merge/split, authentic FULL/readiness receipts, exact event
 packets, original serializer observations, immutable pre-restart MCA copies and a
 strict behavioral comparator. Candidate-only routing metadata is separate. Remaining
 harness repairs require successful actual A/B block-event effects and a startup
@@ -122,7 +128,7 @@ re-decoding after restart passed the deadline cannot establish pre-restart tick 
 It recorded 14.718 s and 672 MB RSS in a different checkpoint; this is not the required
 paired final overhead result. All failed bundles and the old worlds are preserved.
 
-At the phase-progress integration boundary account-wide Codex usage is 78% used /
-22% remaining; reserve is 7% used / 93% remaining. No per-task total is exposed.
+At the native shutdown integration boundary account-wide Codex usage is 80% used /
+20% remaining; reserve is 7% used / 93% remaining. No per-task total is exposed.
 Internal commits are recovery points. Continue repairs and the sole-owner final
 campaign; Stage 4 stays PARTIAL and Stage 5 remains blocked on these acceptance gates.
