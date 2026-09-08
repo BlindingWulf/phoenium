@@ -27,6 +27,9 @@ final class FullContextRefinementTest {
             var graph = f.runtime.graph(f.holder(ChunkPos.ZERO));
             var actual = graph.prepared().orElseThrow().actual();
             var stage = graph.finishing.stage();
+            assertNull(f.holder(ChunkPos.ZERO).getChunkIfPresent(ChunkStatus.FULL),
+                    "context discovery must be allowed while the prepared FULL result is still unpublished");
+            assertFalse(graph.finishing.outcome().isDone());
             var originalCalls = new AtomicInteger(); var reads = new AtomicInteger();
             var retained = new AtomicReference<FullContextReadClaim>();
             set(actual, LevelChunk.class, "postLoad", (LevelChunk.PostLoadProcessor) chunk -> originalCalls.incrementAndGet());
@@ -59,6 +62,27 @@ final class FullContextRefinementTest {
             assertEquals(1, originalCalls.get()); assertEquals(1L, f.runtime.measurements().get("finishingCalls"));
             assertEquals(1L, f.runtime.measurements().get("publicationCalls")); assertFalse(f.barrier.tripped());
         } finally { stop(f); }
+    }
+
+    @Test void aGraphFromAnotherRuntimeCannotBeReadOrRetained() throws Exception {
+        var source = prepared();
+        var foreign = prepared();
+        try {
+            var graph = source.runtime.graph(source.holder(ChunkPos.ZERO));
+            var calls = new AtomicInteger();
+            assertThrows(ChunkProtocolException.class, () -> FullContextRefinement.read(foreign.runtime, graph,
+                    route(source), Set.of(graph.lifecycle.chunkKey()), claim -> {
+                        calls.incrementAndGet(); return "foreign";
+                    }));
+            assertEquals(0, calls.get());
+            assertFalse(source.services.custody().hasActiveUse(graph.work));
+            assertFalse(foreign.services.custody().hasActiveUse(graph.work));
+            assertFalse(source.owner.leases().hasActiveLease());
+            assertFalse(foreign.owner.leases().hasActiveLease());
+            assertFalse(graph.finishing.outcome().isDone());
+        } finally {
+            stop(foreign); stop(source);
+        }
     }
 
     @Test void observationFailureReleasesItsUseAndDoesNotConsumeTheOriginalContinuation() throws Exception {
