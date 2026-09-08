@@ -43,6 +43,8 @@
     "FullSavedScoreContentsMixin",
     "FullSavedNbtContentsMixin",
     "FullSelectorPredicateMixin",
+    "FullLocationPredicateMixin",
+    "FullPredicateChunkMixin",
     "FullFinishingConnectionMixin",
     "FullFinishingScoreboardMixin",
     "FullFinishingScoreboardStateMixin",

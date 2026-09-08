@@ -14,6 +14,17 @@ import net.minecraft.world.phys.shapes.*;
 
 /** Reflection merely reaches private original methods normally callable from their mixin. */
 public final class FullFinishingQueryTestHooks {
+    public static boolean locationPredicate(net.minecraft.advancements.predicates.LocationPredicate predicate,
+            ServerLevel world, double x, double y, double z) {
+        return FullFinishingQueries.locationPredicate(world, x, y, z, () -> (boolean) invoke(
+                net.minecraft.advancements.predicates.LocationPredicate.class, predicate, "phoenium$originalPredicate$matches",
+                new Class<?>[]{ServerLevel.class, double.class, double.class, double.class}, world, x, y, z));
+    }
+    public static ChunkAccess predicateChunk(ServerChunkCache cache, int x, int z, ChunkStatus status, boolean create) {
+        return FullFinishingQueries.predicateChunk((ServerLevel) cache.getLevel(), x, z, status, create,
+                () -> (ChunkAccess) invoke(ServerChunkCache.class, cache, "phoenium$originalPredicate$getChunk",
+                        new Class<?>[]{int.class, int.class, ChunkStatus.class, boolean.class}, x, z, status, create));
+    }
     public static ChunkAccess difficulty(ServerLevel world, int x, int z, ChunkStatus status, boolean create) {
         return FullFinishingQueries.query(world, FullInitializedInputs.Purpose.DIFFICULTY, x, z, status, create,
                 () -> world.getChunk(x, z, status, create));

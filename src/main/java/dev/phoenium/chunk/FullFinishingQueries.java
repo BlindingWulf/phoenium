@@ -45,6 +45,7 @@ public final class FullFinishingQueries {
         private Query query;
         private Shape shape;
         private BlockRead blockRead;
+        private LocationRead locationRead;
         private Invocation(FullRegistrationRuntime runtime, FullRegistrationRuntime.Graph source,
                            ChunkStageClaim claim, FullInitializedInputs.Receipt receipt) {
             this.runtime = runtime; this.source = source; this.claim = claim; this.receipt = receipt;
@@ -111,7 +112,7 @@ public final class FullFinishingQueries {
         }
         @Override public void close() {
             if (claim == null) return;
-            if (CURRENT.get() != this || query != null || shape != null || blockRead != null)
+            if (CURRENT.get() != this || query != null || shape != null || blockRead != null || locationRead != null)
                 throw breach("initialized FULL query scope escaped its synchronous operation");
             CURRENT.remove(); targets.clear(); runtime = null; source = null; claim = null; receipt = null;
         }
@@ -132,6 +133,35 @@ public final class FullFinishingQueries {
     }
     private record Shape(Invocation invocation, BlockGetter world, BlockPos position, BlockState state) { }
     private record BlockRead(FullInitializedInputs.Target target, BlockPos position, boolean privateInput) { }
+    private record LocationRead(ServerLevel world, BlockPos position) { }
+
+    /** Only the original LocationPredicate body opens this scope. Its conditions and
+     * short-circuiting remain in vanilla; each reached chunk getter checks a declared input. */
+    public static boolean locationPredicate(ServerLevel world, double x, double y, double z,
+                                             java.util.function.BooleanSupplier original) {
+        Invocation invocation = CURRENT.get();
+        if (!FullFinishingServices.finishing()) return original.getAsBoolean();
+        if (invocation == null || invocation.receipt.contexts() == null || world != invocation.receipt.world())
+            throw breach("location predicate has no exact saved FULL context");
+        invocation.requireCurrent();
+        var parent = invocation.locationRead;
+        invocation.locationRead = new LocationRead(world, BlockPos.containing(x, y, z));
+        try { return original.getAsBoolean(); }
+        finally { invocation.locationRead = parent; }
+    }
+
+    /** The ordinary cache getter still selects its own future and performs its reached
+     * ticket effects. Only this location-predicate call can borrow an unpublished FULL. */
+    public static ChunkAccess predicateChunk(ServerLevel world, int x, int z, ChunkStatus status, boolean create,
+                                              Supplier<ChunkAccess> original) {
+        Invocation invocation = CURRENT.get();
+        if (invocation == null || invocation.locationRead == null || invocation.query != null) return original.get();
+        invocation.requireCurrent();
+        if (world != invocation.locationRead.world || status != ChunkStatus.FULL
+                || !invocation.receipt.contexts().predicateFullChunks().contains(new ChunkPos(x, z)))
+            throw breach("location predicate getter has no declared exact FULL context input");
+        return query(world, FullInitializedInputs.Purpose.BLOCK_CONTEXT, x, z, status, create, original);
+    }
 
     /** Called at the exact difficulty, collision, or positional biome getChunk invocation. */
     public static ChunkAccess query(LevelReader world, FullInitializedInputs.Purpose purpose,
@@ -143,6 +173,7 @@ public final class FullFinishingQueries {
             case DIFFICULTY, COLLISION -> status == ChunkStatus.FULL && !create;
             case DYNAMIC_SHAPE_MUTATION -> status == ChunkStatus.FULL && create;
             case ENVIRONMENT -> status == ChunkStatus.BIOMES && !create;
+            case BLOCK_CONTEXT -> status == ChunkStatus.FULL && invocation.locationRead != null;
             default -> false;
         };
         if (!audited) throw breach("unaudited initialized query status/create/purpose combination");
@@ -266,6 +297,14 @@ public final class FullFinishingQueries {
     public static BlockEntity dynamicBlockEntity(LevelChunk chunk, BlockPos position,
                                                 LevelChunk.EntityCreationType creation, Supplier<BlockEntity> original) {
         Invocation invocation = CURRENT.get();
+        if (invocation != null && invocation.locationRead != null && invocation.shape == null) {
+            var target = invocation.target(chunk.getLevel(), chunk.getPos(), FullInitializedInputs.Purpose.BLOCK_CONTEXT);
+            if (creation != LevelChunk.EntityCreationType.IMMEDIATE || target.actual() != chunk
+                    || !invocation.receipt.contexts().predicateFullChunks().contains(chunk.getPos()))
+                throw breach("location predicate block entity lacks its exact original IMMEDIATE input");
+            FullSavedContextInputs.consumingBlockTag(chunk, position);
+            return original.get();
+        }
         if (invocation == null || invocation.shape == null) return original.get();
         requireShape(chunk.getLevel(), position);
         var target = invocation.target(chunk.getLevel(), chunk.getPos(), FullInitializedInputs.Purpose.DYNAMIC_SHAPE_MUTATION);

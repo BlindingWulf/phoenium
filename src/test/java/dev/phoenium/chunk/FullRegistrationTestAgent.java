@@ -21,6 +21,7 @@ public final class FullRegistrationTestAgent {
                         && !name.equals("net/minecraft/world/level/Level")
                         && !name.equals("net/minecraft/world/level/LevelReader")
                         && !name.equals("net/minecraft/world/level/BlockCollisions")
+                        && !name.equals("net/minecraft/advancements/predicates/LocationPredicate")
                         && !name.equals("net/minecraft/nbt/CompoundTag")
                         && !name.equals("net/minecraft/nbt/ListTag")
                         && !name.equals("net/minecraft/world/level/storage/PrimaryLevelData")
