@@ -446,6 +446,13 @@ public final class FullSavedContextInputs {
                     predicateBiomeChunks.addAll(predicates.biomes());
                     predicateFullChunks.addAll(predicates.full());
                     bytes = Math.addExact(bytes, predicates.bytes());
+                    if (!predicates.storageIds().isEmpty()) {
+                        var reads = predicates.storageIds().stream().map(id -> new FullSavedTextInputs.NbtRead(
+                                FullSavedTextInputs.Source.STORAGE, id.toString(), null, "", false, 101)).toList();
+                        var providerInputs = new FullSavedTextInputs.Requirements(List.of(), List.of(), List.of(), reads, null);
+                        texts.computeIfAbsent(fact.path(), ignored -> new ArrayList<>()).add(providerInputs);
+                        for (var read : reads) queue.add(new Pending(fact, read));
+                    }
                 }
             }
             for (var read : requirements.nbtReads()) queue.add(new Pending(fact, read));
