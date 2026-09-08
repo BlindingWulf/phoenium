@@ -28,6 +28,24 @@ The session began from clean `2b3080b`; all newer work is preserved. No agents a
   The current `finish-candidate-5-j` uses the unchanged production 7B611F...8C01 and has reached
   arming, merge, initial/settle clocks, and both block recipient phases. A bounded probe observer
   now emits the retained production barrier cause immediately; failure dumps stay inside each run.
+- `finish-candidate-5-j/k` passed arming, merge, real B tracking removal, native far FULL readiness,
+  and split. The far check failed because the harness ignored native unload/reload delay semantics:
+  K saved the far obligations with delay316, unpacked at388 into trigger704, but checked at568.
+  Both exact obligations remained present in the native container; no lost tick was demonstrated.
+  The shared workload now steps to the observed native far deadline (bounded, exact identities)
+  and places the independent persisted stone-button deadline at start+700 so it remains pending.
+  Also corrected the observer's far block coordinate (south is z9, not z7). K's PARTIAL ordered
+  trace and pending/native-unpack receipts are retained; failed runs now allow bounded original
+  shutdown and trace preservation instead of immediately killing the child after issuing stop.
+- Frozen reference `finish-reference-5-c/d` rejected/raced the old scoped fixture transitions
+  before arming; D hit the frozen scheduler's admitted-tick reachability guard. Frozen source and
+  artifact remain untouched. Reference comparison now uses the oracle's original world-default
+  serial layout (`explicitTopology=false`), with exactly the same native gameplay inputs/client
+  travel/save/reload/step commands. Candidate explicit A/B layout and coordinator migration remain
+  mandatory separate gates. This follows the declared serial-oracle comparison contract.
+- `finish-reference-5-e` revealed that a cached client FULL receipt could precede actual native
+  movement/section update. Completion now waits for both independent receipts before coordinator
+  restoration; no native state is assigned by the observer. Current run: `finish-candidate-5-l`.
 
 - Repaired entity lifecycle publication at native `ServerLevel$EntityCallbacks.onTrackingStart`
   HEAD, after `EntityLookup.add` and before original tracker registration. Chunk-loaded and

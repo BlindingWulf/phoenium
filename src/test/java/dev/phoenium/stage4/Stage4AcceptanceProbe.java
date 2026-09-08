@@ -170,6 +170,10 @@ public final class Stage4AcceptanceProbe implements DedicatedServerModInitialize
                                 throw new IllegalStateException("native tick step rejected while not frozen");
                             return 1;
                         }))))
+                .then(Commands.literal("step-far-effects").executes(context -> {
+                    scheduleFarEffects(context.getSource().getLevel());
+                    return 1;
+                }))
                 .then(Commands.literal("step-restored").then(Commands.argument("maximumTicks",
                     IntegerArgumentType.integer(1, 2400)).executes(context -> {
                         scheduleRestoredBefore(context.getSource().getLevel(),
@@ -229,7 +233,15 @@ public final class Stage4AcceptanceProbe implements DedicatedServerModInitialize
                     boolean pass = Stage4Trace.checkFarEffects();
                     context.getSource().sendSuccess(() -> net.minecraft.network.chat.Component.literal(
                         "STAGE4_TRACE_FAR_CHECK pass=" + pass), false);
-                    if (!pass) throw new IllegalStateException("far block/fluid obligations were not reached");
+                    if (!pass) {
+                        ServerLevel level = context.getSource().getLevel();
+                        var chunk = level.getChunkSource().getChunkNow(REGION_B_FAR.getX() >> 4, REGION_B_FAR.getZ() >> 4);
+                        System.out.println("STAGE4_TRACE_FAR_PENDING now=" + level.getGameTime() + " chunk=" + chunk
+                            + " blocks=" + (chunk == null ? "absent" : ((net.minecraft.world.ticks.LevelChunkTicks<?>) chunk.getBlockTicks()).getAll().toList())
+                            + " fluids=" + (chunk == null ? "absent" : ((net.minecraft.world.ticks.LevelChunkTicks<?>) chunk.getFluidTicks()).getAll().toList()));
+                        Stage4Trace.finish(level);
+                        throw new IllegalStateException("far block/fluid obligations were not reached");
+                    }
                     return 1;
                 }))
                 .then(Commands.literal("barrier")
@@ -339,6 +351,24 @@ public final class Stage4AcceptanceProbe implements DedicatedServerModInitialize
             + " state=" + state + " callbacks=" + observed);
     }
 
+    private static void scheduleFarEffects(ServerLevel level) {
+        if (!level.getServer().tickRateManager().isFrozen())
+            throw new IllegalStateException("far deadline requires the native clock to be frozen");
+        var chunk = level.getChunkSource().getChunkNow(REGION_B_FAR.getX() >> 4, REGION_B_FAR.getZ() >> 4);
+        if (chunk == null) throw new IllegalStateException("far deadline has no current FULL chunk");
+        var blocks = ((net.minecraft.world.ticks.LevelChunkTicks<?>) chunk.getBlockTicks()).getAll()
+            .filter(tick -> tick.pos().equals(REGION_B_FAR_BLOCK) && tick.type() == Blocks.NOTE_BLOCK).toList();
+        var fluids = ((net.minecraft.world.ticks.LevelChunkTicks<?>) chunk.getFluidTicks()).getAll()
+            .filter(tick -> tick.pos().equals(REGION_B_FAR_FLUID) && tick.type() == Fluids.WATER).toList();
+        if (blocks.size() != 1 || fluids.size() != 1 || blocks.getFirst().triggerTick() != fluids.getFirst().triggerTick())
+            throw new IllegalStateException("far native obligation identity/deadline changed: " + blocks + " / " + fluids);
+        long trigger = blocks.getFirst().triggerTick();
+        long steps = trigger - level.getGameTime() + 1;
+        if (steps < 1 || steps > 600) throw new IllegalStateException("far native deadline outside bounded step");
+        Stage4Trace.event("clock.far.deadline", "now=" + level.getGameTime() + " trigger=" + trigger + " steps=" + steps);
+        stepNative(level, "far-effects", steps);
+    }
+
     private static void stepNative(ServerLevel level, String label, long ticks) {
         if (ticks < 1 || ticks > 2400) throw new IllegalArgumentException("invalid native step " + ticks);
         if (ticks > Integer.MAX_VALUE) throw new IllegalArgumentException("native step overflow");
@@ -380,8 +410,11 @@ public final class Stage4AcceptanceProbe implements DedicatedServerModInitialize
             if (barrier instanceof dev.phoenium.failure.FailureBarrier failureBarrier)
                 failureBarrier.record().ifPresent(record -> record.cause().printStackTrace());
         }
-        for (Stage4TeleportTopology.Prepared prepared : TELEPORT_RECEIPTS.values())
+        for (var entry : List.copyOf(TELEPORT_RECEIPTS.entrySet())) {
+            var prepared = entry.getValue();
             prepared.observeDestinationFull();
+            if (prepared.observeCompletion()) TELEPORT_RECEIPTS.remove(entry.getKey());
+        }
     }
 
     /** Completes and only then retires the matching prepared teleport receipt. */
@@ -392,8 +425,13 @@ public final class Stage4AcceptanceProbe implements DedicatedServerModInitialize
         Stage4TeleportTopology.Prepared prepared = TELEPORT_RECEIPTS.get(id);
         if (prepared == null)
             throw new IllegalStateException("teleport fixture has no prepared receipt for " + id);
-        prepared.completeAfterClientFull(player);
-        TELEPORT_RECEIPTS.remove(id);
+        try {
+            prepared.confirmClientFull(player);
+            if (prepared.observeCompletion()) TELEPORT_RECEIPTS.remove(id);
+        } catch (RuntimeException failure) {
+            failure.printStackTrace();
+            throw failure;
+        }
     }
 
     private static void arm(ServerLevel level) {
@@ -425,7 +463,7 @@ public final class Stage4AcceptanceProbe implements DedicatedServerModInitialize
         level.getBlockTicks().schedule(new ScheduledTick<>(Blocks.NOTE_BLOCK, REGION_B, now + 3, TickPriority.NORMAL, 2));
         level.getBlockTicks().schedule(new ScheduledTick<>(Blocks.NOTE_BLOCK, REGION_A, now + 2, TickPriority.HIGH, 1));
         // This future tick must still be pending at the normal save cut and restart.
-        level.getBlockTicks().schedule(new ScheduledTick<>(Blocks.STONE_BUTTON, REGION_B_FUTURE, now + 400, TickPriority.LOW, 99));
+        level.getBlockTicks().schedule(new ScheduledTick<>(Blocks.STONE_BUTTON, REGION_B_FUTURE, now + 700, TickPriority.LOW, 99));
         BlockPos fluid = REGION_B.east();
         level.setBlock(fluid, Fluids.WATER.defaultFluidState().createLegacyBlock(), 3);
         // A water placement may enqueue its own producer tick.  Clear that native

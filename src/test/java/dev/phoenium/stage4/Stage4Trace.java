@@ -109,6 +109,9 @@ public final class Stage4Trace {
                                      long currentTick,
                                      List<? extends net.minecraft.world.ticks.SavedTick<?>> pendingBefore) {
         if (pendingBefore == null) return;
+        if (active) for (var saved : pendingBefore) if (fixture(saved.pos()))
+            System.out.println("STAGE4_TRACE_FIXTURE_UNPACK pos=" + saved.pos() + " type=" + saved.type()
+                + " delay=" + saved.delay() + " currentTick=" + currentTick);
         List<? extends net.minecraft.world.ticks.SavedTick<?>> pending = pendingBefore.stream()
             .filter(tick -> tick.pos().equals(Stage4AcceptanceProbe.REGION_B_FUTURE)
                 && tick.type() == net.minecraft.world.level.block.Blocks.STONE_BUTTON)
@@ -428,7 +431,7 @@ public final class Stage4Trace {
             || pos.equals(new BlockPos(520, 65, 8))
             || pos.equals(new BlockPos(520, 65, 200))
             || pos.equals(new BlockPos(521, 65, 8))
-            || pos.equals(new BlockPos(520, 65, 7))
+            || pos.equals(Stage4AcceptanceProbe.REGION_B_FAR_BLOCK)
             || pos.equals(new BlockPos(121, 65, 8)) || pos.equals(new BlockPos(8, 66, 8));
     }
 

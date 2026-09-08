@@ -55,12 +55,11 @@ public final class Stage4ClientTraceTest implements FabricClientGameTest {
                 System.getProperty("os.name", "").toLowerCase().contains("win") ? "java.exe" : "java").toString(),
                 "-Xmx2G", "-Dphoenium.test.diagnostics=true",
                 "-Dphoenium.stage4.candidate=" + candidate,
-                // Both modes use the same accepted Stage 3 support flags and disposable Stage 4
-                // probe.  explicitTopology is the established one-worker fixture; the
-                // stage4.candidate flag alone controls calls that require the new Stage 4
-                // coordinator/authority APIs.
+                // The frozen oracle uses its original world-default serial layout. Candidate
+                // topology/migration is a separate gate; both modes execute identical native
+                // gameplay inputs, real client travel, save/reload and clock-step commands.
                 "-Dphoenium.full.authoritative=true",
-                "-Dphoenium.stage3.explicitTopology=true",
+                "-Dphoenium.stage3.explicitTopology=" + candidate,
                 "-Dphoenium.test.chunkFixtureSupport=true",
                 "-Dphoenium.stage3.chunkTrace=true",
                 "-Dphoenium.stage4.viewDistance=" + System.getProperty("phoenium.stage4.viewDistance", "8"),
@@ -184,9 +183,9 @@ public final class Stage4ClientTraceTest implements FabricClientGameTest {
                 command(server, "stage4trace split-far");
                 awaitLog(context, server, log, "STAGE4_TRACE_TOPOLOGY_SPLIT", START_TIMEOUT_TICKS);
             }
-            // Keep the player at the far B cohort while the now+320 obligations execute,
+            // Keep the player at the far B cohort while the native restored obligations execute,
             // then use a separate short step for the deferred event in chunk 32,12.
-            command(server, "stage4trace step far-effects 100");
+            command(server, "stage4trace step-far-effects");
             awaitLog(context, server, log, "STAGE4_TRACE_CLOCK_STEP_REACHED label=far-effects", START_TIMEOUT_TICKS);
             command(server, "stage4trace check-far");
             awaitLog(context, server, log, "STAGE4_TRACE_FAR_CHECK pass=true", START_TIMEOUT_TICKS);
@@ -198,7 +197,7 @@ public final class Stage4ClientTraceTest implements FabricClientGameTest {
             command(server, "stage4trace check-deferred-eligible");
             awaitLog(context, server, log,
                 "STAGE4_TRACE_DEFERRED_ELIGIBILITY phase=after-viewport", START_TIMEOUT_TICKS);
-            // Leave the original now+400 block obligation pending while allowing the migrated
+            // Leave the original now+700 block obligation pending while allowing the migrated
             // far fluid/block (now+320) to execute under B after the split.  This is an exact
             // native frozen-clock step rather than a wall-clock/game-time deadline race.
             ClientTraceObservations.clearPacketEvents();
@@ -289,7 +288,11 @@ public final class Stage4ClientTraceTest implements FabricClientGameTest {
             captureNetworkState(server, dumpDirectory.resolve("tcp-state-handshake-timeout.txt"));
             if (connected) try { disconnectClient(context); } catch (Throwable ignored) { }
             if (server != null && server.isAlive()) {
-                try { command(server, "stop"); } catch (Throwable ignored) { server.destroy(); }
+                try {
+                    command(server, "stage4trace finish");
+                    command(server, "stop");
+                    waitForExit(context, server);
+                } catch (Throwable ignored) { server.destroy(); }
             }
             throw new AssertionError("Stage 4 account-free client trace failed", failure);
         } finally {

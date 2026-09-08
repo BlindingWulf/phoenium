@@ -566,7 +566,7 @@ def run_process(server, trace_path=None, drive=False, explicit_topology=False, t
                         # LevelChunkTicks.unpack receipt.  Each native step is scheduled in its
                         # own command turn and observed after the server executes it; this keeps
                         # state assertions outside ServerTickRateManager's scheduling call.
-                        send("stage4trace step-restored 450")
+                        send("stage4trace step-restored 900")
                         scheduled = read_until(process, read_line, log, lines,
                                                 "STAGE4_TRACE_RELOAD_STEP_SCHEDULED phase=before", 30)
                         reached_before = read_until(process, read_line, log, lines,

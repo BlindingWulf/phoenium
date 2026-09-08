@@ -116,6 +116,7 @@ public final class Stage4TeleportTopology {
         private final CorePrepared core;
         private boolean completed;
         private boolean ready;
+        private boolean clientFullConfirmed;
         private final Set<ChunkPos> temporaryChunks = new LinkedHashSet<>();
         private final Map<ChunkPos, java.util.concurrent.CompletableFuture<ChunkResult<net.minecraft.world.level.chunk.ChunkAccess>>>
             requests = new LinkedHashMap<>();
@@ -172,6 +173,29 @@ public final class Stage4TeleportTopology {
         public int destinationChunkX() { return destination.x(); }
         public int destinationChunkZ() { return destination.z(); }
         public int radius() { return radius; }
+
+        /** The real client receipt can precede native movement delivery when its chunk is cached. */
+        public void confirmClientFull(ServerPlayer actualPlayer) {
+            requireBoundary(level);
+            if (actualPlayer != player || actualPlayer.level() != level)
+                throw new IllegalStateException("teleport client receipt belongs to another player or level");
+            clientFullConfirmed = true;
+        }
+
+        public boolean observeCompletion() {
+            if (!clientFullConfirmed || completed) return completed;
+            requireBoundary(level);
+            if (player.chunkPosition().x() != destination.x() || player.chunkPosition().z() != destination.z()
+                    || !player.getLastSectionPos().equals(SectionPos.of(player))) return false;
+            var map = level.getChunkSource().chunkMap;
+            long packed = ChunkPos.pack(destination.x(), destination.z());
+            if (map.getDistanceManager().hasPlayersNearby(packed) != net.minecraft.util.TriState.TRUE
+                    || !map.isChunkTracked(player, destination.x(), destination.z())) return false;
+            ChunkHolder holder = map.getUpdatingChunkIfPresent(packed);
+            if (holder == null || !successful(holder.getFullChunkFuture())) return false;
+            completeAfterClientFull(player);
+            return true;
+        }
 
         public void observeDestinationFull() {
             if (ready) return;
