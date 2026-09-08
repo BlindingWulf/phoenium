@@ -23,7 +23,7 @@ identity and task/worker token accounting are unavailable. No recursive delegati
 additional Astra, API billing, resets, account changes, or remote publication.
 Starting account-wide usage: Codex 35% used / 65% remaining; reserve 7% used / 93%
 remaining. First dispatcher integration: Codex 38% used / 62% remaining, reserve
-7% used / 93% remaining. Tick/event + save/stop integration: Codex 44% used / 56% remaining; reserve 7% used / 93% remaining. Native-area integration: Codex 51% used / 49% remaining; reserve 7% used / 93% remaining. These are account windows, not per-task consumption.
+7% used / 93% remaining. Tick/event + save/stop integration: Codex 44% used / 56% remaining; reserve 7% used / 93% remaining. Native-area integration: Codex 51% used / 49% remaining; reserve 7% used / 93% remaining. Passenger/save-failure integration: Codex 58% used / 42% remaining; reserve 7% used / 93% remaining. These are account windows, not per-task consumption.
 
 ## Fixed implementation and acceptance map
 
@@ -31,7 +31,7 @@ remaining. First dispatcher integration: Codex 38% used / 62% remaining, reserve
 | --- | --- | --- |
 | Scheduled ticks | Real per-owner persistent containers, due selection, typed collection/dispatch; native clear/copy share the original current-cycle fields and finite area cut | Installed deterministic two-owner migration, exact original register-then-unpack oracle and restored effects |
 | Block events | Per-owner ordered queues, original nested enqueue and dispatch, migration | Installed ordered comparator and pending-work merge/split |
-| Entity tracking | Integrated actual tracker partitions, original pairing/removal/update, entity/session receipts and exact source-map order | Complete passenger/active-producer preflight; actual clients, ordered packets and lifecycle migration |
+| Entity tracking | Actual tracker partitions, original pairing/removal/update, entity/session and exact passenger-edge receipts, source-map order | Owner-free outer chunk/entity producer cuts; actual clients, ordered packets and lifecycle migration |
 | Save cuts | Original selected-holder retention, batch/operation topology cuts, detached original snapshot, original I/O acknowledgement | Final-artifact disk records/restart, replacement/pressure and affected FULL lifecycle |
 | Shutdown | Admission close, leased admitted-work drain, independent failure settlement, terminal metadata acknowledgement | Clean final installed stop under normal and adverse pending work |
 | Global services | Established named services and explicit metadata/owner-free I/O protocols | Final integrated reached-path audit; see STAGE4_SERVICE_CONTRACT.md |
@@ -68,11 +68,32 @@ events, save and clean stop, but restart reports a foreign closure owner. Preser
 both bundles. Root repaired the nested producer overclaim: enqueue requires only the destination owner; the future callback halo is admitted when due. A regression crosses that same boundary and later executes after genuine convergence. Do not widen a valid fixture boundary simply to hide that production
 failure. No integrated Stage 4 installed PASS exists.
 
-Stable integrated production checkpoint: `34b2d0f`; tracking accessor repair `1db10ad`, exact scheduled eligibility/native index `952ce13` plus owned immutable head receipts `34b2d0f`, and block-event nested/deferred boundary `b4d23e9`. Focused scheduled/descriptor/event integration: 20 tests PASS. The installed tracker accessor failure is preserved by Luna in `integrated-installed-tracking-fixture-033157`. Genuine pending fixture `5da8152` corrects the original duplicate B/type schedule that never created a second obligation; next campaign must compare identical corrected reference inputs. Lead owns native tick clear/copy integration and next
-restart closure review, with save/stop and topology architecture. Sol owns production
-tracking and immediate-add preflight, then connected repairs. Luna is the sole broad
-build/live campaign owner: exact original oracles, controlled client comparator,
-MCA pending tick deadline/readback/reached effects, real merge/split and lifecycle,
-5/5 and 8/8, affected foundation regressions, and elapsed/RSS/GC-limit observations.
-Next stable campaign must include all production repairs, not an earlier JAR.
+Integrated production recovery: `f36fcb1`, including native tick eligibility/index
+`952ce13`/`34b2d0f`, nested block-event boundary `b4d23e9`, exact tracker accessors
+`1db10ad`, named tracking startup `3a36d24`, passenger relations `4cd836f`/`f36fcb1`,
+and original final phase RETURN repair `b7d0051`. `545b793` preserves a source/save
+exception caught by vanilla after its dirty claim, restores dirty state through the
+current owner ACK, and retains the exact failure at flush. The new negative first
+failure and repaired focused evidence are under `run/stage4/caught-save-*`.
+Save/facts/accessor integration: 21 tests PASS; final phase/stop/facts/accessor: 20 PASS.
+
+Latest installed checkpoint `integrated-installed-stable-034415` starts and executes
+scheduled services/save/stop but has no final PASS: tracking and block.enqueue proof
+are missing; reload command fails before its begin marker. Its pre-restart decoder
+was faulty. Re-decoding the world after a restart past the deadline does not prove
+pre-restart tick loss. Harness fixes `31a26b5`/`e59d239` now decode and preserve an
+immutable MCA copy before restart; `ca7d11f` exposes the original reload exception.
+Only detached original packed tick results are observed at serialization; proposed
+owner-free raw container diagnostics were rejected and were not integrated.
+Genuine pending fixture `5da8152` replaced an invalid duplicate B/type schedule;
+comparison must use identical corrected reference inputs.
+
+Sol owns the reached outer cache/entity producer gap: the old CACHE_OWNER phase
+ran all selected chunks under the world anchor owner. Actual callbacks need finite
+owner-free admission and current source/recipient closure, preserving original RNG,
+order and synchronous effects. Lead owns save/stop, persistence review and integration.
+Luna alone owns broad builds/live campaigns, exact native oracles, controlled real
+client comparison, immutable MCA/reload effects, real merge/split and lifecycle, 5/5
+and 8/8, affected foundation regressions, and comparable elapsed/RSS observations.
+The next stable campaign must include all production repairs.
 Internal commits remain recovery points; continue until all required gates pass.
