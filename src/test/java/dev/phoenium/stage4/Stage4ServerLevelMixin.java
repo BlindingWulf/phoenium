@@ -7,6 +7,7 @@ import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.level.BlockEventData;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.level.block.ButtonBlock;
 import net.minecraft.world.level.material.Fluid;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
@@ -43,8 +44,13 @@ abstract class Stage4ServerLevelMixin {
         }
     }
 
-    @Inject(method = "doBlockEvent(Lnet/minecraft/world/level/BlockEventData;)Z", at = @At("HEAD"), require = 1)
-    private void phoenium$dispatch(BlockEventData event, CallbackInfoReturnable<Boolean> cir) {
+    /**
+     * Observe the original event body through its invocation boundary.  A production
+     * cancellable HEAD admission hook can bypass a HEAD injection, while this wrapper still
+     * observes the one original call and records its returned acceptance value.
+     */
+    @WrapMethod(method = "doBlockEvent(Lnet/minecraft/world/level/BlockEventData;)Z")
+    private boolean phoenium$dispatch(BlockEventData event, Operation<Boolean> original) {
         if (Stage4Trace.fixture(event.pos())) Stage4Trace.event("block.dispatch", "pos=" + event.pos() + " block=" + Stage4Trace.block(event.block()) + " a=" + event.paramA() + " b=" + event.paramB()
             + " " + Stage4Trace.authority((ServerLevel) (Object) this, event.pos()));
         if (Stage4Trace.fixture(event.pos())) Stage4Trace.bodyObserved((ServerLevel) (Object) this, event.pos(), "block.dispatch");
@@ -56,6 +62,11 @@ abstract class Stage4ServerLevelMixin {
             level.blockEvent(nested, Blocks.NOTE_BLOCK, 2, event.paramB() + 1);
             Stage4Trace.event("block.nested.enqueue", "pos=" + nested + " block=" + Stage4Trace.block(Blocks.NOTE_BLOCK));
         }
+        boolean accepted = original.call(event);
+        if (Stage4Trace.fixture(event.pos()))
+            Stage4Trace.event("block.dispatch.result", "pos=" + event.pos() + " a=" + event.paramA()
+                + " b=" + event.paramB() + " result=" + accepted);
+        return accepted;
     }
 
     @Inject(method = "tickFluid(Lnet/minecraft/core/BlockPos;Lnet/minecraft/world/level/material/Fluid;)V", at = @At("HEAD"), require = 1)
@@ -65,16 +76,24 @@ abstract class Stage4ServerLevelMixin {
         if (Stage4Trace.fixture(pos)) Stage4Trace.bodyObserved((ServerLevel) (Object) this, pos, "fluid.tick");
     }
 
-    @Inject(method = "tickBlock(Lnet/minecraft/core/BlockPos;Lnet/minecraft/world/level/block/Block;)V", at = @At("HEAD"), require = 1)
-    private void phoenium$block(BlockPos pos, Block block, CallbackInfo ci) {
+    @WrapMethod(method = "tickBlock(Lnet/minecraft/core/BlockPos;Lnet/minecraft/world/level/block/Block;)V")
+    private void phoenium$block(BlockPos pos, Block block, Operation<Void> original) {
         ServerLevel level = (ServerLevel) (Object) this;
         if (Stage4Trace.fixture(pos)) Stage4Trace.event("tick.block.vanilla", "pos=" + pos + " block=" + Stage4Trace.block(block)
             + " gameTime=" + level.getGameTime() + " " + Stage4Trace.authority(level, pos));
+        original.call(pos, block);
+        // Record body ownership and the reload effect only after the original callback returns
+        // successfully.  The fixture never changes native state from this observation path.
         if (Stage4Trace.fixture(pos)) Stage4Trace.bodyObserved(level, pos, "block.tick");
-        if (Stage4Trace.reloadEffect(pos) && block == Blocks.NOTE_BLOCK) {
-            level.setBlock(pos, Blocks.REDSTONE_BLOCK.defaultBlockState(), 3);
-            Stage4Trace.event("effect.tick.reached", "pos=" + pos + " gameTime=" + level.getGameTime());
-            System.out.println("STAGE4_TRACE_RELOAD_EFFECT reached=true gameTime=" + level.getGameTime());
+        if (Stage4Trace.reloadEffect(pos) && block == Blocks.STONE_BUTTON) {
+            var state = level.getBlockState(pos);
+            boolean reached = state.is(Blocks.STONE_BUTTON)
+                && !state.getValue(ButtonBlock.POWERED);
+            if (reached) {
+                Stage4Trace.event("effect.tick.reached", "pos=" + pos + " gameTime=" + level.getGameTime()
+                    + " state=" + state);
+                System.out.println("STAGE4_TRACE_RELOAD_EFFECT reached=true gameTime=" + level.getGameTime());
+            }
         }
     }
 }

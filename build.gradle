@@ -193,10 +193,13 @@ loom {
             // Explicitly select the frozen serial reference for comparator runs;
             // the child server receives this through the client JVM property.
             vmArg "-Dphoenium.stage4.reference=${providers.gradleProperty('stage4Reference').orElse('false').get()}"
+            vmArg "-Dphoenium.stage4.packetTrace=${providers.gradleProperty('stage4PacketTrace').orElse('false').get()}"
             def stage4RunId = providers.gradleProperty('stage4RunId').orElse('current').get()
             def stage4EvidenceDir = providers.gradleProperty('stage4EvidenceDir')
                     .orElse(layout.buildDirectory.dir('stage4-client-gametest/evidence/' + stage4RunId)
                     .map { it.asFile.absolutePath }).get()
+            if (providers.gradleProperty('stage4PacketTrace').orElse('false').get().toBoolean())
+                vmArg "-Dphoenium.stage4.packetTracePath=${file(stage4EvidenceDir).toPath().resolve('client-packets.log').toFile().absolutePath}"
             def stage4ServerDirectory = providers.gradleProperty('stage4ServerDirectory')
                     .orElse(layout.buildDirectory.dir('stage4-client-server')
                     .map { it.asFile.absolutePath }).get()

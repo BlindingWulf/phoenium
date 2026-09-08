@@ -6,9 +6,13 @@ import net.fabricmc.api.DedicatedServerModInitializer;
 import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback;
 import net.minecraft.commands.Commands;
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.level.block.ButtonBlock;
+import net.minecraft.world.level.block.state.properties.AttachFace;
+import net.minecraft.world.level.block.state.properties.BlockStateProperties;
 import net.minecraft.world.level.material.Fluids;
 import net.minecraft.world.ticks.ScheduledTick;
 import net.minecraft.world.ticks.TickPriority;
@@ -53,6 +57,30 @@ public final class Stage4AcceptanceProbe implements DedicatedServerModInitialize
         CommandRegistrationCallback.EVENT.register((dispatcher, access, selection) -> dispatcher.register(
             Commands.literal("stage4trace")
                 .then(Commands.literal("run").executes(context -> { arm(context.getSource().getLevel()); return 1; }))
+                .then(Commands.literal("prepare").executes(context -> {
+                    prepareChunks(context.getSource().getLevel());
+                    return 1;
+                }))
+                .then(Commands.literal("prepare-a").executes(context -> {
+                    prepareChunk(context.getSource().getLevel(), REGION_A, "A");
+                    return 1;
+                }))
+                .then(Commands.literal("prepare-b").executes(context -> {
+                    prepareChunk(context.getSource().getLevel(), REGION_B, "B");
+                    return 1;
+                }))
+                .then(Commands.literal("prepare-far").executes(context -> {
+                    prepareChunk(context.getSource().getLevel(), REGION_B_FAR, "far");
+                    return 1;
+                }))
+                .then(Commands.literal("prepare-deferred").executes(context -> {
+                    prepareChunk(context.getSource().getLevel(), REGION_DEFERRED_EVENT, "deferred");
+                    return 1;
+                }))
+                .then(Commands.literal("release-temporary").executes(context -> {
+                    releaseTemporaryChunks(context.getSource().getLevel());
+                    return 1;
+                }))
                 .then(Commands.literal("lifecycle").executes(context -> {
                     runTopologyLifecycle(context.getSource().getLevel());
                     return 1;
@@ -99,6 +127,10 @@ public final class Stage4AcceptanceProbe implements DedicatedServerModInitialize
                 }))
                 .then(Commands.literal("block-probe-a").executes(context -> {
                     probeBlockEvent(context.getSource().getLevel(), REGION_A, 4, 21, "a");
+                    return 1;
+                }))
+                .then(Commands.literal("clear-block-probe-support").executes(context -> {
+                    clearBlockProbeSupport(context.getSource().getLevel());
                     return 1;
                 }))
                 .then(Commands.literal("block-probe-b").executes(context -> {
@@ -158,7 +190,9 @@ public final class Stage4AcceptanceProbe implements DedicatedServerModInitialize
                 }))
                 .then(Commands.literal("verify").executes(context -> {
                     ServerLevel level = context.getSource().getLevel();
-                    boolean reached = level.getBlockState(REGION_B_FUTURE).is(Blocks.REDSTONE_BLOCK);
+                    var futureState = level.getBlockState(REGION_B_FUTURE);
+                    boolean reached = futureState.is(Blocks.STONE_BUTTON)
+                        && !futureState.getValue(ButtonBlock.POWERED);
                     Stage4Trace.event("reload.effect", "reached=" + reached + " state=" + level.getBlockState(REGION_B_FUTURE));
                     context.getSource().sendSuccess(() -> net.minecraft.network.chat.Component.literal(
                         "STAGE4_TRACE_RELOAD a=" + level.getBlockState(REGION_A) +
@@ -172,21 +206,34 @@ public final class Stage4AcceptanceProbe implements DedicatedServerModInitialize
 
     private static void arm(ServerLevel level) {
         if (level.dimension() != Level.OVERWORLD) throw new IllegalStateException("Stage4 fixture requires overworld");
-        level.getChunk(REGION_A.getX() >> 4, REGION_A.getZ() >> 4);
-        level.getChunk(REGION_B.getX() >> 4, REGION_B.getZ() >> 4);
-        level.setChunkForced(REGION_A.getX() >> 4, REGION_A.getZ() >> 4, true);
-        level.setChunkForced(REGION_B.getX() >> 4, REGION_B.getZ() >> 4, true);
+        if (level.getChunkSource().getChunk(REGION_A.getX() >> 4, REGION_A.getZ() >> 4,
+                ChunkStatus.FULL, false) == null
+            || level.getChunkSource().getChunk(REGION_B.getX() >> 4, REGION_B.getZ() >> 4,
+                ChunkStatus.FULL, false) == null
+            || level.getChunkSource().getChunk(REGION_B_FAR.getX() >> 4, REGION_B_FAR.getZ() >> 4,
+                ChunkStatus.FULL, false) == null
+            || level.getChunkSource().getChunk(REGION_DEFERRED_EVENT.getX() >> 4,
+                REGION_DEFERRED_EVENT.getZ() >> 4, ChunkStatus.FULL, false) == null)
+            throw new IllegalStateException("Stage4 fixture chunks were not prepared before clock freeze");
         Stage4Trace.begin(level);
         if (level.getServer().tickRateManager().isFrozen()) Stage4Trace.clockFrozen(level);
+        preparePlayerPads(level);
         long now = level.getGameTime();
         level.setBlock(REGION_A, Blocks.NOTE_BLOCK.defaultBlockState(), 3);
         level.setBlock(REGION_B, Blocks.NOTE_BLOCK.defaultBlockState(), 3);
-        level.setBlock(REGION_B_FUTURE, Blocks.NOTE_BLOCK.defaultBlockState(), 3);
+        // A directly powered floor button has no placement producer tick.  Its explicit native
+        // deadline is persisted, and ButtonBlock.tick turns POWERED off through the original
+        // callback after reload; the probe only observes that resulting state.
+        var futureButton = Blocks.STONE_BUTTON.defaultBlockState()
+            .setValue(BlockStateProperties.ATTACH_FACE, AttachFace.FLOOR)
+            .setValue(BlockStateProperties.HORIZONTAL_FACING, Direction.NORTH)
+            .setValue(ButtonBlock.POWERED, true);
+        level.setBlock(REGION_B_FUTURE, futureButton, 3);
         level.getBlockTicks().schedule(new ScheduledTick<>(Blocks.NOTE_BLOCK, REGION_A, now + 2, TickPriority.HIGH, 1));
         level.getBlockTicks().schedule(new ScheduledTick<>(Blocks.NOTE_BLOCK, REGION_B, now + 3, TickPriority.NORMAL, 2));
         level.getBlockTicks().schedule(new ScheduledTick<>(Blocks.NOTE_BLOCK, REGION_A, now + 2, TickPriority.HIGH, 1));
         // This future tick must still be pending at the normal save cut and restart.
-        level.getBlockTicks().schedule(new ScheduledTick<>(Blocks.NOTE_BLOCK, REGION_B_FUTURE, now + 400, TickPriority.LOW, 99));
+        level.getBlockTicks().schedule(new ScheduledTick<>(Blocks.STONE_BUTTON, REGION_B_FUTURE, now + 400, TickPriority.LOW, 99));
         BlockPos fluid = REGION_B.east();
         level.setBlock(fluid, Fluids.WATER.defaultFluidState().createLegacyBlock(), 3);
         // A water placement may enqueue its own producer tick.  Clear that native
@@ -216,11 +263,66 @@ public final class Stage4AcceptanceProbe implements DedicatedServerModInitialize
         System.out.println("STAGE4_TRACE_ARMED a=" + REGION_A + " b=" + REGION_B + " now=" + now + routes);
     }
 
+    /** Keep the real client at the commanded y=65 during explicit native steps. */
+    private static void preparePlayerPads(ServerLevel level) {
+        for (BlockPos center : List.of(REGION_A, REGION_B, REGION_B_FAR, REGION_DEFERRED_EVENT)) {
+            for (int dx = -2; dx <= 2; dx++) for (int dz = -2; dz <= 2; dz++)
+                level.setBlock(new BlockPos(center.getX() + dx, 64, center.getZ() + dz),
+                    Blocks.STONE.defaultBlockState(), 3);
+        }
+        Stage4Trace.event("fixture.player.pads", "y=64 centers=" + REGION_A + ";" + REGION_B + ";"
+            + REGION_B_FAR + ";" + REGION_DEFERRED_EVENT);
+    }
+
+    private static void prepareChunks(ServerLevel level) {
+        prepareChunk(level, REGION_A, "A");
+        prepareChunk(level, REGION_B, "B");
+    }
+
+    /**
+     * The client drives each point into the native distance path before issuing this command.
+     * Consequently this command only retains the already completed holder and never calls a
+     * synchronous getChunk/FULL wait from the server command thread.
+     */
+    private static void prepareChunk(ServerLevel level, BlockPos pos, String label) {
+        if (level.dimension() != Level.OVERWORLD) throw new IllegalStateException("Stage4 fixture requires overworld");
+        int chunkX = pos.getX() >> 4;
+        int chunkZ = pos.getZ() >> 4;
+        level.setChunkForced(chunkX, chunkZ, true);
+        System.out.println("STAGE4_TRACE_PREPARED_POINT label=" + label + " route=(" + chunkX + "," + chunkZ
+            + ") gameTime=" + level.getGameTime());
+        if (label.equals("B"))
+            System.out.println("STAGE4_TRACE_PREPARED routes=(0,0),(7,0) gameTime=" + level.getGameTime());
+        if (label.equals("deferred"))
+            System.out.println("STAGE4_TRACE_PREPARED_FAR routes=(32,0),(32,12) gameTime=" + level.getGameTime());
+    }
+
+    /**
+     * Retain the actual completed FULL data long enough to arm the fixture, then remove the
+     * temporary force tickets.  The far deferred event must remain ineligible until the player
+     * later reaches its real viewport; a force ticket here would make that gate vacuous.
+     */
+    private static void releaseTemporaryChunks(ServerLevel level) {
+        level.setChunkForced(REGION_B_FAR.getX() >> 4, REGION_B_FAR.getZ() >> 4, false);
+        level.setChunkForced(REGION_DEFERRED_EVENT.getX() >> 4, REGION_DEFERRED_EVENT.getZ() >> 4, false);
+        Stage4Trace.event("fixture.temporary.released", "far=(32,0) deferred=(32,12) gameTime="
+            + level.getGameTime());
+        System.out.println("STAGE4_TRACE_TEMPORARY_RELEASED gameTime=" + level.getGameTime());
+    }
+
     private static void probeBlockEvent(ServerLevel level, BlockPos pos, int paramA, int paramB, String label) {
-        Stage4Trace.beginBlockProbe(label, pos);
+        Stage4Trace.beginBlockProbe(label, pos, paramA, paramB);
         level.blockEvent(pos, Blocks.NOTE_BLOCK, paramA, paramB);
         Stage4Trace.event("block.probe.input", "label=" + label + " pos=" + pos + " a=" + paramA + " b=" + paramB
             + " gameTime=" + level.getGameTime());
+    }
+
+    /** Clear the nested fixture's temporary above-block before the positive recipient probes. */
+    private static void clearBlockProbeSupport(ServerLevel level) {
+        level.setBlock(REGION_A.above(), Blocks.AIR.defaultBlockState(), 3);
+        level.setBlock(REGION_B.above(), Blocks.AIR.defaultBlockState(), 3);
+        Stage4Trace.event("block.probe.support", "a=" + REGION_A.above() + " b=" + REGION_B.above()
+            + " states=" + level.getBlockState(REGION_A.above()) + "," + level.getBlockState(REGION_B.above()));
     }
 
     /**

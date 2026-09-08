@@ -107,12 +107,57 @@ live campaign was started for this baseline.
 * `historical-hash-checks.json`: frozen artifacts and key historical manifest/
   log checks, all matching.
 
+## Integrated checkpoint
+
+The first integrated installed checkpoint was run from the merged stable source
+at `a1da48a` (verification branch commit `5637201`) with explicit topology and
+view/simulation distance `5/5`. The production JAR SHA-256 was
+`830958512276B13956C433EF77A9E30BD38C750A896432DAD1A7AEF285CDDC07`; the
+test-only probe SHA-256 was
+`DB7D3EB5C64ADF0F43C4F38C5C0ACD4767D6BBA1BCFF5D37357289F0E3055F04`.
+Evidence is preserved under
+`run/stage4/integrated-installed-20260908-025903/`. Startup completed and
+reported distinct routes for A chunk `(0,0)` and B chunk `(7,0)`, but the first
+scheduled-tick pass stopped with
+`regional service closure cannot progress ... x=5,z=0`; no fixture effects
+were reached. The same run's shutdown path emitted the closure failure and
+unload saves reported `save has no current owner` for several chunks. The
+restart process therefore did not reach the reload barrier. MCA readback was
+`MISSING` with zero decoded records for the expected B tick (trigger `601`),
+which keeps both persistence gates open. This is a production integration
+blocker, not a harness pass.
+
+For the next controlled run, `--explicit-topology` now adds both
+`-Dphoenium.stage3.explicitTopology=true` and
+`-Dphoenium.test.chunkFixtureSupport=true` to the first and restart JVMs. The
+latter makes the production fixture publish its spawn-support and corridor
+domain consistently across reload instead of relying on the narrow pre-spawn
+strip.
+
+The installed runner now records per phase elapsed time, JVM path, `-Xmx2G`,
+optional peak process RSS, and a GC log-pattern count in its manifest. GC
+logging is disabled, and RSS is marked unavailable when `psutil` is absent;
+these fields provide run context only and make no heap-efficiency or scaling
+claim.
+
+The focused oracle suite now compares equal-priority restored negative
+sub-tick orders with pinned `LevelTicks`, checks the `maxTicks=0/1`
+eligibility and selection contract, and binds the service to the original
+`nextTickForContainer` map during a real register-then-unpack sequence. Those
+tests pass against the integrated eligibility/index repair. The oracle and
+regional service both record eligibility reads for both due containers at
+`maxTicks=0` (`[0,10]`) before selecting no callbacks, then preserve the
+selected-container read at `maxTicks=1`. Native `LevelTicks.clearArea` and
+`copyAreaFrom` are exercised through the shared original cohort, and a
+test-only merge-then-split case confirms both real container queues execute
+under the merged owner and the A owner after republishing split routes.
+
 ## Installed fixture extension
 
 The test-only `stage4AcceptanceHarness` task builds
 `build/test-harness/stage4-acceptance-probe.jar`. Its disposable Fabric
-entrypoint drives two explicit regions (A `(70,65,8)`, chunk `(4,0)`; B
-`(85,65,8)`, chunk `(5,0)`) at seed `444444`, view/simulation `8/8`. The fixture
+entrypoint drives two explicit regions (A `(8,65,8)`, chunk `(0,0)`; B
+`(120,65,8)`, chunk `(7,0)`) at seed `444444`, view/simulation `8/8`. The fixture
 uses registered vanilla note blocks and water, records the real scheduled tick
 producer/consumer callbacks, nested block-event enqueue/dispatch, entity
 pair/remove hooks, actual save hooks, and normal stop. Forced chunk tickets keep
@@ -153,6 +198,16 @@ and normal server stop. The preserved evidence bundle is
 `reference-hashes.json` records the frozen production JAR hash
 `017EE8ED612D238894FFA5A1DC019BA8B0E31124B0B5171D08CC0D8993C1B534` and
 the test-only probe hash.
+
+The client fixture now waits on server-observed game tick barriers for setup,
+settling, and save completion, then finalizes only after the client reports its
+TCP disconnect. Tracking changes
+are retained once per tagged A/B entity, while the test-only broadcaster mixin
+records each actual packet class and entity ID in order. Two fresh repetitions
+of the filtered workload produced 68 events each; after normalizing only
+run-relative `now`, `target`, `gameTime`, and `trigger` fields, the comparator
+returned `PASS` with identical digest
+`DD9288451088B2486C8F7F4EFA80090486F6C2DF6D3BEE80C19132CE37C97EFE`.
 
 The client task accepts
 `-Pstage4ViewDistance=5 -Pstage4SimulationDistance=5` for the 5/5 campaign;

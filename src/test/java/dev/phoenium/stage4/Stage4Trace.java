@@ -43,6 +43,8 @@ public final class Stage4Trace {
     private static volatile boolean fullReadinessRequested;
     private static final Set<Integer> changeSeen = new HashSet<>();
     private static final Map<String, BlockPos> BLOCK_PROBES = new LinkedHashMap<>();
+    private static final Map<String, Integer> BLOCK_PROBE_A = new LinkedHashMap<>();
+    private static final Map<String, Integer> BLOCK_PROBE_B = new LinkedHashMap<>();
     private static final Map<String, Integer> BLOCK_PROBE_PACKETS = new LinkedHashMap<>();
     private static final ThreadLocal<BlockBroadcast> ACTIVE_BLOCK_BROADCAST = new ThreadLocal<>();
 
@@ -67,6 +69,8 @@ public final class Stage4Trace {
             fullReadinessRequested = false;
             changeSeen.clear();
             BLOCK_PROBES.clear();
+            BLOCK_PROBE_A.clear();
+            BLOCK_PROBE_B.clear();
             BLOCK_PROBE_PACKETS.clear();
             world = level.dimension().identifier().toString();
             output = Path.of(System.getProperty("phoenium.stage4.tracePath", "run/stage4/acceptance/trace.json"));
@@ -225,20 +229,38 @@ public final class Stage4Trace {
                 broadcast.z(), broadcast.radius(), broadcast.dimension());
     }
 
-    public static void beginBlockProbe(String label, BlockPos pos) {
+    public static void beginBlockProbe(String label, BlockPos pos, int paramA, int paramB) {
         synchronized (LOCK) {
             BLOCK_PROBES.put(label, pos);
+            BLOCK_PROBE_A.put(label, paramA);
+            BLOCK_PROBE_B.put(label, paramB);
             BLOCK_PROBE_PACKETS.put(label, 0);
         }
-        event("block.probe", "label=" + label + " pos=" + pos);
+        event("block.probe", "label=" + label + " pos=" + pos + " a=" + paramA + " b=" + paramB);
     }
 
     public static void checkBlockProbe(String label, boolean expectRecipient) {
         int packets;
-        synchronized (LOCK) { packets = BLOCK_PROBE_PACKETS.getOrDefault(label, 0); }
-        boolean passed = expectRecipient ? packets > 0 : packets == 0;
-        event("block.probe.result", "label=" + label + " packets=" + packets + " expected="
-            + (expectRecipient ? "recipient" : "none") + " pass=" + passed);
+        BlockPos position;
+        int paramA;
+        int paramB;
+        synchronized (LOCK) {
+            packets = BLOCK_PROBE_PACKETS.getOrDefault(label, 0);
+            position = BLOCK_PROBES.get(label);
+            paramA = BLOCK_PROBE_A.getOrDefault(label, Integer.MIN_VALUE);
+            paramB = BLOCK_PROBE_B.getOrDefault(label, Integer.MIN_VALUE);
+        }
+        List<String> events = snapshot();
+        int probeStart = -1;
+        String probeMarker = "block.probe label=" + label + " pos=" + position;
+        for (int index = 0; index < events.size(); index++)
+            if (events.get(index).startsWith(probeMarker)) probeStart = index;
+        String dispatchPrefix = "block.dispatch.result pos=" + position + " a=" + paramA + " b=" + paramB;
+        boolean dispatchAccepted = probeStart >= 0 && events.subList(probeStart + 1, events.size()).stream().anyMatch(item ->
+            item.startsWith(dispatchPrefix) && item.contains("result=true"));
+        boolean passed = dispatchAccepted && (expectRecipient ? packets > 0 : packets == 0);
+        event("block.probe.result", "label=" + label + " packets=" + packets + " dispatchAccepted="
+            + dispatchAccepted + " expected=" + (expectRecipient ? "recipient" : "none") + " pass=" + passed);
     }
 
     /** The deferred fixture event is observable through its real server callback. */
@@ -259,7 +281,7 @@ public final class Stage4Trace {
         int block = 0;
         int fluid = 0;
         for (String item : snapshot()) {
-            if (item.startsWith("tick.block.vanilla pos=BlockPos{x=520, y=65, z=7}")) block++;
+            if (item.startsWith("tick.block.vanilla pos=" + Stage4AcceptanceProbe.REGION_B_FAR_BLOCK)) block++;
             if (item.startsWith("tick.fluid pos=BlockPos{x=521, y=65, z=8}")) fluid++;
         }
         boolean pass = block == 1 && fluid > 0;
@@ -358,11 +380,14 @@ public final class Stage4Trace {
         require(events, "save.exit", missing);
         if (blockRecipientRequested) require(events, "block.recipient.packet", missing);
         if (blockRecipientRequested) {
-            requireContains(events, "block.probe.result", "label=a packets=0 pass=true",
-                "block.probe.a.noRecipient", missing);
-            requireContains(events, "block.probe.result", "label=b packets=", "block.probe.b.result", missing);
+            if (events.stream().noneMatch(item -> item.startsWith("block.probe.result label=a ")
+                    && item.contains("packets=0") && item.contains("dispatchAccepted=true")
+                    && item.contains("expected=none") && item.contains("pass=true")))
+                missing.add("block.probe.a.noRecipient");
             if (events.stream().noneMatch(item -> item.startsWith("block.probe.result label=b ")
-                    && item.contains("expected=recipient pass=true"))) missing.add("block.probe.b.recipient");
+                    && item.contains("packets=") && item.contains("dispatchAccepted=true")
+                    && item.contains("expected=recipient") && item.contains("pass=true")))
+                missing.add("block.probe.b.recipient");
         }
         if (trackingLifecycleRequested) {
             require(events, "tracking.body", missing);

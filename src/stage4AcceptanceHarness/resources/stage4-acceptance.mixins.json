@@ -2,6 +2,6 @@
   "required": true,
   "package": "dev.phoenium.stage4",
   "compatibilityLevel": "JAVA_25",
-  "mixins": ["Stage4LevelTicksMixin", "Stage4ServerLevelMixin", "Stage4SaveMixin", "Stage4ChunkAccessMixin", "Stage4ServerMixin", "Stage4ServerEntityMixin", "Stage4TrackedEntityMixin", "Stage4TrackingPacketMixin", "Stage4PlayerListMixin"],
+  "mixins": ["Stage4LevelTicksMixin", "Stage4ServerLevelMixin", "Stage4SaveMixin", "Stage4ChunkAccessMixin", "Stage4ServerMixin", "Stage4ServerEntityMixin", "Stage4TrackedEntityMixin", "Stage4TrackingPacketMixin", "Stage4PlayerListMixin", "Stage4ConnectionMixin"],
   "injectors": { "defaultRequire": 1 }
 }

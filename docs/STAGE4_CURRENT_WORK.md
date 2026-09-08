@@ -20,8 +20,8 @@ in `Phoenium-stage4-luna` (harness and sole broad/live verification owner). Back
 runtime identity and task/worker token accounting are unavailable. No additional
 Astra, paid API, reset, account change, remote publication or personal client account.
 
-Account-wide Codex usage began at 35% used / 65% remaining; latest native-shutdown
-integration reading is 80% used / 20% remaining. Reserve remained 7% used / 93%
+Account-wide Codex usage began at 35% used / 65% remaining; latest installed-evidence
+review reading is 85% used / 15% remaining. Reserve remained 7% used / 93%
 remaining. Intermediate readings are preserved in this file's Git history; these
 are shared account windows, not task consumption.
 
@@ -89,16 +89,18 @@ are preserved. Luna owns the first missing native holder/ticket/FULL/generation
 prerequisite diagnosis. Do not increase timeouts, cap 5/5 or 8/8, substitute a
 server-only receipt, or silently widen the frozen supported topology.
 
-Main harness is integrated through `08c3f0c`. Luna has coherent later test-only
-commits through `dec8c48`, plus diagnostic `2a6c0f0` / `0f57111`, awaiting reviewed
-integration. They fix protected Mixin-package helper loading, sequence actual
+Main harness now integrates Luna's coherent test-only work through `b558c68`,
+including `dec8c48`, diagnostic `2a6c0f0` / `0f57111` and the first observation
+contract corrections. These fix protected Mixin-package helper loading, sequence actual
 preparation receipts, add landing pads, release temporary force tickets, and replace
 a fabricated NOTE_BLOCK-to-REDSTONE_BLOCK callback with original STONE_BUTTON.tick.
 Lead review requires the following remaining corrections:
 
-- Keep exact typed, current connection/visit chunk receipts and actual client FULL
-  application; an ever-seen packet at Netty HEAD cannot replace current readiness.
-- Match A/B successful event result parameters and occurrence after its probe marker.
+- Keep exact typed, current connection/world/resident-chunk receipts and actual client
+  FULL application. Do not require a fresh packet when an overlapping viewport still
+  contains the original payload. Separate event-observation clearing from chunk lifetime.
+- A/B event parameters, result fields and the shared far-block coordinate are now
+  coherent; their installed positive event/recipient acceptance is still open.
 - Positively observe deferred event eligibility false before migration and true later.
 - Inspect one exact native pending minecraft:stone_button record in its actual MCA
   chunk, saved powered=true state, priority and native relative delay at the snapshot.
