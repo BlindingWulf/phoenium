@@ -53,8 +53,10 @@ public final class RegionalWorldServices implements RegionalStateMigration {
             blockAccess.phoenium$getTickCheck(), true);
         var fluids = new RegionalScheduledTickService<Fluid>(world, directory, dispatcher,
             fluidAccess.phoenium$getTickCheck(), false);
-        blocks.bindOriginalCycle(blockAccess.phoenium$getToRunThisTick(), blockAccess.phoenium$getAlreadyRunThisTick(), blockAccess.phoenium$getToRunThisTickSet());
-        fluids.bindOriginalCycle(fluidAccess.phoenium$getToRunThisTick(), fluidAccess.phoenium$getAlreadyRunThisTick(), fluidAccess.phoenium$getToRunThisTickSet());
+        blocks.bindOriginalCycle(blockAccess.phoenium$getNextTickForContainer(), blockAccess.phoenium$getToRunThisTick(),
+            blockAccess.phoenium$getAlreadyRunThisTick(), blockAccess.phoenium$getToRunThisTickSet());
+        fluids.bindOriginalCycle(fluidAccess.phoenium$getNextTickForContainer(), fluidAccess.phoenium$getToRunThisTick(),
+            fluidAccess.phoenium$getAlreadyRunThisTick(), fluidAccess.phoenium$getToRunThisTickSet());
         blocks.bootstrap(new LinkedHashMap<>(blockAccess.phoenium$getAllContainers()));
         fluids.bootstrap(new LinkedHashMap<>(fluidAccess.phoenium$getAllContainers()));
         var events = new RegionalBlockEventService<BlockEventData>(world, directory, dispatcher, BlockEventData::pos);

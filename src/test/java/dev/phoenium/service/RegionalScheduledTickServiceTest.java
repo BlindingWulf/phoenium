@@ -28,6 +28,91 @@ import org.junit.jupiter.api.Test;
 
 final class RegionalScheduledTickServiceTest {
     @Test
+    void eligibilityProbesEveryDueContainerBeforeZeroLimitInPrimitiveIndexOrder() {
+        var expected = new java.util.ArrayList<Long>();
+        var oracle = new LevelTicks<Object>(key -> { expected.add(key); return true; });
+        var oracleA = new LevelChunkTicks<Object>(); var oracleB = new LevelChunkTicks<Object>();
+        oracle.addContainer(new ChunkPos(0, 0), oracleA); oracle.addContainer(new ChunkPos(10, 0), oracleB);
+        Object type = new Object();
+        oracle.schedule(tick(type, new BlockPos(0, 64, 0), 4, TickPriority.NORMAL, 1));
+        oracle.schedule(tick(type, new BlockPos(160, 64, 0), 4, TickPriority.HIGH, 2));
+
+        Fixture f = new Fixture(); var actual = new java.util.ArrayList<Long>();
+        var service = f.service(key -> { actual.add(key); return true; });
+        f.aTicks.schedule(tick(type, new BlockPos(0, 64, 0), 4, TickPriority.NORMAL, 1));
+        f.bTicks.schedule(tick(type, new BlockPos(160, 64, 0), 4, TickPriority.HIGH, 2));
+        service.scheduled(f.aChunk, f.aTicks); service.scheduled(f.bChunk, f.bTicks);
+
+        oracle.tick(4, 0, (pos, ignored) -> fail("zero-limit oracle callback"));
+        service.tick(4, 0, (pos, ignored) -> fail("zero-limit regional callback"));
+        assertEquals(expected, actual);
+        assertEquals(2, actual.size(), "maxTicks=0 still probes each due container once");
+        assertEquals(2, f.aTicks.count() + f.bTicks.count());
+    }
+
+    @Test
+    void equalCrossContainerSubtickTieMatchesPinnedPriorityQueueOrder() {
+        Object type = new Object();
+        var oracle = new LevelTicks<Object>(key -> true);
+        var oracleA = new LevelChunkTicks<Object>(); var oracleB = new LevelChunkTicks<Object>();
+        oracle.addContainer(new ChunkPos(0, 0), oracleA); oracle.addContainer(new ChunkPos(10, 0), oracleB);
+        Fixture f = new Fixture(); var service = f.service(key -> true);
+        var ticks = List.of(
+            tick(type, new BlockPos(0, 64, 0), 7, TickPriority.NORMAL, 44),
+            tick(type, new BlockPos(160, 64, 0), 7, TickPriority.NORMAL, 44),
+            tick(type, new BlockPos(1, 64, 0), 7, TickPriority.NORMAL, 45),
+            tick(type, new BlockPos(161, 64, 0), 7, TickPriority.NORMAL, 45));
+        for (ScheduledTick<Object> tick : ticks) {
+            oracle.schedule(tick);
+            (ChunkPos.pack(tick.pos()) == f.aChunk ? f.aTicks : f.bTicks).schedule(tick);
+        }
+        service.scheduled(f.aChunk, f.aTicks); service.scheduled(f.bChunk, f.bTicks);
+        var expected = new java.util.ArrayList<BlockPos>(); var actual = new java.util.ArrayList<BlockPos>();
+        oracle.tick(7, 65536, (pos, ignored) -> expected.add(pos.immutable()));
+        service.tick(7, 65536, (pos, ignored) -> actual.add(pos.immutable()));
+        assertEquals(expected, actual);
+    }
+
+    @Test
+    void eligibilityFailureOccursAtTheSamePrimitiveIndexOccurrence() {
+        var expected = new java.util.ArrayList<Long>(); var actual = new java.util.ArrayList<Long>();
+        var oracleFailure = new IllegalArgumentException("oracle eligibility");
+        var regionalFailure = new IllegalArgumentException("regional eligibility");
+        var oracle = new LevelTicks<Object>(key -> {
+            expected.add(key); if (expected.size() == 2) throw oracleFailure; return true;
+        });
+        var oracleA = new LevelChunkTicks<Object>(); var oracleB = new LevelChunkTicks<Object>();
+        oracle.addContainer(new ChunkPos(0, 0), oracleA); oracle.addContainer(new ChunkPos(10, 0), oracleB);
+        Object type = new Object();
+        oracle.schedule(tick(type, new BlockPos(0, 64, 0), 1, TickPriority.NORMAL, 1));
+        oracle.schedule(tick(type, new BlockPos(160, 64, 0), 1, TickPriority.NORMAL, 2));
+        Fixture f = new Fixture(); var service = f.service(key -> {
+            actual.add(key); if (actual.size() == 2) throw regionalFailure; return true;
+        });
+        f.aTicks.schedule(tick(type, new BlockPos(0, 64, 0), 1, TickPriority.NORMAL, 1));
+        f.bTicks.schedule(tick(type, new BlockPos(160, 64, 0), 1, TickPriority.NORMAL, 2));
+        service.scheduled(f.aChunk, f.aTicks); service.scheduled(f.bChunk, f.bTicks);
+
+        assertSame(oracleFailure, assertThrows(IllegalArgumentException.class,
+            () -> oracle.tick(1, 0, (pos, ignored) -> fail())));
+        assertSame(regionalFailure, assertThrows(IllegalArgumentException.class,
+            () -> service.tick(1, 0, (pos, ignored) -> fail())));
+        assertEquals(expected, actual);
+    }
+
+    @Test
+    void registeredContainerCallbackIndexesDirectRestoredSchedulingWithoutLevelTailHook() throws Exception {
+        Fixture f = new Fixture(); var service = f.service(key -> true);
+        bindOriginalCycle(service, f); // installs the canonical LevelTicks onTickAdded updater
+        Object type = new Object();
+        ScheduledTick<Object> restored = tick(type, new BlockPos(0, 64, 0), 2, TickPriority.HIGH, 19);
+        f.aTicks.schedule(restored); // LevelChunkTicks.unpack uses this same unchecked/callback edge
+        var actual = new java.util.ArrayList<BlockPos>();
+        service.tick(2, 65536, (pos, ignored) -> actual.add(pos.immutable()));
+        assertEquals(List.of(restored.pos()), actual);
+    }
+
+    @Test
     void nestedSchedulingOwnsTheDestinationWithoutClaimingItsFutureCallbackHalo() {
         Fixture f = new Fixture(); var service = f.service(key -> true);
         long adjacentChunk = ChunkPos.pack(1, 0);
@@ -137,7 +222,9 @@ final class RegionalScheduledTickServiceTest {
         var pending = LevelTicks.class.getDeclaredField("toRunThisTick"); pending.setAccessible(true);
         var ran = LevelTicks.class.getDeclaredField("alreadyRunThisTick"); ran.setAccessible(true);
         var queries = LevelTicks.class.getDeclaredField("toRunThisTickSet"); queries.setAccessible(true);
-        service.bindOriginalCycle((java.util.Queue<ScheduledTick<Object>>) pending.get(original),
+        var next = LevelTicks.class.getDeclaredField("nextTickForContainer"); next.setAccessible(true);
+        service.bindOriginalCycle((it.unimi.dsi.fastutil.longs.Long2LongMap) next.get(original),
+            (java.util.Queue<ScheduledTick<Object>>) pending.get(original),
             (List<ScheduledTick<Object>>) ran.get(original), (java.util.Set<ScheduledTick<?>>) queries.get(original));
         return original;
     }
