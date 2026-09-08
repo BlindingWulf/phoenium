@@ -10,6 +10,7 @@ import subprocess
 import threading
 import time
 import psutil
+import platform
 from run_stage4_acceptance import copy_server, sha256, capture_thread_dump, snapshot_mca
 
 FROZEN_STAGE4 = "43AAC30184E5C77784D7A56590AA23A87DC86438684EB2B2F2577A197F4DD81E"
@@ -163,9 +164,13 @@ def main():
             label = f"sample-{sample+1}"
             send(f"stage5 measure {label} {args.ticks}"); wait("STAGE5_MEASURED label=" + label, 240)
         send("stage5 dirty"); wait("STAGE5_DIRTY")
+        save_started = time.monotonic()
         send("save-all flush"); wait("Saved the game")
+        report["nativeSaveReceiptSeconds"] = time.monotonic() - save_started
         send("stage5 snapshot final"); wait("STAGE5_SNAPSHOT label=final")
+        stop_started = time.monotonic()
         send("stop"); process.wait(timeout=90)
+        report["nativeStopSeconds"] = time.monotonic() - stop_started
         if process.returncode != 0:
             raise RuntimeError(f"Native stop failed: exit {process.returncode}")
         report["mca"] = snapshot_mca(server / world, evidence / "mca-before-restart")
@@ -188,7 +193,8 @@ def main():
         metrics_done.set(); sampler.join(timeout=2)
         (output / "process-metrics.json").write_text(json.dumps({"sampleIntervalMillis": 100,
             "samples": metrics, "logicalCpuCount": psutil.cpu_count(), "physicalCpuCount": psutil.cpu_count(logical=False),
-            "hostPhysicalMemoryBytes": psutil.virtual_memory().total}, indent=2))
+            "hostPhysicalMemoryBytes": psutil.virtual_memory().total,
+            "platform": platform.platform(), "processor": platform.processor()}, indent=2))
         report.update({"exitCode": process.returncode, "elapsedSeconds": time.monotonic()-started,
             "commands": commands, "serverLog": str(log_path)})
         (output / "report.json").write_text(json.dumps(report, indent=2))

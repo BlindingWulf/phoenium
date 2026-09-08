@@ -40,7 +40,7 @@ INTERNAL = {"tracking.recipient", "tracking.recipient.remove", "tracking.packet"
             "teleport.accept", "trace.barrier"}
 
 
-def load(path: Path):
+def load(path: Path, *, require_native_unpack=True):
     value = json.loads(path.read_text(encoding="utf-8"))
     events = value.get("events")
     if not isinstance(events, list) or not all(isinstance(item, str) for item in events):
@@ -113,7 +113,7 @@ def load(path: Path):
             raise ValueError(f"unclassified trace event: {kind}")
     if not any(item.startswith("tracking.delivered ") for item in tracking):
         raise ValueError("trace lacks actual tracker connection.send evidence")
-    if not any(item.startswith("tick.native.unpack ") for item in clocks):
+    if require_native_unpack and not any(item.startswith("tick.native.unpack ") for item in clocks):
         raise ValueError("trace lacks native fixture unpack evidence")
     behavioral = (["observable:" + item for item in ordered]
         + ["tracking:" + item for item in tracking]

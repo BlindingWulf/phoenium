@@ -13,6 +13,7 @@ abstract class FullRuntimeAcceptanceEntityStorageMixin<T extends EntityAccess> {
     @WrapMethod(method = "addEntity(Lnet/minecraft/world/level/entity/EntityAccess;Z)Z")
     private boolean inserted(T value, boolean loaded, Operation<Boolean> original) {
         boolean result = original.call(value, loaded);
+        if (value instanceof Entity entity) dev.phoenium.chunk.FullRuntimeAcceptanceProbe.acceptedEntity(entity, result);
         if (value instanceof Entity entity && entity.entityTags().stream().anyMatch(tag -> tag.startsWith("phoenium_full_")))
             System.out.println("PHOENIUM_FULL_ENTITY_INSERT entity=" + entity.getUUID() + " runtimeId=" + entity.getId()
                 + " chunk=" + entity.chunkPosition() + " type=" + entity.getType() + " tags=" + entity.entityTags()

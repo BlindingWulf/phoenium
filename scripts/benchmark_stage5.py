@@ -36,6 +36,9 @@ def summarize(root):
         else: row["allocationUnavailable"]=True
         row["gc"]={name:{metric:values[metric]-before["resources"]["gc"][name][metric] for metric in ("count","millis")}
             for name,values in after["resources"]["gc"].items()}
+        row["sharedServiceEntries"]={name:after["sharedServices"][name]-before["sharedServices"][name]
+            for name in ("serialEntries","fullEntries","releases")}
+        row["sharedServiceReservationsAtCut"]=after["sharedServices"]["reservations"]
         current=after["gameplay"];prior=before["gameplay"]
         if isinstance(current,dict):
             claims=current["claims"]-prior["claims"]
@@ -48,7 +51,7 @@ def summarize(root):
                 maximumSimultaneousOriginalBodies=current["maxSimultaneousBodies"],retainedBodyIntervals=len(current["intervals"]))
         samples.append(row)
     process=json.loads((root/"process-metrics.json").read_text())
-    commands=json.loads((root/"report.json").read_text())["commands"]
+    run_report=json.loads((root/"report.json").read_text()); commands=run_report["commands"]
     first=next(item["atSeconds"] for item in commands if item["command"].startswith("stage5 measure sample-1 "))
     last=next(item["atSeconds"] for item in commands if item["command"]=="stage5 dirty")
     measured=[row for row in process["samples"] if first<=row["atSeconds"]<=last]
@@ -56,6 +59,9 @@ def summarize(root):
     return dict(samples=samples,measuredWorkingSetBytes=distribution([r["rssBytes"] for r in measured]),
         processSampleIntervalMillis=process["sampleIntervalMillis"],hostPhysicalMemoryBytes=process["hostPhysicalMemoryBytes"],
         physicalCpuCount=process["physicalCpuCount"],logicalCpuCount=process["logicalCpuCount"],
+        platform=process["platform"],processor=process["processor"],
+        initialTopologyMillis=json.loads((evidence/"warmup-before.json").read_text())["lastTopologyNanos"]/1e6,
+        nativeSaveReceiptSeconds=run_report["nativeSaveReceiptSeconds"],nativeStopSeconds=run_report["nativeStopSeconds"],
         meanTickMillis=statistics.mean(s["tickMillis"]["mean"] for s in samples),
         meanSmeltsPerSecond=statistics.mean(s["smeltsPerSecond"] for s in samples))
 

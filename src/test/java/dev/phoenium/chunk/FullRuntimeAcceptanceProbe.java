@@ -36,7 +36,9 @@ public final class FullRuntimeAcceptanceProbe implements DedicatedServerModIniti
     private static final Set<Long> CHUNKS = Set.of(new ChunkPos(32, 4).pack(), new ChunkPos(33, 4).pack(),
             new ChunkPos(34, 4).pack(), new ChunkPos(35, 4).pack());
     private static final Map<Long, String> SUFFIXES = new LinkedHashMap<>();
-    private static final Map<String, Integer> READERS = new LinkedHashMap<>();
+    private static final Map<String, Integer> READERS = new java.util.concurrent.ConcurrentHashMap<>();
+    private record AcceptedSurvivor(String marker, Class<?> type) { }
+    private static final Map<UUID, AcceptedSurvivor> ORIGINAL_SURVIVORS = new java.util.concurrent.ConcurrentHashMap<>();
     private static final BlockPos SAVED_BED = new BlockPos(2032, 75, -1104);
     private static final Set<UUID> BED_CHECKS = new HashSet<>();
     private static final Set<BlockPos> SHULKER_POSITIONS = Set.of(new BlockPos(527, 200, 72), new BlockPos(528, 200, 72),
@@ -161,8 +163,18 @@ public final class FullRuntimeAcceptanceProbe implements DedicatedServerModIniti
     /** Called after the original reader returns, on its newly constructed object. Never used by discovery. */
     public static void loaded(Entity entity) {
         if (!entity.entityTags().contains(marker(phase()))) return;
-        require(FullFinishingServices.finishing(), "fixture saved reader did not execute inside authoritative FULL");
         String id = entity.entityTags().stream().filter(s -> s.startsWith(marker(phase()) + "_")).findFirst().orElseThrow();
+        if (!FullFinishingServices.finishing()) {
+            // Native entity sections can save/unload an accepted FULL survivor before
+            // becoming accessible. Its later EntityStorage read is a distinct lifecycle,
+            // not a replay of the original FULL continuation or a first-reader witness.
+            require(READERS.getOrDefault(id, 0) == 1
+                    && new AcceptedSurvivor(id, entity.getClass()).equals(ORIGINAL_SURVIVORS.get(entity.getUUID())),
+                    "first or unproven fixture saved reader escaped authoritative FULL: " + id);
+            System.out.println("PHOENIUM_FULL_ENTITY_STORAGE_REREAD phase=" + phase() + " id=" + id
+                    + " entity=" + entity.getUUID() + " originalFullReaderAndInsertion=true");
+            return;
+        }
         require(READERS.merge(id, 1, Integer::sum) == 1, "saved reader replayed: " + id);
         PlayerTeam team = entity.getTeam();
         System.out.println("PHOENIUM_FULL_ENTITY_LOAD_RETURN phase=" + phase() + " id=" + id
@@ -187,6 +199,16 @@ public final class FullRuntimeAcceptanceProbe implements DedicatedServerModIniti
                     && villager.getInventory().getItem(0).getCount() == 7, "rich saved villager fields lost");
             richVillagers++;
         }
+    }
+
+    public static void acceptedEntity(Entity entity, boolean inserted) {
+        if (!inserted || !FullFinishingServices.finishing() || !entity.entityTags().contains(marker(phase()))
+                || !(entity instanceof Frog || entity instanceof Villager)) return;
+        String id = entity.entityTags().stream().filter(s -> s.startsWith(marker(phase()) + "_")).findFirst().orElseThrow();
+        AcceptedSurvivor value = new AcceptedSurvivor(id, entity.getClass());
+        AcceptedSurvivor previous = ORIGINAL_SURVIVORS.putIfAbsent(entity.getUUID(), value);
+        require(previous == null || previous.equals(value), "original FULL survivor changed identity");
+        require(ORIGINAL_SURVIVORS.size() <= 8, "FULL survivor evidence exceeded the fixture bound");
     }
 
     public static void scoreboardAddBefore(Scoreboard scoreboard, String member, PlayerTeam team) {

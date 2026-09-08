@@ -36,6 +36,7 @@ def main():
             if kind=='frozen':command+=['-Pstage4Reference=true','-Pstage4ReferenceProduction=run/stage4/final-artifacts/phoenium-0.2.0-stage2.jar']
         with (root/(name+'.log')).open('w',encoding='utf-8') as log:
             subprocess.run(command,stdout=log,stderr=subprocess.STDOUT,check=True)
+        require(sha256(production)==production_hash and sha256(probe)==probe_hash,'artifact changed during a control run')
         runs[workers if kind=='candidate' else 'frozen']=out
         evidence=out/'evidence'
         if args.mode=='native':
@@ -58,8 +59,8 @@ def main():
                 if args.mode=='native':
                     result=compare(reference,out,workers>1);target.write_text(json.dumps(result,indent=2))
                 else:
-                    command=[sys.executable,'scripts/compare_stage4_trace.py','--reference',str(reference/'evidence/STAGE4-CLIENT-trace.json'),
-                        '--candidate',str(evidence/'STAGE4-CLIENT-trace.json'),'--require-lifecycle','--output',str(target)]
+                    command=[sys.executable,'scripts/compare_stage5_client.py','--reference',str(reference),
+                        '--candidate',str(out),'--output',str(target)]
                     with target.with_suffix('.log').open('w') as log:subprocess.run(command,stdout=log,stderr=subprocess.STDOUT,check=True)
         results.append(dict(name=name,status='PASS',workers=workers,reference=kind=='frozen'))
         (root/'partial.json').write_text(json.dumps(results,indent=2));print('PASS '+name,flush=True)

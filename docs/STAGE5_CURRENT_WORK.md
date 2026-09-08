@@ -196,3 +196,34 @@ pairs visible. The original 8-reader/suffix witnesses exist. This remains FAIL/p
 diagnosis, not a reason to relax the native entity count. Sol High is doing one bounded
 read-only investigation of that exact missing publication while the lead maintains
 the sequential final-control driver `scripts/run_stage5_controls.py`.
+
+Latest closure checkpoint (still IN PROGRESS): production remains 5aeb2fe / 59BB31DC.
+`controls-native-a` passes frozen Stage 4 and candidate 1/2/4: 128 furnaces, 800 actual
+native ticks, 102,400 original callbacks (204,800 HEAD/RETURN events), 512 smelts,
+12 exact observation cuts, three churn rounds, 12 replacements and 24 stale reads.
+All five ordered comparisons and native MCA checks pass, with natural 2/4-worker overlap.
+
+The bounded Sol High investigation of `full-4-e` proved all four native FULL insertions
+succeeded. One section then legitimately unloaded its frog/villager before visibility;
+the probe incorrectly treated their later EntityStorage reread as a first FULL reader
+and threw inside native loading. The probe now permits only a previously proven native
+FULL reader and successful insertion with the same UUID, marker and exact class. It
+keeps every original first-reader, rich-state, conversion, visibility and count gate.
+No production behavior or FULL publication rule changed. Installed retest is next.
+
+`controls-client5-a` frozen and candidate-one native lifecycle/deadline gates pass, but
+the campaign is not accepted: the initial driver used the headless initial-unpack
+requirement against a fresh client fixture, and its probe changed between builds.
+The new client comparison keeps the Stage 4 ordered projection unchanged and requires
+the original native MCA/unpack/deadline validator on the actual restart. It also
+requires identical probe artifacts, exact saved delays/distances, PASS raw traces,
+original tracking/body coverage for both owners, and prelaunch/restart identity.
+The driver now checks artifacts after each run as well as before. Stable 5/5 and 8/8
+campaigns will run without source edits or competing builds.
+
+Latest full Java suite: 834 tests / 88 suites PASS (`reader-lifecycle-build.log`).
+Python comparator negatives: 16 methods PASS (`comparator-negatives-final.log`).
+Actual copied-JAR identity negatives: 18 checks PASS (`identity-final-b/report.json`).
+The benchmark recorder now includes shared-service entries, actual topology latency,
+native save/stop latency, JVM allocation/GC, process CPU/working set and host metadata.
+No benchmark measurements have been accepted yet.

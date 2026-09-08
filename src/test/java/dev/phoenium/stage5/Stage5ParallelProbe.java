@@ -36,6 +36,7 @@ public final class Stage5ParallelProbe implements DedicatedServerModInitializer 
     private static String layout = "distributed";
     private static boolean demandPending;
     private static int churnRounds;
+    private static long lastTopologyNanos;
 
     @Override public void onInitializeServer() {
         if (!Boolean.getBoolean("phoenium.stage5.probe")) return;
@@ -205,8 +206,10 @@ public final class Stage5ParallelProbe implements DedicatedServerModInitializer 
         });
         FullRegionalEnclosure enclosure = field(live, "fullEnclosure", FullRegionalEnclosure.class);
         TopologyCoordinator coordinator = field(enclosure, "coordinator", TopologyCoordinator.class);
+        long topologyStart = System.nanoTime();
         coordinator.request(new TopologyCoordinator.Transition(participants, owners));
         if (!coordinator.advance()) throw new IllegalStateException("native workload topology did not reach quiescence");
+        lastTopologyNanos = System.nanoTime() - topologyStart;
         layout = concentrated ? "concentrated" : "distributed";
         System.out.println("STAGE5_TOPOLOGY layout=" + layout + " generation=" + directory.snapshot().generation().value());
     }
@@ -275,6 +278,8 @@ public final class Stage5ParallelProbe implements DedicatedServerModInitializer 
             report.put("label", label); report.put("layout", layout); report.put("gameTime", level.getGameTime());
             report.put("furnaces", furnaces); report.put("health", Phoenium.liveRuntime().diagnostics());
             report.put("resources", Stage5ResourceMeasurements.snapshot());
+            report.put("sharedServices", FullFinishingServices.forServer(server).measurements());
+            report.put("lastTopologyNanos", lastTopologyNanos);
             if (label.equals("final")) report.put("nativeCallbacks", Stage5FurnaceObservations.snapshot());
             try { report.put("gameplay", Phoenium.liveRuntime().getClass().getMethod("gameplayMeasurements").invoke(Phoenium.liveRuntime())); }
             catch (NoSuchMethodException frozenStage4) { report.put("gameplay", "unavailable in frozen Stage 4"); }
