@@ -237,6 +237,27 @@ public final class FullEntityFacts {
             return List.copyOf(result);
         } finally { candidateMetadata.unlock(); }
     }
+    /** Revalidates the exact retained relation edge graph as well as every routed identity. */
+    public boolean validTrackingPassengers(Candidate vehicle, List<Candidate> retained) {
+        Objects.requireNonNull(vehicle, "vehicle"); Objects.requireNonNull(retained, "retained");
+        FullFinishingServices.requireWorld(vehicle.fact.world, FullFinishingServices.Kind.ENTITY_REGISTRY);
+        candidateMetadata.lock();
+        try {
+            if (!(vehicle.alias instanceof Access access) || access.phoenium$referenceFact() != vehicle.fact
+                    || !Objects.equals(routes.get(vehicle.alias), new Route(vehicle.position, vehicle.routingRevision))) return false;
+            List<Entity> current = orderedDescendants(vehicle.alias,
+                alias -> passengerRelations.getOrDefault(alias, List.of()));
+            if (current.size() != retained.size()) return false;
+            for (int i = 0; i < current.size(); i++) {
+                Candidate expected = retained.get(i); Entity alias = current.get(i);
+                if (alias != expected.alias) return false;
+                if (!(alias instanceof Access passenger) || passenger.phoenium$referenceFact() != expected.fact
+                        || passenger.phoenium$entityIncarnation() != expected.fact.incarnation
+                        || !Objects.equals(routes.get(alias), new Route(expected.position, expected.routingRevision))) return false;
+            }
+            return true;
+        } finally { candidateMetadata.unlock(); }
+    }
     /** Matches Entity.getIndirectPassengers' direct-child then descendant order while rejecting
      * malformed cycles in the retained identity graph. Package-visible for a focused order proof. */
     static <E> List<E> orderedDescendants(E root, Function<E, List<E>> children) {

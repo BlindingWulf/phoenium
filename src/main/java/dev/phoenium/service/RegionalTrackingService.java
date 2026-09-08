@@ -609,9 +609,8 @@ public final class RegionalTrackingService {
         dispatcher.requireCurrentClosure(projection.footprint);
         if (!finishing.entityFacts.validTrackingCandidate(projection.source))
             throw new IllegalStateException("tracking relation source identity changed");
-        for (FullEntityFacts.Candidate passenger : projection.passengers)
-            if (!finishing.entityFacts.validTrackingCandidate(passenger))
-                throw new IllegalStateException("tracking passenger identity changed");
+        if (!finishing.entityFacts.validTrackingPassengers(projection.source, projection.passengers))
+            throw new IllegalStateException("tracking passenger relation changed");
     }
     private static PlayerReceipt requirePlayer(Map<ServerPlayer, PlayerReceipt> players, ServerPlayer player) {
         return Objects.requireNonNull(players.get(player), "player is absent from retained tracking connection cut");
