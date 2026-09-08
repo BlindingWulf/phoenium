@@ -436,6 +436,11 @@ def run_process(server, trace_path=None, drive=False, explicit_topology=False, t
         java = Path(shutil.which("java") or "java")
     properties = ["-Xmx2G", "-Dphoenium.test.diagnostics=true",
                   "-Dphoenium.stage4.candidate=" + str(bool(explicit_topology)).lower()]
+    if not drive:
+        # Restart must enter the native frozen clock before the first ordinary world tick.  The
+        # test-only probe observes this property at SERVER_STARTED, before the saved future
+        # obligation can be consumed; the drive process remains a normal clock process.
+        properties.append("-Dphoenium.stage4.restartFreeze=true")
     if explicit_topology:
         properties.append("-Dphoenium.stage3.explicitTopology=true")
         # The production fixture otherwise publishes only its narrow default
@@ -452,7 +457,9 @@ def run_process(server, trace_path=None, drive=False, explicit_topology=False, t
     lines = []
     reload_effect = None
     reload_barrier = False
+    reload_clock_frozen = False
     runner_error = None
+    startup_frozen = False
     phase_started = time.monotonic()
     peak_rss = None
 
@@ -484,6 +491,7 @@ def run_process(server, trace_path=None, drive=False, explicit_topology=False, t
         def send(value):
             process.stdin.write(value + "\n")
             process.stdin.flush()
+        startup_deadline = time.monotonic() + (180 if not drive else 120)
         while True:
             sample_process(process)
             line = read_line(0.1)
@@ -491,13 +499,15 @@ def run_process(server, trace_path=None, drive=False, explicit_topology=False, t
                 lines.append(line)
                 log.write(line)
                 log.flush()
+                if "STAGE4_TRACE_STARTUP_CLOCK_FROZEN" in line:
+                    startup_frozen = True
                 if "Done (" in line and drive:
                     break
                 if "Done (" in line and not drive:
                     break
             elif process.poll() is not None:
                 break
-            elif not drive:
+            elif time.monotonic() >= startup_deadline:
                 break
         if drive and process.poll() is None:
             try:
@@ -518,26 +528,37 @@ def run_process(server, trace_path=None, drive=False, explicit_topology=False, t
                 dump_path = capture_thread_dump(server, process, "drive-error") if process.poll() is None else None
         elif process.poll() is None:
             try:
-                send("stage4trace reload")
-                reload_started = read_until(process, read_line, log, lines, "STAGE4_TRACE_RELOAD", 30)
-                send("stage4trace await effect 450")
-                reload_barrier = read_until(process, read_line, log, lines,
-                                            "STAGE4_TRACE_BARRIER label=effect", 180)
-                if not reload_barrier and process.poll() is None:
-                    dump_path = capture_thread_dump(server, process, "reload-barrier")
+                if not startup_frozen:
+                    runner_error = "restart did not report startup clock freeze"
+                    dump_path = capture_thread_dump(server, process, "restart-startup-freeze")
+                    send("stop")
                 else:
-                    dump_path = None
-                send("stage4trace verify")
-                effect_observed = read_until(process, read_line, log, lines,
-                                             "STAGE4_TRACE_RELOAD_EFFECT", 30)
-                effect_lines = [line for line in lines if "STAGE4_TRACE_RELOAD_EFFECT" in line]
-                if effect_lines:
-                    reload_effect = "reached=true" in effect_lines[-1]
-                if not reload_started:
-                    reload_effect = False
-                if not effect_observed and process.poll() is None:
-                    dump_path = capture_thread_dump(server, process, "reload-effect")
-                send("stop")
+                    send("stage4trace reload")
+                    reload_started = read_until(process, read_line, log, lines, "STAGE4_TRACE_RELOAD", 30)
+                    reload_clock_frozen = read_until(process, read_line, log, lines,
+                                                     "STAGE4_TRACE_RELOAD_CLOCK_FROZEN", 30)
+                    if not reload_clock_frozen:
+                        runner_error = "reload did not report frozen native clock"
+                        dump_path = capture_thread_dump(server, process, "reload-clock-freeze")
+                    else:
+                        send("stage4trace await effect 450")
+                        reload_barrier = read_until(process, read_line, log, lines,
+                                                    "STAGE4_TRACE_BARRIER label=effect", 180)
+                        if not reload_barrier and process.poll() is None:
+                            dump_path = capture_thread_dump(server, process, "reload-barrier")
+                        else:
+                            dump_path = None
+                        send("stage4trace verify")
+                        effect_observed = read_until(process, read_line, log, lines,
+                                                     "STAGE4_TRACE_RELOAD_EFFECT", 30)
+                        effect_lines = [line for line in lines if "STAGE4_TRACE_RELOAD_EFFECT" in line]
+                        if effect_lines:
+                            reload_effect = "reached=true" in effect_lines[-1]
+                        if not reload_started:
+                            reload_effect = False
+                        if not effect_observed and process.poll() is None:
+                            dump_path = capture_thread_dump(server, process, "reload-effect")
+                    send("stop")
             except OSError:
                 runner_error = "restart command pipe closed"
                 dump_path = capture_thread_dump(server, process, "runner-error") if process.poll() is None else None
@@ -561,6 +582,8 @@ def run_process(server, trace_path=None, drive=False, explicit_topology=False, t
             "threadDump": locals().get("dump_path"),
             "runnerError": runner_error,
             "reloadBarrierObserved": reload_barrier,
+            "reloadStartupFreezeObserved": startup_frozen,
+            "reloadClockFreezeObserved": reload_clock_frozen if not drive else False,
             "reloadEffectReached": reload_effect}
 
 
@@ -655,18 +678,21 @@ def main():
                 "mcaBeforeRestart": str(args.output / "mca-before-restart.json"),
                 "mcaSnapshot": str(mca_snapshot),
                 "mcaSnapshotFiles": snapshot_files,
-                "pendingTickReadback": str(args.output / "pending-tick-readback.json"),
-                "pendingTickGate": pending["status"] == "PRESENT" and pending.get("deadlineMatch", False)
-                                   and pending.get("unique", False)
-                                   and pending.get("exactIdentity", False)
-                                   and pending.get("chunkMatch", False)
-                                   and pending.get("poweredState", False),
-                "reloadEffectGate": second.get("reloadEffectReached", False) is True,
-                "trace": str(trace)}
+                 "pendingTickReadback": str(args.output / "pending-tick-readback.json"),
+                 "pendingTickGate": pending["status"] == "PRESENT" and pending.get("deadlineMatch", False)
+                                    and pending.get("unique", False)
+                                    and pending.get("exactIdentity", False)
+                                    and pending.get("chunkMatch", False)
+                                    and pending.get("poweredState", False),
+                 "restartClockGate": second.get("reloadStartupFreezeObserved", False) is True
+                                     and second.get("reloadClockFreezeObserved", False) is True,
+                 "reloadEffectGate": second.get("reloadEffectReached", False) is True,
+                 "trace": str(trace)}
     (args.output / "acceptance-manifest.json").write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
     print(json.dumps(manifest, indent=2))
     return 0 if (first["exitCode"] == 0 and second["exitCode"] == 0
-                 and manifest["pendingTickGate"] and manifest["reloadEffectGate"]) else 1
+                 and manifest["pendingTickGate"] and manifest["restartClockGate"]
+                 and manifest["reloadEffectGate"]) else 1
 
 
 if __name__ == "__main__":
