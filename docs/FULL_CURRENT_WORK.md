@@ -90,6 +90,14 @@ result substitutes for installed and actual persisted-disk proof.
 
 ## Latest installed/client evidence
 
+Root `0aca15d` prevents duplicate deliveries from acknowledging a still-active winner's
+claim-bound inputs/services. A reentrant delivery from the actual original postLoad suffix
+failed as BarrierFailure before the fix (`duplicate-exit-32-before.log/.xml`), then passed.
+Finishing6 + services12 green (`duplicate-exit-33`); custody12 + light protocol16 + light
+adversarial28 green (`duplicate-exit-34`). Both XML selections are archived separately.
+The original callback and independent publication each execute once; active service/lease
+and input receipt survive the duplicate. This production change postdates the JAR below.
+
 **Current intermediate PASS:** Luna `run/full-production-integration/transform-20260907-193547`
 and `run/full-authoritative/live-1788827773577` use production SHA256
 `9CB35ECA0F3AD2FBF4B9B427E6116BC8CB139F08D5A4B605B6C39D399DFA1C5B`.
