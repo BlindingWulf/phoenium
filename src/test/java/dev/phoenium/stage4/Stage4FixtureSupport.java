@@ -41,6 +41,16 @@ public final class Stage4FixtureSupport {
         return new ExplicitLiveTopologyFixture.Plan(plan.a(), plan.b(), plan.anchor(), Map.copyOf(routes));
     }
 
+    /** The serial oracle still needs explicit movement authority. Only its initial owner
+     * assignment differs; the finite native support keys and all gameplay inputs are shared. */
+    public static ExplicitLiveTopologyFixture.Plan serial(ExplicitLiveTopologyFixture.Plan plan) {
+        RegionRoute owner = plan.routes().get(plan.anchor());
+        if (owner == null || !owner.region().equals(plan.a())) throw new IllegalStateException("missing serial anchor");
+        Map<RoutingKey, RegionRoute> routes = new LinkedHashMap<>();
+        plan.routes().keySet().forEach(key -> routes.put(key, owner));
+        return new ExplicitLiveTopologyFixture.Plan(plan.a(), plan.b(), plan.anchor(), Map.copyOf(routes));
+    }
+
     private static void add(Map<RoutingKey, RegionRoute> routes, RoutingKey center, int radius, RegionRoute owner) {
         for (int x = center.x() - radius; x <= center.x() + radius; x++)
             for (int z = center.z() - radius; z <= center.z() + radius; z++)

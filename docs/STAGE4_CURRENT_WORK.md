@@ -4,6 +4,32 @@ Stage 4 remains **PARTIAL**, Stage 5 OFF, one gameplay worker, parallel gameplay
 This section supersedes the historical worker assignments and next-step instructions below.
 The session began from clean `2b3080b`; all newer work is preserved. No agents are running.
 
+- Latest committed entity-storage boundary is `2929375`. Full suite then passed with the
+  initial recipient refinement/drain-cause changes: **808 tests / 83 suites**, zero failures,
+  errors/skips (`run/stage4/finishing-full-suite-entity-storage-results.json`).
+- `finish-candidate-5-m` installed `A7E6AEFF6E638A655DA8E5043B1E21CF34C4355F0B74F78D42014686817DD6FC`.
+  It passed native persisted entity loading and restart client login, fixing L's first failure.
+  The bounded enclosure observer proved the first premature merge: an entity at A added the
+  distant player using the maximum range of ANY registered entity. Entity tick recipients now
+  use that exact source/passenger type range. `finish-candidate-5-n` then proved the x=12 split
+  seam cuts a native block-entity halo centered at x=11. The test coordinator split is now midway
+  between original B (7) and far B (32), with the whole finite far column assigned B.
+- N's restart exposed `ChunkMap.move` selecting an unrelated tracker at (36,13) from a player
+  at (7,0), again using maximum-all-types range. Add/move tracker selection now uses each
+  published source/passenger effective range, retaining all previously seen recipients.
+  Service drains now preserve the first unrelated queued owner failure as cause instead of
+  reporting only `cannot progress`; the negative regression passes. Shared teleport preparation
+  includes both old and destination native recipient halos before original movement.
+- Frozen `finish-reference-5-f` had zero packet admissions and 248 movement footprint rejections:
+  `FrozenRegionAuthority` requires explicit keys, so the world-default serial layout cannot
+  serve this movement workload. The reference now uses the SAME finite explicit startup domain,
+  assigned entirely to A before publication. Candidate retains A/B. This is probe-only fixture
+  assignment through the original startup plan, never frozen-byte mutation or direct live publish.
+  Reference F exited normally after its three-minute missing movement-receipt timeout; it is
+  invalid acceptance evidence. Next reference ID is `finish-reference-5-g`.
+- Next candidate: `finish-candidate-5-o`; rebuild and use its exact hash, not any prior artifact.
+  No final acceptance campaign is yet PASS; all listed final gates below remain required.
+
 - Recovery parent `d433305`; current entity-storage integration is under installed validation
   in `finish-candidate-5-m`. Focused checks pass: 65 tests / 22 suites, zero failures/errors
   (`run/stage4/entity-management-focused-results.json`). New native target and hidden-storage
@@ -112,7 +138,7 @@ The session began from clean `2b3080b`; all newer work is preserved. No agents a
 Resume candidate command (use a fresh run ID/directory for each attempt):
 
 ```powershell
-.\gradlew.bat runStage4ClientGameTest -Pstage4RunId=finish-candidate-5-m -Pstage4ServerDirectory=run/stage4/finish-candidate-5-m -Pstage4EvidenceDir=run/stage4/finish-candidate-5-m/evidence -Pstage4ViewDistance=5 -Pstage4SimulationDistance=5 -Pstage4PacketTrace=true --no-daemon --console=plain
+.\gradlew.bat runStage4ClientGameTest -Pstage4RunId=finish-candidate-5-o -Pstage4ServerDirectory=run/stage4/finish-candidate-5-o -Pstage4EvidenceDir=run/stage4/finish-candidate-5-o/evidence -Pstage4ViewDistance=5 -Pstage4SimulationDistance=5 -Pstage4PacketTrace=true --no-daemon --console=plain
 ```
 
 Remaining: candidate connected failures; trustworthy frozen selection negative/positive checks;

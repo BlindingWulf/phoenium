@@ -26,7 +26,6 @@ import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.server.network.ServerGamePacketListenerImpl;
 import net.minecraft.world.entity.Entity;
-import net.minecraft.core.registries.BuiltInRegistries;
 
 /**
  * Owner-partitioned index of the actual ChunkMap tracker objects. The source map remains the
@@ -40,7 +39,6 @@ public final class RegionalTrackingService {
     private final RegionDirectory directory;
     private final RegionalServiceDispatcher dispatcher;
     private final ObjectOwnershipRegistry objects;
-    private final int maximumTrackingRange;
     private final RegionalTrackingPartitions<Entry> index = new RegionalTrackingPartitions<>();
     private final ThreadLocal<AddPlan> activeAdd = new ThreadLocal<>();
     private final ThreadLocal<RemovePlan> activeRemove = new ThreadLocal<>();
@@ -57,9 +55,6 @@ public final class RegionalTrackingService {
         this.directory = Objects.requireNonNull(directory);
         this.dispatcher = Objects.requireNonNull(dispatcher);
         this.objects = Objects.requireNonNull(objects);
-        int maximum = 0;
-        for (var type : BuiltInRegistries.ENTITY_TYPE) maximum = Math.max(maximum, type.clientTrackingRange() * 16);
-        this.maximumTrackingRange = level.getServer().getScaledTrackingDistance(maximum);
     }
 
     /** Bootstrap/reconciliation reads only the named tracker registry's identity/order. */
@@ -331,7 +326,7 @@ public final class RegionalTrackingService {
             synchronized (this) { currentEntries = index.values(); }
             for (Entry entry : currentEntries) {
                 refreshCandidate(entry);
-                if (candidateChunk(entry.key, maximumTrackingRange, sourceKey)) {
+                if (candidateChunk(entry.key, publishedRange(entry.candidate).effectiveRange, sourceKey)) {
                     selectedTrackers.add(entry.tracker);
                     footprint.addAll(publishedRange(entry.candidate).footprint);
                 }
@@ -485,7 +480,7 @@ public final class RegionalTrackingService {
                     }
                 }
             } else if (entry.seenConnections.contains(moving.session.listener())
-                    || candidateChunk(entry.key, maximumTrackingRange, moving.key)) {
+                    || candidateChunk(entry.key, publishedRange(entry.candidate).effectiveRange, moving.key)) {
                 selectedTrackers.add(entry.tracker); footprint.addAll(publishedRange(entry.candidate).footprint);
             }
         }

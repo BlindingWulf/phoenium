@@ -179,8 +179,15 @@ public final class RegionalServiceDispatcher implements RegionalServiceExecutor 
             }
             if (handle.state == Outcome.ABANDONED)
                 throw new IllegalStateException("regional service was abandoned without acknowledgement: " + handle);
+            var failed = scheduler.failureBarrier().record().orElse(null);
+            if (failed != null)
+                throw new IllegalStateException("regional service stopped by prior owner failure: " + handle, failed.cause());
             if (scheduler.deliveryAttempts() == before && !boundaryAdvancer.getAsBoolean())
-                throw new IllegalStateException("regional service cannot progress at current topology boundary: " + handle);
+                throw new IllegalStateException("regional service cannot progress at current topology boundary: " + handle
+                    + " key=" + pending.get(handle.operationId()).key() + " runtimes="
+                    + runtimes.values().stream().map(runtime -> runtime.id() + ":" + runtime.lifecycle()
+                        + ":transition=" + runtime.transitioning() + ":inbox=" + runtime.inboxSize()
+                        + ":leased=" + runtime.leases().hasActiveLease()).toList());
         }
     }
 

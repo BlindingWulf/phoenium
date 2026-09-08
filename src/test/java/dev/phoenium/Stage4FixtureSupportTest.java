@@ -29,6 +29,11 @@ class Stage4FixtureSupportTest {
                 for (int z = 12 - radius; z <= 12 + radius; z++)
                     assertNotNull(extended.routes().get(new RoutingKey(world, x, z)));
             assertFalse(extended.routes().containsKey(new RoutingKey(world, 1000, 1000)));
+            var serial = Stage4FixtureSupport.serial(extended);
+            assertEquals(extended.routes().keySet(), serial.routes().keySet());
+            assertEquals(java.util.Set.of(original.a()), serial.routes().values().stream()
+                .map(route -> route.region()).collect(java.util.stream.Collectors.toSet()));
+            assertTrue(extended.routes().values().stream().anyMatch(route -> route.region().equals(original.b())));
         }
     }
 }

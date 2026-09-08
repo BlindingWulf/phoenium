@@ -121,6 +121,7 @@ public final class Stage4TeleportTopology {
         private final Map<ChunkPos, java.util.concurrent.CompletableFuture<ChunkResult<net.minecraft.world.level.chunk.ChunkAccess>>>
             requests = new LinkedHashMap<>();
         private int readinessPolls;
+        private int completionPolls;
 
         private Prepared(ServerLevel level, ServerPlayer player, String objectId, long incarnation,
                          RoutingKey destination, int radius, CorePrepared core) {
@@ -185,6 +186,10 @@ public final class Stage4TeleportTopology {
         public boolean observeCompletion() {
             if (!clientFullConfirmed || completed) return completed;
             requireBoundary(level);
+            if (++completionPolls == 40 || completionPolls == 200) {
+                Stage4AcceptanceProbe.inspectDemand(level, destination.x(), destination.z());
+                System.out.println("STAGE4_TRACE_TELEPORT_COMPLETION_PENDING " + Phoenium.liveRuntime().diagnostics().toLogLine());
+            }
             if (player.chunkPosition().x() != destination.x() || player.chunkPosition().z() != destination.z()
                     || !player.getLastSectionPos().equals(SectionPos.of(player))) return false;
             var map = level.getChunkSource().chunkMap;
@@ -353,7 +358,8 @@ public final class Stage4TeleportTopology {
 
     static Set<RoutingKey> closure(RoutingKey source, RoutingKey destination, int radius) {
         Set<RoutingKey> keys = new TreeSet<>();
-        keys.add(source);
+        for (int dx = -radius; dx <= radius; dx++) for (int dz = -radius; dz <= radius; dz++)
+            keys.add(key(source.world(), Math.addExact(source.x(), dx), Math.addExact(source.z(), dz)));
         for (int dx = -radius; dx <= radius; dx++) for (int dz = -radius; dz <= radius; dz++)
             keys.add(key(destination.world(), Math.addExact(destination.x(), dx), Math.addExact(destination.z(), dz)));
         return Set.copyOf(keys);

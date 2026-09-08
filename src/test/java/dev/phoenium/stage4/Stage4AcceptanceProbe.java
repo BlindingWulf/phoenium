@@ -577,7 +577,7 @@ public final class Stage4AcceptanceProbe implements DedicatedServerModInitialize
      * accepts arbitrary chunk coordinates so the same diagnostic can be reused for A/B/far
      * points without encoding a fixture-specific assumption in the probe.
      */
-    private static void inspectDemand(ServerLevel level, int chunkX, int chunkZ) {
+    static void inspectDemand(ServerLevel level, int chunkX, int chunkZ) {
         var map = level.getChunkSource().chunkMap;
         var distance = map.getDistanceManager();
         var player = level.players().stream().findFirst().orElse(null);
@@ -757,13 +757,13 @@ public final class Stage4AcceptanceProbe implements DedicatedServerModInitialize
             RegionId a = new RegionId(world, "stage3-fixture-a");
             RegionId b = new RegionId(world, "stage3-fixture-b");
             Map<RoutingKey, RegionId> split = new LinkedHashMap<>();
-            // The post-merge split uses a wide, separated B interior so the far tracking/tick
-            // cohort stays distinct at view/simulation 8/8, with a full one-chunk halo.
+            // Split midway between the old B center (7) and far center (32). The previous
+            // x=12 seam cut the native block-entity halo at x=11, forcing immediate enclosure.
+            // Keep the entire finite far column together, including deferred support at z=12.
             for (var entry : directory.snapshot().routes().entrySet()) {
                 RoutingKey key = entry.getKey();
                 if (!key.world().equals(world)) { split.put(key, entry.getValue().region()); continue; }
-                boolean inB = key.x() >= 12 && key.x() <= 54
-                    && key.z() >= -22 && key.z() <= 22;
+                boolean inB = key.x() > ((REGION_B.getX() >> 4) + (REGION_B_FAR.getX() >> 4)) / 2;
                 split.put(key, inB ? b : a);
             }
             TopologyCoordinator coordinator = privateField(enclosure, "coordinator", TopologyCoordinator.class);

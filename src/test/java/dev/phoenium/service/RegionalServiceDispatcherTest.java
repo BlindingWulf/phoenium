@@ -52,6 +52,21 @@ final class RegionalServiceDispatcherTest {
     }
 
     @Test
+    void earlierOwnerFailureIsPreservedWhenAnotherServiceIsWaitingToExecute() {
+        Fixture f = new Fixture(); var dispatcher = f.dispatcher();
+        var first = new IllegalStateException("earlier original callback");
+        dispatcher.submit(f.aKey, RegionalServiceKind.CHUNK_GAMEPLAY, execution -> { throw first; });
+        var waiting = dispatcher.submit(f.bKey, RegionalServiceKind.TRACKING_UPDATE,
+            execution -> fail("later callback must remain fenced"));
+        var failure = assertThrows(IllegalStateException.class, () -> dispatcher.drain(waiting));
+        assertSame(first, failure.getCause());
+        assertSame(first, f.barrier.record().orElseThrow().cause());
+        assertFalse(waiting.completed());
+        assertFalse(f.a.leases().hasActiveLease());
+        assertFalse(f.b.leases().hasActiveLease());
+    }
+
+    @Test
     void unresolvedClosureStillFailsWithoutRunningTheCallbackOrPublishingRoutes() {
         Fixture f = new Fixture();
         var dispatcher = f.dispatcher();

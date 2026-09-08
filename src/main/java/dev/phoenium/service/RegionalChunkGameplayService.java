@@ -282,10 +282,14 @@ public final class RegionalChunkGameplayService {
             footprint.addAll(planner.requiredClosure(Set.of(key), 1));
             passengers.forEach(passenger -> footprint.addAll(planner.requiredClosure(Set.of(key(passenger)), 1)));
             if (vehicle.vehicle() != null) footprint.addAll(planner.requiredClosure(Set.of(key(vehicle.vehicle())), 1));
+            int entityRange = source.fact().type().clientTrackingRange() * 16;
+            for (var passenger : passengers)
+                entityRange = Math.max(entityRange, passenger.fact().type().clientTrackingRange() * 16);
+            int entityRecipientRadius = (level.getServer().getScaledTrackingDistance(entityRange) + 15) / 16 + 2;
             PlayerCut currentPlayers = capturePlayers();
             for (PlayerProjection player : currentPlayers.players)
-                if (Math.abs((long) player.key.x() - key.x()) <= recipientRadius
-                        && Math.abs((long) player.key.z() - key.z()) <= recipientRadius) footprint.add(player.key);
+                if (Math.abs((long) player.key.x() - key.x()) <= entityRecipientRadius
+                        && Math.abs((long) player.key.z() - key.z()) <= entityRecipientRadius) footprint.add(player.key);
             dispatcher.ensureClosure(Set.copyOf(footprint));
             dispatcher.executeAndDrain(key, RegionalServiceKind.CHUNK_GAMEPLAY, ignored -> {
                 requireEntity(source, key);

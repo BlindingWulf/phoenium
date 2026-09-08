@@ -25,6 +25,7 @@ abstract class Stage4FixtureSupportMixin {
         int simulation = Integer.getInteger("phoenium.stage4.simulationDistance", 8);
         var original = callback.getReturnValue();
         var extended = Stage4FixtureSupport.extend(original, initialSpawn, view, simulation);
+        if (!Boolean.getBoolean("phoenium.stage4.candidate")) extended = Stage4FixtureSupport.serial(extended);
         callback.setReturnValue(extended);
         System.out.println("STAGE4_FIXTURE_SUPPORT world=" + world.value() + " view=" + view
             + " simulation=" + simulation + " radius=" + Stage4FixtureSupport.supportRadius(view, simulation)

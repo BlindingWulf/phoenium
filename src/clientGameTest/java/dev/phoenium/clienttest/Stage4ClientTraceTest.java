@@ -55,11 +55,11 @@ public final class Stage4ClientTraceTest implements FabricClientGameTest {
                 System.getProperty("os.name", "").toLowerCase().contains("win") ? "java.exe" : "java").toString(),
                 "-Xmx2G", "-Dphoenium.test.diagnostics=true",
                 "-Dphoenium.stage4.candidate=" + candidate,
-                // The frozen oracle uses its original world-default serial layout. Candidate
-                // topology/migration is a separate gate; both modes execute identical native
-                // gameplay inputs, real client travel, save/reload and clock-step commands.
+                // Both modes need the frozen movement contract's explicit finite authority.
+                // The shared startup probe assigns the reference domain to A; candidate keeps
+                // A/B and its separate migration gate. Native gameplay and client inputs match.
                 "-Dphoenium.full.authoritative=true",
-                "-Dphoenium.stage3.explicitTopology=" + candidate,
+                "-Dphoenium.stage3.explicitTopology=true",
                 "-Dphoenium.test.chunkFixtureSupport=true",
                 "-Dphoenium.stage3.chunkTrace=true",
                 "-Dphoenium.stage4.viewDistance=" + System.getProperty("phoenium.stage4.viewDistance", "8"),
