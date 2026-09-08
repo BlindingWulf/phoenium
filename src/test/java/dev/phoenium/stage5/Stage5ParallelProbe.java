@@ -37,11 +37,25 @@ public final class Stage5ParallelProbe implements DedicatedServerModInitializer 
     private static boolean demandPending;
     private static int churnRounds;
     private static long lastTopologyNanos;
+    private static net.minecraft.world.level.chunk.LevelChunk retainedClientFar;
 
     @Override public void onInitializeServer() {
         if (!Boolean.getBoolean("phoenium.stage5.probe")) return;
         CommandRegistrationCallback.EVENT.register((dispatcher, registries, environment) -> dispatcher.register(
             Commands.literal("stage5")
+                .then(Commands.literal("retain-client-far").executes(context -> {
+                    var level = context.getSource().getLevel();
+                    retainedClientFar = level.getChunkSource().getChunkNow(32, 0);
+                    if (retainedClientFar == null) throw new IllegalStateException("client far retention has no original FULL chunk");
+                    // Radius zero is native level 33: retain FULL data, not simulation.
+                    level.getChunkSource().addTicketWithRadius(net.minecraft.server.level.TicketType.PLAYER_LOADING,
+                        new net.minecraft.world.level.ChunkPos(32, 0), 0);
+                    System.out.println("STAGE5_CLIENT_FAR_RETAINED nativeLoadingOnlyRadius=0"); return 1;
+                }))
+                .then(Commands.literal("check-client-far").executes(context -> {
+                    requireClientFarNonTicking(context.getSource().getLevel());
+                    System.out.println("STAGE5_CLIENT_FAR_NONTICKING originalFull=true nativeBlockEligibility=false"); return 1;
+                }))
                 .then(Commands.literal("demand").executes(context -> { demand(context.getSource().getLevel()); return 1; }))
                 .then(Commands.literal("dirty").executes(context -> { dirty(context.getSource().getLevel()); return 1; }))
                 .then(Commands.literal("churn").executes(context -> { churn(context.getSource().getLevel()); return 1; }))
@@ -108,7 +122,24 @@ public final class Stage5ParallelProbe implements DedicatedServerModInitializer 
                 if (chunk == null) throw new IllegalStateException("native dirty input has no current chunk");
                 chunk.markUnsaved();
             });
+        if (retainedClientFar != null) {
+            requireClientFarNonTicking(level);
+            for (int[] point : new int[][]{{7, 0}, {32, 0}, {32, 12}})
+                dispatcher.executeAndDrain(new RoutingKey(new WorldId("minecraft:overworld"), point[0], point[1]),
+                    RegionalServiceKind.CHUNK_GAMEPLAY, ignored -> {
+                        var chunk = level.getChunkSource().getChunkNow(point[0], point[1]);
+                        if (chunk == null) throw new IllegalStateException("client final native save input is missing");
+                        chunk.markUnsaved();
+                    });
+            System.out.println("STAGE5_CLIENT_NATIVE_SAVE_CUT gameTime=" + level.getGameTime() + " originalChunks=4");
+        }
         System.out.println("STAGE5_DIRTY nativeChunks=" + CENTERS.length);
+    }
+
+    private static void requireClientFarNonTicking(ServerLevel level) {
+        if (retainedClientFar == null || level.getChunkSource().getChunkNow(32, 0) != retainedClientFar
+                || level.shouldTickBlocksAt(new BlockPos(520, 65, 8)))
+            throw new IllegalStateException("client far input lost its exact non-ticking native FULL retention");
     }
 
     private static void churn(ServerLevel level) {

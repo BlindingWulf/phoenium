@@ -258,3 +258,18 @@ and requires exact per-UUID clocks as well as unchanged ordered packet compariso
 Unrestricted native client runs remain separate lifecycle evidence. Full acceptance,
 benchmarks and production omit this fixture clock. `-Pstage5TrackerClock=false`
 retains the unrestricted client path. New benchmark/client source remains pending build.
+
+`controls-client5-d` PASS all four controls and all five exact comparisons: 132 ordered
+observable events, native tracker calls A=515/B=187/far=323, saved delay186. Natural
+body/claim overlap before and after restart passes in workers2/4. Probe B0DEF774.
+`controls-client8-a` frozen/candidate1/2 pass exact138events; candidate4 all native
+client/MCA/deadline/overlap gates pass but comparator rejects final far-fluid saved
+delays -6 versus4. Its far chunk was serialized at a different legitimate native
+unload time while the client moved to the deferred viewport. This remains FAIL.
+The next client input retains that original far chunk with native PLAYER_LOADING
+radius0 (FULL level33, no simulation), checks actual non-ticking eligibility after
+the viewport move, and marks all four fixture chunks unsaved at the same final
+frozen cut. Original fluid callbacks remain deferred; exact saved arrays stay strict.
+No production change, no deadline normalization, no early/fabricated FULL readiness.
+The sequential remaining-campaign runner stopped immediately on that comparator
+failure; unrestricted final clients, later lifecycle repeats and benchmarks are pending.

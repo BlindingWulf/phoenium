@@ -218,6 +218,10 @@ public final class Stage4ClientTraceTest implements FabricClientGameTest {
             awaitLog(context, server, log, "STAGE4_TRACE_CLOCK_STEP_REACHED label=far-effects", START_TIMEOUT_TICKS);
             command(server, "stage4trace check-far");
             awaitLog(context, server, log, "STAGE4_TRACE_FAR_CHECK pass=true", START_TIMEOUT_TICKS);
+            if (stage5) {
+                command(server, "stage5 retain-client-far");
+                awaitLog(context, server, log, "STAGE5_CLIENT_FAR_RETAINED", START_TIMEOUT_TICKS);
+            }
             topologyTeleport(context, server, log, 520, 65, 200, new int[][] {{32, 12}});
             command(server, "stage4trace barrier deferred-ready");
             awaitLog(context, server, log, "STAGE4_TRACE_BARRIER label=deferred-ready", START_TIMEOUT_TICKS);
@@ -235,6 +239,10 @@ public final class Stage4ClientTraceTest implements FabricClientGameTest {
             command(server, "stage4trace check-deferred-eligible");
             awaitLog(context, server, log,
                 "STAGE4_TRACE_DEFERRED_ELIGIBILITY phase=after-viewport", START_TIMEOUT_TICKS);
+            if (stage5) {
+                command(server, "stage5 check-client-far");
+                awaitLog(context, server, log, "STAGE5_CLIENT_FAR_NONTICKING", START_TIMEOUT_TICKS);
+            }
             // Leave the original now+700 block obligation pending while allowing the migrated
             // far fluid/block (now+320) to execute under B after the split.  This is an exact
             // native frozen-clock step rather than a wall-clock/game-time deadline race.
