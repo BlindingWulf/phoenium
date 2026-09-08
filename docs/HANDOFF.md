@@ -1,11 +1,9 @@
 # Handoff
 
-Active 2026-09-07 FULL integration resume: [FULL_CURRENT_WORK.md](FULL_CURRENT_WORK.md).
-The interrupted implementation is preserved in a local recovery commit and is being
-integrated and verified. Historical 419-test evidence is not a current acceptance
-result. Integrated FULL and Stage 3/R-CHUNK-01 remain PARTIAL. The current note and
-expanded user assignment supersede historical contributor-only stopping points;
-the correctness contracts and accepted approvals remain in force.
+Active 2026-09-08 regional services: [STAGE4_CURRENT_WORK.md](STAGE4_CURRENT_WORK.md).
+[Stage 3 is frozen](STAGE3_CLOSURE_REPORT.md) within its declared supported scope.
+Historical PARTIAL statements and open assignments below are superseded by that
+closure and the Stage 4 assignment; their evidence and accepted contracts remain.
 
 > **BEFORE ANY LIVE MINECRAFT TEST: read [docs/AGENT_MINECRAFT_TESTING.md](AGENT_MINECRAFT_TESTING.md).**
 >

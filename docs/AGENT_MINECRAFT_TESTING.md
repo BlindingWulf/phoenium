@@ -1,5 +1,12 @@
 # Agent Minecraft testing
 
+Current scope amendment (2026-09-08): the user has authorized Stage 4 regional
+services, connected chunk-lifecycle repairs, and installed save/reload/shutdown
+tests. The historical Stage 3-only scope restrictions and PARTIAL status below
+are superseded by [the freeze](STAGE3_CLOSURE_REPORT.md) and
+[current Stage 4 work](STAGE4_CURRENT_WORK.md). Account-free testing, pinned
+versions, disposable worlds, one gameplay worker, and parallel OFF still apply.
+
 This document is the permanent, account-free workflow for testing Project
 Phoenium with Minecraft and Fabric. Read it before running any live Minecraft
 test. It is intentionally command-line-first so an agent can reproduce the

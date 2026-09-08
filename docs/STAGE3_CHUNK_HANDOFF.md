@@ -1,5 +1,10 @@
 # Stage 3 chunk-only handoff
 
+Current status: [STAGE3_SERIAL_CORRECTNESS_FROZEN](STAGE3_CLOSURE_REPORT.md).
+Active development: [Stage 4 regional services](STAGE4_CURRENT_WORK.md).
+Open assignments and PARTIAL statements below are historical and superseded;
+the closure's supported scope and deferred lifecycle boundaries remain explicit.
+
 ## Active FULL integration — 2026-09-07
 
 The expanded FULL assignment is in progress. Read [FULL_CURRENT_WORK.md](FULL_CURRENT_WORK.md)

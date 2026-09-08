@@ -1,5 +1,8 @@
 # Current FULL / Stage 3 closure — 2026-09-08
 
+Stage 4 development now continues in [STAGE4_CURRENT_WORK.md](STAGE4_CURRENT_WORK.md).
+The record below is the preserved Stage 3 freeze, not the active assignment.
+
 **STAGE3_SERIAL_CORRECTNESS_FROZEN**. The latest user closure request is satisfied.
 Stage 3 expansion has stopped. No Stage 4 code, remote push, public release or PASS tag.
 

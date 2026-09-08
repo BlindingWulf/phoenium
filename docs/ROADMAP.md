@@ -77,14 +77,17 @@ Exit criteria: dedicated Fabric server boot; server-only metadata; exactly-once 
 
 Add owner-routed entity movement, player/packet ingress, chunk work completion adapter, and the C2ME boundary contract. No direct C2ME integration starts before the contract is written and tested.
 
-**Status: in progress.** The deterministic object/player epoch ledger, owner gateway,
-outer-lease regression, real entity/player reconciliation, and immutable async completion
-contract are implemented. Exact live packet admission hooks, a real async chunk producer,
-and dedicated-server Stage 3 evidence remain before acceptance.
+**Status: STAGE3_SERIAL_CORRECTNESS_FROZEN**, within the supported scope and explicit
+deferrals in [STAGE3_CLOSURE_REPORT.md](STAGE3_CLOSURE_REPORT.md). That report supersedes
+older partial contributor evidence and preserves the executable serial reference.
 
 Exit criteria: transfer, packet, stale-epoch, chunk completion, and dedicated boot tests pass in serial-first mode.
 
 ## Stage 4 — regional world services
+
+**Status: in development; acceptance PARTIAL.** See the fixed
+[implementation and acceptance map](STAGE4_CURRENT_WORK.md). One gameplay worker;
+parallel gameplay remains OFF.
 
 Add per-region scheduled ticks, block events, entity tracking, save cut, shutdown coordination, and explicitly classified global services.
 

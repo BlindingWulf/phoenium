@@ -1,5 +1,9 @@
 # Test matrix
 
+Current acceptance: [Stage 3 freeze](STAGE3_CLOSURE_REPORT.md) and
+[Stage 4 implementation/acceptance map](STAGE4_CURRENT_WORK.md). Earlier PARTIAL
+records below are preserved historical evidence, not current Stage 3 status.
+
 ## Evidence recorded in Stage 0
 
 | ID | Check | Result | What the result means |
