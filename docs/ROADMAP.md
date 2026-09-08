@@ -96,7 +96,10 @@ Exit criteria: save/shutdown stress; no raw unowned queue execution; migration p
 
 ## Stage 5 — bounded parallelism
 
-Enable more than one worker only after serial oracle comparisons pass.
+**Status: in progress.** Execution policy, comparison contract and evidence are in
+[STAGE5_CURRENT_WORK.md](STAGE5_CURRENT_WORK.md). The Stage 4 freeze remains the
+immutable one-worker reference. Development may enable bounded workers for race
+tests; acceptance requires the serial oracle comparisons and installed evidence.
 
 Exit criteria: deterministic serial-versus-parallel harness results, zero ownership violations, and benchmark evidence for Phoenium itself.
 

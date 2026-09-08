@@ -432,6 +432,7 @@ tasks.register('stage4AcceptanceHarness', Jar) {
     from(sourceSets.test.output.classesDirs) {
         include 'dev/phoenium/stage4/**'
         include 'dev/phoenium/stage4probe/**'
+        include 'dev/phoenium/stage5probe/**'
         exclude 'dev/phoenium/stage4probe/Stage4TeleportTopologyTest*.class'
     }
     from('src/stage4AcceptanceHarness/resources')

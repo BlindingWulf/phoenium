@@ -1,6 +1,7 @@
 # Handoff
 
-Active 2026-09-08 regional services: [STAGE4_CURRENT_WORK.md](STAGE4_CURRENT_WORK.md).
+Active 2026-09-08 bounded parallelism: [STAGE5_CURRENT_WORK.md](STAGE5_CURRENT_WORK.md).
+Stage 4 is frozen at [STAGE4_CLOSURE_REPORT.md](STAGE4_CLOSURE_REPORT.md).
 [Stage 3 is frozen](STAGE3_CLOSURE_REPORT.md) within its declared supported scope.
 Historical PARTIAL statements and open assignments below are superseded by that
 closure and the Stage 4 assignment; their evidence and accepted contracts remain.

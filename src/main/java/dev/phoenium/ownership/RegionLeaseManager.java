@@ -12,15 +12,68 @@ public final class RegionLeaseManager {
     private final RegionId region;
     private long nextEpoch;
     private RegionLease active;
+    private boolean admissionClosed;
+    private Selection selection;
     private final ReentrantLock metadataGate = new ReentrantLock();
     private final Set<ReleaseNotice> releaseNotices = new LinkedHashSet<>();
 
     public RegionLeaseManager(RegionId region) { this.region = region; }
     public RegionLease acquire() {
         metadataGate.lock(); try {
-            if (active != null) throw new IllegalStateException("region already has a mutation lease: " + region);
+            if (admissionClosed) throw new IllegalStateException("region claim admission is closed: " + region);
+            if (active != null || selection != null) throw new IllegalStateException("region already has a mutation lease or selected delivery: " + region);
             active = new RegionLease(this, region, new LeaseEpoch(++nextEpoch));
             return active;
+        } finally { metadataGate.unlock(); }
+    }
+    /** Selection and topology closure share this metadata gate. An unavailable peer is
+     * skipped, never waited on; a selected claim stays live through its original body. */
+    public java.util.Optional<RegionLease> tryAcquire() {
+        metadataGate.lock(); try {
+            if (admissionClosed || active != null || selection != null) return java.util.Optional.empty();
+            active = new RegionLease(this, region, new LeaseEpoch(++nextEpoch));
+            return java.util.Optional.of(active);
+        } finally { metadataGate.unlock(); }
+    }
+    /** A delivery reservation fences topology without granting gameplay authority. In
+     * particular, terminal packet rejection must never acquire a mutation lease. */
+    public java.util.Optional<Selection> trySelect() {
+        metadataGate.lock(); try {
+            if (admissionClosed || active != null || selection != null) return java.util.Optional.empty();
+            selection = new Selection(); return java.util.Optional.of(selection);
+        } finally { metadataGate.unlock(); }
+    }
+    public final class Selection implements AutoCloseable {
+        private boolean closed;
+        private Selection() { }
+        public RegionLease promote() {
+            metadataGate.lock(); try {
+                if (closed || selection != this || active != null) throw new IllegalStateException("expired regional delivery selection");
+                active = new RegionLease(RegionLeaseManager.this, region, new LeaseEpoch(++nextEpoch));
+                selection = null; closed = true; return active;
+            } finally { metadataGate.unlock(); }
+        }
+        @Override public void close() {
+            List<ReleaseNotice> notices;
+            metadataGate.lock(); try {
+                if (closed) return;
+                if (selection != this) throw new IllegalStateException("foreign regional delivery selection");
+                selection = null; closed = true;
+                notices = List.copyOf(releaseNotices); releaseNotices.clear();
+            } finally { metadataGate.unlock(); }
+            notifyReleased(notices);
+        }
+    }
+    public boolean hasClaimOrSelection() {
+        metadataGate.lock(); try { return active != null || selection != null; } finally { metadataGate.unlock(); }
+    }
+    public void closeAdmission() {
+        metadataGate.lock(); try { admissionClosed = true; } finally { metadataGate.unlock(); }
+    }
+    public void openAdmission() {
+        metadataGate.lock(); try {
+            if (active != null || selection != null) throw new IllegalStateException("region reopened with a live claim or selection: " + region);
+            admissionClosed = false;
         } finally { metadataGate.unlock(); }
     }
     void requireCurrent(RegionLease lease) {
@@ -49,7 +102,7 @@ public final class RegionLeaseManager {
     public AutoCloseable whenReleased(Runnable notification) {
         Objects.requireNonNull(notification);
         metadataGate.lock(); try {
-            if (active != null) {
+            if (active != null || selection != null) {
                 var notice = new ReleaseNotice(notification);
                 releaseNotices.add(notice);
                 return notice;

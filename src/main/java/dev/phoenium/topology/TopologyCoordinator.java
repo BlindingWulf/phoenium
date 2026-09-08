@@ -104,7 +104,7 @@ public final class TopologyCoordinator {
             if (migrationFailed) return false;
             if (migrationInProgress) return false;
             transition = pending != null ? pending : pendingConvergence.proposal();
-            if (transition.participants().stream().map(this::runtime).anyMatch(runtime -> runtime.leases().hasActiveLease())) return false;
+            if (transition.participants().stream().map(this::runtime).anyMatch(runtime -> runtime.leases().hasClaimOrSelection())) return false;
             TopologyGeneration next = directory.snapshot().generation().next();
             Map<RoutingKey, RegionRoute> routes = transition.owners().entrySet().stream().collect(java.util.stream.Collectors.toUnmodifiableMap(
                 Map.Entry::getKey, entry -> new RegionRoute(entry.getValue(), next,
@@ -128,7 +128,7 @@ public final class TopologyCoordinator {
 
         metadataGate.lock();
         try {
-            if (transition.participants().stream().map(this::runtime).anyMatch(runtime -> runtime.leases().hasActiveLease()))
+            if (transition.participants().stream().map(this::runtime).anyMatch(runtime -> runtime.leases().hasClaimOrSelection()))
                 throw new IllegalStateException("participant lease appeared while topology admission was closed");
             proposed = directory.publishForTransition(proposed.generation(), proposed.routes(), proposed.worldDefaults());
         } catch (Throwable failure) {

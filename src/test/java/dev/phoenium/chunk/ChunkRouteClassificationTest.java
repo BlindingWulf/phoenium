@@ -125,8 +125,10 @@ class ChunkRouteClassificationTest {
     }
 
     @Test void topologyCannotWakeBeforeExistingLeaseDrains() {
-        Fixture f = new Fixture(); f.propose(); f.pump.publishAndDeliver(f.pending);
+        Fixture f = new Fixture();
         try (var lease = f.owner.leases().acquire()) {
+            f.propose(); f.pump.publishAndDeliver(f.pending);
+            assertThrows(IllegalStateException.class, () -> f.owner.leases().acquire());
             assertFalse(f.topology.advance()); f.pump.retryTopology();
             assertEquals(1, f.pump.parkedCount()); assertTrue(f.inbox.isEmpty());
         }

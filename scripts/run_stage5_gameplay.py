@@ -1,0 +1,153 @@
+"""Bounded installed native furnace campaign. New disposable output required each run."""
+import argparse
+import hashlib
+import json
+import os
+from pathlib import Path
+import queue
+import shutil
+import subprocess
+import threading
+import time
+from run_stage4_acceptance import copy_server, sha256, capture_thread_dump, snapshot_mca
+
+FROZEN_STAGE4 = "43AAC30184E5C77784D7A56590AA23A87DC86438684EB2B2F2577A197F4DD81E"
+FROZEN_STAGE3 = "017EE8ED612D238894FFA5A1DC019BA8B0E31124B0B5171D08CC0D8993C1B534"
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--production", type=Path, default=Path("build/libs/phoenium-0.2.0-stage2.jar"))
+    parser.add_argument("--prepared", type=Path, default=Path("build/stage3-client-server"))
+    parser.add_argument("--probe", type=Path, default=Path("build/test-harness/stage4-acceptance-probe.jar"))
+    parser.add_argument("--workers", type=int, choices=[1, 2, 4, 8], default=2)
+    parser.add_argument("--reference", action="store_true")
+    parser.add_argument("--layout", choices=["distributed", "concentrated"], default="distributed")
+    parser.add_argument("--furnaces-per-region", type=int, choices=range(1, 257), default=64)
+    parser.add_argument("--warmup", type=int, default=40)
+    parser.add_argument("--samples", type=int, choices=range(1, 11), default=2)
+    parser.add_argument("--ticks", type=int, default=80)
+    parser.add_argument("--distance", type=int, choices=[5, 8], default=5)
+    parser.add_argument("--trace", action="store_true")
+    parser.add_argument("--port", type=int, default=25625)
+    args = parser.parse_args()
+    output = args.output.resolve()
+    if output.exists():
+        raise SystemExit(f"Refusing existing output: {output}")
+    expected = sha256(args.production)
+    if args.reference:
+        if expected != FROZEN_STAGE4 or args.workers != 1:
+            raise SystemExit("Stage 5 reference requires exact frozen Stage 4 and one worker")
+    elif expected in (FROZEN_STAGE3, FROZEN_STAGE4):
+        raise SystemExit("Candidate mode rejects either immutable reference artifact")
+    output.mkdir(parents=True)
+    server = output / "server"
+    copy_server(args.prepared, server, args.production, args.probe, [])
+    # Stage 4's copy helper preserves the prepared registration probe. This separate
+    # workload uses only its explicitly selected probe and pinned Fabric libraries.
+    for jar in (server / "mods").glob("full-registration*.jar"):
+        jar.unlink()
+    evidence = output / "evidence"
+    evidence.mkdir()
+    world = "stage5-disposable"
+    (server / "eula.txt").write_text("eula=true\n")
+    (server / "server.properties").write_text("\n".join([
+        f"level-name={world}", "level-seed=444444", "level-type=minecraft:flat",
+        "online-mode=false", "enforce-secure-profile=false", "server-ip=127.0.0.1",
+        f"server-port={args.port}", "enable-rcon=false", "max-players=1", "difficulty=peaceful",
+        "gamemode=creative", f"view-distance={args.distance}", f"simulation-distance={args.distance}",
+        "spawn-protection=0", "sync-chunk-writes=true", "pause-when-empty-seconds=-1", ""]))
+    installed = server / "mods/phoenium-0.2.0-stage2.jar"
+    identity = {"expectedSha256": expected, "installedSha256": sha256(installed),
+                "referenceStage": 4 if args.reference else None,
+                "sourceHead": subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip(),
+                "sourceStatus": subprocess.check_output(["git", "status", "--porcelain"], text=True),
+                "probeSha256": sha256(args.probe), "workers": args.workers}
+    identity["pass"] = identity["expectedSha256"] == identity["installedSha256"]
+    (evidence / "production-identity-first.json").write_text(json.dumps(identity, indent=2))
+    if not identity["pass"]:
+        raise SystemExit("Installed production identity mismatch")
+    java = shutil.which("java")
+    command = [java, "-Xmx2G", "-Xlog:gc*:file=gc.log:time,uptime,level,tags",
+        "-Dphoenium.full.authoritative=true", "-Dphoenium.test.diagnostics=true",
+        "-Dphoenium.stage3.explicitTopology=true", "-Dphoenium.test.chunkFixtureSupport=true",
+        "-Dphoenium.stage3.chunkTrace=true", "-Dphoenium.stage4.candidate=true",
+        "-Dphoenium.stage4.viewDistance=" + str(args.distance),
+        "-Dphoenium.stage4.simulationDistance=" + str(args.distance),
+        "-Dphoenium.stage5.probe=true", "-Dphoenium.stage5.evidence=" + str(evidence),
+        "-Dphoenium.gameplay.workers=" + str(args.workers),
+        "-Dphoenium.gameplay.trace=" + str(args.trace).lower(),
+        "-jar", "fabric-server-launch.jar", "nogui"]
+    (output / "launch.json").write_text(json.dumps(command, indent=2))
+    lines = queue.Queue()
+    seen = []
+    started = time.monotonic()
+    process = subprocess.Popen(command, cwd=server, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT, text=True, encoding="utf-8", errors="replace", bufsize=1,
+        creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+    log_path = output / "server.log"
+    def reader():
+        with log_path.open("w", encoding="utf-8") as log:
+            for line in process.stdout:
+                log.write(line); log.flush(); lines.put(line)
+    threading.Thread(target=reader, daemon=True).start()
+    commands = []
+    def send(value):
+        commands.append({"atSeconds": time.monotonic()-started, "command": value})
+        process.stdin.write(value + "\n"); process.stdin.flush()
+    def wait(token, timeout=120):
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            try:
+                line = lines.get(timeout=0.2); seen.append(line)
+                if token in line:
+                    print(line.strip(), flush=True); return
+                if "state=FAILED" in line or "scheduler=FAILED" in line or "Encountered an unexpected exception" in line:
+                    raise RuntimeError("Current artifact server failure: " + line.strip())
+            except queue.Empty:
+                if process.poll() is not None:
+                    raise RuntimeError(f"Server exited {process.returncode} before {token}")
+        raise TimeoutError("Missing real server receipt: " + token)
+    report = {"status": "FAIL", "identity": identity, "command": command}
+    try:
+        wait("Done (")
+        send("stage5 demand"); wait("STAGE5_READY")
+        send("stage5 prepare " + str(args.furnaces_per_region)); wait("STAGE5_PREPARED")
+        send("stage5 " + ("split" if args.layout == "distributed" else "merge")); wait("STAGE5_TOPOLOGY")
+        send(f"stage5 measure warmup {args.warmup}"); wait("STAGE5_MEASURED label=warmup", 240)
+        for sample in range(args.samples):
+            label = f"sample-{sample+1}"
+            send(f"stage5 measure {label} {args.ticks}"); wait("STAGE5_MEASURED label=" + label, 240)
+        send("save-all flush"); wait("Saved the game")
+        send("stage5 snapshot final"); wait("STAGE5_SNAPSHOT label=final")
+        send("stop"); process.wait(timeout=90)
+        if process.returncode != 0:
+            raise RuntimeError(f"Native stop failed: exit {process.returncode}")
+        report["mca"] = snapshot_mca(server / world, evidence / "mca-before-restart")
+        final = json.loads((evidence / "final.json").read_text())
+        if final["health"]["barrierTripped"] or final["health"]["ownershipViolations"]:
+            raise RuntimeError("Native health rejected final snapshot")
+        if len(final["furnaces"]) != 4 * args.furnaces_per_region:
+            raise RuntimeError("Incomplete native furnace coverage")
+        report["status"] = "PASS_NATIVE_WORKLOAD_ONLY"
+    except Exception as failure:
+        report["failure"] = repr(failure)
+        if process.poll() is None:
+            report["threadDump"] = capture_thread_dump(server, process, "stage5-failure")
+            try:
+                send("stop"); process.wait(timeout=60)
+            except Exception:
+                process.kill(); process.wait(timeout=10)
+                report["forcedTermination"] = True
+    finally:
+        report.update({"exitCode": process.returncode, "elapsedSeconds": time.monotonic()-started,
+            "commands": commands, "serverLog": str(log_path)})
+        (output / "report.json").write_text(json.dumps(report, indent=2))
+        print(json.dumps({key: report.get(key) for key in ("status", "failure", "exitCode", "elapsedSeconds")}), flush=True)
+    if report["status"] != "PASS_NATIVE_WORKLOAD_ONLY":
+        raise SystemExit(1)
+
+
+if __name__ == "__main__":
+    main()

@@ -160,7 +160,8 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
         }
         for (ServerLevel level : server.getAllLevels()) requireChunkWorld(level);
         if (regions.isEmpty()) throw new IllegalStateException("no server levels available for Stage 2 live binding");
-        scheduler = new RegionScheduler(runtimes, directory, barrier, this, this);
+        scheduler = new RegionScheduler(runtimes, directory, barrier, this, this,
+            dev.phoenium.scheduler.GameplayWorkerConfig.fromProperties());
         gateway = new OwnerGateway(directory, runtimes, scheduler);
         objectGateway = new ObjectOwnerGateway(objects, directory, gateway, this::acknowledgeRejectedPacket);
         chunkGateway = new ChunkCompletionGateway(directory, gateway, chunkCustody);
@@ -521,7 +522,8 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
 
     public LiveDiagnostics diagnostics() {
         int activeLeases = runtimes.values().stream().mapToInt(runtime -> runtime.leases().hasActiveLease() ? 1 : 0).sum();
-        return new LiveDiagnostics(state, scheduler == null ? null : scheduler.lifecycle(), lifecycleStarts, lifecycleStops, 1, false,
+        return new LiveDiagnostics(state, scheduler == null ? null : scheduler.lifecycle(), lifecycleStarts, lifecycleStops,
+            scheduler == null ? 1 : scheduler.workerCount(), scheduler != null && scheduler.workerCount() > 1,
             regions.size(), activeLeases, intercepts, dispatches, executions, duplicates, unexpectedBypasses, fallbacks,
             ownershipViolations, unleasedExecutions, hardBarriers, barrier.tripped(), objects.liveCount(), objects.playerCount(),
             packetAdmissions, packetExecutions, packetStaleReroutes, packetRejections, packetRecursions,
@@ -608,6 +610,9 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
     }
     public boolean regionalTrackingAdd(net.minecraft.server.level.ChunkMap map, Entity entity, Runnable original) {
         return regionalServiceBound() && regionalServices.addTrackingEntity(map, entity, original);
+    }
+    public dev.phoenium.scheduler.GameplayMeasurements.Snapshot gameplayMeasurements() {
+        return scheduler == null ? null : scheduler.measurements().snapshot();
     }
     public Boolean regionalEntityStorageSave(ServerLevel level, long chunk,
             java.util.function.Supplier<java.util.List<Entity>> selection, java.util.function.BooleanSupplier original) {

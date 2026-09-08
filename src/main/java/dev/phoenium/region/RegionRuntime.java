@@ -16,9 +16,9 @@ public final class RegionRuntime {
     private final java.util.concurrent.ConcurrentLinkedDeque<RegionTaskEnvelope> transitionMailbox = new java.util.concurrent.ConcurrentLinkedDeque<>();
     private final List<String> operationLog = new ArrayList<>();
     private final boolean recordOperationLog;
-    private RegionLifecycle lifecycle = RegionLifecycle.TRANSIENT;
-    private OwnerEpoch ownerEpoch;
-    private boolean transitioning;
+    private volatile RegionLifecycle lifecycle = RegionLifecycle.TRANSIENT;
+    private volatile OwnerEpoch ownerEpoch;
+    private volatile boolean transitioning;
     private long accumulator;
     private long tickCount;
 
@@ -41,8 +41,14 @@ public final class RegionRuntime {
         if (!lifecycle.permits(next)) throw new IllegalStateException("illegal lifecycle transition " + lifecycle + " -> " + next + " for " + id);
         lifecycle = next;
     }
-    public void beginTransition() { if (lifecycle == RegionLifecycle.DEAD) throw new IllegalStateException("dead region transition"); transitioning = true; }
-    public void finishTransition(OwnerEpoch nextEpoch) { ownerEpoch = nextEpoch; transitioning = false; }
+    public void beginTransition() {
+        if (lifecycle == RegionLifecycle.DEAD) throw new IllegalStateException("dead region transition");
+        leases.closeAdmission(); transitioning = true;
+    }
+    public void finishTransition(OwnerEpoch nextEpoch) {
+        ownerEpoch = nextEpoch; transitioning = false; leases.openAdmission();
+    }
+    public Optional<RegionTaskEnvelope> peek() { return Optional.ofNullable(inbox.peekFirst()); }
     public void enqueue(RegionTaskEnvelope envelope) { inbox.addLast(envelope); }
     public void requeueFirst(RegionTaskEnvelope envelope) { inbox.addFirst(envelope); }
     public void defer(RegionTaskEnvelope envelope) { transitionMailbox.addLast(envelope); }

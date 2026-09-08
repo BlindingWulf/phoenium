@@ -1,5 +1,10 @@
 # Agent Minecraft testing
 
+Stage 5 amendment (2026-09-08): bounded parallel development and acceptance are
+authorized under [STAGE5_CURRENT_WORK.md](STAGE5_CURRENT_WORK.md). This supersedes
+the historical one-worker/parallel-OFF restrictions below, preserving pinned
+versions, account-free clients, immutable freezes and disposable local worlds.
+
 Current scope amendment (2026-09-08): the user has authorized Stage 4 regional
 services, connected chunk-lifecycle repairs, and installed save/reload/shutdown
 tests. The historical Stage 3-only scope restrictions and PARTIAL status below

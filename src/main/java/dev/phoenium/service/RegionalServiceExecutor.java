@@ -7,4 +7,5 @@ import dev.phoenium.task.TaskPayload;
 @FunctionalInterface
 public interface RegionalServiceExecutor {
     void execute(RegionRuntime runtime, TaskPayload.RegionalService operation) throws Exception;
+    default boolean locallyAdmitted(TaskPayload.RegionalService operation) { return false; }
 }

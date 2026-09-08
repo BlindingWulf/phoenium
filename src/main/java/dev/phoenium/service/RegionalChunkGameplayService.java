@@ -336,20 +336,70 @@ public final class RegionalChunkGameplayService {
         if (!pending.isEmpty()) { ticking.addAll(pending); pending.clear(); }
         Iterator<TickingBlockEntity> iterator = ticking.iterator();
         boolean runs = level.tickRateManager().runsNormally();
+        List<LocalTicker> local = new ArrayList<>();
         while (iterator.hasNext()) {
             TickingBlockEntity ticker = iterator.next();
             BlockEntityReceipt receipt = blockEntities.get(ticker);
             if (receipt == null) throw new IllegalStateException("unpublished block entity ticker in original list");
             int[] outcome = {0};
             dispatcher.ensureClosure(receipt.key, 1);
+            LocalBlockEntityTick.Selection[] selected = {null};
+            dispatcher.executeAndDrain(receipt.key, RegionalServiceKind.BLOCK_ENTITY_TICK, ignored -> {
+                dispatcher.requireCurrentClosure(receipt.key, 1);
+                if (runs) selected[0] = LocalBlockEntityTick.select(ticker);
+            });
+            if (selected[0] != null) {
+                local.add(new LocalTicker(receipt, selected[0]));
+                if (local.size() >= dispatcher.workerConfig().workers() * dispatcher.workerConfig().callbacksPerRegion())
+                    flushLocalTickers(local, runs);
+                continue;
+            }
+            flushLocalTickers(local, runs);
             dispatcher.executeAndDrain(receipt.key, RegionalServiceKind.BLOCK_ENTITY_TICK, ignored -> {
                 dispatcher.requireCurrentClosure(receipt.key, 1);
                 if (tickTicker(ticker, runs, receipt.position, level::shouldTickBlocksAt)) outcome[0] = 1;
             });
             if (outcome[0] == 1) { iterator.remove(); blockEntities.remove(ticker); }
         }
+        flushLocalTickers(local, runs);
         access.phoenium$tickingBlockEntities(false);
     }
+
+    private void flushLocalTickers(List<LocalTicker> selected, boolean runs) {
+        if (selected.isEmpty()) return;
+        // Preflights may have converged owners. Resolve the final grouping after all
+        // such publications; preserve the original iterator order inside every owner.
+        var groups = new LinkedHashMap<dev.phoenium.region.RegionId, ArrayDeque<LocalTicker>>();
+        for (LocalTicker ticker : selected) groups.computeIfAbsent(
+            directory.resolve(ticker.receipt.key).orElseThrow().region(), ignored -> new ArrayDeque<>()).addLast(ticker);
+        while (!groups.isEmpty()) {
+            List<RegionalServiceDispatcher.LocalWork> cohort = new ArrayList<>();
+            var iterator = groups.entrySet().iterator();
+            while (iterator.hasNext() && cohort.size() < dispatcher.workerConfig().workers()) {
+                var group = iterator.next(); List<LocalTicker> bodies = new ArrayList<>();
+                while (!group.getValue().isEmpty() && bodies.size() < dispatcher.workerConfig().callbacksPerRegion())
+                    bodies.add(group.getValue().removeFirst());
+                if (group.getValue().isEmpty()) iterator.remove();
+                cohort.add(new RegionalServiceDispatcher.LocalWork(bodies.getFirst().receipt.key, ignored -> {
+                    for (LocalTicker retained : bodies) {
+                        dispatcher.requireHealthyLocalContinuation();
+                        dispatcher.requireCurrentClosure(retained.receipt.key, 1);
+                        retained.selection.requireCurrent();
+                        TickingBlockEntity original = retained.selection.ticker();
+                        if (original.isRemoved()) throw new IllegalStateException("local ticker retired after selection");
+                        if (!original.getPos().equals(retained.receipt.position)) throw new IllegalStateException("local ticker moved after selection");
+                        if (runs && level.shouldTickBlocksAt(retained.receipt.position)) {
+                            String identity = world.value() + ":" + retained.receipt.position.toShortString() + ":" + level.getGameTime();
+                            dispatcher.measurements().originalBody(identity, original::tick);
+                        }
+                    }
+                }));
+            }
+            dispatcher.executeLocalBatch(cohort);
+        }
+        selected.clear();
+    }
+    private record LocalTicker(BlockEntityReceipt receipt, LocalBlockEntityTick.Selection selection) { }
 
     static boolean tickTicker(TickingBlockEntity ticker, boolean runs, BlockPos retainedPosition,
             java.util.function.Predicate<BlockPos> shouldTick) {

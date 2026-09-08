@@ -4,7 +4,7 @@
   "version": "1.0.0",
   "name": "Disposable Stage 4 regional service trace",
   "environment": "server",
-  "entrypoints": { "server": ["dev.phoenium.stage4probe.Stage4AcceptanceProbe"] },
+  "entrypoints": { "server": ["dev.phoenium.stage4probe.Stage4AcceptanceProbe", "dev.phoenium.stage5probe.Stage5ParallelProbe"] },
   "mixins": ["stage4-acceptance.mixins.json"],
   "depends": { "phoenium": "*", "fabric-command-api-v2": "*" }
 }

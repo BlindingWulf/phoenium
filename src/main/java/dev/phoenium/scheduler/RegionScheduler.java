@@ -17,16 +17,21 @@ import dev.phoenium.service.RegionalServiceExecutor;
 import java.util.Comparator;
 import java.util.Map;
 
-/** One explicit worker, deterministic region order, and no alternative execution route. */
+/** Ordered native phases and explicitly admitted bounded regional cohorts share the
+ * same typed delivery, current lease and failure barrier. */
 public final class RegionScheduler {
     private final Map<dev.phoenium.region.RegionId, RegionRuntime> runtimes;
     private final RegionDirectory directory;
     private final FailureBarrier barrier;
     private final LiveTickExecutor liveTickExecutor;
     private final ObjectOperationExecutor objectOperationExecutor;
-    private SchedulerLifecycle lifecycle = SchedulerLifecycle.RUNNING;
-    private long advances;
-    private long deliveryAttempts;
+    private volatile SchedulerLifecycle lifecycle = SchedulerLifecycle.RUNNING;
+    private final java.util.concurrent.atomic.AtomicLong advances = new java.util.concurrent.atomic.AtomicLong();
+    private final java.util.concurrent.atomic.AtomicLong deliveryAttempts = new java.util.concurrent.atomic.AtomicLong();
+    private final GameplayWorkerConfig config;
+    private final BoundedGameplayWorkers workers;
+    private final GameplayMeasurements measurements = new GameplayMeasurements();
+    private final java.util.concurrent.locks.ReentrantLock admission = new java.util.concurrent.locks.ReentrantLock();
     private ObjectOwnerGateway objectDeliveryValidator;
     private OwnerGateway locationValidator;
     private RegionalServiceExecutor regionalServiceExecutor;
@@ -39,16 +44,27 @@ public final class RegionScheduler {
     }
     public RegionScheduler(Map<dev.phoenium.region.RegionId, RegionRuntime> runtimes, RegionDirectory directory, FailureBarrier barrier,
                            LiveTickExecutor liveTickExecutor, ObjectOperationExecutor objectOperationExecutor) {
+        this(runtimes, directory, barrier, liveTickExecutor, objectOperationExecutor, GameplayWorkerConfig.serial());
+    }
+    public RegionScheduler(Map<dev.phoenium.region.RegionId, RegionRuntime> runtimes, RegionDirectory directory, FailureBarrier barrier,
+                           LiveTickExecutor liveTickExecutor, ObjectOperationExecutor objectOperationExecutor, GameplayWorkerConfig config) {
         this.runtimes = runtimes; this.directory = directory; this.barrier = barrier; this.liveTickExecutor = liveTickExecutor;
         this.objectOperationExecutor = objectOperationExecutor;
+        this.config = java.util.Objects.requireNonNull(config);
+        this.workers = new BoundedGameplayWorkers(config.workers());
     }
-    public int workerCount() { return 1; }
+    public int workerCount() { return config.workers(); }
+    public GameplayWorkerConfig workerConfig() { return config; }
+    public int queuedWorkerTasks() { return workers.queued(); }
+    public int liveWorkerThreads() { return workers.threads(); }
+    public boolean batchActive() { return workers.batchActive(); }
+    public GameplayMeasurements measurements() { return measurements; }
     public SchedulerLifecycle lifecycle() { return lifecycle; }
     public boolean acceptsSimulationWork() { return lifecycle.acceptsSimulationWork() && !barrier.tripped(); }
     public FailureBarrier failureBarrier() { return barrier; }
-    public long advances() { return advances; }
+    public long advances() { return advances.get(); }
     /** Includes stale drops and reroutes as well as successful bodies; used only for event-loop progress. */
-    public long deliveryAttempts() { return deliveryAttempts; }
+    public long deliveryAttempts() { return deliveryAttempts.get(); }
     /** Installed by the typed object gateway; validation remains at envelope delivery, never ingress only. */
     public void installObjectDeliveryValidator(ObjectOwnerGateway validator) { this.objectDeliveryValidator = validator; }
     /** Installed by the generic owner gateway; every location task revalidates at execution, never ingress only. */
@@ -59,14 +75,28 @@ public final class RegionScheduler {
             throw new IllegalStateException("regional service executor already installed");
         regionalServiceExecutor = executor;
     }
-    public void quiesce() { if (lifecycle == SchedulerLifecycle.RUNNING) lifecycle = SchedulerLifecycle.QUIESCING; }
+    public void quiesce() {
+        admission.lock(); try { if (lifecycle == SchedulerLifecycle.RUNNING) lifecycle = SchedulerLifecycle.QUIESCING; }
+        finally { admission.unlock(); }
+    }
+    /** Metadata-only ingress cut. Stop cannot acknowledge queues while an accepted
+     * producer still owns its final insertion. No original callback runs under this gate. */
+    public <T> T admit(java.util.function.Supplier<T> metadataInsertion, T stoppedResult) {
+        admission.lock(); try { return acceptsSimulationWork() ? metadataInsertion.get() : stoppedResult; }
+        finally { admission.unlock(); }
+    }
     /** Shutdown never drains envelopes on the caller thread; pending work stays unexecuted. */
-    public void stop() { if (lifecycle != SchedulerLifecycle.FAILED) lifecycle = SchedulerLifecycle.STOPPING; }
+    public void stop() {
+        if (OwnershipContext.current().isPresent()) throw new IllegalStateException("scheduler stop holds owner authority");
+        admission.lock(); try { if (lifecycle != SchedulerLifecycle.FAILED) lifecycle = SchedulerLifecycle.STOPPING; }
+        finally { admission.unlock(); }
+        workers.stop();
+    }
     /** Explicit terminal acknowledgement after retained service/packet claims settle. Only
      * immutable envelopes leave here; no payload or original callback is ever executed. */
     public int acknowledgeStoppedEnvelopes() {
         if (lifecycle.acceptsSimulationWork() || OwnershipContext.current().isPresent()
-                || runtimes.values().stream().anyMatch(runtime -> runtime.leases().hasActiveLease()))
+                || workers.batchActive() || runtimes.values().stream().anyMatch(runtime -> runtime.leases().hasClaimOrSelection()))
             throw new IllegalStateException("queued work acknowledged before scheduler shutdown");
         int acknowledged = 0;
         for (RegionRuntime runtime : runtimes.values()) {
@@ -77,42 +107,138 @@ public final class RegionScheduler {
     }
     public void advanceOne() {
         if (!acceptsSimulationWork()) return;
-        runtimes.values().stream().filter(runtime -> runtime.lifecycle() == RegionLifecycle.READY && !runtime.transitioning() && runtime.inboxSize() > 0)
-            .sorted(Comparator.comparing(RegionRuntime::id)).findFirst().ifPresent(this::runOne);
+        for (RegionRuntime runtime : runtimes.values().stream()
+                .filter(value -> value.lifecycle() == RegionLifecycle.READY && !value.transitioning() && value.inboxSize() > 0)
+                .sorted(Comparator.comparing(RegionRuntime::id)).toList()) {
+            if (runOne(runtime)) return;
+        }
     }
     public boolean runOne(RegionRuntime runtime) {
-        if (!acceptsSimulationWork() || runtime.transitioning()) return false;
-        RegionTaskEnvelope envelope = runtime.poll().orElse(null);
-        if (envelope == null) return false;
-        if (!acceptsSimulationWork()) { runtime.requeueFirst(envelope); return false; }
-        deliveryAttempts++;
-        if (envelope.payload() instanceof TaskPayload.OwnedObjectOperation) {
-            if (objectDeliveryValidator == null || !objectDeliveryValidator.revalidateForExecution(runtime, envelope)) return true;
-        } else {
-            if (locationValidator == null || !locationValidator.revalidateLocationForExecution(runtime, envelope)) return true;
-        }
-        if (!acceptsSimulationWork()) { runtime.requeueFirst(envelope); return false; }
-        try (RegionLease lease = runtime.leases().acquire(); OwnershipContext.Scope ignored = OwnershipContext.enter(runtime.id(), lease.epoch(), OperationCategory.OWNER_TASK)) {
-            runtime.transitionTo(RegionLifecycle.TICKING);
-            lease.requireCurrent();
-            apply(runtime, envelope.payload());
-            advances++;
-            runtime.transitionTo(RegionLifecycle.READY);
-            return true;
+        Selected selected = select(runtime, false);
+        if (selected == null) return false;
+        selected.run(); return true;
+    }
+
+    /** Only the audited local block-entity operation is eligible for worker dispatch.
+     * Native server tasks, FULL, packets, saves and shared gameplay keep their existing
+     * ordered coordinator phases. Queue insertion alone never grants parallel eligibility. */
+    public int advanceLocalBatch(java.util.List<RegionRuntime> cohort) {
+        if (OwnershipContext.current().isPresent()) throw new IllegalStateException("parallel selection retains an owner");
+        if (cohort.size() > workerCount()) throw new IllegalArgumentException("parallel cohort exceeds configured bound");
+        if (new java.util.HashSet<>(cohort).size() != cohort.size()) throw new IllegalArgumentException("duplicate region in parallel cohort");
+        java.util.List<Selected> selected = new java.util.ArrayList<>();
+        boolean admitted = false;
+        try {
+            admission.lock(); try {
+                if (!acceptsSimulationWork()) return 0;
+                workers.begin(); admitted = true;
+            } finally { admission.unlock(); }
+            for (RegionRuntime runtime : cohort) {
+                Selected next = select(runtime, true);
+                if (next != null) selected.add(next);
+            }
+            workers.execute(selected.stream().<Runnable>map(value -> value).toList());
         } catch (Throwable failure) {
-            lifecycle = SchedulerLifecycle.FAILED;
-            barrier.trip(failure, directory.snapshot().generation(), runtime.ownerEpoch(), envelope);
-            return true;
+            fail(failure, selected.isEmpty() ? null : selected.getFirst().runtime,
+                selected.isEmpty() ? null : selected.getFirst().envelope);
+        } finally {
+            // A rejected submission retains its envelope; no caller-thread replay.
+            try {
+                for (Selected value : selected) {
+                    try { value.releaseUnstarted(); }
+                    catch (Throwable failure) { fail(failure, value.runtime, value.envelope); }
+                }
+            } finally { if (admitted) workers.finish(); }
         }
+        return selected.size();
+    }
+
+    /** Follow physical queues as well as current routes. A delivery racing a topology
+     * publication can reside in its former inbox and must reroute without being lost. */
+    public int advanceLocalOperations(String serviceId, long worldInstance, java.util.Set<Long> operations) {
+        return advanceLocalBatch(runtimes.values().stream()
+            .filter(runtime -> runtime.lifecycle() == RegionLifecycle.READY && !runtime.transitioning())
+            .filter(runtime -> runtime.peek().map(envelope -> envelope.payload() instanceof TaskPayload.RegionalService service
+                && service.serviceId().equals(serviceId) && service.worldInstance() == worldInstance
+                && operations.contains(service.operationId())).orElse(false))
+            .sorted(Comparator.comparing(RegionRuntime::id)).limit(workerCount()).toList());
+    }
+
+    private Selected select(RegionRuntime runtime, boolean localOnly) {
+        if (!acceptsSimulationWork() || runtime.transitioning() || runtime.lifecycle() != RegionLifecycle.READY) return null;
+        var selection = runtime.leases().trySelect().orElse(null);
+        if (selection == null) return null;
+        boolean retained = false;
+        try {
+            RegionTaskEnvelope head = runtime.peek().orElse(null);
+            if (head == null || localOnly && (!(head.payload() instanceof TaskPayload.RegionalService service)
+                    || !service.operationKind().equals(dev.phoenium.service.RegionalServiceKind.LOCAL_BLOCK_ENTITY_TICK.name())
+                    || regionalServiceExecutor == null || !regionalServiceExecutor.locallyAdmitted(service))) return null;
+            if (!acceptsSimulationWork()) return null;
+            RegionTaskEnvelope envelope = runtime.poll().orElseThrow();
+            if (head != envelope) throw new IllegalStateException("owner inbox was polled outside its selected claim");
+            Selected result = new Selected(runtime, envelope, selection);
+            retained = true; return result;
+        } finally { if (!retained) selection.close(); }
+    }
+
+    private final class Selected implements Runnable {
+        private final RegionRuntime runtime;
+        private final RegionTaskEnvelope envelope;
+        private final dev.phoenium.ownership.RegionLeaseManager.Selection selection;
+        private final long selectedAt = System.nanoTime();
+        private volatile boolean started;
+        private Selected(RegionRuntime runtime, RegionTaskEnvelope envelope, dev.phoenium.ownership.RegionLeaseManager.Selection selection) {
+            this.runtime = runtime; this.envelope = envelope; this.selection = selection;
+        }
+        @Override public void run() {
+            started = true;
+            GameplayMeasurements.Claim measured = null;
+            try (selection) {
+                if (!acceptsSimulationWork()) { runtime.requeueFirst(envelope); return; }
+                deliveryAttempts.incrementAndGet();
+                // Current claim fences topology publication through validation AND body.
+                boolean valid = envelope.payload() instanceof TaskPayload.OwnedObjectOperation
+                    ? objectDeliveryValidator != null && objectDeliveryValidator.revalidateForExecution(runtime, envelope)
+                    : locationValidator != null && locationValidator.revalidateLocationForExecution(runtime, envelope);
+                if (!valid) return;
+                if (!acceptsSimulationWork()) { runtime.requeueFirst(envelope); return; }
+                long claimStart = System.nanoTime();
+                try (RegionLease lease = selection.promote();
+                     OwnershipContext.Scope ignored = OwnershipContext.enter(runtime.id(), lease.epoch(), OperationCategory.OWNER_TASK)) {
+                    runtime.transitionTo(RegionLifecycle.TICKING);
+                    try {
+                        lease.requireCurrent();
+                        if (envelope.payload() instanceof TaskPayload.RegionalService service
+                                && service.operationKind().equals(dev.phoenium.service.RegionalServiceKind.LOCAL_BLOCK_ENTITY_TICK.name()))
+                            measured = measurements.enter(selectedAt, claimStart, directory.snapshot().generation().value(), service.operationId());
+                        apply(runtime, envelope.payload());
+                        advances.incrementAndGet();
+                    } catch (Throwable failure) { fail(failure, runtime, envelope); }
+                    finally { measurements.leaveBody(); runtime.transitionTo(RegionLifecycle.READY); }
+                }
+            } catch (Throwable failure) { fail(failure, runtime, envelope); }
+            finally { measurements.released(measured); }
+        }
+        private void releaseUnstarted() {
+            if (!started) { runtime.requeueFirst(envelope); selection.close(); started = true; }
+        }
+    }
+
+    private void fail(Throwable failure, RegionRuntime runtime, RegionTaskEnvelope envelope) {
+        barrier.trip(failure, directory.snapshot().generation(), runtime == null ? new OwnerEpoch(0) : runtime.ownerEpoch(), envelope);
+        lifecycle = SchedulerLifecycle.FAILED;
     }
     /** Tick work has exactly the same lease/context mechanism as owner-envelope work. */
     public void runTick(RegionRuntime runtime) {
         if (!acceptsSimulationWork() || runtime.transitioning()) return;
-        try (RegionLease lease = runtime.leases().acquire(); OwnershipContext.Scope ignored = OwnershipContext.enter(runtime.id(), lease.epoch(), OperationCategory.TICK)) {
+        RegionLease acquired = runtime.leases().tryAcquire().orElse(null);
+        if (acquired == null) return;
+        try (RegionLease lease = acquired; OwnershipContext.Scope ignored = OwnershipContext.enter(runtime.id(), lease.epoch(), OperationCategory.TICK)) {
             runtime.transitionTo(RegionLifecycle.TICKING);
             lease.requireCurrent();
             runtime.tick();
-            advances++;
+            advances.incrementAndGet();
             runtime.transitionTo(RegionLifecycle.READY);
         } catch (Throwable failure) {
             lifecycle = SchedulerLifecycle.FAILED;
@@ -121,7 +247,9 @@ public final class RegionScheduler {
     }
     public void snapshot(RegionRuntime runtime, Runnable sink) {
         if (!acceptsSimulationWork()) return;
-        try (RegionLease lease = runtime.leases().acquire(); OwnershipContext.Scope ignored = OwnershipContext.enter(runtime.id(), lease.epoch(), OperationCategory.SAVE_SNAPSHOT)) {
+        RegionLease acquired = runtime.leases().tryAcquire().orElse(null);
+        if (acquired == null) return;
+        try (RegionLease lease = acquired; OwnershipContext.Scope ignored = OwnershipContext.enter(runtime.id(), lease.epoch(), OperationCategory.SAVE_SNAPSHOT)) {
             sink.run();
         } catch (Throwable failure) {
             lifecycle = SchedulerLifecycle.FAILED;
