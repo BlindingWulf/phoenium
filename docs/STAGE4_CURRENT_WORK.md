@@ -49,112 +49,80 @@ subscriber stays invalid, and a new slot needs a distinct original-producer rece
 ## Verification and next unresolved case
 
 Baseline: 690 tests / 59 suites PASS and ten historical hashes verified;
-`Phoenium-stage4-luna/run/stage4/baseline-20260908-012726`. Production rebuilt to
-exact frozen SHA above. Historical Stage 3 evidence/worlds remain immutable.
+`Phoenium-stage4-luna/run/stage4/baseline-20260908-012726`. Frozen production
+rebuilt to the exact SHA above. Historical Stage 3 evidence/worlds remain immutable.
+The latest consolidated gate, at production `2d37d3a`, passes 769 tests / 72 suites
+with zero failures/errors/skips and a successful build. This gate predates the
+NaturalSpawner, phase-progress and failed-stop repairs; final verification is open.
 
-Integrated source recovery points: `a1da48a` tick/event/save + installed client harness;
-`847602c` shared-barrier/topology notification and terminal ACK repair; `0d9623a`
-counts publication inside enclosure as progress (real enclosure regression).
-Focused evidence under main `run/stage4`: save/stop 19 tests; live retention/core
-34 tests; topology terminal ACK 52 tests; closure progress 15 tests. Original
-failures are retained in their named failed-* directories/logs. Current native
-clear/copy regression compares unmodified pinned LevelTicks using its actual cohort
-fields, including cancellation, copied already-run/pending entries and query behavior.
+Integrated production is now `2ba0e8a` (after `00ce944`, `f793e57`). Native scheduled
+register/unpack and current-cycle clear/copy oracles remain intact; the container
+monitor repair `2d37d3a` passed the merged 22-test scheduled/lifetime gate. Selected
+chunk/entity/block-entity callbacks preserve native order and use finite current
+owner admission (`0a14b8a`, `ccc2f3b`). Source reads at world-service bootstrap and
+container peek/poll are outside both registry/service metadata monitors. The
+10-test merged phase/ticker/lifetime gate passed before the latest repair.
 
-Luna's installed `integrated-installed-20260908-025903` failed on closure progress
-and narrow fixture setup; missing pending tick records/reload effect correctly FAIL.
-Paired explicitTopology + chunkFixtureSupport flags repair the missing-route fixture.
-Subsequent `integrated-installed-repair-031256` has positive first-run block/fluid,
-events, save and clean stop, but restart reports a foreign closure owner. Preserve
-both bundles. Root repaired the nested producer overclaim: enqueue requires only the destination owner; the future callback halo is admitted when due. A regression crosses that same boundary and later executes after genuine convergence. Do not widen a valid fixture boundary simply to hide that production
-failure. No integrated Stage 4 installed PASS exists.
+Genuine same-holder FULL re-promotion `0d82ef3` retains the original producer,
+revokes the withdrawn subscriber, and requires a new actual completion receipt for
+the distinct slot. Fresh/reload before/after completion and later input replacement
+pass in the 66-test published/initialized/authoritative gate. Four native negative
+reproductions remain under `run/stage4/same-holder-repromotion-negative-20260908.*`.
+Source lifecycle late-producer refusals (`c3cf005`) cannot reopen bootstrap.
 
-Integrated production recovery: `b2ab914` (test-oracle recovery `bf250f1`), including native tick eligibility/index
-`952ce13`/`34b2d0f`, nested block-event boundary `b4d23e9`, exact tracker accessors
-`1db10ad`, named tracking startup `3a36d24`, passenger relations `4cd836f`/`f36fcb1`,
-and original final phase RETURN repair `b7d0051`. `545b793` preserves a source/save
-exception caught by vanilla after its dirty claim, restores dirty state through the
-current owner ACK, and retains the exact failure at flush. The new negative first
-failure and repaired focused evidence are under `run/stage4/caught-save-*`.
-Save/facts/accessor integration: 21 tests PASS; final phase/stop/facts/accessor: 20 PASS.
-`b2ab914` keeps original nearby block-event broadcast conditions/order/sends while
-reading only precise owner-published recipient coordinates and current live-session
-receipts. Routing now publishes after position fields commit and before original
-`onMove`; a throwing native callback test proves the moved receipt survives and is
-withdrawn at actual unindex. Facts/event/phase focused evidence: 20 tests PASS.
-`bf250f1` integrates Luna's stronger native register-then-unpack/index oracle and
-retains direct original LevelTicks ordering/eligibility comparisons.
+The last installed candidate is worker `9370007`, production SHA-256
+`B582CCFC642FC0394027CDAAD404CDDDDD80EB9EDC92DED13E7A6CD82D8D811`.
+It passes the corrected exact NaturalSpawner overload transformation (`f793e57`),
+but `Phoenium-stage4-luna/run/full-production-integration/transform-20260908-060338`
+fails on the first world tick, gameTime 1: `dispatchLevelTick` expects queued owner
+work between consecutive READINESS and BLOCK_EVENTS coordinator phases. That trips
+the barrier; subsequent unload-save refusals and shutdown waiting are secondary.
+This is not normal-stop evidence. Sol's phase repair `00ce944` advances the finite
+coordinator chain before requesting a real owner step, retains missing-work failure,
+and passes its phase/readiness focused gate plus build excluding broad tests.
 
-Latest installed checkpoint `integrated-installed-stable-034415` starts and executes
-scheduled services/save/stop but has no final PASS: tracking and block.enqueue proof
-are missing; reload command fails before its begin marker. Its pre-restart decoder
-was faulty. Re-decoding the world after a restart past the deadline does not prove
-pre-restart tick loss. Harness fixes `31a26b5`/`e59d239` now decode and preserve an
-immutable MCA copy before restart; `ca7d11f` exposes the original reload exception.
-Only detached original packed tick results are observed at serialization; proposed
-owner-free raw container diagnostics were rejected and were not integrated.
-Genuine pending fixture `5da8152` replaced an invalid duplicate B/type schedule;
-comparison must use identical corrected reference inputs.
+Lead `2ba0e8a` settles actual retained writes and protocol custody before native
+resource closure after failed admission/drain. The exception remains primary; the
+failed-stop scope is confined to that invocation. Reentrant requests cannot replay
+work; independent close failures are retained. The 19-test stop/save/generation
+focused gate passes (`run/stage4/failed-stop-order-integration-20260908.log`).
+Sol owns the connected exact-native failure-stop hooks: omit forbidden new snapshots
+and unloads, send terminal transport notifications through existing sessions, join
+already submitted storage work, and close independent resources. This integration
+is still open. Healthy native stop retains its original path. Lead owns architecture,
+review, integration, current notes and focused checks; Sol remains explicit Sol/high.
 
-Production recovery `0a14b8a` integrates Sol's complete native chunk/entity callback
-boundary. Selected chunks, entity/passenger/vehicle graphs, and block-entity tickers
-enter their current regional owner after finite admission. The native chunk shuffle,
-entity iteration, spawner order/counters, conditional final phase and ticker removal
-protocol are preserved. Original spawn-state entity iteration remains once; the extra
-per-tick entity-binding scan is removed. Native block-ticker unload removes before
-reading its now-cleared position. Lead's integrated phase/block-ticker/lifetime gate
-passes 10 tests (`run/stage4/final-callback-integration-20260908.log`).
-`ccc2f3b` moves native service bootstrap outside the registry monitor and refreshes
-natural-spawn player receipts after admission and before use; Sol's focused gate
-passes 23 tests. `2d37d3a` integrates the final container-monitor repair: bound native
-index hooks add no extra peek; native collection/drain calls run outside both metadata
-monitors. The merged scheduled/lifetime gate passes 22 tests, retaining all original
-register/unpack and area oracles (`run/stage4/native-tick-lock-integration-20260908.log`).
-Sol is idle on clean `eae63b1`, available for concrete installed failures only.
-Lead owns save/stop, provenance and integration.
-Luna alone owns broad builds/live campaigns, exact native oracles, controlled real
-client comparison, immutable MCA/reload effects, real merge/split and lifecycle, 5/5
-and 8/8, affected foundation regressions, and comparable elapsed/RSS observations.
-Her installed topology fixture requests actual coordinator merge/split (no direct
-directory publication). Integrated harness `784c710` (worker through `9f30a1c`)
-uses the same native-clock workload on both JARs, genuine FULL receipts and native
-fluid-queue inputs. It keeps far ticks in the simulated viewport through their
-deadline, observes entity removal while visible and checks exact client event packets.
-`b5cbea7` adds real A/B serializer observations, successful-return shutdown evidence,
-explicit reference selection and separate run paths. Luna owns the stable production
-campaign at `2d37d3a` and is repairing a reached test-only PlayerList Mixin local-capture
-failure in the initial frozen-reference 5/5 run. The failed bundle is preserved at
-`Phoenium-stage4-luna/run/stage4/reference-client-5-playerlist-failure-20260908-052925`.
-Final candidate, reference 5/5 and 8/8, comparison, persisted MCA/restart
-and foundation gates remain open. Preserve each prepared server/world bundle before
-another Sync preparation; verify the actual installed JAR hash on every launch.
-The stable-source full gate passes 769 tests / 72 suites, zero failures/errors/skips,
-after the reviewed metadata-only tracker exemption in `1d18b5c` (worker `3706f34`).
-Gradle build passes. Production JAR SHA-256 is
-`1EBB8A438BD6DB8F98E15481F26DF63136D8A9E24E26A3758F071D7B64589900`;
-shared probe at worker `44e7249` is
-`F4137F8084E9A362EE519690209FF7164D1765B7355ED1A06293861D2DC03C05`.
-`73095e7` integrates isolated launch paths and the repaired recipient Mixin/client
-observation holder. The current frozen-reference run
-`run/stage4/reference-client-5-20260908-054512` starts/listens but client login times
-out after Hello. Luna is capturing both process stacks and running the independent
-installed transformed-runtime candidate probe. The latter now has a preserved
-failure in `run/full-production-integration/transform-20260908-055335`: original
-NaturalSpawner class transformation rejects the regional nearest-player invocation
-target (zero matching calls). Sol owns that exact native descriptor repair and its
-companion distance target; Luna owns the installed rerun and separate login analysis.
-Both client/server login-stall stacks are preserved under
-`run/stage4/reference-client-5-dump-20260908-055040/thread-dumps`.
-No client/runtime PASS is inferred from the successful build or listening endpoint.
-Lead `c3cf005` rejects late producers after service termination before native mutation;
-its new focused lifetime regression passes. The genuine same-holder withdrawal /
-re-promotion repair preserves the original producer, revoked old subscriber, current
-lower-input identity and new actual FULL slot/result. Four native negative reproductions
-are retained in `run/stage4/same-holder-repromotion-negative-20260908.*`. Fresh/reload
-before/after-completion cases and admitted FULL re-promotion plus subsequent input
-replacement pass in the 66-test published/initialized/authoritative focused gate.
-At the re-promotion boundary account-wide Codex usage was 66% used / 34% remaining.
-At the final callback integration boundary it was 71% used / 29% remaining;
-at stable production `2d37d3a` it is 74% used / 26% remaining;
-reserve remains 7% used / 93% remaining. No per-task token total is exposed.
-Internal commits remain recovery points; continue until all required gates pass.
+Luna alone owns broad builds and the final live campaign. Current frozen-reference
+login evidence in `run/stage4/reference-network-exception-20260908-062250` verifies
+the exact frozen JAR and an accepted TCP connection that closes before any server
+packet-decoder receive. Client Hello then times out; both process stacks and actual
+TCP tuples/PIDs are preserved. Diagnostic test-only commit `5094ad4` records native
+listener/phase/counters, exceptions and TCP state; it is not yet integrated on main.
+The earlier preflight-removal/property-parity experiment did not resolve login.
+Luna is comparing the actual client connection setup with the working Stage 3 and
+pinned native path, then tracing the client-side close origin. No client/runtime PASS
+is inferred from startup, a listening endpoint, or a passing build.
+
+The shared acceptance harness is integrated through `08c3f0c` (failure thread dumps),
+`73095e7` (isolated launch/recipient/client observation repair), `b5cbea7` and `784c710`.
+It uses identical native-clock inputs on reference/candidate, real A/B regions,
+actual coordinator merge/split, authenticated FULL/readiness receipts, exact event
+packets, original serializer observations, immutable pre-restart MCA copies and a
+strict behavioral comparator. Candidate-only routing metadata is separate. Remaining
+harness repairs require successful actual A/B block-event effects and a startup
+freeze before a persisted deadline can pass; normal restart must reuse a completed
+shared-client world. Server-only smoke does not complete the client gates.
+
+Final candidate and reference 5/5 plus 8/8, ordered behavioral comparison, persisted
+MCA/restart effects, migration/lifecycle and affected FULL/packet/service/saved-vault
+checks remain open. Preserve prepared server/world bundles before Sync and verify
+the actual installed JAR hash on each launch. Earlier installed evidence under
+`integrated-installed-stable-034415` is partial: its old MCA decoder was faulty and
+re-decoding after restart passed the deadline cannot establish pre-restart tick loss.
+It recorded 14.718 s and 672 MB RSS in a different checkpoint; this is not the required
+paired final overhead result. All failed bundles and the old worlds are preserved.
+
+At the phase-progress integration boundary account-wide Codex usage is 78% used /
+22% remaining; reserve is 7% used / 93% remaining. No per-task total is exposed.
+Internal commits are recovery points. Continue repairs and the sole-owner final
+campaign; Stage 4 stays PARTIAL and Stage 5 remains blocked on these acceptance gates.
