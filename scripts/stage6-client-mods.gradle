@@ -11,7 +11,10 @@ gradle.projectsEvaluated {
     project.tasks.named('prepareStage4ClientServer').configure {
         doLast {
             def server = project.file(project.property('stage4ServerDirectory')).canonicalFile
-            def auditRoot = project.file('build/stage6-audit-20260909').canonicalFile.toPath()
+            def rootOverride = project.findProperty('stage6EvidenceRoot')
+            def auditRoot = project.file(rootOverride ?: 'build/stage6-audit-20260909').canonicalFile.toPath()
+            if (rootOverride != null && !auditRoot.startsWith(project.file('run/stage7').canonicalFile.toPath()))
+                throw new GradleException('Repair evidence root must remain under run/stage7')
             if (!server.toPath().startsWith(auditRoot)) throw new GradleException('Not an isolated Stage 6 server')
             def mods = new File(server, 'mods')
             // Full API bundle supersedes these exact frozen modules only in this control.

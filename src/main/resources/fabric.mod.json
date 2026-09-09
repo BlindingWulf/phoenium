@@ -16,6 +16,10 @@
     "phoenium.full.mixins.json",
     "phoenium.tick.mixins.json"
   ],
+  "breaks": {
+    "c2me": "*",
+    "c2me-rewrites-chunk-system": "*"
+  },
   "depends": {
     "fabricloader": ">=0.19.5",
     "fabric-command-api-v2": "*",

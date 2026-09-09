@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  "id": "phoenium-c2me-path-observer",
+  "version": "1.0.0",
+  "name": "Disposable C2ME path receipts",
+  "environment": "server",
+  "entrypoints": { "server": ["dev.phoenium.c2meprobe.C2mePathProbe"] },
+  "mixins": ["c2me-path-observer.mixins.json"],
+  "depends": { "phoenium": "*" }
+}

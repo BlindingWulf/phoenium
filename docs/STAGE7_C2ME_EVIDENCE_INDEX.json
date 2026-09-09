@@ -1,0 +1,2759 @@
+{
+  "schema": 1,
+  "evidenceRoot": "run/stage7/c2me-20260909",
+  "baselineCommit": "f12fd22faf31460952eccf7d9268fb0db278acb6",
+  "branch": "stage7/c2me-tick-phase-integration",
+  "tickPhaseRepair": "PASS_REVIEWED_SEMANTICS_ONLY",
+  "installedC2me": "BLOCKED",
+  "overallC2me": "BLOCKED",
+  "stage6": "AUDIT_PARTIAL",
+  "stage7": "IN_PROGRESS",
+  "stage8Plus": "NOT_STARTED",
+  "artifact": {
+    "sha256": "6E87986E8BAD90C0F8E7F4636392C55BA38CFFA7CCE45B4EA5BB30C576F547B2",
+    "artifacts": {
+      "c2me-path-observer.jar": "46B984F7D0BCEB44875F74B1BDA06CDDC0E15BC75E1B8D6A70323E6EE453C6E8",
+      "phoenium-0.2.0-stage2.jar": "6E87986E8BAD90C0F8E7F4636392C55BA38CFFA7CCE45B4EA5BB30C576F547B2",
+      "stage4-acceptance-probe.jar": "DC1FA87FA00CE6EBFF8E25BEF77617BF3FA856B6BD15E0589A24D8AA5C260ED6",
+      "stage7-observations.jar": "FE9090B08D1D3A2D7AFCA07E7E6AF09B301ABF6F182F6C167593A9E473D3D5D9"
+    },
+    "tests": {
+      "tests": 840,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "suites": 89
+    },
+    "metadata": {
+      "schemaVersion": 1,
+      "id": "phoenium",
+      "version": "0.2.0-stage2",
+      "name": "Phoenium",
+      "description": "Regionized server scheduling engine; Stage 2 serial live integration.",
+      "license": "GPL-3.0-only",
+      "environment": "server",
+      "entrypoints": {
+        "server": [
+          "dev.phoenium.Phoenium"
+        ]
+      },
+      "mixins": [
+        "phoenium.mixins.json",
+        "phoenium.full.mixins.json",
+        "phoenium.tick.mixins.json"
+      ],
+      "breaks": {
+        "c2me": "*",
+        "c2me-rewrites-chunk-system": "*"
+      },
+      "depends": {
+        "fabricloader": ">=0.19.5",
+        "fabric-command-api-v2": "*",
+        "fabric-lifecycle-events-v1": "*",
+        "minecraft": "26.2",
+        "java": ">=25"
+      }
+    }
+  },
+  "sourceRevision": "UNKNOWN; locked C2ME binary authoritative",
+  "configuration": {
+    "minecraft": "26.2",
+    "java": "25.0.4.1",
+    "loader": "0.19.5",
+    "fabricApi": "0.159.0+26.2",
+    "fabricApiBundleSha256": "3F3A5D96E6A8F554A72E71FB507D6A979CA16D9190C305CEB1300F1D01E733EE",
+    "fabricApiNestedModules": 43,
+    "loom": "1.17.20",
+    "gradle": "9.5.1",
+    "viewDistance": 5,
+    "simulationDistance": 5,
+    "c2meDefaultsUnchanged": true,
+    "c2meGlobalExecutorParallelism": 2,
+    "modelAndReasoningVerification": "NOT_EXPOSED"
+  },
+  "finalInstalledCases": [
+    {
+      "kind": "native",
+      "workers": 1,
+      "status": "PASS_CONSOLE_SAMPLE",
+      "productionSha256": "6E87986E8BAD90C0F8E7F4636392C55BA38CFFA7CCE45B4EA5BB30C576F547B2",
+      "phases": [
+        {
+          "phase": "first",
+          "exitCode": 0,
+          "PHOENIUM_FULL STOPPED": "[01:20:24] [Server thread/INFO]: PHOENIUM_FULL STOPPED authoritative=true minecraft:overworld={registrations=174, publicationCalls=174, structureWaitingWriters=0, structureHolders=0, finishingCalls=174, deliveries=0, preparationCalls=174, structureReaders=0, generationHolders=0, producerReleases=5344, structureWriters=0, graphs=0, returnedIndex=0, structureDemandTickets=0, captures=174} inputs={requestedPreparations=0, plans=0, edges=0, expandedOperations=0, pendingNotifications=0, factBytes=0, consumers=0, validations=1044} published={uses=0, publications=174, transientExecutions=0, capacityRefusals=0, reservations=174, chargedRecordBytes=0, acknowledgements=0, acquisitions=0, records=0}",
+          "PHOENIUM_STAGE4_SHUTDOWN": "[01:20:24] [Server thread/INFO]: PHOENIUM_STAGE4_SHUTDOWN admissionClosed=true queuedServices=0 pendingSaves=0 saveState={completedNotAcknowledged=0, retiredFailedSources=0, failedWrites=0, failedSettlements=0, acknowledgements=1750, captures=1402, pending=0}",
+          "PHOENIUM_STAGE2 stopped": "[01:20:24] [Server thread/INFO]: PHOENIUM_STAGE2 stopped lifecycle=STOPPED scheduler=STOPPING workers=1 lifecycleStarts=1 lifecycleStops=1 parallel=OFF worlds=3 leases=0 intercepted=1095 dispatched=1095 executed=1095 duplicate=0 bypass=0 fallback=0 ownershipViolations=0 unleased=0 barriers=0 entities=0 players=0 packetAdmissions=0 packetExecutions=0 packetStaleReroutes=0 packetRejections=0 packetRecursions=0 chunkAdmissions=0 chunkApplications=0 chunkReroutes=0 chunkRejections=0 chunkDuplicates=0 producerChunkMutations=0 packets=move[in=0,defer=0,accept=0,reject=0,owner=0,replay=0,effect=0,reconcile=0,sameEpoch=0,stale=0] interact[in=0,hit=0,miss=0,incarnationReject=0,ownerAdmission=0,crossReject=0,ownerExecution=0,replay=0,lookup=0,effect=0,stale=0]",
+          "savedFullRecords": 70
+        },
+        {
+          "phase": "restart",
+          "exitCode": 0,
+          "PHOENIUM_FULL STOPPED": "[01:20:41] [Server thread/INFO]: PHOENIUM_FULL STOPPED authoritative=true minecraft:overworld={structureWaitingWriters=0, structureHolders=0, finishingCalls=174, deliveries=0, preparationCalls=174, structureReaders=0, generationHolders=0, producerReleases=2664, structureWriters=0, graphs=0, returnedIndex=0, structureDemandTickets=0, captures=174, registrations=174, publicationCalls=174} inputs={plans=0, edges=0, expandedOperations=0, pendingNotifications=0, factBytes=0, consumers=0, validations=1044, requestedPreparations=0} published={uses=0, publications=174, transientExecutions=0, capacityRefusals=0, reservations=174, chargedRecordBytes=0, acknowledgements=0, acquisitions=0, records=0}",
+          "PHOENIUM_STAGE4_SHUTDOWN": "[01:20:41] [Server thread/INFO]: PHOENIUM_STAGE4_SHUTDOWN admissionClosed=true queuedServices=0 pendingSaves=0 saveState={completedNotAcknowledged=0, retiredFailedSources=0, failedWrites=0, failedSettlements=0, acknowledgements=647, captures=167, pending=0}",
+          "PHOENIUM_STAGE2 stopped": "[01:20:41] [Server thread/INFO]: PHOENIUM_STAGE2 stopped lifecycle=STOPPED scheduler=STOPPING workers=1 lifecycleStarts=1 lifecycleStops=1 parallel=OFF worlds=3 leases=0 intercepted=591 dispatched=591 executed=591 duplicate=0 bypass=0 fallback=0 ownershipViolations=0 unleased=0 barriers=0 entities=0 players=0 packetAdmissions=0 packetExecutions=0 packetStaleReroutes=0 packetRejections=0 packetRecursions=0 chunkAdmissions=0 chunkApplications=0 chunkReroutes=0 chunkRejections=0 chunkDuplicates=0 producerChunkMutations=0 packets=move[in=0,defer=0,accept=0,reject=0,owner=0,replay=0,effect=0,reconcile=0,sameEpoch=0,stale=0] interact[in=0,hit=0,miss=0,incarnationReject=0,ownerAdmission=0,crossReject=0,ownerExecution=0,replay=0,lookup=0,effect=0,stale=0]",
+          "savedFullRecords": 70
+        }
+      ]
+    },
+    {
+      "kind": "chunky-original",
+      "workers": 1,
+      "status": "PASS_CONSOLE_SAMPLE",
+      "productionSha256": "6E87986E8BAD90C0F8E7F4636392C55BA38CFFA7CCE45B4EA5BB30C576F547B2",
+      "phases": [
+        {
+          "phase": "first",
+          "exitCode": 0,
+          "PHOENIUM_FULL STOPPED": "[01:20:57] [Server thread/INFO]: PHOENIUM_FULL STOPPED authoritative=true minecraft:overworld={graphs=0, structureWriters=0, producerReleases=7524, generationHolders=0, structureReaders=0, preparationCalls=156, deliveries=0, finishingCalls=156, structureHolders=0, structureWaitingWriters=0, captures=156, registrations=156, publicationCalls=156, structureDemandTickets=0, returnedIndex=0} inputs={pendingNotifications=0, expandedOperations=0, edges=0, plans=0, requestedPreparations=0, validations=936, consumers=0, factBytes=0} published={acknowledgements=0, chargedRecordBytes=0, reservations=156, capacityRefusals=0, transientExecutions=0, publications=156, uses=0, records=0, acquisitions=0}",
+          "PHOENIUM_STAGE4_SHUTDOWN": "[01:20:57] [Server thread/INFO]: PHOENIUM_STAGE4_SHUTDOWN admissionClosed=true queuedServices=0 pendingSaves=0 saveState={captures=2299, acknowledgements=2525, failedSettlements=0, failedWrites=0, retiredFailedSources=0, completedNotAcknowledged=0, pending=0}",
+          "PHOENIUM_STAGE2 stopped": "[01:20:57] [Server thread/INFO]: PHOENIUM_STAGE2 stopped lifecycle=STOPPED scheduler=STOPPING workers=1 lifecycleStarts=1 lifecycleStops=1 parallel=OFF worlds=3 leases=0 intercepted=555 dispatched=555 executed=555 duplicate=0 bypass=0 fallback=0 ownershipViolations=0 unleased=0 barriers=0 entities=0 players=0 packetAdmissions=0 packetExecutions=0 packetStaleReroutes=0 packetRejections=0 packetRecursions=0 chunkAdmissions=0 chunkApplications=0 chunkReroutes=0 chunkRejections=0 chunkDuplicates=0 producerChunkMutations=0 packets=move[in=0,defer=0,accept=0,reject=0,owner=0,replay=0,effect=0,reconcile=0,sameEpoch=0,stale=0] interact[in=0,hit=0,miss=0,incarnationReject=0,ownerAdmission=0,crossReject=0,ownerExecution=0,replay=0,lookup=0,effect=0,stale=0]",
+          "savedFullRecords": 81
+        },
+        {
+          "phase": "restart",
+          "exitCode": 0,
+          "PHOENIUM_FULL STOPPED": "[01:21:18] [Server thread/INFO]: PHOENIUM_FULL STOPPED authoritative=true minecraft:overworld={publicationCalls=199, structureDemandTickets=0, returnedIndex=0, graphs=0, structureWriters=0, producerReleases=5331, generationHolders=0, structureReaders=0, preparationCalls=199, deliveries=0, finishingCalls=199, structureHolders=0, structureWaitingWriters=0, captures=199, registrations=199} inputs={validations=1194, consumers=0, factBytes=0, pendingNotifications=0, expandedOperations=0, edges=0, plans=0, requestedPreparations=0} published={records=0, acquisitions=0, acknowledgements=0, chargedRecordBytes=0, reservations=199, capacityRefusals=0, transientExecutions=0, publications=199, uses=0}",
+          "PHOENIUM_STAGE4_SHUTDOWN": "[01:21:18] [Server thread/INFO]: PHOENIUM_STAGE4_SHUTDOWN admissionClosed=true queuedServices=0 pendingSaves=0 saveState={pending=0, captures=1216, acknowledgements=1614, failedSettlements=0, failedWrites=0, retiredFailedSources=0, completedNotAcknowledged=0}",
+          "PHOENIUM_STAGE2 stopped": "[01:21:18] [Server thread/INFO]: PHOENIUM_STAGE2 stopped lifecycle=STOPPED scheduler=STOPPING workers=1 lifecycleStarts=1 lifecycleStops=1 parallel=OFF worlds=3 leases=0 intercepted=846 dispatched=846 executed=846 duplicate=0 bypass=0 fallback=0 ownershipViolations=0 unleased=0 barriers=0 entities=0 players=0 packetAdmissions=0 packetExecutions=0 packetStaleReroutes=0 packetRejections=0 packetRecursions=0 chunkAdmissions=0 chunkApplications=0 chunkReroutes=0 chunkRejections=0 chunkDuplicates=0 producerChunkMutations=0 packets=move[in=0,defer=0,accept=0,reject=0,owner=0,replay=0,effect=0,reconcile=0,sameEpoch=0,stale=0] interact[in=0,hit=0,miss=0,incarnationReject=0,ownerAdmission=0,crossReject=0,ownerExecution=0,replay=0,lookup=0,effect=0,stale=0]",
+          "savedFullRecords": 81
+        }
+      ]
+    },
+    {
+      "kind": "chunky-cancel",
+      "workers": 1,
+      "status": "PASS_CONSOLE_SAMPLE",
+      "productionSha256": "6E87986E8BAD90C0F8E7F4636392C55BA38CFFA7CCE45B4EA5BB30C576F547B2",
+      "phases": [
+        {
+          "phase": "first",
+          "exitCode": 0,
+          "PHOENIUM_FULL STOPPED": "[01:21:28] [Server thread/INFO]: PHOENIUM_FULL STOPPED authoritative=true minecraft:overworld={structureWriters=0, producerReleases=4269, generationHolders=0, structureReaders=0, preparationCalls=51, deliveries=0, finishingCalls=51, structureHolders=0, structureWaitingWriters=0, captures=51, registrations=51, publicationCalls=51, structureDemandTickets=0, returnedIndex=0, graphs=0} inputs={pendingNotifications=0, expandedOperations=0, edges=0, plans=0, requestedPreparations=0, validations=306, consumers=0, factBytes=0} published={acknowledgements=0, chargedRecordBytes=0, reservations=51, capacityRefusals=0, transientExecutions=0, publications=51, uses=0, records=0, acquisitions=0}",
+          "PHOENIUM_STAGE4_SHUTDOWN": "[01:21:28] [Server thread/INFO]: PHOENIUM_STAGE4_SHUTDOWN admissionClosed=true queuedServices=0 pendingSaves=0 saveState={captures=1460, acknowledgements=1562, failedSettlements=0, failedWrites=0, retiredFailedSources=0, completedNotAcknowledged=0, pending=0}",
+          "PHOENIUM_STAGE2 stopped": "[01:21:28] [Server thread/INFO]: PHOENIUM_STAGE2 stopped lifecycle=STOPPED scheduler=STOPPING workers=1 lifecycleStarts=1 lifecycleStops=1 parallel=OFF worlds=3 leases=0 intercepted=132 dispatched=132 executed=132 duplicate=0 bypass=0 fallback=0 ownershipViolations=0 unleased=0 barriers=0 entities=0 players=0 packetAdmissions=0 packetExecutions=0 packetStaleReroutes=0 packetRejections=0 packetRecursions=0 chunkAdmissions=0 chunkApplications=0 chunkReroutes=0 chunkRejections=0 chunkDuplicates=0 producerChunkMutations=0 packets=move[in=0,defer=0,accept=0,reject=0,owner=0,replay=0,effect=0,reconcile=0,sameEpoch=0,stale=0] interact[in=0,hit=0,miss=0,incarnationReject=0,ownerAdmission=0,crossReject=0,ownerExecution=0,replay=0,lookup=0,effect=0,stale=0]"
+        }
+      ],
+      "lifetime": {
+        "status": "PASS_OUTSTANDING_LIFETIME_SAMPLE",
+        "kind": "chunky-cancel",
+        "outstanding": 50,
+        "issued": 50,
+        "completed": 50
+      }
+    },
+    {
+      "kind": "chunky-stop",
+      "workers": 1,
+      "status": "PASS_CONSOLE_SAMPLE",
+      "productionSha256": "6E87986E8BAD90C0F8E7F4636392C55BA38CFFA7CCE45B4EA5BB30C576F547B2",
+      "phases": [
+        {
+          "phase": "first",
+          "exitCode": 0,
+          "PHOENIUM_FULL STOPPED": "[01:21:36] [Server thread/INFO]: PHOENIUM_FULL STOPPED authoritative=true minecraft:overworld={structureWriters=0, graphs=0, returnedIndex=0, structureDemandTickets=0, publicationCalls=1, registrations=1, captures=1, structureWaitingWriters=0, structureHolders=0, finishingCalls=1, deliveries=0, preparationCalls=1, structureReaders=0, generationHolders=0, producerReleases=2008} inputs={pendingNotifications=0, factBytes=0, consumers=0, validations=6, requestedPreparations=0, plans=0, edges=0, expandedOperations=0} published={chargedRecordBytes=0, acknowledgements=0, acquisitions=0, records=0, uses=0, publications=1, transientExecutions=0, capacityRefusals=0, reservations=1}",
+          "PHOENIUM_STAGE4_SHUTDOWN": "[01:21:36] [Server thread/INFO]: PHOENIUM_STAGE4_SHUTDOWN admissionClosed=true queuedServices=0 pendingSaves=0 saveState={acknowledgements=1285, captures=987, pending=0, completedNotAcknowledged=0, retiredFailedSources=0, failedWrites=0, failedSettlements=0}",
+          "PHOENIUM_STAGE2 stopped": "[01:21:36] [Server thread/INFO]: PHOENIUM_STAGE2 stopped lifecycle=STOPPED scheduler=STOPPING workers=1 lifecycleStarts=1 lifecycleStops=1 parallel=OFF worlds=3 leases=0 intercepted=27 dispatched=27 executed=27 duplicate=0 bypass=0 fallback=0 ownershipViolations=0 unleased=0 barriers=0 entities=0 players=0 packetAdmissions=0 packetExecutions=0 packetStaleReroutes=0 packetRejections=0 packetRecursions=0 chunkAdmissions=0 chunkApplications=0 chunkReroutes=0 chunkRejections=0 chunkDuplicates=0 producerChunkMutations=0 packets=move[in=0,defer=0,accept=0,reject=0,owner=0,replay=0,effect=0,reconcile=0,sameEpoch=0,stale=0] interact[in=0,hit=0,miss=0,incarnationReject=0,ownerAdmission=0,crossReject=0,ownerExecution=0,replay=0,lookup=0,effect=0,stale=0]"
+        }
+      ],
+      "lifetime": {
+        "status": "PASS_OUTSTANDING_LIFETIME_SAMPLE",
+        "kind": "server-stop-request",
+        "outstanding": 50,
+        "issued": 50,
+        "completed": 50
+      }
+    },
+    {
+      "kind": "native",
+      "workers": 4,
+      "status": "PASS_CONSOLE_SAMPLE",
+      "productionSha256": "6E87986E8BAD90C0F8E7F4636392C55BA38CFFA7CCE45B4EA5BB30C576F547B2",
+      "phases": [
+        {
+          "phase": "first",
+          "exitCode": 0,
+          "PHOENIUM_FULL STOPPED": "[01:22:02] [Server thread/INFO]: PHOENIUM_FULL STOPPED authoritative=true minecraft:overworld={deliveries=0, finishingCalls=174, structureHolders=0, structureWaitingWriters=0, captures=174, registrations=174, publicationCalls=174, structureDemandTickets=0, returnedIndex=0, graphs=0, structureWriters=0, producerReleases=5344, generationHolders=0, structureReaders=0, preparationCalls=174} inputs={edges=0, plans=0, requestedPreparations=0, validations=1044, consumers=0, factBytes=0, pendingNotifications=0, expandedOperations=0} published={transientExecutions=0, publications=174, uses=0, records=0, acquisitions=0, acknowledgements=0, chargedRecordBytes=0, reservations=174, capacityRefusals=0}",
+          "PHOENIUM_STAGE4_SHUTDOWN": "[01:22:02] [Server thread/INFO]: PHOENIUM_STAGE4_SHUTDOWN admissionClosed=true queuedServices=0 pendingSaves=0 saveState={failedWrites=0, retiredFailedSources=0, completedNotAcknowledged=0, pending=0, captures=1402, acknowledgements=1750, failedSettlements=0}",
+          "PHOENIUM_STAGE2 stopped": "[01:22:02] [Server thread/INFO]: PHOENIUM_STAGE2 stopped lifecycle=STOPPED scheduler=STOPPING workers=4 lifecycleStarts=1 lifecycleStops=1 parallel=ON worlds=3 leases=0 intercepted=1101 dispatched=1101 executed=1101 duplicate=0 bypass=0 fallback=0 ownershipViolations=0 unleased=0 barriers=0 entities=0 players=0 packetAdmissions=0 packetExecutions=0 packetStaleReroutes=0 packetRejections=0 packetRecursions=0 chunkAdmissions=0 chunkApplications=0 chunkReroutes=0 chunkRejections=0 chunkDuplicates=0 producerChunkMutations=0 packets=move[in=0,defer=0,accept=0,reject=0,owner=0,replay=0,effect=0,reconcile=0,sameEpoch=0,stale=0] interact[in=0,hit=0,miss=0,incarnationReject=0,ownerAdmission=0,crossReject=0,ownerExecution=0,replay=0,lookup=0,effect=0,stale=0]",
+          "savedFullRecords": 70
+        },
+        {
+          "phase": "restart",
+          "exitCode": 0,
+          "PHOENIUM_FULL STOPPED": "[01:22:19] [Server thread/INFO]: PHOENIUM_FULL STOPPED authoritative=true minecraft:overworld={deliveries=0, finishingCalls=174, structureHolders=0, structureWaitingWriters=0, captures=174, registrations=174, publicationCalls=174, structureDemandTickets=0, returnedIndex=0, graphs=0, structureWriters=0, producerReleases=2664, generationHolders=0, structureReaders=0, preparationCalls=174} inputs={plans=0, requestedPreparations=0, validations=1044, consumers=0, factBytes=0, pendingNotifications=0, expandedOperations=0, edges=0} published={publications=174, uses=0, records=0, acquisitions=0, acknowledgements=0, chargedRecordBytes=0, reservations=174, capacityRefusals=0, transientExecutions=0}",
+          "PHOENIUM_STAGE4_SHUTDOWN": "[01:22:19] [Server thread/INFO]: PHOENIUM_STAGE4_SHUTDOWN admissionClosed=true queuedServices=0 pendingSaves=0 saveState={retiredFailedSources=0, completedNotAcknowledged=0, pending=0, captures=169, acknowledgements=648, failedSettlements=0, failedWrites=0}",
+          "PHOENIUM_STAGE2 stopped": "[01:22:19] [Server thread/INFO]: PHOENIUM_STAGE2 stopped lifecycle=STOPPED scheduler=STOPPING workers=4 lifecycleStarts=1 lifecycleStops=1 parallel=ON worlds=3 leases=0 intercepted=588 dispatched=588 executed=588 duplicate=0 bypass=0 fallback=0 ownershipViolations=0 unleased=0 barriers=0 entities=0 players=0 packetAdmissions=0 packetExecutions=0 packetStaleReroutes=0 packetRejections=0 packetRecursions=0 chunkAdmissions=0 chunkApplications=0 chunkReroutes=0 chunkRejections=0 chunkDuplicates=0 producerChunkMutations=0 packets=move[in=0,defer=0,accept=0,reject=0,owner=0,replay=0,effect=0,reconcile=0,sameEpoch=0,stale=0] interact[in=0,hit=0,miss=0,incarnationReject=0,ownerAdmission=0,crossReject=0,ownerExecution=0,replay=0,lookup=0,effect=0,stale=0]",
+          "savedFullRecords": 70
+        }
+      ]
+    },
+    {
+      "kind": "chunky-original",
+      "workers": 4,
+      "status": "PASS_CONSOLE_SAMPLE",
+      "productionSha256": "6E87986E8BAD90C0F8E7F4636392C55BA38CFFA7CCE45B4EA5BB30C576F547B2",
+      "phases": [
+        {
+          "phase": "first",
+          "exitCode": 0,
+          "PHOENIUM_FULL STOPPED": "[01:22:36] [Server thread/INFO]: PHOENIUM_FULL STOPPED authoritative=true minecraft:overworld={preparationCalls=156, structureReaders=0, generationHolders=0, producerReleases=7524, structureWriters=0, graphs=0, returnedIndex=0, structureDemandTickets=0, captures=156, registrations=156, publicationCalls=156, structureWaitingWriters=0, structureHolders=0, finishingCalls=156, deliveries=0} inputs={pendingNotifications=0, factBytes=0, consumers=0, validations=936, requestedPreparations=0, plans=0, edges=0, expandedOperations=0} published={reservations=156, chargedRecordBytes=0, acknowledgements=0, acquisitions=0, records=0, uses=0, publications=156, transientExecutions=0, capacityRefusals=0}",
+          "PHOENIUM_STAGE4_SHUTDOWN": "[01:22:36] [Server thread/INFO]: PHOENIUM_STAGE4_SHUTDOWN admissionClosed=true queuedServices=0 pendingSaves=0 saveState={failedSettlements=0, acknowledgements=2525, captures=2297, pending=0, completedNotAcknowledged=0, retiredFailedSources=0, failedWrites=0}",
+          "PHOENIUM_STAGE2 stopped": "[01:22:36] [Server thread/INFO]: PHOENIUM_STAGE2 stopped lifecycle=STOPPED scheduler=STOPPING workers=4 lifecycleStarts=1 lifecycleStops=1 parallel=ON worlds=3 leases=0 intercepted=552 dispatched=552 executed=552 duplicate=0 bypass=0 fallback=0 ownershipViolations=0 unleased=0 barriers=0 entities=0 players=0 packetAdmissions=0 packetExecutions=0 packetStaleReroutes=0 packetRejections=0 packetRecursions=0 chunkAdmissions=0 chunkApplications=0 chunkReroutes=0 chunkRejections=0 chunkDuplicates=0 producerChunkMutations=0 packets=move[in=0,defer=0,accept=0,reject=0,owner=0,replay=0,effect=0,reconcile=0,sameEpoch=0,stale=0] interact[in=0,hit=0,miss=0,incarnationReject=0,ownerAdmission=0,crossReject=0,ownerExecution=0,replay=0,lookup=0,effect=0,stale=0]",
+          "savedFullRecords": 81
+        },
+        {
+          "phase": "restart",
+          "exitCode": 0,
+          "PHOENIUM_FULL STOPPED": "[01:22:56] [Server thread/INFO]: PHOENIUM_FULL STOPPED authoritative=true minecraft:overworld={returnedIndex=0, structureDemandTickets=0, captures=199, registrations=199, publicationCalls=199, structureWaitingWriters=0, structureHolders=0, finishingCalls=199, deliveries=0, preparationCalls=199, structureReaders=0, generationHolders=0, producerReleases=5331, structureWriters=0, graphs=0} inputs={consumers=0, validations=1194, requestedPreparations=0, plans=0, edges=0, expandedOperations=0, pendingNotifications=0, factBytes=0} published={uses=0, publications=199, transientExecutions=0, capacityRefusals=0, reservations=199, chargedRecordBytes=0, acknowledgements=0, acquisitions=0, records=0}",
+          "PHOENIUM_STAGE4_SHUTDOWN": "[01:22:56] [Server thread/INFO]: PHOENIUM_STAGE4_SHUTDOWN admissionClosed=true queuedServices=0 pendingSaves=0 saveState={completedNotAcknowledged=0, retiredFailedSources=0, failedWrites=0, failedSettlements=0, acknowledgements=1613, captures=1215, pending=0}",
+          "PHOENIUM_STAGE2 stopped": "[01:22:56] [Server thread/INFO]: PHOENIUM_STAGE2 stopped lifecycle=STOPPED scheduler=STOPPING workers=4 lifecycleStarts=1 lifecycleStops=1 parallel=ON worlds=3 leases=0 intercepted=843 dispatched=843 executed=843 duplicate=0 bypass=0 fallback=0 ownershipViolations=0 unleased=0 barriers=0 entities=0 players=0 packetAdmissions=0 packetExecutions=0 packetStaleReroutes=0 packetRejections=0 packetRecursions=0 chunkAdmissions=0 chunkApplications=0 chunkReroutes=0 chunkRejections=0 chunkDuplicates=0 producerChunkMutations=0 packets=move[in=0,defer=0,accept=0,reject=0,owner=0,replay=0,effect=0,reconcile=0,sameEpoch=0,stale=0] interact[in=0,hit=0,miss=0,incarnationReject=0,ownerAdmission=0,crossReject=0,ownerExecution=0,replay=0,lookup=0,effect=0,stale=0]",
+          "savedFullRecords": 81
+        }
+      ]
+    },
+    {
+      "kind": "chunky-cancel",
+      "workers": 4,
+      "status": "PASS_CONSOLE_SAMPLE",
+      "productionSha256": "6E87986E8BAD90C0F8E7F4636392C55BA38CFFA7CCE45B4EA5BB30C576F547B2",
+      "phases": [
+        {
+          "phase": "first",
+          "exitCode": 0,
+          "PHOENIUM_FULL STOPPED": "[01:23:06] [Server thread/INFO]: PHOENIUM_FULL STOPPED authoritative=true minecraft:overworld={graphs=0, structureWriters=0, producerReleases=4269, generationHolders=0, structureReaders=0, preparationCalls=51, deliveries=0, finishingCalls=51, structureHolders=0, structureWaitingWriters=0, captures=51, registrations=51, publicationCalls=51, structureDemandTickets=0, returnedIndex=0} inputs={factBytes=0, pendingNotifications=0, expandedOperations=0, edges=0, plans=0, requestedPreparations=0, validations=306, consumers=0} published={acquisitions=0, acknowledgements=0, chargedRecordBytes=0, reservations=51, capacityRefusals=0, transientExecutions=0, publications=51, uses=0, records=0}",
+          "PHOENIUM_STAGE4_SHUTDOWN": "[01:23:06] [Server thread/INFO]: PHOENIUM_STAGE4_SHUTDOWN admissionClosed=true queuedServices=0 pendingSaves=0 saveState={pending=0, captures=1460, acknowledgements=1562, failedSettlements=0, failedWrites=0, retiredFailedSources=0, completedNotAcknowledged=0}",
+          "PHOENIUM_STAGE2 stopped": "[01:23:06] [Server thread/INFO]: PHOENIUM_STAGE2 stopped lifecycle=STOPPED scheduler=STOPPING workers=4 lifecycleStarts=1 lifecycleStops=1 parallel=ON worlds=3 leases=0 intercepted=129 dispatched=129 executed=129 duplicate=0 bypass=0 fallback=0 ownershipViolations=0 unleased=0 barriers=0 entities=0 players=0 packetAdmissions=0 packetExecutions=0 packetStaleReroutes=0 packetRejections=0 packetRecursions=0 chunkAdmissions=0 chunkApplications=0 chunkReroutes=0 chunkRejections=0 chunkDuplicates=0 producerChunkMutations=0 packets=move[in=0,defer=0,accept=0,reject=0,owner=0,replay=0,effect=0,reconcile=0,sameEpoch=0,stale=0] interact[in=0,hit=0,miss=0,incarnationReject=0,ownerAdmission=0,crossReject=0,ownerExecution=0,replay=0,lookup=0,effect=0,stale=0]"
+        }
+      ],
+      "lifetime": {
+        "status": "PASS_OUTSTANDING_LIFETIME_SAMPLE",
+        "kind": "chunky-cancel",
+        "outstanding": 50,
+        "issued": 50,
+        "completed": 50
+      }
+    },
+    {
+      "kind": "chunky-stop",
+      "workers": 4,
+      "status": "PASS_CONSOLE_SAMPLE",
+      "productionSha256": "6E87986E8BAD90C0F8E7F4636392C55BA38CFFA7CCE45B4EA5BB30C576F547B2",
+      "phases": [
+        {
+          "phase": "first",
+          "exitCode": 0,
+          "PHOENIUM_FULL STOPPED": "[01:23:14] [Server thread/INFO]: PHOENIUM_FULL STOPPED authoritative=true minecraft:overworld={structureReaders=0, preparationCalls=1, deliveries=0, finishingCalls=1, structureHolders=0, structureWaitingWriters=0, publicationCalls=1, captures=1, registrations=1, structureDemandTickets=0, returnedIndex=0, graphs=0, structureWriters=0, producerReleases=2008, generationHolders=0} inputs={expandedOperations=0, edges=0, plans=0, requestedPreparations=0, validations=6, consumers=0, factBytes=0, pendingNotifications=0} published={capacityRefusals=0, transientExecutions=0, publications=1, uses=0, records=0, acquisitions=0, acknowledgements=0, chargedRecordBytes=0, reservations=1}",
+          "PHOENIUM_STAGE4_SHUTDOWN": "[01:23:14] [Server thread/INFO]: PHOENIUM_STAGE4_SHUTDOWN admissionClosed=true queuedServices=0 pendingSaves=0 saveState={failedWrites=0, retiredFailedSources=0, completedNotAcknowledged=0, pending=0, captures=987, acknowledgements=1285, failedSettlements=0}",
+          "PHOENIUM_STAGE2 stopped": "[01:23:14] [Server thread/INFO]: PHOENIUM_STAGE2 stopped lifecycle=STOPPED scheduler=STOPPING workers=4 lifecycleStarts=1 lifecycleStops=1 parallel=ON worlds=3 leases=0 intercepted=27 dispatched=27 executed=27 duplicate=0 bypass=0 fallback=0 ownershipViolations=0 unleased=0 barriers=0 entities=0 players=0 packetAdmissions=0 packetExecutions=0 packetStaleReroutes=0 packetRejections=0 packetRecursions=0 chunkAdmissions=0 chunkApplications=0 chunkReroutes=0 chunkRejections=0 chunkDuplicates=0 producerChunkMutations=0 packets=move[in=0,defer=0,accept=0,reject=0,owner=0,replay=0,effect=0,reconcile=0,sameEpoch=0,stale=0] interact[in=0,hit=0,miss=0,incarnationReject=0,ownerAdmission=0,crossReject=0,ownerExecution=0,replay=0,lookup=0,effect=0,stale=0]"
+        }
+      ],
+      "lifetime": {
+        "status": "PASS_OUTSTANDING_LIFETIME_SAMPLE",
+        "kind": "server-stop-request",
+        "outstanding": 50,
+        "issued": 50,
+        "completed": 50
+      }
+    },
+    {
+      "kind": "C2ME rejection",
+      "workers": 1,
+      "childExit": 1,
+      "worldCreated": false,
+      "status": "PASS_EXPLICIT_BLOCK_ONLY"
+    },
+    {
+      "kind": "C2ME rejection",
+      "workers": 4,
+      "childExit": 1,
+      "worldCreated": false,
+      "status": "PASS_EXPLICIT_BLOCK_ONLY"
+    }
+  ],
+  "clientRegressions": [
+    {
+      "workers": 1,
+      "comparison": {
+        "status": "PASS",
+        "firstMismatch": null,
+        "orderedEvents": [
+          132,
+          132
+        ],
+        "nativeRestart": [
+          {
+            "viewDistance": 5,
+            "simulationDistance": 5,
+            "savedDelay": 186
+          },
+          {
+            "viewDistance": 5,
+            "simulationDistance": 5,
+            "savedDelay": 186
+          }
+        ],
+        "originalTrackerCalls": {
+          "00000009-0000-000a-0000-000b0000000c": 323,
+          "00000005-0000-0006-0000-000700000008": 187,
+          "00000001-0000-0002-0000-000300000004": 515
+        },
+        "digests": [
+          "6AB41117A5099DD52A7E10C358A6E30887EB489B7A038C4E1F1A5078E4385A96",
+          "6AB41117A5099DD52A7E10C358A6E30887EB489B7A038C4E1F1A5078E4385A96"
+        ]
+      }
+    },
+    {
+      "workers": 4,
+      "comparison": {
+        "status": "PASS",
+        "firstMismatch": null,
+        "orderedEvents": [
+          132,
+          132
+        ],
+        "nativeRestart": [
+          {
+            "viewDistance": 5,
+            "simulationDistance": 5,
+            "savedDelay": 186
+          },
+          {
+            "viewDistance": 5,
+            "simulationDistance": 5,
+            "savedDelay": 186
+          }
+        ],
+        "originalTrackerCalls": {
+          "00000009-0000-000a-0000-000b0000000c": 323,
+          "00000005-0000-0006-0000-000700000008": 187,
+          "00000001-0000-0002-0000-000300000004": 515
+        },
+        "digests": [
+          "6AB41117A5099DD52A7E10C358A6E30887EB489B7A038C4E1F1A5078E4385A96",
+          "6AB41117A5099DD52A7E10C358A6E30887EB489B7A038C4E1F1A5078E4385A96"
+        ]
+      }
+    }
+  ],
+  "unexecutedC2meAcceptance": [
+    "completed fresh native generation W1/W4",
+    "actual disk restart W1/W4",
+    "real TCP client and gameplay/tracking W1/W4",
+    "healthy outstanding cancellation/failure/stop W1/W4",
+    "positive replacement FULL owned application/publication and retained save acknowledgement"
+  ],
+  "files": [
+    {
+      "path": "run/stage7/c2me-20260909/archived-client-control-view/path-mapping.json",
+      "sha256": "B7D17392982614EB163D7B3397CD3381FCDB43518E9F348A551622D1F884837E",
+      "bytes": 2081
+    },
+    {
+      "path": "run/stage7/c2me-20260909/archived-client-control-view/process-metrics-first.json",
+      "sha256": "55D4213C294DD00592D151850A63D07EB3643CEFB3669895714F7DC76F144449",
+      "bytes": 203
+    },
+    {
+      "path": "run/stage7/c2me-20260909/archived-client-control-view/process-metrics-restart.json",
+      "sha256": "FA36D519844DBD0DA73A9065CC0EE91E3A1BE6D8039CE78A89E999E4E1E66DDE",
+      "bytes": 202
+    },
+    {
+      "path": "run/stage7/c2me-20260909/archived-client-control-view/production-identity-first.json",
+      "sha256": "5B1D5E9A042F3BFEC680834495F667A847030754054FD9D642D88861479D3D49",
+      "bytes": 389
+    },
+    {
+      "path": "run/stage7/c2me-20260909/archived-client-control-view/production-identity-restart.json",
+      "sha256": "706583A4306D3AC0B9220AE741121BA4ADF35B05AA495F37E30C75D0D74BC62E",
+      "bytes": 391
+    },
+    {
+      "path": "run/stage7/c2me-20260909/archived-client-control-view/STAGE4-CLIENT-before-restart-trace.json",
+      "sha256": "B386105F174F4858E70AC246220B92AF7157B7F2B22F1A3C2719EBD0F5C7ECA6",
+      "bytes": 168810
+    },
+    {
+      "path": "run/stage7/c2me-20260909/archived-client-control-view/STAGE4-CLIENT-reload-trace.json",
+      "sha256": "2DF4FC797FACD28D0B66963F732E554577CED20AC12A8DAFAED0D74906DA3607",
+      "bytes": 5173
+    },
+    {
+      "path": "run/stage7/c2me-20260909/archived-client-control-view/STAGE4-CLIENT-trace.json",
+      "sha256": "B386105F174F4858E70AC246220B92AF7157B7F2B22F1A3C2719EBD0F5C7ECA6",
+      "bytes": 168810
+    },
+    {
+      "path": "run/stage7/c2me-20260909/archived-client-control-view/STAGE4-CLIENT.json",
+      "sha256": "F969F2679AB1F4C411441F26DA2CF6661023ADC52166CC9ADE65D26046E1939E",
+      "bytes": 2126
+    },
+    {
+      "path": "run/stage7/c2me-20260909/baseline-cache-bytecode.txt",
+      "sha256": "56FF4ABAC4C3DB5E413907A48730C4F64CF652BB887B6AA7E6A5CACD2B36AA3F",
+      "bytes": 144304
+    },
+    {
+      "path": "run/stage7/c2me-20260909/baseline-tests.log",
+      "sha256": "737FA957113C40993550B4CA71990FDBE9091080553862224EE37525E065804E",
+      "bytes": 1065
+    },
+    {
+      "path": "run/stage7/c2me-20260909/baseline-w1/first-pid.json",
+      "sha256": "698C3DC6AF08215D9CDE23B59817341156186663472F756F2109FAE0DD8066B2",
+      "bytes": 539
+    },
+    {
+      "path": "run/stage7/c2me-20260909/baseline-w1/first-report.json",
+      "sha256": "F47243FD3B234155FB5FE2AFD2A906858294E23EAC1CBCC60C9A82D3850BA9BE",
+      "bytes": 9782
+    },
+    {
+      "path": "run/stage7/c2me-20260909/baseline-w1/first.log",
+      "sha256": "88D64AC226E9B686085FCEAC84E6F8C452F6C4E447D696142AD3A78FAFAD3AEE",
+      "bytes": 33895
+    },
+    {
+      "path": "run/stage7/c2me-20260909/baseline-w1/installed.json",
+      "sha256": "AFDAECE6A2DA43D0DBB4AF09B7D1ED1F9CF183A32375986D478F07FB567281CD",
+      "bytes": 10708
+    },
+    {
+      "path": "run/stage7/c2me-20260909/baseline-w1/plan.json",
+      "sha256": "A8F0F94830E9F02B23B3DB22C1F1A9B6C20AC8239A4C2CE914231B73D206E710",
+      "bytes": 372
+    },
+    {
+      "path": "run/stage7/c2me-20260909/baseline-w1/report.json",
+      "sha256": "A7BF82BCAA337BC2D462685268E0A31BC1373E75DD5FAA66DC43E403F3A9DF20",
+      "bytes": 7020
+    },
+    {
+      "path": "run/stage7/c2me-20260909/baseline-w1/server/.mixin.out/class/net/minecraft/server/level/ServerChunkCache.target.class",
+      "sha256": "68A011659CF3CA09FC5BC19AAACC501DBAD196DE0C317BA27907E78047E398FE",
+      "bytes": 59996
+    },
+    {
+      "path": "run/stage7/c2me-20260909/baseline-w1/server/config/c2me.toml",
+      "sha256": "29D546C79D9FFBB02EECC1C899A067E82EAFE1A81AC9B694EED6244C31A8C565",
+      "bytes": 9934
+    },
+    {
+      "path": "run/stage7/c2me-20260909/baseline-w1/server/server.properties",
+      "sha256": "45CEFD710F08EF30DD3E1E0EEC58FD919DF55A1F9E9AD3376B23611E61DB6C93",
+      "bytes": 1865
+    },
+    {
+      "path": "run/stage7/c2me-20260909/c2me-generation-delegate.txt",
+      "sha256": "BF810236C8EF8897E9FE317521DCC5BB5B1CB353B3BC8A9F82C4E28293258464",
+      "bytes": 57170
+    },
+    {
+      "path": "run/stage7/c2me-20260909/c2me-holder-bytecode.txt",
+      "sha256": "2DCE6496C6E95357E45ED4F962C021BA702C534E182378CF00B3C5359430B52B",
+      "bytes": 64634
+    },
+    {
+      "path": "run/stage7/c2me-20260909/c2me-lifecycle-bytecode.txt",
+      "sha256": "36EE77A0952D306B2EA09C87154B81EA301965B78BD8C40441D70B37BFE3A37D",
+      "bytes": 143495
+    },
+    {
+      "path": "run/stage7/c2me-20260909/client-api-selection.json",
+      "sha256": "CEF0CC099716D989164E6B4CA026B43C9214B486BB501A0FB01EC4862DCDB2B2",
+      "bytes": 314
+    },
+    {
+      "path": "run/stage7/c2me-20260909/client-commands.json",
+      "sha256": "2D9DA6D520C25F453F0E25F91DDAC93143FEE564514F247A4D031DD925ECDB4B",
+      "bytes": 1851
+    },
+    {
+      "path": "run/stage7/c2me-20260909/client-comparison-w1.json",
+      "sha256": "8F96467641FDEBF004DD3620B4A10B93199ED77EDAFF0D30819EB2E475879FD9",
+      "bytes": 246
+    },
+    {
+      "path": "run/stage7/c2me-20260909/client-results.json",
+      "sha256": "C361CE0A3850F65A822C29BD4F44AF70F6F0284A71667534B242CE6956F7CCDF",
+      "bytes": 101
+    },
+    {
+      "path": "run/stage7/c2me-20260909/client-w1-driver.log",
+      "sha256": "B26B1CC69B57D33F6BF42A8BDA7280977D4DD445EDB5AF75785A15D2EFAB0C91",
+      "bytes": 1080828
+    },
+    {
+      "path": "run/stage7/c2me-20260909/client-w4-driver.log",
+      "sha256": "1775DAC6C7E6E9DD744D5E8FF61A2F4B5400A7485FFE12A0DF4717F7EED5465E",
+      "bytes": 1048004
+    },
+    {
+      "path": "run/stage7/c2me-20260909/client_batch.py",
+      "sha256": "19438F03A69F17299B2BED9AEAFFC8CA3B2FBCE1A84145A155981ABABF39B498",
+      "bytes": 2794
+    },
+    {
+      "path": "run/stage7/c2me-20260909/diagnostic-native-plan.json",
+      "sha256": "63E59CAA64140C1470404CCDBCC1944910C436D8699CD19D949260A9170CDEBA",
+      "bytes": 2576
+    },
+    {
+      "path": "run/stage7/c2me-20260909/early-command.json",
+      "sha256": "556B18A55132506E4E6D955E729A3E01F2E40F25B36675B3B29507C25DED7DA7",
+      "bytes": 897
+    },
+    {
+      "path": "run/stage7/c2me-20260909/early-driver.log",
+      "sha256": "EC69C770EAC9C01D3C259688B9E239B8E01D4C054405F36BBD205605F18BC9DA",
+      "bytes": 172
+    },
+    {
+      "path": "run/stage7/c2me-20260909/early-histogram.txt",
+      "sha256": "FFE58029390B29ADA184BAB69E56A568FC8E20CD26F95F24317D70E1FE18C532",
+      "bytes": 1963216
+    },
+    {
+      "path": "run/stage7/c2me-20260909/early-native-w4/first-pid.json",
+      "sha256": "7E6B2A14862AE5D128E02252E13E8F53032B5CB2088284F073F939095B913E14",
+      "bytes": 681
+    },
+    {
+      "path": "run/stage7/c2me-20260909/early-native-w4/first-report.json",
+      "sha256": "D3DCA536909AAFDB101D06EAA294FEC442E853F0C535AB406A0E1478AFDB4677",
+      "bytes": 3545
+    },
+    {
+      "path": "run/stage7/c2me-20260909/early-native-w4/first.log",
+      "sha256": "3958A40A0C07F32097B9AD1941D4CA7492E3883F0C97EB9380AC2F0FB59CA86F",
+      "bytes": 27517
+    },
+    {
+      "path": "run/stage7/c2me-20260909/early-native-w4/installed.json",
+      "sha256": "792634CDA1309841FF57A8411FE58FB4E7AC9799FE05121805A592852AE46E0B",
+      "bytes": 11280
+    },
+    {
+      "path": "run/stage7/c2me-20260909/early-native-w4/plan.json",
+      "sha256": "9EEBDB819680F1D3C232C8F060FEE3145D9088E076197FAF7E2C4B7340CB2E2C",
+      "bytes": 2722
+    },
+    {
+      "path": "run/stage7/c2me-20260909/early-native-w4/report.json",
+      "sha256": "145743A3C48CFD44090DE5C6DFB74A0C2ECA7CBD20753A4669F846E0FF111BF8",
+      "bytes": 2314
+    },
+    {
+      "path": "run/stage7/c2me-20260909/early-native-w4/server/config/c2me.toml",
+      "sha256": "29D546C79D9FFBB02EECC1C899A067E82EAFE1A81AC9B694EED6244C31A8C565",
+      "bytes": 9934
+    },
+    {
+      "path": "run/stage7/c2me-20260909/early-native-w4/server/server.properties",
+      "sha256": "C9938641310FA3544C247335FD1EC30054BFAAE7768B15FB4F52396446097EE4",
+      "bytes": 354
+    },
+    {
+      "path": "run/stage7/c2me-20260909/early-native-w4-v2/first-pid.json",
+      "sha256": "1393203F2BE8DCEF53273458AD451AE1282EB54B3C7ED34B1CBA8A84A7C9924E",
+      "bytes": 684
+    },
+    {
+      "path": "run/stage7/c2me-20260909/early-native-w4-v2/first-report.json",
+      "sha256": "5CB319AF087FB389D103DD9CB5007CE8FCA24104024E0CA681C3FB130160BBC3",
+      "bytes": 9433
+    },
+    {
+      "path": "run/stage7/c2me-20260909/early-native-w4-v2/first.log",
+      "sha256": "84D4BEDDAA05382E018FAC4BBBAAB8CF06EC7C6B5C5D23521173DFDD3817D26A",
+      "bytes": 34991
+    },
+    {
+      "path": "run/stage7/c2me-20260909/early-native-w4-v2/installed.json",
+      "sha256": "D2F3D2A852F71D3D9335C466E32FED8D99CED019315516F3F6015BDA59FC8AF7",
+      "bytes": 11280
+    },
+    {
+      "path": "run/stage7/c2me-20260909/early-native-w4-v2/plan.json",
+      "sha256": "399516F09C4542D674F3ADFF6695753DAF55AF7B5EF1CE82C55BA7D5E80542CD",
+      "bytes": 2725
+    },
+    {
+      "path": "run/stage7/c2me-20260909/early-native-w4-v2/report.json",
+      "sha256": "5093ED9FD273353D0B0E96F0236F70FC190CD7C437B8BDAEC5EF0B026E4C6C90",
+      "bytes": 7458
+    },
+    {
+      "path": "run/stage7/c2me-20260909/early-native-w4-v2/server/.mixin.out/class/net/minecraft/server/level/ServerChunkCache.target.class",
+      "sha256": "7F105C7077C17A4494CF1A2FE8C1BD287407ED2486BBFF6FD160527A6F9524E1",
+      "bytes": 60794
+    },
+    {
+      "path": "run/stage7/c2me-20260909/early-native-w4-v2/server/config/c2me.toml",
+      "sha256": "29D546C79D9FFBB02EECC1C899A067E82EAFE1A81AC9B694EED6244C31A8C565",
+      "bytes": 9934
+    },
+    {
+      "path": "run/stage7/c2me-20260909/early-native-w4-v2/server/server.properties",
+      "sha256": "36590114BB4E4183C6FDE2F9FAD22B9662A78634799A492B283919BA6B3A9434",
+      "bytes": 1867
+    },
+    {
+      "path": "run/stage7/c2me-20260909/early-native-w4-v3/first-pid.json",
+      "sha256": "34244425698BBF1506DB0907270CB1CD339543F00BF21D7186104DD845200971",
+      "bytes": 684
+    },
+    {
+      "path": "run/stage7/c2me-20260909/early-native-w4-v3/first-report.json",
+      "sha256": "97D74956961CD91E4F55975152142A4B1DD455DCFDFAE1666530A6D9FF69F408",
+      "bytes": 123120
+    },
+    {
+      "path": "run/stage7/c2me-20260909/early-native-w4-v3/first.log",
+      "sha256": "0103B4DAC183C333D01A497F1F7166F21F7286B74A2B9981A8C44EB15645FBFF",
+      "bytes": 34353
+    },
+    {
+      "path": "run/stage7/c2me-20260909/early-native-w4-v3/installed.json",
+      "sha256": "1B24E346295A87DF82F6AB2E9CBCAA777B43DBEADE86DC77525F6C8979E2E8A0",
+      "bytes": 11280
+    },
+    {
+      "path": "run/stage7/c2me-20260909/early-native-w4-v3/plan.json",
+      "sha256": "C6BB6311DDE18378EE96D617D75E5247FC5B7BA2E599E43BAE2C9B252B6F9626",
+      "bytes": 2725
+    },
+    {
+      "path": "run/stage7/c2me-20260909/early-native-w4-v3/report.json",
+      "sha256": "5CBD9DCA7DF6585B45BE5F946192EC5EC3B7CBA28273B58CBDCCFF8C117E8DC7",
+      "bytes": 2553
+    },
+    {
+      "path": "run/stage7/c2me-20260909/early-native-w4-v3/server/.mixin.out/class/net/minecraft/server/level/ChunkMap.class",
+      "sha256": "7FCC74EB0A79D44FF8779268EBC13B081DBE76B778B7FDC92C54207DFCD0E789",
+      "bytes": 163073
+    },
+    {
+      "path": "run/stage7/c2me-20260909/early-native-w4-v3/server/.mixin.out/class/net/minecraft/server/level/GenerationChunkHolder.class",
+      "sha256": "B11819C72012F8DEFD50E108D5CF9B70A1B7090BC703F40E9A03633526617607",
+      "bytes": 32514
+    },
+    {
+      "path": "run/stage7/c2me-20260909/early-native-w4-v3/server/.mixin.out/class/net/minecraft/server/level/ServerChunkCache.class",
+      "sha256": "67D05A7EC8C38411D3EA38A27DFE3F881606CC1BFB1294834A86CE3644210ACD",
+      "bytes": 70894
+    },
+    {
+      "path": "run/stage7/c2me-20260909/early-native-w4-v3/server/config/c2me.toml",
+      "sha256": "29D546C79D9FFBB02EECC1C899A067E82EAFE1A81AC9B694EED6244C31A8C565",
+      "bytes": 9934
+    },
+    {
+      "path": "run/stage7/c2me-20260909/early-native-w4-v3/server/server.properties",
+      "sha256": "ADED97B5D6FAE18FFF7FACC375F1FE0275054E7829B4F996297467FFA24631A5",
+      "bytes": 1867
+    },
+    {
+      "path": "run/stage7/c2me-20260909/early-observations-v2.json",
+      "sha256": "44136FA355B3678A1146AD16F7E8649E94FB4FC21FE77E8310C060F61CAAFF8A",
+      "bytes": 2
+    },
+    {
+      "path": "run/stage7/c2me-20260909/early-observations-v3.json",
+      "sha256": "3A407B467C09AD9A54C44AC2DE11D4138A50D5EE53EB00F79C36F951B35545D9",
+      "bytes": 81844
+    },
+    {
+      "path": "run/stage7/c2me-20260909/early-plan.json",
+      "sha256": "C6BB6311DDE18378EE96D617D75E5247FC5B7BA2E599E43BAE2C9B252B6F9626",
+      "bytes": 2725
+    },
+    {
+      "path": "run/stage7/c2me-20260909/early-threads.txt",
+      "sha256": "486A911CD0A6A3B226BC6CD42BC640E410A9A030C97EEE2944737F35E56A2A13",
+      "bytes": 64979
+    },
+    {
+      "path": "run/stage7/c2me-20260909/early_diagnostic.py",
+      "sha256": "C73CAA26A2188F2214E11CE34B3AC39524B7FCB49E1EA9F70AD302403D2BA5E3",
+      "bytes": 1755
+    },
+    {
+      "path": "run/stage7/c2me-20260909/early_diagnostic_v2.py",
+      "sha256": "FA8EBD1561AE49E7519392AAF650E1D900C132C06CB1AF524659FC7BED051441",
+      "bytes": 1763
+    },
+    {
+      "path": "run/stage7/c2me-20260909/early_diagnostic_v3.py",
+      "sha256": "924F0627C9CCC505B5A50388BB8F43EDFFD95B0BC0DE39BA11CEB5C92F1B7896",
+      "bytes": 1765
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-artifacts/c2me-path-observer.jar",
+      "sha256": "46B984F7D0BCEB44875F74B1BDA06CDDC0E15BC75E1B8D6A70323E6EE453C6E8",
+      "bytes": 12047
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-artifacts/manifest.json",
+      "sha256": "3C41C5078A6FE31B0C87B7F78934765A4C7B9F24CE670BA31B142D8F926EE7F9",
+      "bytes": 1382
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-artifacts/phoenium-0.2.0-stage2.jar",
+      "sha256": "EF92814DC94021E759827946651E0C1040B8D77607747BC6AA9B8FE37401AECC",
+      "bytes": 1252190
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-artifacts/stage4-acceptance-probe.jar",
+      "sha256": "DC1FA87FA00CE6EBFF8E25BEF77617BF3FA856B6BD15E0589A24D8AA5C260ED6",
+      "bytes": 118373
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-artifacts/stage7-observations.jar",
+      "sha256": "FE9090B08D1D3A2D7AFCA07E7E6AF09B301ABF6F182F6C167593A9E473D3D5D9",
+      "bytes": 16016
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-artifacts-v2/c2me-path-observer.jar",
+      "sha256": "46B984F7D0BCEB44875F74B1BDA06CDDC0E15BC75E1B8D6A70323E6EE453C6E8",
+      "bytes": 12047
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-artifacts-v2/manifest.json",
+      "sha256": "46EA4D043491BF5DFF414BBF491BAB709D6D84663A0BA5A992F33425EFC3EEA7",
+      "bytes": 1402
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-artifacts-v2/phoenium-0.2.0-stage2.jar",
+      "sha256": "6E87986E8BAD90C0F8E7F4636392C55BA38CFFA7CCE45B4EA5BB30C576F547B2",
+      "bytes": 1252194
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-artifacts-v2/stage4-acceptance-probe.jar",
+      "sha256": "DC1FA87FA00CE6EBFF8E25BEF77617BF3FA856B6BD15E0589A24D8AA5C260ED6",
+      "bytes": 118373
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-artifacts-v2/stage7-observations.jar",
+      "sha256": "FE9090B08D1D3A2D7AFCA07E7E6AF09B301ABF6F182F6C167593A9E473D3D5D9",
+      "bytes": 16016
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-batch-results-v2.json",
+      "sha256": "EB2F3ACFF7A9F1A8BDD74D3E6B846FAFBFB8610AD3AA970A4F1345F80B44B202",
+      "bytes": 232
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-batch-results.json",
+      "sha256": "FD4BE1A134111E774E06D9D9E592787379E234794C63525B11B77E06A6859206",
+      "bytes": 121
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-blocked-c2me-w1/first-mca.json",
+      "sha256": "8688661883ECCE51446B3AA32B8E4AD11E50A0534A543FB2CE5A2FBA554295F9",
+      "bytes": 240119
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-blocked-c2me-w1/first-pid.json",
+      "sha256": "DA2B7AE40AAAC1E4228D5A37E5F643747A8D48F6D4B385CF0C0A5FA8E070D6EF",
+      "bytes": 539
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-blocked-c2me-w1/first-report.json",
+      "sha256": "CE85095EA395C610729605665AF78925E7F4CA3FD2C6E70E0E4ADED0C137DBFC",
+      "bytes": 34563
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-blocked-c2me-w1/first.log",
+      "sha256": "3F8B39CCF7954221AD2DF6EBFA524BABFD15FB4BABCA659CF5FDB34662FD1EDE",
+      "bytes": 31664
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-blocked-c2me-w1/installed.json",
+      "sha256": "E98800CE9DC8B8619E7C939D4BF7AC6D5294DDF2FCE5B55281397F061B7F3EE8",
+      "bytes": 10780
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-blocked-c2me-w1/plan.json",
+      "sha256": "A8F0F94830E9F02B23B3DB22C1F1A9B6C20AC8239A4C2CE914231B73D206E710",
+      "bytes": 372
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-blocked-c2me-w1/report.json",
+      "sha256": "BE9A7FF90A007E8E43C874A06F8F034F09CC3CA82AF8E371A15AAA46E606B41A",
+      "bytes": 6006
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-blocked-c2me-w1/restart-mca.json",
+      "sha256": "3EAD3922CBF478BB25C3A82C4EA28C69E5DE05F5A44DD7EEE72D246164F0EFA7",
+      "bytes": 240127
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-blocked-c2me-w1/restart-pid.json",
+      "sha256": "61DE9F20B35AC2C945F8B0CC4F58A75AAFBF3603DD4D333C0B14507B5D5B785C",
+      "bytes": 538
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-blocked-c2me-w1/restart-report.json",
+      "sha256": "CDD7F882E5DD7DC9A7BC7284C8F4937D4DC82600D72F1152D7D32C9998B532CF",
+      "bytes": 33641
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-blocked-c2me-w1/restart.log",
+      "sha256": "4703C1395898B2F30C53A3AEDA232483A1CEC9C5B3C057EA4491E7E42C7BD739",
+      "bytes": 30628
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-blocked-c2me-w1/server/.mixin.out/class/net/minecraft/server/level/ChunkMap.class",
+      "sha256": "319D70DA9C2C2E6081BF755BA57BD9ACE31DAD3EA6BDEB0B17A1F5189ADEB056",
+      "bytes": 158289
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-blocked-c2me-w1/server/.mixin.out/class/net/minecraft/server/level/GenerationChunkHolder.class",
+      "sha256": "90A740A31D47FFC449983009399B30B4CDCC50CE7DF3C1BE94C6350162A8DCF8",
+      "bytes": 31859
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-blocked-c2me-w1/server/.mixin.out/class/net/minecraft/server/level/ServerChunkCache.class",
+      "sha256": "D579DCCDF70E7121C326E194F241092D43D9901F54E821922198E2BAA8006349",
+      "bytes": 63443
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-blocked-c2me-w1/server/config/c2me.toml",
+      "sha256": "A3AE14EAFD755448E73A29D533A9E6A0B71D46CC1D64C533B7F75411DC6E1317",
+      "bytes": 5548
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-blocked-c2me-w1/server/server.properties",
+      "sha256": "DDA8A17D58E55BD55605119F683D972326BEBDAAE037E29B0509E61730680E19",
+      "bytes": 1865
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-blocked-c2me-w1-driver.log",
+      "sha256": "800531E0C26E45419E4A03568DAF610BD0551D3D38E51F135011B0C137A82D35",
+      "bytes": 246
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-build-v2.log",
+      "sha256": "CB6CDE8E202112A48A085205DA14DD8441DBFB4E982CB4D277A02263BFF91B22",
+      "bytes": 1928
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-build.log",
+      "sha256": "15995FA997AF00F06A518B2AA7C7F6E6AC1B2D7B23E78604D5D78E4E30EE8698",
+      "bytes": 2790
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-client-comparison-w1.json",
+      "sha256": "7BC8C71BFCD7E389D3FE920D1FB2CB698B92FB0BBD89A82EF16781B2117B10F1",
+      "bytes": 671
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-client-comparison-w4.json",
+      "sha256": "7BC8C71BFCD7E389D3FE920D1FB2CB698B92FB0BBD89A82EF16781B2117B10F1",
+      "bytes": 671
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-client-w1/evidence/client-packets.log",
+      "sha256": "33BC17D00861FC1C191660441BB9AADCE5793BC9075410214FAC90B9AF2E66E9",
+      "bytes": 397418
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-client-w1/evidence/process-metrics-first.json",
+      "sha256": "A4B945DB79AA42EA70DA05F19DBABD010CE55370F19813A742C2B78902E4F287",
+      "bytes": 202
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-client-w1/evidence/process-metrics-restart.json",
+      "sha256": "02C396DDE797BD8D901985B9BC00FFD7E68F0F758F5ED9522A5D124C49F4A1C1",
+      "bytes": 201
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-client-w1/evidence/production-identity-first.json",
+      "sha256": "03FDD85568D390909E4197E8B79280FC7DD52CEF9B3CD192B0FDCA6403038618",
+      "bytes": 372
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-client-w1/evidence/production-identity-restart.json",
+      "sha256": "62A0E897872EFB04B26ADB060F46871C7EBF5B9E610E605AAF5C7B06FC1792F9",
+      "bytes": 374
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-client-w1/evidence/STAGE4-CLIENT-before-restart-trace.json",
+      "sha256": "D7244C29D6A5785561207DD2A8017C5610CF4473E5A4C229DA8648FFA3EB5450",
+      "bytes": 170659
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-client-w1/evidence/STAGE4-CLIENT-reload-trace.json",
+      "sha256": "F2D80B7A428950FEACA3F79B882D62441E173C8C7ADEEDD11483FDD3080EF6FD",
+      "bytes": 5165
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-client-w1/evidence/STAGE4-CLIENT-trace.json",
+      "sha256": "D7244C29D6A5785561207DD2A8017C5610CF4473E5A4C229DA8648FFA3EB5450",
+      "bytes": 170659
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-client-w1/evidence/STAGE4-CLIENT.json",
+      "sha256": "5C2CD2D19BB00C615F306546B7CC9170FD8DDE0B0058C41E7356A0A006C767BA",
+      "bytes": 2035
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-client-w1/server/server.properties",
+      "sha256": "9034D15315FBDB101D13242119DECF09BD4E384CDF053683BD1CCB0391E6DFE5",
+      "bytes": 1893
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-client-w4/evidence/client-packets.log",
+      "sha256": "427EF9CEB232AD25427B5699E2D43C77D103FDC9D7C8EC241A82BB8E6696FF3F",
+      "bytes": 379545
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-client-w4/evidence/process-metrics-first.json",
+      "sha256": "0B0E93C45AC2769A6EE83E9A6A313AB784EDAD4915979FF271ECA69240494C7C",
+      "bytes": 202
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-client-w4/evidence/process-metrics-restart.json",
+      "sha256": "2A8C2A33305310D3F951C875C5545A5678681E844EBB9BCFB3D69AE4BFBE562C",
+      "bytes": 201
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-client-w4/evidence/production-identity-first.json",
+      "sha256": "C7CF916D16D038795BA7E1C9202DA8792D1DF552871D7524C29A5E7FE40A07B6",
+      "bytes": 372
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-client-w4/evidence/production-identity-restart.json",
+      "sha256": "F49A78CB92112F6C743474540965C81251CFEA316A4041274672F8E3C81E963C",
+      "bytes": 374
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-client-w4/evidence/STAGE4-CLIENT-before-restart-trace.json",
+      "sha256": "0147EB584424BA713F8EB440B1621F52D0677BF395612918C72511D5EE56B66E",
+      "bytes": 169157
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-client-w4/evidence/STAGE4-CLIENT-reload-trace.json",
+      "sha256": "9C5193104DEC1A3DC09F6AD3941AF680E4DCE0D0EEDE958E7357A918673F469F",
+      "bytes": 5165
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-client-w4/evidence/STAGE4-CLIENT-trace.json",
+      "sha256": "0147EB584424BA713F8EB440B1621F52D0677BF395612918C72511D5EE56B66E",
+      "bytes": 169157
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-client-w4/evidence/STAGE4-CLIENT.json",
+      "sha256": "F26D99FDE247FE2EF35C2DD0031EFE86210437FF6AE6144AE3D1F2489C855294",
+      "bytes": 2035
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-client-w4/server/server.properties",
+      "sha256": "F45E60B188110ED0F54E948CDFC831D8B7811964F920634EB768309CB46B8F6B",
+      "bytes": 1893
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-commands-v2.json",
+      "sha256": "1DB94F7174F2BBE8A58F7D86EFD03BDE89A3F0690EF1A7D03C4DEA953CC3AEE7",
+      "bytes": 1855
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-commands.json",
+      "sha256": "78220E484027F37A0F38D451617E1FB370ADAABE6EB946B619A033758499DBBE",
+      "bytes": 957
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-native-plan-v3.json",
+      "sha256": "0858FADABE039CEB8F898FD70B28831B01BEF0C1E1C95F7B95A6D2D34089C900",
+      "bytes": 26434
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-native-plan.json",
+      "sha256": "EF2618334D56AE6DA59E19894EAAF51579E989AF70BBA44BFA1472E344D09E0C",
+      "bytes": 26130
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-test-results/TEST-dev.phoenium.adversestop.AdverseStopProbeContractTest.xml",
+      "sha256": "0878078C307FAA7D103677AC1931700BB4E2095F5F6D18F8A00F9196C82E3219",
+      "bytes": 1163
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-test-results/TEST-dev.phoenium.chunk.C2meTickPhaseBoundaryTest.xml",
+      "sha256": "DF12B8D4866562799E19C88172D6E9D23CEF9E8E9FD81AD908397B1DF6AB1512",
+      "bytes": 824
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-test-results/TEST-dev.phoenium.chunk.ChunkAdapterInfrastructureTest.xml",
+      "sha256": "1B4921523A129D9E08744A9A7C74204C5262E8D204B23C642A4C88CBE6232EAE",
+      "bytes": 2128
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-test-results/TEST-dev.phoenium.chunk.ChunkCustodyModelTest.xml",
+      "sha256": "D7C8E9431579DDA55AB72D0E11848982321A0EEFF1126FECD623F2493D652DFA",
+      "bytes": 2117
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-test-results/TEST-dev.phoenium.chunk.ChunkMetadataAuthorizationTest.xml",
+      "sha256": "04F25001B011BE83587F6F60BCFC43EEE56201CA7F8C3BD8B9FD44EBBB96DDC7",
+      "bytes": 1959
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-test-results/TEST-dev.phoenium.chunk.ChunkMetadataVanillaContractTest.xml",
+      "sha256": "95D05DEFD2E9ECEF1DF0493E49845F705DA64346371C6A140491B94A067B726F",
+      "bytes": 78398
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-test-results/TEST-dev.phoenium.chunk.ChunkPrerequisiteServicesTest.xml",
+      "sha256": "640361DE6E11BBDA828BA3E89B6391278FD7C7D1FDA1BD50D8297DDC3A58FBE1",
+      "bytes": 3283
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-test-results/TEST-dev.phoenium.chunk.ChunkQueryFailureBindingTest.xml",
+      "sha256": "89B6F97B138DC542F6E6576110FF64BB0AAF4F5B46C9DF814C5DB289ACDF167D",
+      "bytes": 169012
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-test-results/TEST-dev.phoenium.chunk.ChunkReloadPrerequisiteOrderTest.xml",
+      "sha256": "3FF4BE0F29E75677EED95290ABC5769D565E52BA50EA43CE1DC2772DAB85AEDA",
+      "bytes": 658
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-test-results/TEST-dev.phoenium.chunk.ChunkRouteClassificationTest.xml",
+      "sha256": "70940F0DBE246B270AB44D511D7F96A431343F641BDCD8EC5D22B75211E80424",
+      "bytes": 2041
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-test-results/TEST-dev.phoenium.chunk.ChunkSaveRetentionTest.xml",
+      "sha256": "CBFAD352952B26E28D6625436F92A85097FEC7AF08F4DB39EA9867FD9EABBA00",
+      "bytes": 489
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-test-results/TEST-dev.phoenium.chunk.FailedStopNativeCleanupTest.xml",
+      "sha256": "464D3580CFA9463315D7925BD81590AD49F69F171FE44A6F6230FE4876E94FE7",
+      "bytes": 656
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-test-results/TEST-dev.phoenium.chunk.FullAuthoritativeFinishingTest.xml",
+      "sha256": "1226D40E94A5FD841A429DDCD3379334363F43C5BA55BA8512038E90B2701B0B",
+      "bytes": 35600
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-test-results/TEST-dev.phoenium.chunk.FullCallbackAuthorityContractTest.xml",
+      "sha256": "2D30736D8252996AA7DA954295C2F86815A11F9C35CAD9984D86410DF26CA2AD",
+      "bytes": 12688
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-test-results/TEST-dev.phoenium.chunk.FullContextMetadataLockTest.xml",
+      "sha256": "7594A6C10D13F4B73394C2E514F9C1917307A13C90CF58D2D040ED6860AF3D00",
+      "bytes": 703
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-test-results/TEST-dev.phoenium.chunk.FullContextRefinementTest.xml",
+      "sha256": "1E115AA68318441CE8421CC210812FD4451FB5DB28DD9968A4EF62EE636DFF4B",
+      "bytes": 1470
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-test-results/TEST-dev.phoenium.chunk.FullEntityFactsTest.xml",
+      "sha256": "7BBB8D024DA0791D324419169D8366EF81AB5316886D7F4E306E67D7B9802F2F",
+      "bytes": 2389
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-test-results/TEST-dev.phoenium.chunk.FullEntityPredicateInputTest.xml",
+      "sha256": "3EEC28BEF13876EC54169AF9A36CB47BCB347209C5631EC8AE40D7F9643FFF68",
+      "bytes": 999
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-test-results/TEST-dev.phoenium.chunk.FullEntityPropertyExecutionTest.xml",
+      "sha256": "8B9F3D770D39693A7413A3FA62C91143E3B15F28699E5C08E7BE8D9B6B6C71F1",
+      "bytes": 846
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-test-results/TEST-dev.phoenium.chunk.FullEntityReferenceDecisionTest.xml",
+      "sha256": "A9EA92F2F9F0441B6E165498C64B25B2546DE7618D9F0676EC9F303B944AB930",
+      "bytes": 2058
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-test-results/TEST-dev.phoenium.chunk.FullFinishingQueriesTest.xml",
+      "sha256": "B41B8D6C31684CFF37085B986FB7229914A2EF1522419CC635D158D04F16039B",
+      "bytes": 110027
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-test-results/TEST-dev.phoenium.chunk.FullFinishingServicesTest.xml",
+      "sha256": "BFB37456E3940AABC1B23018AA9F006D5A736C17F869F96C4501ADDBE5DE2CB9",
+      "bytes": 2230
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-test-results/TEST-dev.phoenium.chunk.FullGenerationShutdownContinuationTest.xml",
+      "sha256": "7CFEFDF9208ACFF65452E35A0F21E027B9380D2E319D63F43C12646A013FE9ED",
+      "bytes": 701
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-test-results/TEST-dev.phoenium.chunk.FullInitializedInputBindingTest.xml",
+      "sha256": "48EF1A5E9D5173230774B59AB8F795AAEABC5BA7E9A59FC5E7AE1C41AAA72F3D",
+      "bytes": 38746
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-test-results/TEST-dev.phoenium.chunk.FullInputAcknowledgementTest.xml",
+      "sha256": "7F4546196F94BECB9AC4EF89380A23C12F57156228B969BF5F3DF60CCFA99BC9",
+      "bytes": 1213
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-test-results/TEST-dev.phoenium.chunk.FullInputCapacityProgressTest.xml",
+      "sha256": "7B8A280C8E9092BE5793864B9EE7F6EB876A3FFB5996078DBF47712465A70322",
+      "bytes": 853
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-test-results/TEST-dev.phoenium.chunk.FullLegacyOwnerCacheTest.xml",
+      "sha256": "A6E6525A4AB9C4991AC802534D17A8C81A21B9EF77D45A035D02F13EDCE64741",
+      "bytes": 1568
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-test-results/TEST-dev.phoenium.chunk.FullLegacyOwnerDecisionTest.xml",
+      "sha256": "39CEA863174EC035CB3B31C0C0F02B082603BA9789DE90E46854CB87E01B7519",
+      "bytes": 12646
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-test-results/TEST-dev.phoenium.chunk.FullLegacyOwnersTest.xml",
+      "sha256": "261EFDC669D210279E1347CF9328A218145E7AFB7D4A70038877F4478022AAB5",
+      "bytes": 1979
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-test-results/TEST-dev.phoenium.chunk.FullLocationPredicateInputTest.xml",
+      "sha256": "EE4D3988E1697EC8680F0464A128ADD7E4F933BA873CA2844970D8D77B219102",
+      "bytes": 885
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-test-results/TEST-dev.phoenium.chunk.FullNestedQueryBoundaryTest.xml",
+      "sha256": "E23E0659173B136DC9FA132D1F85EEEF1B06BCB4B4F7E40DF314B58DEA025BB9",
+      "bytes": 249644
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-test-results/TEST-dev.phoenium.chunk.FullNonselfInputDecisionTest.xml",
+      "sha256": "055E36CB821C61A473D3D100B781496E4071F2366B9509CE6FE91A10604E1980",
+      "bytes": 274820
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-test-results/TEST-dev.phoenium.chunk.FullPendingBlockTextInputTest.xml",
+      "sha256": "A257749B00F991C43061DEAF4811F91F773908327425D6AC696D0D80E04D8AC0",
+      "bytes": 2314
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-test-results/TEST-dev.phoenium.chunk.FullPostLoadScoreboardContractTest.xml",
+      "sha256": "0BF92F89FBF6896F44BFC60E80185D8BAEDA91E2AA236471914A1658521BB093",
+      "bytes": 1287
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-test-results/TEST-dev.phoenium.chunk.FullProductionBoundaryTest.xml",
+      "sha256": "DD1BF11F2588663B56AFC6094497DD1E449CAA9ECCF4D81E63C24D490C4E73B2",
+      "bytes": 2338
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-test-results/TEST-dev.phoenium.chunk.FullProductionRegistrationTest.xml",
+      "sha256": "A1CC3E07EFD64C171ECF25308820CAC90431388974940AE986535AC0291790B1",
+      "bytes": 73138
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-test-results/TEST-dev.phoenium.chunk.FullPublishedInputBindingTest.xml",
+      "sha256": "C4AAB48F2DB152C5D71785727DA0B013F7134B574D5191E540F93749E092EC4A",
+      "bytes": 104241
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-test-results/TEST-dev.phoenium.chunk.FullRegisteredPredicateExecutionTest.xml",
+      "sha256": "2C513F4989A211B2168CD1B5415346780612961DCF6EB574DA2BA70689AD41CC",
+      "bytes": 1172
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-test-results/TEST-dev.phoenium.chunk.FullRegistrationFixtureSaveBridgeTest.xml",
+      "sha256": "3EAD996B543E121A0F6AAB393AC079B3EC0466462D3E0D65334DB97BBE5332EC",
+      "bytes": 842
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-test-results/TEST-dev.phoenium.chunk.FullSavedContextInputTest.xml",
+      "sha256": "8E5D4479F59BED7534416FB5AEDF78997863A4691B9E809E84802CB9033C7FDD",
+      "bytes": 98201
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-test-results/TEST-dev.phoenium.chunk.FullSavedEntityInputTest.xml",
+      "sha256": "AA7B65F79563D071081F876CAE07754BF5AA99C2C26558A3B12B50468DF53B76",
+      "bytes": 4580
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-test-results/TEST-dev.phoenium.chunk.FullSavedTextInputTest.xml",
+      "sha256": "B3BB7CFC9C856C73728517835E5F99BC8B6B89287DD88D884C1E5F5745BED770",
+      "bytes": 1814
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-test-results/TEST-dev.phoenium.chunk.FullSavedVillagerInputTest.xml",
+      "sha256": "D0DE031A9E9F02757D8E65C612DF3D34782FBC7C4D1270CF6168190C684F142D",
+      "bytes": 1669
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-test-results/TEST-dev.phoenium.chunk.FullSelectorPredicateInputsTest.xml",
+      "sha256": "170CF36404A68D9A8A8ED3BC3A72294F35EC0996A23B5FE84768744A8280CB03",
+      "bytes": 2286
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-test-results/TEST-dev.phoenium.chunk.FullServerShutdownFailureOrderTest.xml",
+      "sha256": "77947EB573AAF69AB0D7990CBE12F714708E57322FCB268DD7799EF1BA7B8DD1",
+      "bytes": 1558
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-test-results/TEST-dev.phoenium.chunk.FullServerTaskSchedulingTest.xml",
+      "sha256": "36C6E8395FE05AF11AEAB95C0BE4E6D3CC10AF9A85845F405075A90F23A34D2B",
+      "bytes": 1385
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-test-results/TEST-dev.phoenium.chunk.FullStructureDemandTest.xml",
+      "sha256": "2FD51140B0193ED28CE67706A0CE1CBD827FB6E66AED50C8573452F4DE163AB4",
+      "bytes": 836
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-test-results/TEST-dev.phoenium.chunk.FullStructureInputTest.xml",
+      "sha256": "5B6B751627EA06C616A124755D926355AABFD02CACD05BB7D316DEF33834EC06",
+      "bytes": 686
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-test-results/TEST-dev.phoenium.chunk.FullStructureMutationTurnsTest.xml",
+      "sha256": "F1E1EFD427E6B838FC2EF530B0AB4F19992ACC638A08C86FF7BCB1387FAFA104",
+      "bytes": 1042
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-test-results/TEST-dev.phoenium.chunk.FullTadpoleDecisionTest.xml",
+      "sha256": "673E185AC03DEEF7E79FBB2B6D65CE562BEFE4855BED4C19D069B09C1FB4C078",
+      "bytes": 105628
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-test-results/TEST-dev.phoenium.chunk.FullWorldgenEnvironmentTest.xml",
+      "sha256": "4EF595D88C4FD6B137B80234879653F9BFC2590AEE7B531B4C556F2637ED0834",
+      "bytes": 1152
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-test-results/TEST-dev.phoenium.chunk.LightIngressAdversarialTest.xml",
+      "sha256": "4CC338D944FB4718DE2D934199D1F6D3F94E66242BAAB68278F5BDBA8520E833",
+      "bytes": 3977
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-test-results/TEST-dev.phoenium.chunk.LightIngressProtocolTest.xml",
+      "sha256": "40187937C2303E852581546AEAC42274259F75AC11AA40DF98FB774C7C9AD5C9",
+      "bytes": 14509
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-test-results/TEST-dev.phoenium.chunk.LiveTickPhaseBoundaryTest.xml",
+      "sha256": "B0ED504751A76BA681A500BCF09A92142A9C34C02AE56A27399DC5F37A9FBCEC",
+      "bytes": 1229
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-test-results/TEST-dev.phoenium.chunk.LiveTickReadinessTest.xml",
+      "sha256": "938C84A1464626309CF762870E2C9486D27E6699C1017BDBF35643E2EC667AB3",
+      "bytes": 957
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-test-results/TEST-dev.phoenium.chunk.ParsedApplyFutureBindingTest.xml",
+      "sha256": "6491CF3DA13D0F4B3053D4EE60DF89E30C919321E95AFD484A05F4DAD771FBE9",
+      "bytes": 3762
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-test-results/TEST-dev.phoenium.chunk.PoiLoadBookkeepingTest.xml",
+      "sha256": "DD427D878CA9796DEF2220560A8D82448E578900A7E73B94D99ECD15C74DD552",
+      "bytes": 772
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-test-results/TEST-dev.phoenium.chunk.RegionalDaytimeSiegeTest.xml",
+      "sha256": "F474E39CBD8CD5EA9E7E8880C8EC8E6EB567DA87040BC46E6F64EBDCA4769F1F",
+      "bytes": 490
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-test-results/TEST-dev.phoenium.chunk.RegionalSiegeRetainedOriginTest.xml",
+      "sha256": "22B8D67562FFA977BCA091887BD94ADBE11F20B501A4227C5595EED66643E402",
+      "bytes": 687
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-test-results/TEST-dev.phoenium.CoreAcceptanceTest.xml",
+      "sha256": "9FEE26F30794B9AACCB015192AC85C5BDF3AE9504BB4624D5A778DABE9D1F70D",
+      "bytes": 3585
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-test-results/TEST-dev.phoenium.InteractionAdmissionTest.xml",
+      "sha256": "17DBDF2D3F22146ECD98EBFC6B0F3730550FDB8EF4354C6AEC96E285517B1DF9",
+      "bytes": 1125
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-test-results/TEST-dev.phoenium.live.EntityIndexLifetimeTest.xml",
+      "sha256": "08A58F57D5B75857251BEA69468332B4D6D06FD097A86A3C761754DB33BA43D9",
+      "bytes": 491
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-test-results/TEST-dev.phoenium.live.PhoeniumLiveRuntimePhaseProgressionTest.xml",
+      "sha256": "E7797988DCE6F9E9AB7E70AFEE5155E785606D7D82DDF1DD0A3A462591DEB081",
+      "bytes": 866
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-test-results/TEST-dev.phoenium.LiveMovementAdmissionTest.xml",
+      "sha256": "2829D41EC191685957547C2E3FBC941EE04AB76D957556396F456598B4B0B672",
+      "bytes": 1237
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-test-results/TEST-dev.phoenium.mixin.FailedStopNativeTargetTest.xml",
+      "sha256": "9BF21DC878CB987E19275F306381DEEC2524401B3BBB2456A73C54828E7A2A43",
+      "bytes": 1097
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-test-results/TEST-dev.phoenium.mixin.RegionalNaturalSpawnerDescriptorTest.xml",
+      "sha256": "1C39FE771B0532818DFC9BB1D8CD74D6DA87ED5FB4ABB04CCA8ADD1D9499435D",
+      "bytes": 526
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-test-results/TEST-dev.phoenium.mixin.ServerLevelEntityLifecycleTargetTest.xml",
+      "sha256": "0F5020F36DEB298BECCF20FCBD1F6E9650D743800DE67DC8C00E7E0057A01598",
+      "bytes": 840
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-test-results/TEST-dev.phoenium.RealClientReadinessTest.xml",
+      "sha256": "4EB2E07EEB7163A9421577D6BBD5449DC79512FB16745E366534DCA821F68A75",
+      "bytes": 1273
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-test-results/TEST-dev.phoenium.RegionLeaseReleaseTest.xml",
+      "sha256": "F1A8C3AF2252DB34E470C68BEEB326E595A3CDFB985D35F3695B658A15683E90",
+      "bytes": 766
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-test-results/TEST-dev.phoenium.save.RegionalSaveCoordinatorTest.xml",
+      "sha256": "B5167B4DEA3217AFC2DF3D6E314A8A31D2964426F8177AB8FF6A5E8FC0775F3E",
+      "bytes": 1983
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-test-results/TEST-dev.phoenium.save.RetainedChunkSnapshotTest.xml",
+      "sha256": "3CD60BAB99C0B64020AF182801D99FC22364BECB874CF2E2D242370FDBD7A7B9",
+      "bytes": 483
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-test-results/TEST-dev.phoenium.save.SaveTopologyCutTest.xml",
+      "sha256": "83553E78613BFBA589EC85DA63FC392C8E4541A0D6080961EDA2F7E40487059C",
+      "bytes": 773
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-test-results/TEST-dev.phoenium.service.BoundedGameplaySchedulerTest.xml",
+      "sha256": "638A6F9F12ADB139B2C9726E8DA6B5247F22E1F0559464B739A062BFA68CAB54",
+      "bytes": 2715
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-test-results/TEST-dev.phoenium.service.LiveRegionRetentionTest.xml",
+      "sha256": "254519AC0BC755B0F54CE7B50B9699D9E9FA78E6E9C24B27E6274A8E295DB033",
+      "bytes": 499
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-test-results/TEST-dev.phoenium.service.RegionalBlockEntityTickOrderTest.xml",
+      "sha256": "A10BA73276C68B4311B60106DEF66C50090CB6C6C940C5A7EB0BDA767D041712",
+      "bytes": 998
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-test-results/TEST-dev.phoenium.service.RegionalBlockEventServiceTest.xml",
+      "sha256": "314E12E5EE1C0C88EE5654CAD7E439A8405671054E3EBFAB7EF5986AE9C0B1BC",
+      "bytes": 1126
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-test-results/TEST-dev.phoenium.service.RegionalCustomSpawnerBoundaryTest.xml",
+      "sha256": "C55FC0E278EE62F6DF42AAC293012C28C9069D752D084DFA122CCFA2035170B7",
+      "bytes": 686
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-test-results/TEST-dev.phoenium.service.RegionalMovementTrackingTest.xml",
+      "sha256": "7BB4E7EA8DD3ED3D8D9F70ABF04C699CB0575CFC2B49ED7AEDD566BA34E324A7",
+      "bytes": 505
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-test-results/TEST-dev.phoenium.service.RegionalScheduledTickServiceTest.xml",
+      "sha256": "AF3E9C5BF10D553079D41516CFC44D5170E0F428BE7C91BFB65AD42CAC733079",
+      "bytes": 3658
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-test-results/TEST-dev.phoenium.service.RegionalServiceDispatcherTest.xml",
+      "sha256": "6AC635C05134C5D05AEC24DB3C1BCEECF79A995B61DFD6D8EF2094682BB80869",
+      "bytes": 1776
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-test-results/TEST-dev.phoenium.service.RegionalTrackingAdapterContractTest.xml",
+      "sha256": "A0C7485FF2ABE2E7E874356C0FF89B52384992A64D1991F056149A82E7599CB7",
+      "bytes": 677
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-test-results/TEST-dev.phoenium.service.RegionalTrackingPartitionsTest.xml",
+      "sha256": "634A51E3A7307D010A90109FF204E24DD9C4E065555D03EBBBA9046E114EDD8C",
+      "bytes": 977
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-test-results/TEST-dev.phoenium.service.RegionalWorldServiceLifetimeTest.xml",
+      "sha256": "854E84CFAB1D8D091964486C1F8D05E4AA1037F9C1FAFBC0DA1AFDA368348A31",
+      "bytes": 680
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-test-results/TEST-dev.phoenium.Stage3MovementTest.xml",
+      "sha256": "D66061616E99B70BA75B2C17465516A500D9AFCE568F94C14D53A3DC3AA61D43",
+      "bytes": 2174
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-test-results/TEST-dev.phoenium.Stage3OwnershipTest.xml",
+      "sha256": "C119FEBA265696965E0210E6C16737EA1A9A52B3A43E648E0916DFDFB6297A81",
+      "bytes": 3106
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-test-results/TEST-dev.phoenium.Stage4FixtureSupportTest.xml",
+      "sha256": "125590E23F7E8EC73361325528C6621ECE4FFA02AE64E0A99737407385BE5567",
+      "bytes": 490
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-test-results/TEST-dev.phoenium.stage4probe.Stage4TeleportTopologyTest.xml",
+      "sha256": "F22DC712CDDD28A56279D13378340769632BD979BE2B9A37293A9FA1036F69A9",
+      "bytes": 1373
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-test-results/TEST-dev.phoenium.testmixin.FullRegistrationSaveBindingMixinContractTest.xml",
+      "sha256": "42EC9D0844B5D0CEF2046F5FA4A80FA301CB6BEECC396850129D749D9A1811BD",
+      "bytes": 707
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-test-results/TEST-dev.phoenium.topology.TopologyCoordinatorMigrationTest.xml",
+      "sha256": "13146C5738BE57082F99E0C88D83677CA42D091008F9616BBB8A705668BD23B9",
+      "bytes": 1724
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-test-results-v2/TEST-dev.phoenium.adversestop.AdverseStopProbeContractTest.xml",
+      "sha256": "9C51842FD6A5D25B82E1112BE1ED0CA7A82150D96EC5B788232DAB2691B808D7",
+      "bytes": 1163
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-test-results-v2/TEST-dev.phoenium.chunk.C2meTickPhaseBoundaryTest.xml",
+      "sha256": "4A61C77E0C9FCE38EE81B6B4BE84D0EE10C84FB0236058BECC88D044988D65C7",
+      "bytes": 824
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-test-results-v2/TEST-dev.phoenium.chunk.ChunkAdapterInfrastructureTest.xml",
+      "sha256": "BED7368BE69BB2DDBAEE146B0732DC1DF4767BB9C3C29516033DCE0A9B6FA21B",
+      "bytes": 2126
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-test-results-v2/TEST-dev.phoenium.chunk.ChunkCustodyModelTest.xml",
+      "sha256": "FC8DD47DBFE04401704291B457BD0CF7022AEDAD1A493C0C5B36090DC244B34E",
+      "bytes": 2111
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-test-results-v2/TEST-dev.phoenium.chunk.ChunkMetadataAuthorizationTest.xml",
+      "sha256": "ADBCD34EFB15F8DB4CB1B2BDF0582F309C5D976E2079B69C538F63A83931ACFF",
+      "bytes": 1957
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-test-results-v2/TEST-dev.phoenium.chunk.ChunkMetadataVanillaContractTest.xml",
+      "sha256": "1724B6BC483B925DD84E9B950AE717BFFF68509BA77350C7ABEDC30838E87904",
+      "bytes": 78398
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-test-results-v2/TEST-dev.phoenium.chunk.ChunkPrerequisiteServicesTest.xml",
+      "sha256": "D39E8882DD7D6FDD5B6ED99F24C946B5E7EFDDF35C6B4E62A68F0D87AE9ADF2C",
+      "bytes": 3285
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-test-results-v2/TEST-dev.phoenium.chunk.ChunkQueryFailureBindingTest.xml",
+      "sha256": "2CC5B5AE4E46C2B47C4FD3AA314968F0E01750B6DE855D08871FC0908EB5D15D",
+      "bytes": 169012
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-test-results-v2/TEST-dev.phoenium.chunk.ChunkReloadPrerequisiteOrderTest.xml",
+      "sha256": "70855A887AD14B9DE4CCEBA0F9F42D2F720236B9A7D3F8420215CACA9312C168",
+      "bytes": 658
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-test-results-v2/TEST-dev.phoenium.chunk.ChunkRouteClassificationTest.xml",
+      "sha256": "CFAD04BD6BB704829810473994D79F6FFAC1E07EA3208A42C69DEFC08204F39E",
+      "bytes": 2043
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-test-results-v2/TEST-dev.phoenium.chunk.ChunkSaveRetentionTest.xml",
+      "sha256": "4E65AE50809276EBD465FDA04DF2D96DEDB7B4AB515A3E376B9DC99D0FD01F1C",
+      "bytes": 489
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-test-results-v2/TEST-dev.phoenium.chunk.FailedStopNativeCleanupTest.xml",
+      "sha256": "96FE1166ED1795896CD14BA360EC850CA155251F28A8FC86FFA126C193BC537E",
+      "bytes": 656
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-test-results-v2/TEST-dev.phoenium.chunk.FullAuthoritativeFinishingTest.xml",
+      "sha256": "DF0CB2CE7FA7E03A9F5C7E89F156AB6BB950B5BE996592D208A15D9979ED8706",
+      "bytes": 35600
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-test-results-v2/TEST-dev.phoenium.chunk.FullCallbackAuthorityContractTest.xml",
+      "sha256": "253F62289B7DB21CAFBCBA9C19DD48BAF4DF5E1850E5517AD59058F894C03E64",
+      "bytes": 12689
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-test-results-v2/TEST-dev.phoenium.chunk.FullContextMetadataLockTest.xml",
+      "sha256": "D05F0E303DBB18AB2049A06A46F98FB40068F7DC263229F706A61A7501B81D43",
+      "bytes": 703
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-test-results-v2/TEST-dev.phoenium.chunk.FullContextRefinementTest.xml",
+      "sha256": "3129065E9D6EFC7892B1685F2BE032117A2658DAF762DDF0663506DB8B874434",
+      "bytes": 1471
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-test-results-v2/TEST-dev.phoenium.chunk.FullEntityFactsTest.xml",
+      "sha256": "8FC897E506EBEE24398C537AD87C520CDB5EE61819F6D21AF58589A44D577841",
+      "bytes": 2391
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-test-results-v2/TEST-dev.phoenium.chunk.FullEntityPredicateInputTest.xml",
+      "sha256": "A6416F87F79F392016EF68B042DE6AD3D41D935778F8BCDCB53E75A452278ABD",
+      "bytes": 1003
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-test-results-v2/TEST-dev.phoenium.chunk.FullEntityPropertyExecutionTest.xml",
+      "sha256": "CD26E6CE62D8D91F5E4A01892C33DB8F9899C5DEE07601963E4DA36FBDCEA1F7",
+      "bytes": 845
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-test-results-v2/TEST-dev.phoenium.chunk.FullEntityReferenceDecisionTest.xml",
+      "sha256": "6B85A8EDCC5E18E60B2E9532EC0B90B67A9442B45BB19E4D366D4F5D25395570",
+      "bytes": 2060
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-test-results-v2/TEST-dev.phoenium.chunk.FullFinishingQueriesTest.xml",
+      "sha256": "4D13A90521543A4D0F1C7184F9F98292F837C0FA48F4F5B5A43D173E8A38DE02",
+      "bytes": 110025
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-test-results-v2/TEST-dev.phoenium.chunk.FullFinishingServicesTest.xml",
+      "sha256": "B5996AAFFA95378610FEC6D0E3F0F0F49343E81BB7CF75D2E65430D56BEBD0B4",
+      "bytes": 2230
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-test-results-v2/TEST-dev.phoenium.chunk.FullGenerationShutdownContinuationTest.xml",
+      "sha256": "BEB035EA78DAF6A41603FCFB164388FE5AF72B6B2CD6ED6EA2E096004D25B238",
+      "bytes": 700
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-test-results-v2/TEST-dev.phoenium.chunk.FullInitializedInputBindingTest.xml",
+      "sha256": "F34C1CFE408D3F9AB649A95F57A07F80DE6F4B545E96E7BCA19A7038A9A3C016",
+      "bytes": 38740
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-test-results-v2/TEST-dev.phoenium.chunk.FullInputAcknowledgementTest.xml",
+      "sha256": "9D83CAA4F873C1727033E55EDCF7DC0F6DBAA63D2CB6B49479746B09CEAD20D6",
+      "bytes": 1215
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-test-results-v2/TEST-dev.phoenium.chunk.FullInputCapacityProgressTest.xml",
+      "sha256": "234B49BB49A69700820EC85E6ACF5DEEDF99FF32DB08250F9548D5846543B721",
+      "bytes": 853
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-test-results-v2/TEST-dev.phoenium.chunk.FullLegacyOwnerCacheTest.xml",
+      "sha256": "9D61AD6430B5E34A4E59C550ABFD8A714E03293E602354FB7115DDD34CBDABCD",
+      "bytes": 1569
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-test-results-v2/TEST-dev.phoenium.chunk.FullLegacyOwnerDecisionTest.xml",
+      "sha256": "0E8DC19AC9D677D1256D952F2A50F47FA14447C1F383282FBDF9C570C7A45AB7",
+      "bytes": 12645
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-test-results-v2/TEST-dev.phoenium.chunk.FullLegacyOwnersTest.xml",
+      "sha256": "31B62D1273F246BF736C2F2863CB2E8E467667C431346563144F4BF1A8925D54",
+      "bytes": 1979
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-test-results-v2/TEST-dev.phoenium.chunk.FullLocationPredicateInputTest.xml",
+      "sha256": "D02D8D5694274D17749BEFD152D1A88650BD842C670B6FB097570DF8D25201D6",
+      "bytes": 885
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-test-results-v2/TEST-dev.phoenium.chunk.FullNestedQueryBoundaryTest.xml",
+      "sha256": "86296B1F2A4EA344993884A549FF5ADC64F646891AFA29B72CF412BFF0E2069C",
+      "bytes": 249643
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-test-results-v2/TEST-dev.phoenium.chunk.FullNonselfInputDecisionTest.xml",
+      "sha256": "012DB2145AE9D89BBA5AB364C27C9FB95E2662EEDA077F4F750FF1F571B62ACF",
+      "bytes": 274819
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-test-results-v2/TEST-dev.phoenium.chunk.FullPendingBlockTextInputTest.xml",
+      "sha256": "114EE614759A5875586B50A19B1375D309BA69082B14A10332F7ABD2C59F3CC0",
+      "bytes": 2315
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-test-results-v2/TEST-dev.phoenium.chunk.FullPostLoadScoreboardContractTest.xml",
+      "sha256": "EC61184C38BF272C90EEDC3325BDC322AB0B02CDF2D6B1787F57B14D24C561D2",
+      "bytes": 1287
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-test-results-v2/TEST-dev.phoenium.chunk.FullProductionBoundaryTest.xml",
+      "sha256": "A8AFE59E1CFB81DD330D089B6CC601C5385B49DE43A30BFD48E6EE01DEC04EC2",
+      "bytes": 2331
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-test-results-v2/TEST-dev.phoenium.chunk.FullProductionRegistrationTest.xml",
+      "sha256": "2A69C81D7D2FAD33653FB50DA72CA8405AAAFE8479A8E23B26F54E75CE490AFA",
+      "bytes": 73140
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-test-results-v2/TEST-dev.phoenium.chunk.FullPublishedInputBindingTest.xml",
+      "sha256": "DB172372F691AB37A375B2CDABED196401A048FCC70265D6F238A2D33B394916",
+      "bytes": 104242
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-test-results-v2/TEST-dev.phoenium.chunk.FullRegisteredPredicateExecutionTest.xml",
+      "sha256": "428C5EFB995FEE0C8544A6890D541D1C00B0715A914F4079A0F92482F9599FD3",
+      "bytes": 1173
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-test-results-v2/TEST-dev.phoenium.chunk.FullRegistrationFixtureSaveBridgeTest.xml",
+      "sha256": "A6D910A8F5D2DBA6FBDE3DE528852BCDF2CE905A7987A9E5ACC23CA62BCD9ACB",
+      "bytes": 842
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-test-results-v2/TEST-dev.phoenium.chunk.FullSavedContextInputTest.xml",
+      "sha256": "58CF8750D0730C702F2710A78A2637ACF6CBF6F49296683D02A1C34AF5CCAFB2",
+      "bytes": 98207
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-test-results-v2/TEST-dev.phoenium.chunk.FullSavedEntityInputTest.xml",
+      "sha256": "FEC2324BC02F88D37C024029F5AD9D9AE19AA9742432F6674A759F793B169DAA",
+      "bytes": 4580
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-test-results-v2/TEST-dev.phoenium.chunk.FullSavedTextInputTest.xml",
+      "sha256": "77D7D2F8BE5538C066430E42113CC796E5D7AB1251412E6D017F942AE8AD4426",
+      "bytes": 1812
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-test-results-v2/TEST-dev.phoenium.chunk.FullSavedVillagerInputTest.xml",
+      "sha256": "8FF0ABAA825DE5311B97DA2915D2075CD3B0564BFBEA15CEA63DA31A9CD72126",
+      "bytes": 1667
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-test-results-v2/TEST-dev.phoenium.chunk.FullSelectorPredicateInputsTest.xml",
+      "sha256": "962D0739E0D9FCEF632EADE5AFD6C9AFC8037EF4E773253781A501E2F31FB302",
+      "bytes": 2284
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-test-results-v2/TEST-dev.phoenium.chunk.FullServerShutdownFailureOrderTest.xml",
+      "sha256": "167371DDD89A41DAEFF637067B8CA054E66812C85F13976D8BA4E6C25A1E1221",
+      "bytes": 1560
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-test-results-v2/TEST-dev.phoenium.chunk.FullServerTaskSchedulingTest.xml",
+      "sha256": "EAED6A499187103DC8C6F123DB31B0706197F5B9051339C6ED5689BDD3C97DF8",
+      "bytes": 1385
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-test-results-v2/TEST-dev.phoenium.chunk.FullStructureDemandTest.xml",
+      "sha256": "FA30E93B5DD4530B3B84CBC7C18DA1E24269BD693791F1F459671283A514AA5A",
+      "bytes": 836
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-test-results-v2/TEST-dev.phoenium.chunk.FullStructureInputTest.xml",
+      "sha256": "D919E1F76EF74867834C7B5ACAD580268DA1D734B7D9DED3E5B1754F37A28BD9",
+      "bytes": 687
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-test-results-v2/TEST-dev.phoenium.chunk.FullStructureMutationTurnsTest.xml",
+      "sha256": "B48AAA5E2ADF97FD5F6D5853E4F02918AD02023B60E52FE4F9133E1DA3B7B026",
+      "bytes": 1042
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-test-results-v2/TEST-dev.phoenium.chunk.FullTadpoleDecisionTest.xml",
+      "sha256": "54380BE737546A48E6C5CDCE14130D145766C0A8CD49AEDE36294EABACD5BC71",
+      "bytes": 105628
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-test-results-v2/TEST-dev.phoenium.chunk.FullWorldgenEnvironmentTest.xml",
+      "sha256": "490A199817EEC8A7C01DDD92A7849651ADBD1F4BA620A6D7EE00236893DDAC65",
+      "bytes": 1152
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-test-results-v2/TEST-dev.phoenium.chunk.LightIngressAdversarialTest.xml",
+      "sha256": "39D628F1C82AC0D290FF6986D23494D68941059B85063D9BA7C86AD03E10D06D",
+      "bytes": 3975
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-test-results-v2/TEST-dev.phoenium.chunk.LightIngressProtocolTest.xml",
+      "sha256": "09B0BEB23B721CD0101AFFDCCBD5D0E1CA958B0EC9E0FF484A7EE06E39CD2551",
+      "bytes": 14509
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-test-results-v2/TEST-dev.phoenium.chunk.LiveTickPhaseBoundaryTest.xml",
+      "sha256": "E8151AE988D2554AB9116B0A82916F1515729D53BC28C5530A0F07DF7B0FCD81",
+      "bytes": 1228
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-test-results-v2/TEST-dev.phoenium.chunk.LiveTickReadinessTest.xml",
+      "sha256": "BBF1654E9457EC5AEB4F654DA942BB05E6309DEE96930BED8BD00BD7822D4A87",
+      "bytes": 957
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-test-results-v2/TEST-dev.phoenium.chunk.ParsedApplyFutureBindingTest.xml",
+      "sha256": "00F80F71E03EE70755EAF4184642D4B85243DA274D10E2C4890B4EA48302C5EA",
+      "bytes": 3764
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-test-results-v2/TEST-dev.phoenium.chunk.PoiLoadBookkeepingTest.xml",
+      "sha256": "57EFA67B83D0D536E07B19852ADC8AA0AA60DAB2E58F5551B3B775970E1EE023",
+      "bytes": 772
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-test-results-v2/TEST-dev.phoenium.chunk.RegionalDaytimeSiegeTest.xml",
+      "sha256": "64506F418B230DA74E6B361041E484760009A3BCD7A56820764314EE0E92BBB8",
+      "bytes": 490
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-test-results-v2/TEST-dev.phoenium.chunk.RegionalSiegeRetainedOriginTest.xml",
+      "sha256": "EA8A73D96F0CF97113A0CC0DE592D62EC9A0F109CB088DB07F252F22F1675D7C",
+      "bytes": 687
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-test-results-v2/TEST-dev.phoenium.CoreAcceptanceTest.xml",
+      "sha256": "F6219C997A02BBFE5F5D7AC9351B7E0F5EC39B4B1F5E07241A3451D7ADF78C81",
+      "bytes": 3592
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-test-results-v2/TEST-dev.phoenium.InteractionAdmissionTest.xml",
+      "sha256": "ED9BF0FE4A1B98B28211C9A657743E04E750CDC1BBFF0C0FED37F9F3442FB0B7",
+      "bytes": 1127
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-test-results-v2/TEST-dev.phoenium.live.EntityIndexLifetimeTest.xml",
+      "sha256": "5247F5F9B5E55928A7761B159745BBF52997F94FFA8DEAE613595103C2C039C0",
+      "bytes": 495
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-test-results-v2/TEST-dev.phoenium.live.PhoeniumLiveRuntimePhaseProgressionTest.xml",
+      "sha256": "ED35BA9A455AB43B7A3FB1B247D25175076E67E493D4E4E506A6F371C749873D",
+      "bytes": 866
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-test-results-v2/TEST-dev.phoenium.LiveMovementAdmissionTest.xml",
+      "sha256": "9180770E526DD354E0D4A829D3E0C98257B86C67543CD408E654786DFE888169",
+      "bytes": 1233
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-test-results-v2/TEST-dev.phoenium.mixin.FailedStopNativeTargetTest.xml",
+      "sha256": "33A7BD74EB569BC8D70B2BC818BCAFB92FF9807A98BE32DB5A6B59F80CB4B347",
+      "bytes": 1095
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-test-results-v2/TEST-dev.phoenium.mixin.RegionalNaturalSpawnerDescriptorTest.xml",
+      "sha256": "D32866AFA8C92499BC585C4A5147C1B75DC12BEBF2BFA43CB1C37B7865D4FAD1",
+      "bytes": 526
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-test-results-v2/TEST-dev.phoenium.mixin.ServerLevelEntityLifecycleTargetTest.xml",
+      "sha256": "59AAA505D457DED30507C66039B4ACCD67A87E2BFBB5F96260937D1DD01BD25A",
+      "bytes": 842
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-test-results-v2/TEST-dev.phoenium.RealClientReadinessTest.xml",
+      "sha256": "AD1C2177FDB391C94A9C4116DAFBEE97A314DBB50DC61FFF8645696EFA9CE725",
+      "bytes": 1275
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-test-results-v2/TEST-dev.phoenium.RegionLeaseReleaseTest.xml",
+      "sha256": "78607B2453E5B164B7FCD1D9ED44A492A1267B21F8E898867A41430E1FD607A7",
+      "bytes": 764
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-test-results-v2/TEST-dev.phoenium.save.RegionalSaveCoordinatorTest.xml",
+      "sha256": "49DDDAE62DF38DB4F270F9FED8F0B5CDCB9DDBC769F7DD99D4268B84A84F43D5",
+      "bytes": 1983
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-test-results-v2/TEST-dev.phoenium.save.RetainedChunkSnapshotTest.xml",
+      "sha256": "B4C6AE8057A6737FCC045266542BEB96E77B5F6B5EACF66B71F6A50DD8DF2DF4",
+      "bytes": 483
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-test-results-v2/TEST-dev.phoenium.save.SaveTopologyCutTest.xml",
+      "sha256": "6F9F29E7F607A342FD0817CFFAD5E1B34F7A4E218E31E0F353057E055165F2EB",
+      "bytes": 773
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-test-results-v2/TEST-dev.phoenium.service.BoundedGameplaySchedulerTest.xml",
+      "sha256": "CAFB335BF94B94F87B71FAB14E2E58B139A256E5AD7CE68286D4728B74DBA307",
+      "bytes": 2715
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-test-results-v2/TEST-dev.phoenium.service.LiveRegionRetentionTest.xml",
+      "sha256": "DF862F86F7C8A806E01DF23BBF1232E3F0AF0DE24CE421DB803DF6FF6C76C9D2",
+      "bytes": 499
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-test-results-v2/TEST-dev.phoenium.service.RegionalBlockEntityTickOrderTest.xml",
+      "sha256": "427534D5BBCA91043EDE0FD80546B86BDC1A440E0C9D14C7B1E52FC6CF2484AC",
+      "bytes": 998
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-test-results-v2/TEST-dev.phoenium.service.RegionalBlockEventServiceTest.xml",
+      "sha256": "768607B039D72001DEF879777DC61E3191A1DDF2A4D16BEEBCADCD9F114AC758",
+      "bytes": 1124
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-test-results-v2/TEST-dev.phoenium.service.RegionalCustomSpawnerBoundaryTest.xml",
+      "sha256": "80C67689B501EE6D40BD17BF1CE1053EA845AAB97D2EFE9C10BBF55487F64E21",
+      "bytes": 684
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-test-results-v2/TEST-dev.phoenium.service.RegionalMovementTrackingTest.xml",
+      "sha256": "CC92BBFE337C3CD0FF38D7413B12491C17F2993988955CCEAD43DF090762704E",
+      "bytes": 505
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-test-results-v2/TEST-dev.phoenium.service.RegionalScheduledTickServiceTest.xml",
+      "sha256": "D8438683F5E79216096DA6294B07D608A7EC72E099B4525F154F2E54E401BC67",
+      "bytes": 3656
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-test-results-v2/TEST-dev.phoenium.service.RegionalServiceDispatcherTest.xml",
+      "sha256": "582331257CCA9C5AAE14BA2882A4FFB1BED9D63009C2903F1C1635A27197CFD2",
+      "bytes": 1776
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-test-results-v2/TEST-dev.phoenium.service.RegionalTrackingAdapterContractTest.xml",
+      "sha256": "5F436F1C6517C25C704C3E3BF8065981DE4C55CC1F9FD32B2998D43FC915D296",
+      "bytes": 677
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-test-results-v2/TEST-dev.phoenium.service.RegionalTrackingPartitionsTest.xml",
+      "sha256": "E7696E2805DA0BB628C7B5347E2E270612589F676162E00EF847D3A90A1975C7",
+      "bytes": 977
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-test-results-v2/TEST-dev.phoenium.service.RegionalWorldServiceLifetimeTest.xml",
+      "sha256": "1A555E2D1A761AD672CF7736BCA2C9C7CCEA373DAD05040DB5F655A795781640",
+      "bytes": 682
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-test-results-v2/TEST-dev.phoenium.Stage3MovementTest.xml",
+      "sha256": "231FE069524599176FD3E5EB69274D5096755EEB60A8091C9E08EA6F349F99AA",
+      "bytes": 2170
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-test-results-v2/TEST-dev.phoenium.Stage3OwnershipTest.xml",
+      "sha256": "FBAF541762395F66AF9DADC9CA200D72FC2EA4154EBEA97B803050DE0BD2B6FE",
+      "bytes": 3105
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-test-results-v2/TEST-dev.phoenium.Stage4FixtureSupportTest.xml",
+      "sha256": "7BECF1209284137235C0959AC1A9E969EEDF600A598971E642CDCB2991A07F7D",
+      "bytes": 490
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-test-results-v2/TEST-dev.phoenium.stage4probe.Stage4TeleportTopologyTest.xml",
+      "sha256": "A2DC2A2AECAC0DA358A5659E1CF0027C5E66A6D99D5FE1068E658C1373AA7F92",
+      "bytes": 1373
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-test-results-v2/TEST-dev.phoenium.testmixin.FullRegistrationSaveBindingMixinContractTest.xml",
+      "sha256": "B47199476BA7874656DF9BF01658F5D683BFE7B7889DF0C2303BFC99CDC437E3",
+      "bytes": 705
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-test-results-v2/TEST-dev.phoenium.topology.TopologyCoordinatorMigrationTest.xml",
+      "sha256": "6C702EFB51FA39C0A94083022F32E519DE8F2569DFC6B6D7BAA92F1FD0855B73",
+      "bytes": 1726
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-v2-blocked-c2me-w1/first-pid.json",
+      "sha256": "48B556536F63E4C38EE0ACF3280C008F8BF8DEA017E9DD83ABC332C8047DD03F",
+      "bytes": 540
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-v2-blocked-c2me-w1/first-report.json",
+      "sha256": "417EAF50B329AB090311497D5657E61B70695466A595F7B90FB120D9F56A1D0E",
+      "bytes": 1113
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-v2-blocked-c2me-w1/first.log",
+      "sha256": "796B426678032C29BB4DEC1C379C52761ACD83493787E64189F4EBCC637FC147",
+      "bytes": 2062
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-v2-blocked-c2me-w1/installed.json",
+      "sha256": "52E7E48D201B4203F32F98BC059BA1FC63545FAF3B3E18F0B517CBE23CD8214A",
+      "bytes": 10802
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-v2-blocked-c2me-w1/plan.json",
+      "sha256": "A8F0F94830E9F02B23B3DB22C1F1A9B6C20AC8239A4C2CE914231B73D206E710",
+      "bytes": 372
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-v2-blocked-c2me-w1/report.json",
+      "sha256": "A2F16F270A3A35D6672999F43F73FB4E68F7BE52013771F03A0DCBBE4DA9B6B0",
+      "bytes": 2083
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-v2-blocked-c2me-w1/server/server.properties",
+      "sha256": "67D994D60689F5D31A991DFE633176573AE1E2DF4A9D4D2345A44EF42E6E63B3",
+      "bytes": 352
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-v2-blocked-c2me-w1-driver.log",
+      "sha256": "A88C605B2ADBAD6B6E65939768AEB9BB9DF2D1C5C0EC25B3410F5A5C59CB0550",
+      "bytes": 157
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-v2-native-w1/first-pid.json",
+      "sha256": "7CEDFBBF3B71E2FD846B70E9472333A22A599F0D9C3A1D3092171F1B42AAE906",
+      "bytes": 475
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-v2-native-w1/first-report.json",
+      "sha256": "BE2FC701653DCF21EE7D4092E3D3A4DC2EC9EEE7E3B3161ED8229D8AF3289232",
+      "bytes": 25792
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-v2-native-w1/first.log",
+      "sha256": "2FB85AEDEEA13B437BBD06C1ADDD4C7EC60576C76D716CCCCCE500B15B262C16",
+      "bytes": 14062
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-v2-native-w1/installed.json",
+      "sha256": "F4182AB3612B92AA71A49B01257BF36DD2DD8A3F6EC5ACCF692E68897C8E523A",
+      "bytes": 6358
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-v2-native-w1/plan.json",
+      "sha256": "EF2618334D56AE6DA59E19894EAAF51579E989AF70BBA44BFA1472E344D09E0C",
+      "bytes": 26130
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-v2-native-w1/report.json",
+      "sha256": "841399B4711CB761F317FED2A7E05953B05496CA564A07748574E57D23C0C123",
+      "bytes": 2179
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-v2-native-w1/server/server.properties",
+      "sha256": "C01F18E51255F2BC5352F554D068B134D8C00B16C151A7C4385F5A902822EC98",
+      "bytes": 1867
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-v2-native-w1-driver.log",
+      "sha256": "1250F63BD5EB2A2C1A5A0CA1B69B69236AC5DA5692281C7E58E06D31E9FA5B2E",
+      "bytes": 189
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-v3-blocked-c2me-w4/first-pid.json",
+      "sha256": "FA5B40817A30C88BEC07BD0040496A6DE965B7CB5F6E26E4438ED606A7CD299B",
+      "bytes": 540
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-v3-blocked-c2me-w4/first-report.json",
+      "sha256": "17FA431B2F34007006405CD055326093429870987FC68501C787C24E4E05E005",
+      "bytes": 1110
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-v3-blocked-c2me-w4/first.log",
+      "sha256": "352F669CF0CD2B7DB7F2C0E4289D764D00EE85C84BC1FC456FFE5BD0C0E6EC68",
+      "bytes": 2062
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-v3-blocked-c2me-w4/installed.json",
+      "sha256": "52E7E48D201B4203F32F98BC059BA1FC63545FAF3B3E18F0B517CBE23CD8214A",
+      "bytes": 10802
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-v3-blocked-c2me-w4/plan.json",
+      "sha256": "A8F0F94830E9F02B23B3DB22C1F1A9B6C20AC8239A4C2CE914231B73D206E710",
+      "bytes": 372
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-v3-blocked-c2me-w4/report.json",
+      "sha256": "74C29484943E39EAFF8B582A5CB72F0DD13211DA993AC6741FC4A9E751325572",
+      "bytes": 2083
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-v3-blocked-c2me-w4/server/server.properties",
+      "sha256": "67D994D60689F5D31A991DFE633176573AE1E2DF4A9D4D2345A44EF42E6E63B3",
+      "bytes": 352
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-v3-blocked-c2me-w4-driver.log",
+      "sha256": "954BFB338B4BC0E0DE4D0824C1EFE9B69C914F8B9AD8D2C746A8A68EFE3FF12E",
+      "bytes": 157
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-v3-chunky-cancel-w1/command.json",
+      "sha256": "2FE7BA38AC9DEB05E5B7BDA2EEF238E0B65AE37A91795621CE0721BB30271E17",
+      "bytes": 1099
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-v3-chunky-cancel-w1/driver.log",
+      "sha256": "BA9F762C9984942D0870A58F9BCAF274A58A2F9E3F5BA603F9A43AF782E9444B",
+      "bytes": 121
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-v3-chunky-cancel-w1/lifetime-verification.json",
+      "sha256": "EA1E5F9AFC7637527BB4CAA125A7857303035B10D65E263AFF7483DE47048D14",
+      "bytes": 139
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-v3-chunky-cancel-w1/observations.json",
+      "sha256": "F1ECD8244B4938BA7C67D1280FFE9325327B51C7E1F4FF1BFCC09150B3CE62E2",
+      "bytes": 8841
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-v3-chunky-cancel-w1/plan.json",
+      "sha256": "C194F3172AA0A309ABAAFD263C825E584C35B598ABD3737C5297A77FDF90B1F7",
+      "bytes": 1154
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-v3-chunky-cancel-w1/run/first-mca.json",
+      "sha256": "5D93215A3B866632B7E7BA65DF182CDF67EF1252A147AD92F0F8DE0F40A512F2",
+      "bytes": 485231
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-v3-chunky-cancel-w1/run/first-pid.json",
+      "sha256": "6E1BFE649FEB2AD0FEFD8A07871786B9A012543C7CDB131F5DF8EF251178BCA5",
+      "bytes": 639
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-v3-chunky-cancel-w1/run/first-report.json",
+      "sha256": "5723F7175E9BF6F22D2BE85500DF4E73A88101360AE2DD7746ED4D87A85F84AD",
+      "bytes": 19414
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-v3-chunky-cancel-w1/run/first.log",
+      "sha256": "EAF7AFADCCDAD849B5054B9352657C64C4D7C9A45E80AF315587A15359F0D4D9",
+      "bytes": 14200
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-v3-chunky-cancel-w1/run/installed.json",
+      "sha256": "4868147F0E89DD0F42F1B10AB50B33667698DB2EB9D3A80F00F904ABD3393201",
+      "bytes": 8340
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-v3-chunky-cancel-w1/run/plan.json",
+      "sha256": "C194F3172AA0A309ABAAFD263C825E584C35B598ABD3737C5297A77FDF90B1F7",
+      "bytes": 1154
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-v3-chunky-cancel-w1/run/report.json",
+      "sha256": "06C4FEA236FEF6FA46A003089F1B303CAB5DCFAC1CB544254563ACE4A99E50D3",
+      "bytes": 3987
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-v3-chunky-cancel-w1/run/server/server.properties",
+      "sha256": "48A442D71121F7708C635C5E7FEF47AFAA30279BC919E3F67DA309232EA6B5A1",
+      "bytes": 1867
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-v3-chunky-cancel-w1-driver.log",
+      "sha256": "F7240B5F22DC9C546157201B9FDE7ABA4ED74F10FA486090F6CA5216ACBBACEC",
+      "bytes": 144
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-v3-chunky-cancel-w4/command.json",
+      "sha256": "36D01BA49331DD3E2188CBD60DA055029CED6C1F75ACE78D2160D14FAC672BCD",
+      "bytes": 1099
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-v3-chunky-cancel-w4/driver.log",
+      "sha256": "75724F82A442996A4045CE19B2473B6289B8E0086B9B3BF263375D556D763DAD",
+      "bytes": 121
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-v3-chunky-cancel-w4/lifetime-verification.json",
+      "sha256": "EA1E5F9AFC7637527BB4CAA125A7857303035B10D65E263AFF7483DE47048D14",
+      "bytes": 139
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-v3-chunky-cancel-w4/observations.json",
+      "sha256": "5FF53ABD3B95733FCA5A048A396EFEE56BD590D50809EC26BDEF433F7486987B",
+      "bytes": 8841
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-v3-chunky-cancel-w4/plan.json",
+      "sha256": "4375F224D1C411980DE3F38E94AEA8839B8F1905F5A51EBEE6FD88AD465A422A",
+      "bytes": 1154
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-v3-chunky-cancel-w4/run/first-mca.json",
+      "sha256": "5350A2F88676C26FCC6E7883BBDC5728ED11A9B27DD6877EF18866E5A4E1FDFC",
+      "bytes": 485231
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-v3-chunky-cancel-w4/run/first-pid.json",
+      "sha256": "5C26E3C3862653179EF62200D9C35A23D448FECC2AE77BB5D3F7524F66789734",
+      "bytes": 638
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-v3-chunky-cancel-w4/run/first-report.json",
+      "sha256": "9E795DA3C1A015457BC1BD891C4E9B9C32740C2455CBDD38E8793CE4DDA18AE1",
+      "bytes": 19434
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-v3-chunky-cancel-w4/run/first.log",
+      "sha256": "51ECE6CA7FED3F035CA8754EFC890ADFA5FF172044E94442157E11014D700327",
+      "bytes": 14198
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-v3-chunky-cancel-w4/run/installed.json",
+      "sha256": "4868147F0E89DD0F42F1B10AB50B33667698DB2EB9D3A80F00F904ABD3393201",
+      "bytes": 8340
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-v3-chunky-cancel-w4/run/plan.json",
+      "sha256": "4375F224D1C411980DE3F38E94AEA8839B8F1905F5A51EBEE6FD88AD465A422A",
+      "bytes": 1154
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-v3-chunky-cancel-w4/run/report.json",
+      "sha256": "99AC9A86AA09C6C3C1B7ABF01AA1B4EF9620B25ED082B3EFB867BCBF14093EED",
+      "bytes": 3986
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-v3-chunky-cancel-w4/run/server/server.properties",
+      "sha256": "44686B178CE464FA2F39D989BF1FEF3DAF80671CED22BCD1ACBBA77BEA069E70",
+      "bytes": 1867
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-v3-chunky-cancel-w4-driver.log",
+      "sha256": "6C33FA7C2439A3F72233EDEBC324B15118DCAF419DDBF0B5BDDAAB058CFFF7F9",
+      "bytes": 144
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-v3-chunky-original-w1/command.json",
+      "sha256": "A8152E88DE812584775A113CA7B1A29632468ACD64C5650D67F5288480D8CAA3",
+      "bytes": 956
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-v3-chunky-original-w1/driver.log",
+      "sha256": "79DE7021882ACA7DC9B4E3FB709C519D07F3642ED855C5328F3E8CA08610C1DD",
+      "bytes": 247
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-v3-chunky-original-w1/plan.json",
+      "sha256": "7D827CB4A29C5817D4CEC957E9CAB9EDDD620795CFEB6DA8F3324AAD73581E1B",
+      "bytes": 16016
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-v3-chunky-original-w1/run/first-mca.json",
+      "sha256": "1F3D95978A137D858E4817908973C89FEC43FA10E44947C054D749D23D4428A2",
+      "bytes": 788870
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-v3-chunky-original-w1/run/first-pid.json",
+      "sha256": "C87CAC994FBE04C7957E4FDD2A65CE72ADEE910CD2B9F9C7741416622CFB500A",
+      "bytes": 475
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-v3-chunky-original-w1/run/first-report.json",
+      "sha256": "E32B9745C766CD5FAC8E7EE82F0E589A7A364850A5070076EE0DDFD19227572D",
+      "bytes": 27415
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-v3-chunky-original-w1/run/first-requested-full.json",
+      "sha256": "3BAA1325B1471DBDD43041AFC7E07319EC60CB9935D9CB0442ED9AFA49DAE6A3",
+      "bytes": 12854
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-v3-chunky-original-w1/run/first.log",
+      "sha256": "BFDBDF40BDED595FBE562D5311229F76E1D508E09C061F8957109126D320019F",
+      "bytes": 15496
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-v3-chunky-original-w1/run/installed.json",
+      "sha256": "61930C83168DF229BE6B89CE3FA89C5E94397F822209A463E493D5F644F98254",
+      "bytes": 7704
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-v3-chunky-original-w1/run/plan.json",
+      "sha256": "7D827CB4A29C5817D4CEC957E9CAB9EDDD620795CFEB6DA8F3324AAD73581E1B",
+      "bytes": 16016
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-v3-chunky-original-w1/run/report.json",
+      "sha256": "058A041007D7E55A7FFD44C790F0812AA531F89843D6C3ADDD1BBCA7FBDDEA10",
+      "bytes": 6016
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-v3-chunky-original-w1/run/restart-mca.json",
+      "sha256": "5F0D1D2FA65C63AA53855D214346AF7549BE062CB2F845C273217EADB335C072",
+      "bytes": 1690909
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-v3-chunky-original-w1/run/restart-pid.json",
+      "sha256": "4E47ADDBF13ECB6260BFB7BBD4ED916C252C45F7F434A9FF90436C485977B1D2",
+      "bytes": 474
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-v3-chunky-original-w1/run/restart-report.json",
+      "sha256": "BB8728BF1D7BA6B9C9915858B4A737977EA82112F86CDD1F47C2A63795D98BDC",
+      "bytes": 54686
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-v3-chunky-original-w1/run/restart-requested-full.json",
+      "sha256": "9F550C0DAF7167CB6A1C6CD8BE14CDDB0B4F4DCA3132F3B3FB8228DC8F4D277F",
+      "bytes": 12858
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-v3-chunky-original-w1/run/restart.log",
+      "sha256": "4376FF18FBA7B6207FD6661F50ECC485D91D6C03843AD9A47A358B26F70965C2",
+      "bytes": 25756
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-v3-chunky-original-w1/run/server/server.properties",
+      "sha256": "9E8F1E1684EC32B15755EA623E102CC3FB3D3856CBD2FE9321CAF39FED7C58DC",
+      "bytes": 1867
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-v3-chunky-original-w1-driver.log",
+      "sha256": "73FF052E5B3AC12F8D94F4D2C9E806311CF87D89FC178BF7BA0865A8971E428F",
+      "bytes": 148
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-v3-chunky-original-w4/command.json",
+      "sha256": "6B68CB604483597B5CBE55A11D451111D279A678FD722E393580A4C2CC07146C",
+      "bytes": 956
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-v3-chunky-original-w4/driver.log",
+      "sha256": "08B2E31F8F6D15D4D20EB0723B7A0924CA6B587E589B1661E4776FFF6FCCC1E9",
+      "bytes": 235
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-v3-chunky-original-w4/plan.json",
+      "sha256": "BC7EBF2C1DE4121BAF19AD7BF325FE899BB380BF136853FE90AEFA1A9D101637",
+      "bytes": 16016
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-v3-chunky-original-w4/run/first-mca.json",
+      "sha256": "57CD6B3C4D17554A34A33E1AF3186506EAAFAD7324E847B96D4EAF61BAEE2E15",
+      "bytes": 824979
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-v3-chunky-original-w4/run/first-pid.json",
+      "sha256": "13ED60D1A9988C12ECF9BD02977AAA12205E19E78C713881E1733E5B6DAC39E2",
+      "bytes": 475
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-v3-chunky-original-w4/run/first-report.json",
+      "sha256": "56700DF7035F859EFDEDD61ED591E27788CD4646D0A25732351C10C1524EC3A7",
+      "bytes": 26928
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-v3-chunky-original-w4/run/first-requested-full.json",
+      "sha256": "B879C2CDC158B2BE8721E5875940AA0B4D7FB185FD5C16DA4F0F60163F9A0963",
+      "bytes": 12854
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-v3-chunky-original-w4/run/first.log",
+      "sha256": "3DEB0BB39EE8A48041590BBA13B1BED3EF1FFD3A56A04AAA497F7972C5456BF9",
+      "bytes": 15495
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-v3-chunky-original-w4/run/installed.json",
+      "sha256": "61930C83168DF229BE6B89CE3FA89C5E94397F822209A463E493D5F644F98254",
+      "bytes": 7704
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-v3-chunky-original-w4/run/plan.json",
+      "sha256": "BC7EBF2C1DE4121BAF19AD7BF325FE899BB380BF136853FE90AEFA1A9D101637",
+      "bytes": 16016
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-v3-chunky-original-w4/run/report.json",
+      "sha256": "8312DDB97A9DEF0FA11C502CC973AFCCACEF1D0F0EE919274CE027B28D34FD8C",
+      "bytes": 6002
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-v3-chunky-original-w4/run/restart-mca.json",
+      "sha256": "6984C7EFC2B44C296F41438795C22DCFB8C791535AE3E08CE8B569E963ADF772",
+      "bytes": 1723417
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-v3-chunky-original-w4/run/restart-pid.json",
+      "sha256": "4105D15A81E29912692894E2C2027A5F5E3F40B21E6BD1A871B350685951B8A2",
+      "bytes": 475
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-v3-chunky-original-w4/run/restart-report.json",
+      "sha256": "9E580B4A7BE8A9F19D0828F1AF14A11F67734E09C11D358771945CC97770554D",
+      "bytes": 53666
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-v3-chunky-original-w4/run/restart-requested-full.json",
+      "sha256": "D0727C6CAA4CA4BC021B660B3E4AF46D6213F2BE618668CFBB36AF5A8CE37A8E",
+      "bytes": 12858
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-v3-chunky-original-w4/run/restart.log",
+      "sha256": "66E2EE691AA23FA8A415F2E7DF88B68A2A633A5562DA753CBCC8722F7CDA3BDE",
+      "bytes": 25694
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-v3-chunky-original-w4/run/server/server.properties",
+      "sha256": "D959537A2772359374B6212BE89A880F372560DDBE9ECEB63C52763B40DB8D16",
+      "bytes": 1867
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-v3-chunky-original-w4-driver.log",
+      "sha256": "904B80ED6AF5F62A13DFB23F775977B112A8DA499F235AA34817C7FB54FE1B5A",
+      "bytes": 148
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-v3-chunky-stop-w1/command.json",
+      "sha256": "A95430FC1D6CAFFC0A3DA5AC3CCCA93F4E7C45351AEA8D52FD4B0A369C4D6A5D",
+      "bytes": 1095
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-v3-chunky-stop-w1/driver.log",
+      "sha256": "0F83DED8661EFCEB264ECAD720416BEF669D6297344B1B760FC5455842C78DE8",
+      "bytes": 121
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-v3-chunky-stop-w1/lifetime-verification.json",
+      "sha256": "8B3121A6954BCB4A16B691094CA41C09958273C09FC0CA537B9CEFED7FF9EF06",
+      "bytes": 145
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-v3-chunky-stop-w1/observations.json",
+      "sha256": "CD3B747ACB4633FB9093A101E60B73DFF1348D1F09716AF014985AC093CABB27",
+      "bytes": 8837
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-v3-chunky-stop-w1/plan.json",
+      "sha256": "0DF6D7D823CDAF1B10A101C2DD452C513F53D10D03DE140D332CB595392DFA96",
+      "bytes": 918
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-v3-chunky-stop-w1/run/first-mca.json",
+      "sha256": "7BF16DB2449BC18869944C76472BEA5ED52D688CB75B9D707B42F459D3EAE9C6",
+      "bytes": 240455
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-v3-chunky-stop-w1/run/first-pid.json",
+      "sha256": "505CB7AEC8548BAA8C8E5F906DD4F29FFE10FAF340C39739676FFF02F89F6DC6",
+      "bytes": 637
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-v3-chunky-stop-w1/run/first-report.json",
+      "sha256": "85F57085C34B8C419D370EF5A1425379541B5E68DC2043C2B24985A4FF1A4658",
+      "bytes": 16801
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-v3-chunky-stop-w1/run/first.log",
+      "sha256": "945A7560DA8062B16D8F10D37F50417A23F9355BE7BAD7AB78D2D04FE3F825B9",
+      "bytes": 13204
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-v3-chunky-stop-w1/run/installed.json",
+      "sha256": "4868147F0E89DD0F42F1B10AB50B33667698DB2EB9D3A80F00F904ABD3393201",
+      "bytes": 8340
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-v3-chunky-stop-w1/run/plan.json",
+      "sha256": "0DF6D7D823CDAF1B10A101C2DD452C513F53D10D03DE140D332CB595392DFA96",
+      "bytes": 918
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-v3-chunky-stop-w1/run/report.json",
+      "sha256": "60FFF226CEBC0E45280005B59B14C59ED80C082C2F4DAA70318AFC5C2EC7EC28",
+      "bytes": 3273
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-v3-chunky-stop-w1/run/server/server.properties",
+      "sha256": "81A3B3D903787C5EA0BDD48906EC8CB0C6FA588B6B85BA30357CD1877D8D4E39",
+      "bytes": 1867
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-v3-chunky-stop-w1-driver.log",
+      "sha256": "0CC048B3745444097EBC3167CA15D5621F7F20CD154ECE9B5554F974D389B2A3",
+      "bytes": 140
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-v3-chunky-stop-w4/command.json",
+      "sha256": "17FAE2D1BE3E988C4231BAC3047642021911E5E91C064C6E1D4AD99D783F3FED",
+      "bytes": 1095
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-v3-chunky-stop-w4/driver.log",
+      "sha256": "A089018877CD78FD76425D232326DE9FD497720E202A6A1211DEA63B05E5A305",
+      "bytes": 121
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-v3-chunky-stop-w4/lifetime-verification.json",
+      "sha256": "8B3121A6954BCB4A16B691094CA41C09958273C09FC0CA537B9CEFED7FF9EF06",
+      "bytes": 145
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-v3-chunky-stop-w4/observations.json",
+      "sha256": "364B1D52E3590746DDB1481AEAD49A49478D9BCBC6E59F3C6679AF41E7177B89",
+      "bytes": 8837
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-v3-chunky-stop-w4/plan.json",
+      "sha256": "3327F4BC6D99C4ACCDF7DB86EC8AA17A1328F41BF3594324C4C6F08B76C1A826",
+      "bytes": 918
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-v3-chunky-stop-w4/run/first-mca.json",
+      "sha256": "7546C4A1A4F7626272E579D785601C6A52A26B6972C9B469399036486C19301D",
+      "bytes": 240455
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-v3-chunky-stop-w4/run/first-pid.json",
+      "sha256": "120B238B6CF05347B00733A724DF8CDFF0B1EA934FF3D931C7350E163D56B4BD",
+      "bytes": 637
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-v3-chunky-stop-w4/run/first-report.json",
+      "sha256": "58B5932496493DE2E1D3E4C7D281D84677F0ACCD274B9EF17FB31D5A7CA2AEA7",
+      "bytes": 16576
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-v3-chunky-stop-w4/run/first.log",
+      "sha256": "70F5BA95A18F977611240A6C84CBD7D2455313E328C0937C0A1472605CA3C6BD",
+      "bytes": 13203
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-v3-chunky-stop-w4/run/installed.json",
+      "sha256": "4868147F0E89DD0F42F1B10AB50B33667698DB2EB9D3A80F00F904ABD3393201",
+      "bytes": 8340
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-v3-chunky-stop-w4/run/plan.json",
+      "sha256": "3327F4BC6D99C4ACCDF7DB86EC8AA17A1328F41BF3594324C4C6F08B76C1A826",
+      "bytes": 918
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-v3-chunky-stop-w4/run/report.json",
+      "sha256": "5805FE3FFD3DE6507066C618C1DE3AA11EDB21EE9DCAD1D3DC0A78414939976C",
+      "bytes": 3273
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-v3-chunky-stop-w4/run/server/server.properties",
+      "sha256": "8F678C943C2C8B5FDE62F3EC01C67B0B8A135799ED92F7AB74B7201113A8CF3A",
+      "bytes": 1867
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-v3-chunky-stop-w4-driver.log",
+      "sha256": "40630314D415BE785C62F0008E010499AE3D67C789A69A4417AB59D779A9F158",
+      "bytes": 140
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-v3-native-w1/first-mca.json",
+      "sha256": "83ECB2C5D1D62BAAC606D72E146F62A1BCE89127B536C845C0893C9AC7F57F87",
+      "bytes": 952773
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-v3-native-w1/first-pid.json",
+      "sha256": "B879E7C9F8279F273E6970F97CB78467691122B425ED9066416A846AD835D3DD",
+      "bytes": 475
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-v3-native-w1/first-report.json",
+      "sha256": "1B9E8522988C404E54D6C1B02A7749760D8AB9B36D6E4E2F3EEC7CE87DCD036D",
+      "bytes": 59421
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-v3-native-w1/first-requested-full.json",
+      "sha256": "2E9DE0BD9C185C349D7A50B28FC094F0E0B2E6F16E88EA79EDF883C4E0B55E4E",
+      "bytes": 11170
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-v3-native-w1/first.log",
+      "sha256": "8D5419540B7B1957804D0565B09F4B39AC183EE109C62EA93E4A7575B88F5547",
+      "bytes": 26159
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-v3-native-w1/installed.json",
+      "sha256": "F4182AB3612B92AA71A49B01257BF36DD2DD8A3F6EC5ACCF692E68897C8E523A",
+      "bytes": 6358
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-v3-native-w1/plan.json",
+      "sha256": "0858FADABE039CEB8F898FD70B28831B01BEF0C1E1C95F7B95A6D2D34089C900",
+      "bytes": 26434
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-v3-native-w1/report.json",
+      "sha256": "981D010DA2EAE7114482283DFF2873DC18E72FE2E830ECE149027870116BD1A0",
+      "bytes": 5796
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-v3-native-w1/restart-mca.json",
+      "sha256": "828DADD2BC98471527B8EBEC139BE25B174E9FD4848CCC70E66EA7E3BA06BC23",
+      "bytes": 938309
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-v3-native-w1/restart-pid.json",
+      "sha256": "E02C316ED357B412B920C375937DCDFE96BE204F2A6C8B55C29D56758D9CBE9E",
+      "bytes": 475
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-v3-native-w1/restart-report.json",
+      "sha256": "BE7D71F91D156B8EF1D339E5EB6FB7AB5D176153A05056E280D427FD0FC7EE5E",
+      "bytes": 51190
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-v3-native-w1/restart-requested-full.json",
+      "sha256": "B50E8AB1E135C2C82E32B93172DFF54EE9D59FD6755DB318F08625263F402F4B",
+      "bytes": 11174
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-v3-native-w1/restart.log",
+      "sha256": "2BA5C5FCBBABFA8689A75373C358B18F0889E26DCA607AC53276EAB201E9F3BF",
+      "bytes": 25269
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-v3-native-w1/server/server.properties",
+      "sha256": "83CA3FD50188E35150E4DDBD839D651FD263DACCF263C148338EE9108B28C547",
+      "bytes": 1867
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-v3-native-w1-driver.log",
+      "sha256": "FF967C09F8E87FC809279FA35BA164FFECE7E8155EF6E5CCC29C52E2AA48AD8C",
+      "bytes": 246
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-v3-native-w4/first-mca.json",
+      "sha256": "DE4CD77809B3FF97D0C73566672D8987B2C607DB037887214EB5F094275923C0",
+      "bytes": 977138
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-v3-native-w4/first-pid.json",
+      "sha256": "8F617E99FC037A007A3DEFC70F11973396B0E9F29526987BBB0ECC23A1EC9B08",
+      "bytes": 475
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-v3-native-w4/first-report.json",
+      "sha256": "819E4260A0425457ACE6D69BA7A11F0CB754D90FDFAB5352C1B2442A2D5AB868",
+      "bytes": 59350
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-v3-native-w4/first-requested-full.json",
+      "sha256": "692619195E7002D2CD358A3594094805C56D9312CD3F97DD0A194D2DCEB06C82",
+      "bytes": 11170
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-v3-native-w4/first.log",
+      "sha256": "3DA206F57F10AEC28D0885FC6C96F0FAA4BF9E1254A1F4A487028681D276671E",
+      "bytes": 26156
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-v3-native-w4/installed.json",
+      "sha256": "F4182AB3612B92AA71A49B01257BF36DD2DD8A3F6EC5ACCF692E68897C8E523A",
+      "bytes": 6358
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-v3-native-w4/plan.json",
+      "sha256": "0858FADABE039CEB8F898FD70B28831B01BEF0C1E1C95F7B95A6D2D34089C900",
+      "bytes": 26434
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-v3-native-w4/report.json",
+      "sha256": "359061B7DFA2695991ABE4E4BC24636A14416E4345F4F7795FDD51BBF7887BF4",
+      "bytes": 5782
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-v3-native-w4/restart-mca.json",
+      "sha256": "59D3A0A40276FA30ADF5358F86C6B434C98435182B6FBD0607398B57106CF6AA",
+      "bytes": 955920
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-v3-native-w4/restart-pid.json",
+      "sha256": "FBB8699F8ED626D28FC667A11E1B6102D253EDCFE89F69859A9AA16AAEF6F4EE",
+      "bytes": 475
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-v3-native-w4/restart-report.json",
+      "sha256": "DAABA43C0F901032B011B3F772C353F9065909BE74ACFF73B64B373BE22A1089",
+      "bytes": 50960
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-v3-native-w4/restart-requested-full.json",
+      "sha256": "34E17187E7C06571EF5CA11AB378B3B91B0EE9E0E84B30F0D67D8E1E2AF2227A",
+      "bytes": 11174
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-v3-native-w4/restart.log",
+      "sha256": "56EAF90C25DB670C81514D82E641F771E1FE722FD6CB328096066E75EDCD5CC0",
+      "bytes": 25267
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-v3-native-w4/server/server.properties",
+      "sha256": "65E419E957A1E5857445936CDAC9170F4845E2BF6FA6AB5226753407457FDC36",
+      "bytes": 1867
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-v3-native-w4-driver.log",
+      "sha256": "A1D3A6D31711BB4BD3CC9C48B5F3B45BAA2EB05EC6C5173D4FFF90F45BB5B240",
+      "bytes": 235
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final-verification.json",
+      "sha256": "083802B39719F404C6C609F26CBB6A0684B5C2BF5945F005C93D77D344D347BB",
+      "bytes": 881
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final_batch.py",
+      "sha256": "8D4123682E113052E4A009739DC91D9B361DB2D5F0E1B477D0FF4D39066F4577",
+      "bytes": 3842
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final_batch_v2.py",
+      "sha256": "7A5D254BD416818FE535AFEF685E61EBF3AB39ACB8055722E3B08A8F5A5D0CA5",
+      "bytes": 3851
+    },
+    {
+      "path": "run/stage7/c2me-20260909/final_remaining.py",
+      "sha256": "1FE5D7307DCDC19D1258C6928CD0B1ED4FAE7A98154340BADCADD8E1EBB6B52A",
+      "bytes": 2547
+    },
+    {
+      "path": "run/stage7/c2me-20260909/initial-phase-build.log",
+      "sha256": "05508F41E11EB17F79C2F54C4D86B18AD622EB2B54AD2A0E2C256893D70E74EC",
+      "bytes": 836
+    },
+    {
+      "path": "run/stage7/c2me-20260909/installed-cache-bytecode.txt",
+      "sha256": "99BA9A6E71D5194487E7E68EDF6C1821C245172236DCB65F59944515B7846098",
+      "bytes": 186053
+    },
+    {
+      "path": "run/stage7/c2me-20260909/installed-map-bytecode.txt",
+      "sha256": "F9D27F6CE82890CE5A222715B382CBC7594857CA6D265B1A479AB972BBCA3757",
+      "bytes": 483325
+    },
+    {
+      "path": "run/stage7/c2me-20260909/phase-candidate.jar",
+      "sha256": "E295C45CF679FC8F972888F92B305B3CEADA7D8FE6824C82ECAA18342D2A47A2",
+      "bytes": 1252157
+    },
+    {
+      "path": "run/stage7/c2me-20260909/phase-native-w1/first-pid.json",
+      "sha256": "C05C6E4354E81FB6461C9DCB29AB2A25B399ACD2991FA96E545ACDC8966E0A8E",
+      "bytes": 539
+    },
+    {
+      "path": "run/stage7/c2me-20260909/phase-native-w1/first-report.json",
+      "sha256": "90B2D8D11204828AF7E9FBB0FE2EEF1D64904E26C2C2DAAAE62EC68CBD62BDAC",
+      "bytes": 115405
+    },
+    {
+      "path": "run/stage7/c2me-20260909/phase-native-w1/first.log",
+      "sha256": "72783B47C041F955C6F4FEE4257C53EDA4F58796E6E6BBDDD834567F146476EA",
+      "bytes": 30356
+    },
+    {
+      "path": "run/stage7/c2me-20260909/phase-native-w1/installed.json",
+      "sha256": "A84526F2CC9D8DAF5A0FF19AE775EDAE59DD334E9F110ACC7253FF77139D8920",
+      "bytes": 10702
+    },
+    {
+      "path": "run/stage7/c2me-20260909/phase-native-w1/plan.json",
+      "sha256": "63E59CAA64140C1470404CCDBCC1944910C436D8699CD19D949260A9170CDEBA",
+      "bytes": 2576
+    },
+    {
+      "path": "run/stage7/c2me-20260909/phase-native-w1/report.json",
+      "sha256": "76744FD9016D39B3663B72CD5FA8766633F5759185E897196EC1392ABC190349",
+      "bytes": 2161
+    },
+    {
+      "path": "run/stage7/c2me-20260909/phase-native-w1/server/.mixin.out/class/net/minecraft/server/level/ChunkMap.class",
+      "sha256": "C19E7C27106D650DB599CC2283535A04F6217FC0A6787F3522F360D9FC83F71D",
+      "bytes": 161912
+    },
+    {
+      "path": "run/stage7/c2me-20260909/phase-native-w1/server/.mixin.out/class/net/minecraft/server/level/GenerationChunkHolder.class",
+      "sha256": "53F4D2F0A9279C70AE9AD162399F3E60002A8E52C0E190AEEE6500983E7DDCC2",
+      "bytes": 31859
+    },
+    {
+      "path": "run/stage7/c2me-20260909/phase-native-w1/server/.mixin.out/class/net/minecraft/server/level/ServerChunkCache.class",
+      "sha256": "56A5A501953726EB9E5F2D4B9D2B08D31703CB657C8DED157C7DAA5D323D59F7",
+      "bytes": 70391
+    },
+    {
+      "path": "run/stage7/c2me-20260909/phase-native-w1/server/config/c2me.toml",
+      "sha256": "29D546C79D9FFBB02EECC1C899A067E82EAFE1A81AC9B694EED6244C31A8C565",
+      "bytes": 9934
+    },
+    {
+      "path": "run/stage7/c2me-20260909/phase-native-w1/server/server.properties",
+      "sha256": "BC079290F0159C04B147441C0700763D9CCCAC98F6495764AA373167D59BEC40",
+      "bytes": 1867
+    },
+    {
+      "path": "run/stage7/c2me-20260909/phase-tests.log",
+      "sha256": "A1729098A971E5DC8CC10E63FA73044EE68E8C3F6B59FD173B8FDB22DCBC97AC",
+      "bytes": 1155
+    },
+    {
+      "path": "run/stage7/c2me-20260909/probe-build-v2.log",
+      "sha256": "8B222DFC05F8165738686E95FFE53C56DFDA05E9D4E17897C6B1E9774483B94F",
+      "bytes": 695
+    },
+    {
+      "path": "run/stage7/c2me-20260909/probe-build-v3.log",
+      "sha256": "8B222DFC05F8165738686E95FFE53C56DFDA05E9D4E17897C6B1E9774483B94F",
+      "bytes": 695
+    },
+    {
+      "path": "run/stage7/c2me-20260909/probe-build.log",
+      "sha256": "016A2075D82FFBD76627F5006C3CB9032876B7260F16689B777C1F6DE57D67E8",
+      "bytes": 695
+    },
+    {
+      "path": "run/stage7/c2me-20260909/red-html/index.html",
+      "sha256": "670503A05CD768208D9776D20B65893C35AA2437058DEA1EF96AEACEBEDE996A",
+      "bytes": 2992
+    },
+    {
+      "path": "run/stage7/c2me-20260909/red-results/TEST-dev.phoenium.chunk.C2meTickPhaseBoundaryTest.xml",
+      "sha256": "A9D6BA5B228ACAA12311A5DB6073682220843DDF0861073B456591B1B3C85FEC",
+      "bytes": 1411
+    },
+    {
+      "path": "run/stage7/c2me-20260909/red-source/LiveTickPhaseBoundary.java",
+      "sha256": "530517E9599E4AB74C69649956D9B01BC267AB14CB28774E2876116979B4560F",
+      "bytes": 31243
+    },
+    {
+      "path": "run/stage7/c2me-20260909/red-test.log",
+      "sha256": "7FDACBBE618207D81657DDCB580CF6B0551EED7BC49AC747304002BD21C9F2E8",
+      "bytes": 1958
+    },
+    {
+      "path": "run/stage7/c2me-20260909/red.gradle",
+      "sha256": "6C5272FBE57C56E0776656FA437557739C664263127B1408C724A21729E8B5A4",
+      "bytes": 438
+    },
+    {
+      "path": "run/stage7/c2me-20260909/remaining-commands.json",
+      "sha256": "46C06C613C90D114D2822D928E05E0C36ACE5194E171D800C1F83F6FFDA23356",
+      "bytes": 8807
+    },
+    {
+      "path": "run/stage7/c2me-20260909/remaining-results.json",
+      "sha256": "DBEC563670D0B1278F9A30918A3637B55A109814B65D0F66B697D73CD966B271",
+      "bytes": 1050
+    },
+    {
+      "path": "run/stage7/c2me-20260909/second-threads.txt",
+      "sha256": "F92DA2C019F41E3A62D9F6CB5DD206C06103933948E75811764C53CBF67EBF72",
+      "bytes": 61485
+    },
+    {
+      "path": "run/stage7/c2me-20260909/update_docs.py",
+      "sha256": "86ED7A0D96F6D665F525BDB300FFA1511F3F9C6347931319E21DC202AB6C8C0D",
+      "bytes": 2612
+    }
+  ]
+}

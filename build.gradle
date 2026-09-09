@@ -462,6 +462,14 @@ tasks.register('stage7ObservationHarness', Jar) {
     from(sourceSets.test.output.classesDirs) { include 'dev/phoenium/stage7/**' }
     from('src/stage7Harness/resources')
 }
+tasks.register('c2meObservationHarness', Jar) {
+    description = 'Build read-only installed C2ME path and phase receipts outside production.'
+    dependsOn tasks.named('compileTestJava')
+    archiveFileName = 'c2me-path-observer.jar'
+    destinationDirectory = layout.buildDirectory.dir('test-harness')
+    from(sourceSets.test.output.classesDirs) { include 'dev/phoenium/c2meprobe/**' }
+    from('src/c2meHarness/resources')
+}
 
 tasks.register('prepareFullAcceptanceServer', Copy) {
     dependsOn tasks.named('prepareStage3ClientServer'), tasks.named('fullAcceptanceHarness')

@@ -194,8 +194,7 @@ public final class LiveTickPhaseBoundary {
         require(node.name.equals(CACHE), "wrong cache target");
         MethodNode original = original(node, "(" + BOOL + "Z)V");
         MethodInsnNode update = unique(original, CACHE, "runDistanceManagerUpdates", "()Z");
-        AbstractInsnNode pop = next(update);
-        require(pop.getOpcode() == Opcodes.POP, "distance-update result consumption changed");
+        AbstractInsnNode pop = distanceUpdateConsumption(node, original, update);
         int boundary = original.instructions.indexOf(pop) + 1;
         require(original.instructions.indexOf(unique(original, "net/minecraft/world/level/TicketStorage", "purgeStaleTickets", "(Lnet/minecraft/server/level/ChunkMap;)V")) < boundary,
                 "ticket-purge prefix moved");
@@ -248,6 +247,48 @@ public final class LiveTickPhaseBoundary {
         maintenance.maxLocals = maintenanceState + 1;
         retainLocalAcrossFrames(maintenance, maintenanceState, CACHE_STATE);
         node.interfaces.add(PHASES + "$CacheAccess"); node.methods.add(before); node.methods.add(after); node.methods.add(maintenance);
+    }
+    /**
+     * C2ME 0.4.2-alpha.0.43 inserts its holder-map publication between the producer
+     * and POP. The producer's boolean remains below the callback arguments on the
+     * operand stack; the callback consumes its own boolean, not the producer's.
+     * Keep the entire sequence in readiness. Match the installed callback body,
+     * never mod presence or Mixin's unstable generated handler prefix alone.
+     */
+    private static AbstractInsnNode distanceUpdateConsumption(ClassNode node, MethodNode tick, MethodInsnNode update) {
+        AbstractInsnNode consumer = next(update);
+        if (consumer != null && consumer.getOpcode() == Opcodes.POP) return consumer;
+        AbstractInsnNode argument = consumer == null ? null : next(consumer);
+        AbstractInsnNode invocation = argument == null ? null : next(argument);
+        require(variable(consumer, Opcodes.ALOAD, 0) && argument != null && argument.getOpcode() == Opcodes.ACONST_NULL
+                && invocation instanceof MethodInsnNode, "distance-update result consumption changed");
+        MethodInsnNode callback = (MethodInsnNode) invocation;
+        String descriptor = "(Lorg/spongepowered/asm/mixin/injection/callback/CallbackInfo;)V";
+        require(callback.getOpcode() == Opcodes.INVOKEVIRTUAL && callback.owner.equals(CACHE) && !callback.itf
+                && callback.name.startsWith("handler$")
+                && callback.name.endsWith("$c2me-rewrites-chunk-system$updateHolderMapAfterTick")
+                && callback.desc.equals(descriptor), "unreviewed distance-update callback " + callback.owner + "." + callback.name + callback.desc);
+        require(unique(tick, CACHE, callback.name, descriptor) == callback, "duplicate holder-map callback");
+        List<MethodNode> bodies = node.methods.stream().filter(method -> method.name.equals(callback.name)
+                && method.desc.equals(descriptor)).toList();
+        require(bodies.size() == 1, "missing reviewed holder-map callback body");
+        MethodNode body = bodies.getFirst();
+        List<AbstractInsnNode> code = new ArrayList<>();
+        for (AbstractInsnNode instruction : body.instructions) if (instruction.getOpcode() >= 0) code.add(instruction);
+        String access = "com/ishland/c2me/base/mixin/access/IThreadedAnvilChunkStorage";
+        require((body.access & (Opcodes.ACC_STATIC | Opcodes.ACC_SYNCHRONIZED | Opcodes.ACC_ABSTRACT | Opcodes.ACC_NATIVE)) == 0
+                && body.tryCatchBlocks.isEmpty() && code.size() == 6
+                && variable(code.get(0), Opcodes.ALOAD, 0)
+                && code.get(1) instanceof FieldInsnNode field && field.getOpcode() == Opcodes.GETFIELD
+                && field.owner.equals(CACHE) && field.name.equals("chunkMap") && field.desc.equals("Lnet/minecraft/server/level/ChunkMap;")
+                && code.get(2) instanceof TypeInsnNode cast && cast.getOpcode() == Opcodes.CHECKCAST && cast.desc.equals(access)
+                && code.get(3) instanceof MethodInsnNode call && call.getOpcode() == Opcodes.INVOKEINTERFACE && call.itf
+                && call.owner.equals(access) && call.name.equals("invokeUpdateHolderMap") && call.desc.equals("()Z")
+                && code.get(4).getOpcode() == Opcodes.POP && code.get(5).getOpcode() == Opcodes.RETURN,
+                "holder-map callback effects/result consumption changed");
+        AbstractInsnNode pop = next(callback);
+        require(pop != null && pop.getOpcode() == Opcodes.POP, "distance-update result consumption changed after holder-map callback");
+        return pop;
     }
     private static MethodNode original(ClassNode node, String descriptor) {
         require(node.methods.stream().noneMatch(method -> method.name.startsWith("phoenium$beforeScheduledTicks")

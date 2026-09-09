@@ -104,3 +104,16 @@ Only test fixtures control offered tracker calls, pre-publication IDs and save c
 original packet iteration/output and production behavior remain intact. No upstream
 implementation was imported. The final benchmark and freeze are documented in
 `STAGE5_CLOSURE_REPORT.md`.
+
+## Stage 7 C2ME phase review
+
+| Review | Upstream path / artifact | Revision | License | Specific use |
+| --- | --- | --- | --- | --- |
+| S7-C2ME-01 | C2ME `MixinServerChunkManager.java`, `NewChunkHolderVanillaInterface`, `statuses/VanillaWorldGenerationDelegate`, `ServerAccessible`, `ReadFromDisk` and `ReadFromDiskAsync`, as embedded in `c2me-fabric-mc26.2-0.4.2-alpha.0.43.jar` | Release `0.4.2-alpha.0.43+26.2`; source commit **UNKNOWN**; binary SHA-256 `B013229383F51789C57684CBCFC12981C8D791206F3B594866DFEB74AED3770B` | MIT per locked outer/nested metadata; transitive libraries retain their own licenses | Local bytecode/installed-Mixin review of result consumption, callback ordering and replacement lifecycle paths; independently authored Phoenium guard, adapter and executable instruction fixture. No upstream runtime implementation imported or distributed. |
+
+The installed Minecraft/Fabric transformation and local pinned Minecraft producer
+bytecode were used as behavioral evidence. Disassemblies and binary exports stay in
+ignored `run/stage7/c2me-20260909`; tests/probes stay outside the server production
+JAR. The runtime patch calls the unchanged installed C2ME callback; it does not copy
+that implementation. No new upstream source download or release-to-commit claim was
+made. See `STAGE7_C2ME_REPAIR_REPORT.md` for the blocked provider integration.
