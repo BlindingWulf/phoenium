@@ -1,0 +1,26 @@
+{
+  "description": "Local-only profiler activation, native world ticks and offline saved profile.",
+  "first": [
+    {
+      "command": "spark tps",
+      "expect": "TPS from last"
+    },
+    {
+      "command": "spark profiler start --thread *",
+      "expect": "Profiler is now running",
+      "settleSeconds": 5
+    },
+    {
+      "command": "spark profiler stop --save-to-file",
+      "expect": "Profiler stopped & save complete!",
+      "settleSeconds": 2,
+      "regex": false
+    }
+  ],
+  "restart": [
+    {
+      "command": "spark tps",
+      "expect": "TPS from last"
+    }
+  ]
+}

@@ -1,5 +1,7 @@
 # Handoff
 
+Current result: **Stage 6 AUDIT PARTIAL, finite audit closed 2026-09-09**. Read [STAGE6_AUDIT_REPORT.md](STAGE6_AUDIT_REPORT.md), the single [STAGE6_AUDIT_MATRIX.md](STAGE6_AUDIT_MATRIX.md), and [STAGE7_AUDIT_BACKLOG.md](STAGE7_AUDIT_BACKLOG.md). Locked artifacts and evidence hashes are in the Stage 6 manifest/index. Local branch: `stage6/bounded-compatibility-audit`. No automatic continuation or Stage 7 implementation is authorized; historical task-specific instructions to keep going are superseded for this closed audit. Correctness requirements remain unchanged.
+
 Stage 5 is **STAGE5_PARALLEL_SCALING_FROZEN**. Start with the self-contained
 [STAGE5_CLOSURE_REPORT.md](STAGE5_CLOSURE_REPORT.md) and the short
 [STAGE5_CURRENT_WORK.md](STAGE5_CURRENT_WORK.md). The local freeze tag identifies
@@ -7,9 +9,9 @@ the final documentation/source commit; `run/stage5/final-artifacts/manifest.json
 records its exact commit/tag IDs and artifact/evidence hashes. Production SHA-256:
 `59BB31DC058351C7F4BC9DB572FEC1DE2B298FF623614FC4CB3EAFAEB5A772D5`.
 
-Stage 6 has not started. It may rely on the frozen Stage 5 ownership, original-body,
-serial equivalence, native persistence and lifecycle guarantees; it must audit actual
-required-stack compatibility without weakening them. No new compatibility fork or
+Stage 6 relied on the frozen Stage 5 ownership, original-body,
+serial equivalence, native persistence and lifecycle guarantees. Its scoped samples
+and reproducible blockers do not establish full required-stack compatibility. No new compatibility fork or
 optimization campaign is authorized by Stage 5's closure alone.
 
 [Stage 4](STAGE4_CLOSURE_REPORT.md) and [Stage 3](STAGE3_CLOSURE_REPORT.md) remain

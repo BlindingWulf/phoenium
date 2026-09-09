@@ -1,0 +1,19 @@
+{
+  "description": "Load/save/restart screening only; no feature-compatibility claim.",
+  "first": [
+    {
+      "command": "list",
+      "expect": "players online"
+    }
+  ],
+  "restart": [
+    {
+      "command": "list",
+      "expect": "players online"
+    }
+  ],
+  "jvm": [
+    "-Dmixin.debug.export=true",
+    "-Dmixin.dumpTargetOnFailure=true"
+  ]
+}

@@ -1,0 +1,91 @@
+{
+  "description": "One source-justified configuration trial: disable Lithium chunk-access optimization implicated by the exact default Mixin conflict.",
+  "first": [
+    {
+      "command": "tick freeze",
+      "expect": "The game is frozen"
+    },
+    {
+      "command": "forceload add 0 0 175 15",
+      "expect": "Marked",
+      "settleSeconds": 3
+    },
+    {
+      "command": "execute if loaded 80 65 8 run say FIXTURE_LOADED",
+      "expect": "FIXTURE_LOADED",
+      "pollReadiness": true
+    },
+    {
+      "command": "fill 71 64 7 89 64 9 minecraft:stone",
+      "expect": "Successfully filled"
+    },
+    {
+      "command": "fill 71 65 7 89 66 9 minecraft:air",
+      "expect": "Successfully filled|No blocks were filled",
+      "regex": true
+    },
+    {
+      "command": "setblock 88 65 8 minecraft:redstone_lamp",
+      "expect": "Changed the block"
+    },
+    {
+      "command": "fill 73 65 8 87 65 8 minecraft:redstone_wire",
+      "expect": "Successfully filled"
+    },
+    {
+      "command": "setblock 72 65 8 minecraft:redstone_block",
+      "expect": "Changed the block"
+    },
+    {
+      "command": "tick step 20",
+      "expect": "Stepping",
+      "settleSeconds": 2
+    },
+    {
+      "command": "execute if block 88 65 8 minecraft:redstone_lamp[lit=true] run say LAMP_ON",
+      "expect": "LAMP_ON"
+    },
+    {
+      "command": "time query gametime",
+      "expect": "The game time is"
+    }
+  ],
+  "restart": [
+    {
+      "command": "execute if loaded 88 65 8 run say RELOADED",
+      "expect": "RELOADED",
+      "pollReadiness": true
+    },
+    {
+      "command": "tick freeze",
+      "expect": "The game is frozen"
+    },
+    {
+      "command": "execute if block 88 65 8 minecraft:redstone_lamp[lit=true] run say LAMP_PERSISTED",
+      "expect": "LAMP_PERSISTED"
+    },
+    {
+      "command": "setblock 72 65 8 minecraft:air",
+      "expect": "Changed the block"
+    },
+    {
+      "command": "tick step 20",
+      "expect": "Stepping",
+      "settleSeconds": 2
+    },
+    {
+      "command": "execute if block 88 65 8 minecraft:redstone_lamp[lit=false] run say LAMP_OFF",
+      "expect": "LAMP_OFF"
+    }
+  ],
+  "positions": [
+    {
+      "x": 88,
+      "y": 65,
+      "z": 8
+    }
+  ],
+  "configs": {
+    "config/lithium.properties": "mixin.world.chunk_access=false\n"
+  }
+}

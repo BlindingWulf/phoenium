@@ -1,6 +1,6 @@
 # Compatibility matrix
 
-This is the Stage 0 compatibility policy, target inventory, and future test plan. It records no execution evidence: **every mod status below is `NOT_TESTED`**. A successful launch, accepted JAR, absent Mixin conflict, or one apparent feature invocation is not compatibility proof.
+Current evidence is in the single [Stage 6 audit matrix](STAGE6_AUDIT_MATRIX.md), with **AUDIT PARTIAL** scope and downstream obligations. The material below remains the historical Stage 0 policy/plan; its `NOT_TESTED` labels are not the current audit dispositions. A successful launch, accepted JAR, absent Mixin conflict, or one apparent feature invocation is not compatibility proof.
 
 ## Status values and production gate
 

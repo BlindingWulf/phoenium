@@ -1,0 +1,3375 @@
+{
+  "schema": 1,
+  "note": "Hashes pin retained raw evidence; driver success is only scoped screening. Interpret with STAGE6_AUDIT_MATRIX.md. Original failures and unsuccessful launch commands remain retained. Raw world snapshots and profiles are not committed.",
+  "root": "build/stage6-audit-20260909",
+  "runs": [
+    {
+      "run": "alternate-current-fabric",
+      "driverStatus": "PASS_CONSOLE_SAMPLE",
+      "files": [
+        {
+          "path": "build/stage6-audit-20260909/runs/alternate-current-fabric/first-mca.json",
+          "sha256": "3aa71eb409b2542e67d57cd8c9b6468fd37f5607d55748267442c56020f4c1f5",
+          "bytes": 461486
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/alternate-current-fabric/first-pid.json",
+          "sha256": "81c19724dd7d76519e8ec5a8e76a54606b052887b529b685507beac34a74b8b5",
+          "bytes": 474
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/alternate-current-fabric/first-report.json",
+          "sha256": "b9de1fc764994855a5e654305d7f2fe505421dc3180500be933b26e8421cb43a",
+          "bytes": 21947
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/alternate-current-fabric/first.log",
+          "sha256": "e58c680f5529b0d8315bba0f8bd5be1f4439a87744563ce574723475d08d8549",
+          "bytes": 11652
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/alternate-current-fabric/installed.json",
+          "sha256": "69b683c2eaa8d7a0dfa68a53af519f8547a503b27253f9213913bacb99a34889",
+          "bytes": 6609
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/alternate-current-fabric/plan.json",
+          "sha256": "8d07f3c5f935046723c942e8340258b5bddb5b8b27d73edcd66731ee367aa9ff",
+          "bytes": 2292
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/alternate-current-fabric/report.json",
+          "sha256": "4a1593538b9f4faf8b42088b6a56cc59d38806c62e0031b378d7aff052e249c1",
+          "bytes": 3990
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/alternate-current-fabric/restart-mca.json",
+          "sha256": "c9976118c92db7ab3564da1d8f20d38595068f7f8a6d0e284ec60194ce38d208",
+          "bytes": 461494
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/alternate-current-fabric/restart-pid.json",
+          "sha256": "621bec324af8016d8af7adf0cdf204943f9617d9537fbd78d614f00a5d7a8be6",
+          "bytes": 475
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/alternate-current-fabric/restart-report.json",
+          "sha256": "14775d85dfa59da80e7c14fb8890daa50d8e7a330ca2265ad2babb9050b4921e",
+          "bytes": 17436
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/alternate-current-fabric/restart.log",
+          "sha256": "a3982fc0377b9517d3de9abc381dac07ea860bc15bdf15c3d608ff19864c71da",
+          "bytes": 10640
+        }
+      ]
+    },
+    {
+      "run": "alternate-current-w1",
+      "driverStatus": "PASS_CONSOLE_SAMPLE",
+      "files": [
+        {
+          "path": "build/stage6-audit-20260909/runs/alternate-current-w1/first-mca.json",
+          "sha256": "fadd091726fb512d749814ad05bb78cd1f66e35efdf93cf59abf604ed9264d13",
+          "bytes": 461470
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/alternate-current-w1/first-pid.json",
+          "sha256": "c00c0bcfae1aa7e29ae91a00ad5703e052a382f05fe5a805e07485d695ca8525",
+          "bytes": 475
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/alternate-current-w1/first-report.json",
+          "sha256": "2b69aacc528a6074f9d36f0df529b58e006ea7986ffe0ab4d37c6b07e034c217",
+          "bytes": 23333
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/alternate-current-w1/first.log",
+          "sha256": "e02b6c6298d94ad8a77fb34f78fbf6894cdee85b5fb4290f6d13e70aac6d3f19",
+          "bytes": 14380
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/alternate-current-w1/installed.json",
+          "sha256": "17cc6c3b1f9738d0e628404864d5454a1df769ee72c8d1f53c7b53f834b48000",
+          "bytes": 7486
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/alternate-current-w1/plan.json",
+          "sha256": "8d07f3c5f935046723c942e8340258b5bddb5b8b27d73edcd66731ee367aa9ff",
+          "bytes": 2292
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/alternate-current-w1/report.json",
+          "sha256": "6b16c952755ef4021dd5bf4f483176e1ff6184b7cccca69cdba5cac0a9844276",
+          "bytes": 5520
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/alternate-current-w1/restart-mca.json",
+          "sha256": "38110e35f7f6778f501ef817bff988253002d7628197d276d85dc8dddccda652",
+          "bytes": 461478
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/alternate-current-w1/restart-pid.json",
+          "sha256": "232e9182d1a26cdf013e4f34280acb35a6aab8cd0b56d3d330a40094ef13b5a5",
+          "bytes": 475
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/alternate-current-w1/restart-report.json",
+          "sha256": "9249a0a065a5c85ac25131cb55ae073f85d543db60c65bfe609fb7932120d40a",
+          "bytes": 18734
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/alternate-current-w1/restart.log",
+          "sha256": "cd92374cac85301e288ab8d8870b52e279ce3d8e467257ebf119d3817b660d39",
+          "bytes": 13365
+        }
+      ]
+    },
+    {
+      "run": "alternate-current-w4",
+      "driverStatus": "PASS_CONSOLE_SAMPLE",
+      "files": [
+        {
+          "path": "build/stage6-audit-20260909/runs/alternate-current-w4/first-mca.json",
+          "sha256": "b9d1b2edb964c6ca66b45cbbeaf49c059e32cdd4ea17efd7d643823a3438dd56",
+          "bytes": 461470
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/alternate-current-w4/first-pid.json",
+          "sha256": "79c787b90ff716636b82ecc90fe9a90dfd88ededd2f9fb4ee02f66f1e77fd874",
+          "bytes": 475
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/alternate-current-w4/first-report.json",
+          "sha256": "213040c390b2b410767a26597dd80447e35cbe2224a307ea52f3fafdc6b10f05",
+          "bytes": 23215
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/alternate-current-w4/first.log",
+          "sha256": "f890fa18a7056203b4b94ef328f845ade3dd1e81d235a9d119132b98f43b2604",
+          "bytes": 14378
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/alternate-current-w4/installed.json",
+          "sha256": "17cc6c3b1f9738d0e628404864d5454a1df769ee72c8d1f53c7b53f834b48000",
+          "bytes": 7486
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/alternate-current-w4/plan.json",
+          "sha256": "8d07f3c5f935046723c942e8340258b5bddb5b8b27d73edcd66731ee367aa9ff",
+          "bytes": 2292
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/alternate-current-w4/report.json",
+          "sha256": "bf273e2eb02c1e4bd32e67129858a267fdd99769300466936856786461a931bd",
+          "bytes": 5519
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/alternate-current-w4/restart-mca.json",
+          "sha256": "8125180648a6119ada049c5af5288a2e46cd05f47bd48cedace5f45039c88dfd",
+          "bytes": 461478
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/alternate-current-w4/restart-pid.json",
+          "sha256": "248092752987a16e85fd0968294f2d88b65e47444cad6b8081224b8c62fe1776",
+          "bytes": 474
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/alternate-current-w4/restart-report.json",
+          "sha256": "97bd3d047312fc7ad669c6923932f3fd6c438249f405323ef96f52b35757db6f",
+          "bytes": 18699
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/alternate-current-w4/restart.log",
+          "sha256": "8e5ef478a524743dca1a60b9bc6995d0aee4c33a3c2cf616ac301d002b8d8b05",
+          "bytes": 13363
+        }
+      ]
+    },
+    {
+      "run": "api-control-w1",
+      "driverStatus": "PASS_CONSOLE_SAMPLE",
+      "files": [
+        {
+          "path": "build/stage6-audit-20260909/runs/api-control-w1/first-mca.json",
+          "sha256": "b485857cec35f1640db194f5c21ff6c105a3e12c207f434d452761f22f482011",
+          "bytes": 461446
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/api-control-w1/first-pid.json",
+          "sha256": "905a5b0735e129287be1af2441e28d8af1b77a4b1f7731a413f2e9a1cf92b9c3",
+          "bytes": 475
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/api-control-w1/first-report.json",
+          "sha256": "27a1d0640a88508f2726d2d70c2d7f94b906cb2d6b8041c562f13cca46cccd5f",
+          "bytes": 22837
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/api-control-w1/first.log",
+          "sha256": "d81df0c5713c99bba7011ca0281c099056873ee564e02d628b707dc9e68b8881",
+          "bytes": 14270
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/api-control-w1/installed.json",
+          "sha256": "2acec7f091e61b4f8ec4762d9e4184eb8f9532701dd60afbd2a6db4961b613f8",
+          "bytes": 6264
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/api-control-w1/plan.json",
+          "sha256": "dc806d4c917d622bef2624e3d81dd07fa6c3a73f8583cf62c48eb489a641f892",
+          "bytes": 2232
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/api-control-w1/report.json",
+          "sha256": "85b87c4e4e3d81f344673ea9d46ffdbd24d64b33d5da64a22c7034ed43defe54",
+          "bytes": 5376
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/api-control-w1/restart-mca.json",
+          "sha256": "61bd718c4eefb15bb3d09753dd13b88a3bc329245c9bdf5c793b353dbb381a7c",
+          "bytes": 461454
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/api-control-w1/restart-pid.json",
+          "sha256": "8e4855135b9df68c19b7f94fad5da542e0f968adadf8aacc25e08a63fa743b23",
+          "bytes": 475
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/api-control-w1/restart-report.json",
+          "sha256": "dd37c1cdc34383d1fa60ba49343f1bf57e059d6d90a675e36deebbada9ea5cf5",
+          "bytes": 18224
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/api-control-w1/restart.log",
+          "sha256": "1c7ef602bbb320f5dde97a132e0033601e9395c2269c8ff0ecbc12cae964c3c4",
+          "bytes": 13318
+        }
+      ]
+    },
+    {
+      "run": "api-control-w4",
+      "driverStatus": "PASS_CONSOLE_SAMPLE",
+      "files": [
+        {
+          "path": "build/stage6-audit-20260909/runs/api-control-w4/first-mca.json",
+          "sha256": "904163cb7cedfc64dc6d7b6853be30a8a31d700a50319a296a3208b2c7c4af20",
+          "bytes": 461446
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/api-control-w4/first-pid.json",
+          "sha256": "ddbb1a6bfb0deb723c3c3811ae8676a3a0304dba7d1e5def7f348ab10c97a695",
+          "bytes": 475
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/api-control-w4/first-report.json",
+          "sha256": "d056d840220c6b791d852e9bbc78606bb0b7be228421debe987633830e280666",
+          "bytes": 22970
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/api-control-w4/first.log",
+          "sha256": "d616effdb5f33572887d6759d229f78c85483359fd17d46a91602454ff508505",
+          "bytes": 14268
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/api-control-w4/installed.json",
+          "sha256": "2acec7f091e61b4f8ec4762d9e4184eb8f9532701dd60afbd2a6db4961b613f8",
+          "bytes": 6264
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/api-control-w4/plan.json",
+          "sha256": "dc806d4c917d622bef2624e3d81dd07fa6c3a73f8583cf62c48eb489a641f892",
+          "bytes": 2232
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/api-control-w4/report.json",
+          "sha256": "b31d7fd56754078a46d335401ab828ebb01c94f8def4baea72bed8bfc3d7dca5",
+          "bytes": 5373
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/api-control-w4/restart-mca.json",
+          "sha256": "7fc4ae91c0bd45a8e92be25d2f59940f34f7be304258d07dba1dde43a6279d5e",
+          "bytes": 461454
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/api-control-w4/restart-pid.json",
+          "sha256": "2d0c9db46f6cd901beddd9fd55fd33a369d26465971ad6b91b9a595a9a43d2a0",
+          "bytes": 474
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/api-control-w4/restart-report.json",
+          "sha256": "0668ebfc1add3ccf4fa4a38194e7aa59ebc99e6caff7e65c882c2c2833740870",
+          "bytes": 18347
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/api-control-w4/restart.log",
+          "sha256": "d10d61fe13a039e7d0361518b7e07d6b4c489640e9474850673ee612411c3636",
+          "bytes": 13316
+        }
+      ]
+    },
+    {
+      "run": "c2me-confirm-w4",
+      "driverStatus": "UNRESOLVED",
+      "files": [
+        {
+          "path": "build/stage6-audit-20260909/runs/c2me-confirm-w4/first-pid.json",
+          "sha256": "d03807ddef7e8f7f4a6682aabb67763cd6e13837c43a093adee70f65d600f4c3",
+          "bytes": 540
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/c2me-confirm-w4/first-report.json",
+          "sha256": "c9ed10805a0993fb84dd8d0c46b6e555401cf56d83d00bda26c3873a7122bb32",
+          "bytes": 4558
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/c2me-confirm-w4/first.log",
+          "sha256": "a0130618bb01242dbbc69f1d3c3cd09c3f3e0a485914d312b6cce1889a7f1f64",
+          "bytes": 34567
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/c2me-confirm-w4/installed.json",
+          "sha256": "4c75cdcc3203ae4e80ed0aab84989b078c65fa7b5b42f909dec7e9fcb2aae386",
+          "bytes": 10708
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/c2me-confirm-w4/plan.json",
+          "sha256": "a8f0f94830e9f02b23b3db22c1f1a9b6c20ac8239a4c2ce914231b73d206e710",
+          "bytes": 372
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/c2me-confirm-w4/report.json",
+          "sha256": "aa704a18003972f2fdda925b2ecf06fdd6e409bb6f919bfd7e8e08ba00df8031",
+          "bytes": 1956
+        }
+      ]
+    },
+    {
+      "run": "c2me-fabric-control",
+      "driverStatus": "UNRESOLVED",
+      "files": [
+        {
+          "path": "build/stage6-audit-20260909/runs/c2me-fabric-control/first-mca.json",
+          "sha256": "05edd52bae241616c8792bd70e51c9f296176d795f186d8c4559c3be3d480693",
+          "bytes": 869052
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/c2me-fabric-control/first-pid.json",
+          "sha256": "eb8b2f0e502310b78666c6e196b08e5dee510b6d1ad1404b7b515f160d2dfb54",
+          "bytes": 475
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/c2me-fabric-control/first-report.json",
+          "sha256": "3dd0fab61e8f0da4891a3a261f73a05a56d04b95b8b177360fb214035c6a5e4b",
+          "bytes": 30652
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/c2me-fabric-control/first.log",
+          "sha256": "3eb5f704e4da39efe95960249340075cb5e26062583d602f81bb899ff072ae61",
+          "bytes": 17370
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/c2me-fabric-control/installed.json",
+          "sha256": "724a6e62cc4bf5bae4f20c33cdbaab42848786aae850497a8d8e423273f1f302",
+          "bytes": 9831
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/c2me-fabric-control/plan.json",
+          "sha256": "cd9e6305a6b32eee9ac579a35870426e07250804afb80209fe9bd661089fd744",
+          "bytes": 2424
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/c2me-fabric-control/report.json",
+          "sha256": "f79a61c40810403701ee241d05325ef592c01dcbb94c20b69656e31c70368c64",
+          "bytes": 3464
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/c2me-fabric-control/restart-pid.json",
+          "sha256": "a255c4e96ce9c5875280473ab5e04a055e1f651339724fcf93dc011539873b6c",
+          "bytes": 475
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/c2me-fabric-control/restart-report.json",
+          "sha256": "339ece7eb90330d0d21584134e9f7d398a20fc49da9c52ccbec28e6be309cb00",
+          "bytes": 76868
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/c2me-fabric-control/restart.log",
+          "sha256": "2fe0396607e79cdcb07e22630bbe6b88df0c14069539611180462c7f820d300c",
+          "bytes": 15013
+        }
+      ]
+    },
+    {
+      "run": "c2me-fabric-ready",
+      "driverStatus": "PASS_CONSOLE_SAMPLE",
+      "files": [
+        {
+          "path": "build/stage6-audit-20260909/runs/c2me-fabric-ready/first-mca.json",
+          "sha256": "1497fd325ad0ee4f4c04f51433ef02729ae1e3dfffdba1cdd5e1ff94a6a4d4c7",
+          "bytes": 846650
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/c2me-fabric-ready/first-pid.json",
+          "sha256": "4d681b365e3f5c7b095737c2dc6a16a3f3a2ab183f9d973e6abd68f2ec95d997",
+          "bytes": 475
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/c2me-fabric-ready/first-report.json",
+          "sha256": "c1637da802bd3e7d6dd81b02b2a6be9a7aba44e075baaaf4b8cc502d849bc74a",
+          "bytes": 30465
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/c2me-fabric-ready/first.log",
+          "sha256": "572665c2f8766613be893a7be42756942d97a65110f481421d4101c5a2375605",
+          "bytes": 17366
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/c2me-fabric-ready/installed.json",
+          "sha256": "724a6e62cc4bf5bae4f20c33cdbaab42848786aae850497a8d8e423273f1f302",
+          "bytes": 9831
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/c2me-fabric-ready/plan.json",
+          "sha256": "d639dd9095e6114aefbebeb38c35392a3d6c2ba81ef7d865426d04bece6527c9",
+          "bytes": 2484
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/c2me-fabric-ready/report.json",
+          "sha256": "eafcfbca8decbc66dbc208d8bd9df2b13587028c3bdec39dd673f3add01500dc",
+          "bytes": 3974
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/c2me-fabric-ready/restart-mca.json",
+          "sha256": "473c929b43bdd99138c3ac1ead17ade88054871990eb1c69b2fddee762277aaf",
+          "bytes": 832769
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/c2me-fabric-ready/restart-pid.json",
+          "sha256": "c87cac994fbe04c7957e4fdd2a65ce72adee910cd2b9f9c7741416622cfb500a",
+          "bytes": 475
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/c2me-fabric-ready/restart-report.json",
+          "sha256": "58ce40849c71fa3e63c1ea4488b700d0f7f0a3cf9bc239161076eb16d8d2cb67",
+          "bytes": 23283
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/c2me-fabric-ready/restart.log",
+          "sha256": "e3cd9a74ecad92b4cf555e58b5e68d20d8096d019e5fd14fc29eda681377e1cd",
+          "bytes": 16126
+        }
+      ]
+    },
+    {
+      "run": "c2me-w1",
+      "driverStatus": "UNRESOLVED",
+      "files": [
+        {
+          "path": "build/stage6-audit-20260909/runs/c2me-w1/first-pid.json",
+          "sha256": "3174a0bf0769017290fcd10ff225d5b0d7b45c53a041d241606301d6888465a0",
+          "bytes": 475
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/c2me-w1/first-report.json",
+          "sha256": "76c6508a7c9dd27e5c6110b23194f32bce800f0b35e03a37e156e148b11cc5d5",
+          "bytes": 4224
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/c2me-w1/first.log",
+          "sha256": "a1feca42fad40307f2c11d9ab3e24cacb3d44ba609f169e563481f0ab1c13060",
+          "bytes": 20391
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/c2me-w1/installed.json",
+          "sha256": "4c75cdcc3203ae4e80ed0aab84989b078c65fa7b5b42f909dec7e9fcb2aae386",
+          "bytes": 10708
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/c2me-w1/plan.json",
+          "sha256": "a44179eb752c0ed3c6107aff9eeaea06503fd79b716d61630dc541ac8e66a070",
+          "bytes": 280
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/c2me-w1/report.json",
+          "sha256": "380bfc61c15ed191135cabd50e7dbbf155b85aebdb4b6cc076244bf8ddacc2e4",
+          "bytes": 1851
+        }
+      ]
+    },
+    {
+      "run": "chunky-fabric-control",
+      "driverStatus": "PASS_CONSOLE_SAMPLE",
+      "files": [
+        {
+          "path": "build/stage6-audit-20260909/runs/chunky-fabric-control/first-mca.json",
+          "sha256": "017b217224c4303ddfb2dc801be3132bb1474c05f7d91ba7a6e4b651ff557aa2",
+          "bytes": 788858
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/chunky-fabric-control/first-pid.json",
+          "sha256": "acfecc4bf732c54d68b1c428c1a4a86042a14c9f97b631d08f5f3540f2edd708",
+          "bytes": 475
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/chunky-fabric-control/first-report.json",
+          "sha256": "30fa45598aed8a3925107028e28bdf038f9acb7d0fb159e91808910699313899",
+          "bytes": 26697
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/chunky-fabric-control/first.log",
+          "sha256": "95b00b4bbf4de194d2ed6128dd5dd5b1a06f680e57037fe1cd7100c652b2b437",
+          "bytes": 12742
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/chunky-fabric-control/installed.json",
+          "sha256": "3ded60a02467b8cb644b26ed32385d94dacf37f8fe8306096e094f2bfe4acf6f",
+          "bytes": 6733
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/chunky-fabric-control/plan.json",
+          "sha256": "4f15ee53ec6e719adf9bf8e524bbf5d1ca92ec3090e194514f55e7fc518eaba2",
+          "bytes": 2967
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/chunky-fabric-control/report.json",
+          "sha256": "1e17dc53a5fa1de50a21c2ff3f5172f155070071489ac6ad81cdb2e879cb9807",
+          "bytes": 3919
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/chunky-fabric-control/restart-mca.json",
+          "sha256": "03c8aa154c400ce32e4c6bc2885a6d11c08c3fac3024d8c3c91b158eb849f3fe",
+          "bytes": 778502
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/chunky-fabric-control/restart-pid.json",
+          "sha256": "8472e7d0a69b7a68131597649944f75297ca15446fa8acfecf64e7030432b666",
+          "bytes": 475
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/chunky-fabric-control/restart-report.json",
+          "sha256": "6c3e3f9465327f67ffc0baff406f5b735b6a2b188fdd4909a09cd753ce226f9c",
+          "bytes": 17699
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/chunky-fabric-control/restart.log",
+          "sha256": "cde3047f8f79e46ae3db6c3eacb2af5d28ec0f34c72a02e6273402dbdba50060",
+          "bytes": 10759
+        }
+      ]
+    },
+    {
+      "run": "chunky-w1",
+      "driverStatus": "UNRESOLVED",
+      "files": [
+        {
+          "path": "build/stage6-audit-20260909/runs/chunky-w1/first-pid.json",
+          "sha256": "a464c6fcb8e8c04b56843a5e6d0389e784ad89bfa9411b395ed77a2bd89887b4",
+          "bytes": 475
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/chunky-w1/first-report.json",
+          "sha256": "2a41b267c621c9941e59cda3fc79b49e5ec62053e60e41ac1c9ba55d73f16d20",
+          "bytes": 133191
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/chunky-w1/first.log",
+          "sha256": "2b065d22c9ededb22465c38b1d406205b61b4bedceaa220da7cd61ea0d2e0f84",
+          "bytes": 14363
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/chunky-w1/installed.json",
+          "sha256": "a216a2d21d9b2fb234a0be3f79fe03187aeefced35f465369a417b7e889bbbb9",
+          "bytes": 7610
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/chunky-w1/live-stall-threads.txt",
+          "sha256": "a81933099c2adb2716eebe576959c12f966d28d42941e96f7789a21446faa95d",
+          "bytes": 44388
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/chunky-w1/plan.json",
+          "sha256": "4f15ee53ec6e719adf9bf8e524bbf5d1ca92ec3090e194514f55e7fc518eaba2",
+          "bytes": 2967
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/chunky-w1/report.json",
+          "sha256": "32936f4d3da0f506182c2c709dfb6e6b04055cb1a8e6329e9cbe027ee1408c16",
+          "bytes": 1845
+        }
+      ]
+    },
+    {
+      "run": "clumps-confirm-w4",
+      "driverStatus": "UNRESOLVED",
+      "files": [
+        {
+          "path": "build/stage6-audit-20260909/runs/clumps-confirm-w4/first-pid.json",
+          "sha256": "407f9b594d952d04df386bd3ee1c465f5ca9101f5b264b7894a31d02f2cb0d68",
+          "bytes": 475
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/clumps-confirm-w4/first-report.json",
+          "sha256": "0189b083e3ccc8399d70fa1abfa611ff78afcc047c6fa413cd60e2169dfb2514",
+          "bytes": 22603
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/clumps-confirm-w4/first.log",
+          "sha256": "70daa123d945cbbf315dd23fef3317a88466af1adaf638077548f1fa77e40c01",
+          "bytes": 18957
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/clumps-confirm-w4/installed.json",
+          "sha256": "b20e09dfefd17e9d4fffe46de01bda46b3cb8619265f364a9686a47738eaf88f",
+          "bytes": 7236
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/clumps-confirm-w4/plan.json",
+          "sha256": "94fc988de72f27f7d03901b02528ab1449aff20cc4d680750fffbbb1101d0c75",
+          "bytes": 3078
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/clumps-confirm-w4/report.json",
+          "sha256": "abf133f8e9124be07806dce8eb2289595caa557047b2414f039d784749ba5576",
+          "bytes": 1657
+        }
+      ]
+    },
+    {
+      "run": "clumps-fabric-control",
+      "driverStatus": "PASS_CONSOLE_SAMPLE",
+      "files": [
+        {
+          "path": "build/stage6-audit-20260909/runs/clumps-fabric-control/first-mca.json",
+          "sha256": "b364100dc608bae393eea49757e8187b0c16ee2f633d6136a5b0836c14c8ed15",
+          "bytes": 461474
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/clumps-fabric-control/first-pid.json",
+          "sha256": "33e057933f5f4ffa2aa311ce254d267d61c6978023e674dadf51719c8ccf9eb4",
+          "bytes": 475
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/clumps-fabric-control/first-report.json",
+          "sha256": "f14401e5847315e0576c463ef126c23c7defce8c5bbaaba9d3ad5fc2a5bb2a1e",
+          "bytes": 26545
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/clumps-fabric-control/first.log",
+          "sha256": "9d2c5f3f3a5437b5a9e4d97dc5ca431a23c724b9729c79998a82651c1e9f29ba",
+          "bytes": 12625
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/clumps-fabric-control/installed.json",
+          "sha256": "0996b8cca35249bda0d133f99b7315111f3bb78e80393a6e935271d5eee6f44a",
+          "bytes": 6359
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/clumps-fabric-control/plan.json",
+          "sha256": "94fc988de72f27f7d03901b02528ab1449aff20cc4d680750fffbbb1101d0c75",
+          "bytes": 3078
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/clumps-fabric-control/report.json",
+          "sha256": "4dbef243724040af15ffc3de2c70a8ce54f719c67c1b62df047d7debf05b6edc",
+          "bytes": 3957
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/clumps-fabric-control/restart-mca.json",
+          "sha256": "2be6500d16c084af7c242162764dd7cb7ece1df043fd86a18fff0d20589102d5",
+          "bytes": 461482
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/clumps-fabric-control/restart-pid.json",
+          "sha256": "5c5fdc5dc666a675d59188e7c10ae8a4ea08bc5acd0246d00a7b6f9925ebb090",
+          "bytes": 475
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/clumps-fabric-control/restart-report.json",
+          "sha256": "b87f39f2d727b9a79c2450fd3dc655dfe9095f4b22fc16cdddef45e8804f06ce",
+          "bytes": 18327
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/clumps-fabric-control/restart.log",
+          "sha256": "8bc794fa4b536e6c20d218a9a0b10c1a787f094a3e14ae08d42e2f112e75a842",
+          "bytes": 11267
+        }
+      ]
+    },
+    {
+      "run": "clumps-w1",
+      "driverStatus": "UNRESOLVED",
+      "files": [
+        {
+          "path": "build/stage6-audit-20260909/runs/clumps-w1/first-pid.json",
+          "sha256": "5110a9ec1d3db83ae6da24f9409c2a603bd36cdbec57c3405b09974a94b38238",
+          "bytes": 473
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/clumps-w1/first-report.json",
+          "sha256": "36de2ced2e24776cbe459423b968ee6594477a609fc2e3d8022455490ea52db9",
+          "bytes": 23007
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/clumps-w1/first.log",
+          "sha256": "5642add407d9a4919c70e7c2730bdc22d979cca3f94a0d5f11bb2dbc03b53733",
+          "bytes": 18927
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/clumps-w1/installed.json",
+          "sha256": "b20e09dfefd17e9d4fffe46de01bda46b3cb8619265f364a9686a47738eaf88f",
+          "bytes": 7236
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/clumps-w1/plan.json",
+          "sha256": "94fc988de72f27f7d03901b02528ab1449aff20cc4d680750fffbbb1101d0c75",
+          "bytes": 3078
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/clumps-w1/report.json",
+          "sha256": "1357f649680150e3cf555147ad149f2723289a12f7e3a37f5c1cda160858f5db",
+          "bytes": 1646
+        }
+      ]
+    },
+    {
+      "run": "ferritecore-2",
+      "driverStatus": "PASS_CONSOLE_SAMPLE",
+      "files": [
+        {
+          "path": "build/stage6-audit-20260909/runs/ferritecore-2/first-heap-histogram.txt",
+          "sha256": "63f0be2a44e05dde01a8f22bd602c2152fc52c4b26c3591835180ef630601662",
+          "bytes": 1910670
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/ferritecore-2/first-mca.json",
+          "sha256": "b4c32dc8eddd32e8dee3d77c6dbfa1f72029711dcc5c6de56d8ddadfa455e56a",
+          "bytes": 461442
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/ferritecore-2/first-pid.json",
+          "sha256": "7382d80b0b1cc5f23e7326f4a42bfbd4ecde85710bc853e2d369098df38a763c",
+          "bytes": 475
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/ferritecore-2/first-report.json",
+          "sha256": "7f70d0908a437a26418b7c8d0c4f4899e2395be606461ca87f2947cd7b6f2f51",
+          "bytes": 23520
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/ferritecore-2/first.log",
+          "sha256": "b9d6b5863e4f6682b17e9ad6e57da195b18d7f67045e57b7ec2c925986d2ff94",
+          "bytes": 14365
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/ferritecore-2/installed.json",
+          "sha256": "83653b6287d687ce647fc4dd7af7a171224201f36efcf40fb925e1e8cd4cc221",
+          "bytes": 7391
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/ferritecore-2/plan.json",
+          "sha256": "9b7b0c570aae5c74d0b668e0ffca8833586ef9d1d1c98367b257cde06f41f4fc",
+          "bytes": 2527
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/ferritecore-2/report.json",
+          "sha256": "ae6801531c46b3cdf3482cf2ce0327965aa73542a425b190672cdc5144bd4c37",
+          "bytes": 5486
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/ferritecore-2/restart-heap-histogram.txt",
+          "sha256": "35c272955c96c3487fdd74b9a0d438b90ee29fa8f3bd4eb2ed16f4d72a8f38de",
+          "bytes": 1906144
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/ferritecore-2/restart-mca.json",
+          "sha256": "7f733c6f7db1bf1a15ab275c7e9d0fbe44bb5080495b58efc45359043143a2f5",
+          "bytes": 461450
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/ferritecore-2/restart-pid.json",
+          "sha256": "bcdb47c7f8764a406b776abcc2765a598c5eb71447e93629815d067a7486daac",
+          "bytes": 475
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/ferritecore-2/restart-report.json",
+          "sha256": "6a87df0b0292076aceaeff528995253cce371cb35aeff9655dbeabbed8c4d348",
+          "bytes": 18906
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/ferritecore-2/restart.log",
+          "sha256": "bf1500685814ec557aa0b81b4b731b01fd5c71729bf33f4f2361ee9d10957a56",
+          "bytes": 13417
+        }
+      ]
+    },
+    {
+      "run": "ferritecore-3",
+      "driverStatus": "PASS_CONSOLE_SAMPLE",
+      "files": [
+        {
+          "path": "build/stage6-audit-20260909/runs/ferritecore-3/first-heap-histogram.txt",
+          "sha256": "97d66fe2b5e96e2919a8254a0cf652078562e33985ebabd13d4bb6f29dcbf8a1",
+          "bytes": 1912110
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/ferritecore-3/first-mca.json",
+          "sha256": "bf56061a76e3846008cbd543bf6d96b27dd270f84be9e7da2865863d98fe462d",
+          "bytes": 461442
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/ferritecore-3/first-pid.json",
+          "sha256": "61665cd4d04bed732eb9ee910bef7dc30f13c905b4d14e75b85892dc704c7227",
+          "bytes": 475
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/ferritecore-3/first-report.json",
+          "sha256": "b40e18a2148367dc6f618ca085de16d6505fa175eeb45f8d5a7bc9dc060baed4",
+          "bytes": 24109
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/ferritecore-3/first.log",
+          "sha256": "7ea6873449e4c43168746b66b4512dfdbfce06b2080853552a1e0aef9d02ebf2",
+          "bytes": 14366
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/ferritecore-3/installed.json",
+          "sha256": "83653b6287d687ce647fc4dd7af7a171224201f36efcf40fb925e1e8cd4cc221",
+          "bytes": 7391
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/ferritecore-3/plan.json",
+          "sha256": "9b7b0c570aae5c74d0b668e0ffca8833586ef9d1d1c98367b257cde06f41f4fc",
+          "bytes": 2527
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/ferritecore-3/report.json",
+          "sha256": "603e38289fe9496f537e7126b3e098b91588572239bb7d3f8cbb90c914995ff1",
+          "bytes": 5489
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/ferritecore-3/restart-heap-histogram.txt",
+          "sha256": "5612640579b7dbd75d7bcf9896b2111dfa6004e82dc6cb89682d629a0f25a8c8",
+          "bytes": 1905904
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/ferritecore-3/restart-mca.json",
+          "sha256": "fdb3b8b54162cabe3ba1beb1576f943f3293481d70007e3846b8d5593ec7ce62",
+          "bytes": 461450
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/ferritecore-3/restart-pid.json",
+          "sha256": "8a9bf4d277b25272dab2452235c5ba8e25d2d23b0005f32aaa57c90d9bb31264",
+          "bytes": 475
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/ferritecore-3/restart-report.json",
+          "sha256": "fd3a204ba61b9e632553e8feb4bc3ddd2fa87cfa9c5ad76cd282df7dceaed95a",
+          "bytes": 19176
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/ferritecore-3/restart.log",
+          "sha256": "aa425fa91ae06f1c7faab33fcbcb3f50522942860a5fcec61df85e0ece133cea",
+          "bytes": 13416
+        }
+      ]
+    },
+    {
+      "run": "ferritecore-w1",
+      "driverStatus": "PASS_CONSOLE_SAMPLE",
+      "files": [
+        {
+          "path": "build/stage6-audit-20260909/runs/ferritecore-w1/first-heap-histogram.txt",
+          "sha256": "07ea147f83967d25e3a527ad2367f61703d36f7f0d0424c803fa9e8ee40cfd12",
+          "bytes": 1910137
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/ferritecore-w1/first-mca.json",
+          "sha256": "230c47c4dca05861add68ea71801a962b05b8130cc5d417e279be31f2da58feb",
+          "bytes": 461446
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/ferritecore-w1/first-pid.json",
+          "sha256": "638b74ab4cdf90d022cf3ef312cbf2628cf3878db76c6302f10312fee2916edf",
+          "bytes": 475
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/ferritecore-w1/first-report.json",
+          "sha256": "f6988c7bd529bbb02f7ac2826d8c500532079c7304ed7a8c4f555be0dbb2cb9b",
+          "bytes": 23426
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/ferritecore-w1/first.log",
+          "sha256": "def1b2f734823a2d4e579d269c0bdab8e3d50b049d4480c466c7447af3df3f02",
+          "bytes": 14368
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/ferritecore-w1/installed.json",
+          "sha256": "83653b6287d687ce647fc4dd7af7a171224201f36efcf40fb925e1e8cd4cc221",
+          "bytes": 7391
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/ferritecore-w1/plan.json",
+          "sha256": "18de7bb854918c928344c68b747b92e075cd0eabfaab1f3d68b023154d9f44f3",
+          "bytes": 2527
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/ferritecore-w1/report.json",
+          "sha256": "bb27d3b4a18e4e57648746e22cce21dbff2a0c5a01fd66582234f0bf1696dfc5",
+          "bytes": 5476
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/ferritecore-w1/restart-heap-histogram.txt",
+          "sha256": "e59b675c975babf6bbb114d895f33d4df2d259a5609d4c2bafb80e58a1fd2105",
+          "bytes": 1906013
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/ferritecore-w1/restart-mca.json",
+          "sha256": "213f4b6e2b67326fcd4a66e48f6407b8af9ecfbf84d0ba58a09b95eb482b57e1",
+          "bytes": 461454
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/ferritecore-w1/restart-pid.json",
+          "sha256": "cd7d1af14c8f7097f1dddf4ce613e92140c1b5087ee2537914348143d381a976",
+          "bytes": 475
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/ferritecore-w1/restart-report.json",
+          "sha256": "dc49538db9e545b68005cae16d15dfa2ead920b7e52a3fdc42468d435a681c9f",
+          "bytes": 18727
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/ferritecore-w1/restart.log",
+          "sha256": "944b7100cdb12a35f285a71ad0be6841f1bdad55d22b7667fd5eee14f38482f9",
+          "bytes": 13420
+        }
+      ]
+    },
+    {
+      "run": "ferritecore-w4",
+      "driverStatus": "PASS_CONSOLE_SAMPLE",
+      "files": [
+        {
+          "path": "build/stage6-audit-20260909/runs/ferritecore-w4/first-mca.json",
+          "sha256": "b267fd7d62d2080f813d572c9ad35879f8e0cd58bf713bd9a706240b4e310c7d",
+          "bytes": 461446
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/ferritecore-w4/first-pid.json",
+          "sha256": "669b61de5ad88125603544b99ab56d332bf579da757635a39861b30cb7f01f32",
+          "bytes": 475
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/ferritecore-w4/first-report.json",
+          "sha256": "bec0d25acae05a6004d565003b2e81fd6bf0a5d0f2caaa77ace322d5cfcd1c3b",
+          "bytes": 23155
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/ferritecore-w4/first.log",
+          "sha256": "004d7174391557b3e34d1fd4213d3df5616803d60414dbc30bf6f667f204a4ef",
+          "bytes": 14288
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/ferritecore-w4/installed.json",
+          "sha256": "83653b6287d687ce647fc4dd7af7a171224201f36efcf40fb925e1e8cd4cc221",
+          "bytes": 7391
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/ferritecore-w4/plan.json",
+          "sha256": "8d07f3c5f935046723c942e8340258b5bddb5b8b27d73edcd66731ee367aa9ff",
+          "bytes": 2292
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/ferritecore-w4/report.json",
+          "sha256": "c68719633281284c457014e19521c6cdfa8960dd706006c829d6cebf7e4430c7",
+          "bytes": 5490
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/ferritecore-w4/restart-mca.json",
+          "sha256": "a015815cac1620c1a7b3d58b39554344b59a09efd2b495e1c32d5d1dfc81b8af",
+          "bytes": 461454
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/ferritecore-w4/restart-pid.json",
+          "sha256": "d121f083e972101c844056ecf51374dddd54f9f3b398ae54e6a56e1e48f66656",
+          "bytes": 475
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/ferritecore-w4/restart-report.json",
+          "sha256": "1a0d1423ea36239d220fb141ae60dee6a1af550dd72b0c6550bf6bcb3148006f",
+          "bytes": 18688
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/ferritecore-w4/restart.log",
+          "sha256": "8cf0525d6ac9ef710ab1ff6c96e6fccca82cc8618225333aa8cab85e89006f65",
+          "bytes": 13339
+        }
+      ]
+    },
+    {
+      "run": "frozen-console-w1",
+      "driverStatus": "UNRESOLVED",
+      "files": [
+        {
+          "path": "build/stage6-audit-20260909/runs/frozen-console-w1/first-pid.json",
+          "sha256": "284575980304af91012239d09429dfe1e8dc545026fce476a7839ecdac8b7740",
+          "bytes": 474
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/frozen-console-w1/first-report.json",
+          "sha256": "a7d3d80f9b861a81fd6bf72b00f58988c57a380f5f219c11b75ff8542c32b836",
+          "bytes": 74457
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/frozen-console-w1/first.log",
+          "sha256": "1164b592280525efccae06ffd08bed654cca21b225bcb7471e37125cb225ca92",
+          "bytes": 11131
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/frozen-console-w1/installed.json",
+          "sha256": "e5cb48def1893f976049e15c82c82d5b9c21e2a12fb9a0db70231624885656fc",
+          "bytes": 4563
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/frozen-console-w1/plan.json",
+          "sha256": "dc0e2ab15ce39fe174cc5ad28b32cd8d5705e0ca2eecad9e9a4bdc640fc5b168",
+          "bytes": 2183
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/frozen-console-w1/report.json",
+          "sha256": "3332ce3ac7924421e5ba100e2560c48d3a81ec495d5bbfd93747e97d6fcffcc6",
+          "bytes": 1642
+        }
+      ]
+    },
+    {
+      "run": "frozen-console-w1-corrected",
+      "driverStatus": "UNRESOLVED",
+      "files": [
+        {
+          "path": "build/stage6-audit-20260909/runs/frozen-console-w1-corrected/first-pid.json",
+          "sha256": "fdce6129daf107c6a997deee7f1e3f4a5962cff3712ef1759d6b88c956e40863",
+          "bytes": 475
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/frozen-console-w1-corrected/first-report.json",
+          "sha256": "8f80a41016b0f1d75459dfe443eadf22d615e1d8c0e82f5c3cbcf31e3caa93e9",
+          "bytes": 77796
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/frozen-console-w1-corrected/first.log",
+          "sha256": "8ee19203cebf6652b2ce61318760e7d17f30f840ac4e0002e24ac8189469ee25",
+          "bytes": 12002
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/frozen-console-w1-corrected/installed.json",
+          "sha256": "e5cb48def1893f976049e15c82c82d5b9c21e2a12fb9a0db70231624885656fc",
+          "bytes": 4563
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/frozen-console-w1-corrected/plan.json",
+          "sha256": "203f82d0dbe26861fbfd17acf6fbd97a0489de862c0a1385d9974699b6216d19",
+          "bytes": 2227
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/frozen-console-w1-corrected/report.json",
+          "sha256": "44e333294f78cfdc83ef19f46c417a0f86f3d5ea0e550cc2fd3ddcbe01248002",
+          "bytes": 1655
+        }
+      ]
+    },
+    {
+      "run": "frozen-console-w1-final",
+      "driverStatus": "PASS_CONSOLE_SAMPLE",
+      "files": [
+        {
+          "path": "build/stage6-audit-20260909/runs/frozen-console-w1-final/first-mca.json",
+          "sha256": "d691de04c4e7e317ab356f186c0b43090950bbdf79d6650d10f7b6481c86e799",
+          "bytes": 461482
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/frozen-console-w1-final/first-pid.json",
+          "sha256": "9062a7b7f9fe3b68959033e57f8aeda1887edb722d3e4ae3faa6a580fa0e6478",
+          "bytes": 475
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/frozen-console-w1-final/first-report.json",
+          "sha256": "a0b518706aec9058b68a7e5ad0e4de6a37a2fb2ffbbfa3484c05e4cafbcc979b",
+          "bytes": 19572
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/frozen-console-w1-final/first.log",
+          "sha256": "f4ff1a8878efff6ae5e2345ec9c0c3f4bbf900fb0b64492c527183ba4b9d1d51",
+          "bytes": 12465
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/frozen-console-w1-final/installed.json",
+          "sha256": "e5cb48def1893f976049e15c82c82d5b9c21e2a12fb9a0db70231624885656fc",
+          "bytes": 4563
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/frozen-console-w1-final/plan.json",
+          "sha256": "dc806d4c917d622bef2624e3d81dd07fa6c3a73f8583cf62c48eb489a641f892",
+          "bytes": 2232
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/frozen-console-w1-final/report.json",
+          "sha256": "d89e0c5bee7a61fba33bbccd3e38ce4a9c06430b2bff831860987b6e72b3fa56",
+          "bytes": 3690
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/frozen-console-w1-final/restart-mca.json",
+          "sha256": "2f9bda41e846ab59af0af44257987b346a925cb61254fcd096f9a52354e27dea",
+          "bytes": 461490
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/frozen-console-w1-final/restart-pid.json",
+          "sha256": "4fed34dca7b5588552050892decab3dd53ae346522120b5a37128769778460bc",
+          "bytes": 475
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/frozen-console-w1-final/restart-report.json",
+          "sha256": "51798118ac23293f62e92e16479c058573e48475f098bbd43604272f1469b01b",
+          "bytes": 15315
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/frozen-console-w1-final/restart.log",
+          "sha256": "39df2fb060dec14a4dcf21826224816766dfb20b76abf86af4903158e3942436",
+          "bytes": 11516
+        }
+      ]
+    },
+    {
+      "run": "frozen-health-w1",
+      "driverStatus": "PASS_NATIVE_WORKLOAD_ONLY",
+      "files": [
+        {
+          "path": "build/stage6-audit-20260909/runs/frozen-health-w1/launch.json",
+          "sha256": "8708237a498c8abe89e4113dbc52433c235db89d5e467b66f242d1f6b366c0c4",
+          "bytes": 929
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/frozen-health-w1/persistence.json",
+          "sha256": "5243c517bbed2ae9e2ad0a851ae6c9da5f181fc94763162d41f672b9a48e5d2a",
+          "bytes": 24178
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/frozen-health-w1/process-metrics.json",
+          "sha256": "84df940a5f564a01484a63b9c6800ae2f9029f46e1e342f5e86d67e81c65ef1a",
+          "bytes": 13245
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/frozen-health-w1/report.json",
+          "sha256": "4441d9ebb6a85285fbce91370f0201910cc708ab4c9d2b9e8e211ee3c6811f63",
+          "bytes": 3690
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/frozen-health-w1/server.log",
+          "sha256": "eb890e111a1c94c6a1dcf857081da73703e2d8dca960130dd15712e49b3bd92a",
+          "bytes": 14016
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/frozen-health-w1/evidence/final.json",
+          "sha256": "c306ce9a60882ed024fefb2280d2b47397eae590645bd35fb539e483dbe4708f",
+          "bytes": 2150930
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/frozen-health-w1/evidence/production-identity-first.json",
+          "sha256": "ae3fee16017c3b4aee89655597c9becb584d9051e40b272e58239c67444d71d8",
+          "bytes": 413
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/frozen-health-w1/evidence/sample-1-before.json",
+          "sha256": "153ef4bde62dfd07e23d9e2bd7fccd4cae2dc8535a69472a994957c75be92e70",
+          "bytes": 655773
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/frozen-health-w1/evidence/sample-1.json",
+          "sha256": "0677a46544b57e34ac2713289465b83828303cf3f73b7f36f2f3cd48ca6f23c2",
+          "bytes": 2153590
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/frozen-health-w1/evidence/warmup-before.json",
+          "sha256": "ba5d12a31f28d33c0899be4348d1b589d2f90b0e4555a2b47548bb5495fbe5db",
+          "bytes": 7473
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/frozen-health-w1/evidence/warmup.json",
+          "sha256": "6328ab12458363318747796cd1f6d151ded821d1fa4c7a761e4fa48027d842d9",
+          "bytes": 656373
+        }
+      ]
+    },
+    {
+      "run": "frozen-health-w4",
+      "driverStatus": "PASS_NATIVE_WORKLOAD_ONLY",
+      "files": [
+        {
+          "path": "build/stage6-audit-20260909/runs/frozen-health-w4/launch.json",
+          "sha256": "4b6ebfbb9dd0ffecaa8871af4844c31d7045cc93eccf09b161adc8bcc4874b57",
+          "bytes": 929
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/frozen-health-w4/process-metrics.json",
+          "sha256": "98b3aac61599b945e1228e2f26dc9619a0d5eafa02575feb92fd0f117fbe448c",
+          "bytes": 13907
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/frozen-health-w4/report.json",
+          "sha256": "1876dfcbe0ff22238213bb0d6ffb70027cf6326752629c9188541ce74ac489c3",
+          "bytes": 3712
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/frozen-health-w4/server.log",
+          "sha256": "4893f718b2ff136960e16c3b03e4e5e18050ad886b4a1ad16652e9c36d8adb9d",
+          "bytes": 14016
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/frozen-health-w4/evidence/final.json",
+          "sha256": "41c8be7b9ce6a2c2dd3c2d1e445be1ef0b5c87ef39fcc6113362b2447ef07892",
+          "bytes": 2151988
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/frozen-health-w4/evidence/production-identity-first.json",
+          "sha256": "50a5285ba9da1948601cf5cfb8f5676d23ad57b11e4eec3776beb19e61282ab6",
+          "bytes": 413
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/frozen-health-w4/evidence/sample-1-before.json",
+          "sha256": "1d4b66f6b2725f8504a20f9a65421adb05c32286a8dd9eab42b84e9be879b4a8",
+          "bytes": 656118
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/frozen-health-w4/evidence/sample-1.json",
+          "sha256": "4affa79befaa2d107108cbe7ce06c7c7433f47eaea029e9b033ec68420f7145d",
+          "bytes": 2154649
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/frozen-health-w4/evidence/warmup-before.json",
+          "sha256": "a42dc81a3fbf8917d0fceef16e0ca9505b2a10a78e21d180d1e1966a30dd4dfe",
+          "bytes": 7472
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/frozen-health-w4/evidence/warmup.json",
+          "sha256": "ef0e3c67ee1168400becfb70bba2a26985639022fcca71187ab4d68f57ee086e",
+          "bytes": 656718
+        }
+      ]
+    },
+    {
+      "run": "geyser-floodgate-w1",
+      "driverStatus": "UNRESOLVED",
+      "files": [
+        {
+          "path": "build/stage6-audit-20260909/runs/geyser-floodgate-w1/first-mca.json",
+          "sha256": "36260f0bf937fd8a9449e2be12e93b65d98896d1aa0057c3fded702a35fe3054",
+          "bytes": 240143
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/geyser-floodgate-w1/first-pid.json",
+          "sha256": "a9a11eb28b88acdaf3ff30789c88d39b72b31c23670b35496119b401f969fb97",
+          "bytes": 475
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/geyser-floodgate-w1/first-report.json",
+          "sha256": "dfbacb8faaea395e5ec5ce75b5472b8bb05742593e1607f38c58f7bdf33e6ffd",
+          "bytes": 21776
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/geyser-floodgate-w1/first.log",
+          "sha256": "9d6b9138f96b47c97793af9d05c4dc7cbad7b306cf67ebf9a9ac1f7e356343a1",
+          "bytes": 16487
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/geyser-floodgate-w1/forced-post-stop-termination.json",
+          "sha256": "332ea2fbc461cd89f7c39701e3752d4d18901ecbfbc30890eb51ad9aff8be5e2",
+          "bytes": 396
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/geyser-floodgate-w1/installed.json",
+          "sha256": "14ba3be99564c939b38886fbe453cd003fa9c52fcedc3cc7921e2529834e652b",
+          "bytes": 11828
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/geyser-floodgate-w1/plan.json",
+          "sha256": "23a2510e2b85934da686d9da351113ca7b5e515b372a32815adc4f6bc48f4cbd",
+          "bytes": 446
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/geyser-floodgate-w1/report.json",
+          "sha256": "0baad4cdbf47029863669222177020c598e0eafd16b68a1155a87523e54cf9a1",
+          "bytes": 5540
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/geyser-floodgate-w1/restart-pid.json",
+          "sha256": "0347c2c9e4224a2ebe59b1eeb52695f6683bb457a73acd258c4296da75d2e441",
+          "bytes": 475
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/geyser-floodgate-w1/restart-post-stop-threads.txt",
+          "sha256": "efaf9dfe54fb7bb62fa419cab1b03632a3cc0bde202973080089ea24621eb5ae",
+          "bytes": 17835
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/geyser-floodgate-w1/restart-report.json",
+          "sha256": "a24d57c7714951c6e91809b31af269924a77b09f872425a8f5c423e674289f8f",
+          "bytes": 124057
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/geyser-floodgate-w1/restart.log",
+          "sha256": "3aa480cd0ae7220284fa0950ade5bc648f4fb3c7f2f758bb9f95273bec3e5e18",
+          "bytes": 15102
+        }
+      ]
+    },
+    {
+      "run": "geyser-floodgate-w4",
+      "driverStatus": "PASS_CONSOLE_SAMPLE",
+      "files": [
+        {
+          "path": "build/stage6-audit-20260909/runs/geyser-floodgate-w4/first-mca.json",
+          "sha256": "69de2488f8fa273bc9a487f23f8111d6f6a388954828f476b3e36917af48e25a",
+          "bytes": 240143
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/geyser-floodgate-w4/first-pid.json",
+          "sha256": "09ee1fb477cb679cce23afa4d59801f9488d7b9c793de8be9c78979033f2bc4f",
+          "bytes": 475
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/geyser-floodgate-w4/first-report.json",
+          "sha256": "ddc4b7bc4f26a7d084f213252f4c49018cc7abcd858cc30f47eca0a260f02e96",
+          "bytes": 21679
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/geyser-floodgate-w4/first.log",
+          "sha256": "5c7d5365b9e95aee1b2217d57ee642f911ebd4f5a6879be05bf961ca514451a8",
+          "bytes": 16484
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/geyser-floodgate-w4/installed.json",
+          "sha256": "14ba3be99564c939b38886fbe453cd003fa9c52fcedc3cc7921e2529834e652b",
+          "bytes": 11828
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/geyser-floodgate-w4/plan.json",
+          "sha256": "23a2510e2b85934da686d9da351113ca7b5e515b372a32815adc4f6bc48f4cbd",
+          "bytes": 446
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/geyser-floodgate-w4/report.json",
+          "sha256": "3f98fd05e44d8716ee7eb071e13a2161eca50711defa70a0d2795c3e244b0f7c",
+          "bytes": 5829
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/geyser-floodgate-w4/restart-mca.json",
+          "sha256": "de07f860ec745c5282e7a516d787faac6652b572381802900c3af3336fffa73c",
+          "bytes": 240151
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/geyser-floodgate-w4/restart-pid.json",
+          "sha256": "9d9af5ecec6d157a844aa70478cd95620c7a36bed26f12fcdf12088049c870ef",
+          "bytes": 475
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/geyser-floodgate-w4/restart-report.json",
+          "sha256": "6106876dbc5c90597ad221e5691d5b8a144557d8860631488020864a0b6dc2c6",
+          "bytes": 20693
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/geyser-floodgate-w4/restart.log",
+          "sha256": "6d26d9a3d4a5e5b2a01c4d02d62a7f1bf81a3f1371d9d6662d78c04316d4e3e7",
+          "bytes": 15247
+        }
+      ]
+    },
+    {
+      "run": "krypton-client-w1",
+      "driverStatus": "SEE_CLIENT_LOG_AND_COMPARATOR",
+      "files": [
+        {
+          "path": "build/stage6-audit-20260909/runs/krypton-client-w1/evidence/process-metrics-first.json",
+          "sha256": "8a7052d0fb26fbbe8ad8a93832c4356bbdf495397944b153a5e78c128b5b9610",
+          "bytes": 202
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/krypton-client-w1/evidence/process-metrics-restart.json",
+          "sha256": "e18a8924d2a9ffcc7f8751bf9991576f1d5025dcb0588555b7b2b2cab17d7842",
+          "bytes": 201
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/krypton-client-w1/evidence/production-identity-first.json",
+          "sha256": "21bbfc7ae5d490ccdfcee75ab08169dadaf58bc080749e1fdd4239ce670f2302",
+          "bytes": 382
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/krypton-client-w1/evidence/production-identity-restart.json",
+          "sha256": "245e83b7b2704817395467030c98d043b3afff7f98486e48696a06d43dd40797",
+          "bytes": 384
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/krypton-client-w1/evidence/STAGE4-CLIENT-before-restart-trace.json",
+          "sha256": "42e3f81e8017a45230ad3db256a273d7ad9f3b010197c20e7606ee24ebe9bf05",
+          "bytes": 171517
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/krypton-client-w1/evidence/STAGE4-CLIENT-reload-trace.json",
+          "sha256": "c9bc15a9866a7d7392fd48e223689b132a7e0ee470a055c5540dd51c7e0bffd2",
+          "bytes": 5165
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/krypton-client-w1/evidence/STAGE4-CLIENT-trace.json",
+          "sha256": "42e3f81e8017a45230ad3db256a273d7ad9f3b010197c20e7606ee24ebe9bf05",
+          "bytes": 171517
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/krypton-client-w1/evidence/STAGE4-CLIENT.json",
+          "sha256": "19814285a1c226c79d941ff9da25b8088020419c58fc9dfb93c45e6ef5d491ab",
+          "bytes": 2081
+        }
+      ]
+    },
+    {
+      "run": "krypton-w4",
+      "driverStatus": "SEE_CLIENT_LOG_AND_COMPARATOR",
+      "files": [
+        {
+          "path": "build/stage6-audit-20260909/runs/krypton-w4/evidence/process-metrics-first.json",
+          "sha256": "b7d7e2ad73bfa2b47710f2d6d2ec02747c5b213517ea7092d229839a3220615a",
+          "bytes": 202
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/krypton-w4/evidence/process-metrics-restart.json",
+          "sha256": "a933ddfecc6ead54887b9557d0b5eee8636018176a6b27231f3477f390f500e6",
+          "bytes": 201
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/krypton-w4/evidence/production-identity-first.json",
+          "sha256": "4612b0c35271978bd5edc555e7a85ebfdb48536167c74a396e61a04eb7736cb5",
+          "bytes": 375
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/krypton-w4/evidence/production-identity-restart.json",
+          "sha256": "e099cb93c3af093509fdc7d00391a002c0e3d55b1436f8a4789e8956628ec5ab",
+          "bytes": 377
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/krypton-w4/evidence/STAGE4-CLIENT-before-restart-trace.json",
+          "sha256": "bf8147734498bf91b41abda257ce6ec72281f243891a094a56b3565b38c04649",
+          "bytes": 170810
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/krypton-w4/evidence/STAGE4-CLIENT-reload-trace.json",
+          "sha256": "392e963202cd7551b7fa4a85c3865c5e9a0114c8f589c729862acfc8dc249b01",
+          "bytes": 5165
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/krypton-w4/evidence/STAGE4-CLIENT-trace.json",
+          "sha256": "bf8147734498bf91b41abda257ce6ec72281f243891a094a56b3565b38c04649",
+          "bytes": 170810
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/krypton-w4/evidence/STAGE4-CLIENT.json",
+          "sha256": "ef29b1a837602da32283cf1f2e882ab11e65d74c3a08afede6386890ce953825",
+          "bytes": 2018
+        }
+      ]
+    },
+    {
+      "run": "lithium-client-w4",
+      "driverStatus": "SEE_CLIENT_LOG_AND_COMPARATOR",
+      "files": [
+        {
+          "path": "build/stage6-audit-20260909/runs/lithium-client-w4/evidence/production-identity-first.json",
+          "sha256": "b0c19f92d1ed13ef03009354b84c1aa105f8db768dbc16361a01fef3f37b5fc2",
+          "bytes": 382
+        }
+      ]
+    },
+    {
+      "run": "lithium-config-w1",
+      "driverStatus": "PASS_CONSOLE_SAMPLE",
+      "files": [
+        {
+          "path": "build/stage6-audit-20260909/runs/lithium-config-w1/first-mca.json",
+          "sha256": "58fc7748b1bf162464b6f26257c9822204f4586c2c66d0ff904bc51b23d31c55",
+          "bytes": 461458
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/lithium-config-w1/first-pid.json",
+          "sha256": "9b879c4e1df4c060ae335363739b2200f2f27f7e9f8249b6b010ea6a3ae5afb2",
+          "bytes": 475
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/lithium-config-w1/first-report.json",
+          "sha256": "8a47edfce7f215e5e35743921d7f4b23f3b069515c6b6684a5463512d09503e2",
+          "bytes": 23886
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/lithium-config-w1/first.log",
+          "sha256": "4f3fa579c09ebd2dd8b8e03570101f48c7ba8c66422fbd960219defcfc74cf96",
+          "bytes": 15123
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/lithium-config-w1/installed.json",
+          "sha256": "c5b6148ea13d7c4517b9853b447a9b8a06660c1018c8178b9e2dbc38c27dc0e2",
+          "bytes": 7542
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/lithium-config-w1/plan.json",
+          "sha256": "fef0efefe1ea75f2051bd70e099edacfecf877deceab757c13754c741a323ae6",
+          "bytes": 2393
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/lithium-config-w1/report.json",
+          "sha256": "3468f337a358875954bef8c474f709c83bf0f1ca15486d02d9b0ef0c4e03f7a8",
+          "bytes": 5506
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/lithium-config-w1/restart-mca.json",
+          "sha256": "bfcee541ed46b2c1eaee6559d3946427ad4452856a97a62beb70901c371d8d17",
+          "bytes": 461466
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/lithium-config-w1/restart-pid.json",
+          "sha256": "3cda2024446ae9e2b9c06d94d81e097b6d1706fdf6194d6a3ff7225b127e2d41",
+          "bytes": 475
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/lithium-config-w1/restart-report.json",
+          "sha256": "5ed0f5d4225e2dd66475cdf78cd8eabc309ca7a4644c1dd8dcc46c701ea98327",
+          "bytes": 19298
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/lithium-config-w1/restart.log",
+          "sha256": "c234dd6315054d505ece91f38e4b1f396c931425d59c22362891505f00d113fa",
+          "bytes": 14174
+        }
+      ]
+    },
+    {
+      "run": "lithium-config-w4",
+      "driverStatus": "PASS_CONSOLE_SAMPLE",
+      "files": [
+        {
+          "path": "build/stage6-audit-20260909/runs/lithium-config-w4/first-mca.json",
+          "sha256": "c16bf57ff148b47e143528a62bd5b955a15437648b1d154e917b103ecaa9595e",
+          "bytes": 461458
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/lithium-config-w4/first-pid.json",
+          "sha256": "4d1cfca56cd58e3027cfabcdbbeea28371c4da150a3a4a0eb1a18b059343e0df",
+          "bytes": 475
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/lithium-config-w4/first-report.json",
+          "sha256": "8d514c1e67858ba5aeb92ed730c742680901c2a11a70821c4ff774b8ebc60a01",
+          "bytes": 24220
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/lithium-config-w4/first.log",
+          "sha256": "083d4ef6471eec1d5785523d474dc2987bac6744c6b811e6c1168e29f05717ed",
+          "bytes": 15121
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/lithium-config-w4/installed.json",
+          "sha256": "c5b6148ea13d7c4517b9853b447a9b8a06660c1018c8178b9e2dbc38c27dc0e2",
+          "bytes": 7542
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/lithium-config-w4/plan.json",
+          "sha256": "fef0efefe1ea75f2051bd70e099edacfecf877deceab757c13754c741a323ae6",
+          "bytes": 2393
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/lithium-config-w4/report.json",
+          "sha256": "08560106b6afbefaf12b1cc87de14f0d5d7a57f8fe7f7b7c4691ed5c1bb7f84c",
+          "bytes": 5491
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/lithium-config-w4/restart-mca.json",
+          "sha256": "a966d1480c348a95a61728cdde2d49171e7cd7c02dcd2f0c69269a2e65b1beff",
+          "bytes": 461466
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/lithium-config-w4/restart-pid.json",
+          "sha256": "5bdeec0b7f5e8e45c0450ab9ef3526229df031c017e76088a6ee67de329dd368",
+          "bytes": 475
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/lithium-config-w4/restart-report.json",
+          "sha256": "4e621211e3dcffb43b9491cb834505d661672536e4a8dc4b0f41967904c6f3db",
+          "bytes": 19545
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/lithium-config-w4/restart.log",
+          "sha256": "f90d98eef1aeef9a984af42a3f9c5f2633380a6351625aee78abdc829fb3e482",
+          "bytes": 14172
+        }
+      ]
+    },
+    {
+      "run": "lithium-w1",
+      "driverStatus": "UNRESOLVED",
+      "files": [
+        {
+          "path": "build/stage6-audit-20260909/runs/lithium-w1/first-pid.json",
+          "sha256": "aee65bfbbea634f0aabc49c0b3cfae1651bf7f5fa6dcde3dd09c70153ce93c9d",
+          "bytes": 474
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/lithium-w1/first-report.json",
+          "sha256": "2dbc380add86adbfe45a38e3765f2dcc00ba60a7f7b925efdb6df945b559e14d",
+          "bytes": 1818
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/lithium-w1/first.log",
+          "sha256": "6a66df0cc387a04024f3bf3376fbc51567674aa4f20cd407fed211d7c6da6add",
+          "bytes": 14910
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/lithium-w1/installed.json",
+          "sha256": "c5b6148ea13d7c4517b9853b447a9b8a06660c1018c8178b9e2dbc38c27dc0e2",
+          "bytes": 7542
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/lithium-w1/plan.json",
+          "sha256": "b440790f56badd302362774bf8c4d5e533362e182b017f4fd279e2bde28dd041",
+          "bytes": 2292
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/lithium-w1/report.json",
+          "sha256": "b326cb96f951f145b7e6b9a52a1367524e504d72cb3d12a7cdbad6edad6de2c1",
+          "bytes": 1614
+        }
+      ]
+    },
+    {
+      "run": "lithium-w4",
+      "driverStatus": "UNRESOLVED",
+      "files": [
+        {
+          "path": "build/stage6-audit-20260909/runs/lithium-w4/first-pid.json",
+          "sha256": "0fa76aa1d8fc160e6a568badb31e758342ef55d3567dd63ba3700d7780d32d4e",
+          "bytes": 475
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/lithium-w4/first-report.json",
+          "sha256": "f3674962cb2c04977783e9357ff2b32d1b668c3bf1f7fc466e59ba44ccd762ba",
+          "bytes": 1990
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/lithium-w4/first.log",
+          "sha256": "a625b33ce9fec92aef536ec823068ee99578cba79aecd1984f555c5f0abb45a8",
+          "bytes": 14910
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/lithium-w4/installed.json",
+          "sha256": "c5b6148ea13d7c4517b9853b447a9b8a06660c1018c8178b9e2dbc38c27dc0e2",
+          "bytes": 7542
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/lithium-w4/plan.json",
+          "sha256": "b440790f56badd302362774bf8c4d5e533362e182b017f4fd279e2bde28dd041",
+          "bytes": 2292
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/lithium-w4/report.json",
+          "sha256": "bc0380728f3497e8d79156ef6985a769f684b0d27d3ce59db83bf107a1463895",
+          "bytes": 1629
+        }
+      ]
+    },
+    {
+      "run": "logic-stack-w4",
+      "driverStatus": "SEE_CLIENT_LOG_AND_COMPARATOR",
+      "files": [
+        {
+          "path": "build/stage6-audit-20260909/runs/logic-stack-w4/evidence/production-identity-first.json",
+          "sha256": "a738ae5864ec80cad7911a3bb7c39139a0952490dd4454f4cf057c6d1b45c68a",
+          "bytes": 379
+        }
+      ]
+    },
+    {
+      "run": "memory-control-1",
+      "driverStatus": "PASS_CONSOLE_SAMPLE",
+      "files": [
+        {
+          "path": "build/stage6-audit-20260909/runs/memory-control-1/first-heap-histogram.txt",
+          "sha256": "2172a3e52689fa295c503a77e2701b95b319c9018bf7b450daa9ea0edeeaa6bd",
+          "bytes": 1910605
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/memory-control-1/first-mca.json",
+          "sha256": "a8c43481073ff3693c2d2d11cf66e9f1f9523103e15f159c86e754b0d16a42cd",
+          "bytes": 461454
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/memory-control-1/first-pid.json",
+          "sha256": "03a5ecd08efc6e851ce879d6446ea5a75653f0ea23f3f021f6eea87a3af5eda1",
+          "bytes": 475
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/memory-control-1/first-report.json",
+          "sha256": "e1c43402e413900bad13f5432d8cd29d546aaa48f1afe5bf7111a1a5afd354c2",
+          "bytes": 23295
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/memory-control-1/first.log",
+          "sha256": "b2c8b37dea64c1451236a23e5ac02f8fb9cc88fe5adbf0abfd267a7fa802a0d8",
+          "bytes": 14354
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/memory-control-1/installed.json",
+          "sha256": "2acec7f091e61b4f8ec4762d9e4184eb8f9532701dd60afbd2a6db4961b613f8",
+          "bytes": 6264
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/memory-control-1/plan.json",
+          "sha256": "18de7bb854918c928344c68b747b92e075cd0eabfaab1f3d68b023154d9f44f3",
+          "bytes": 2527
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/memory-control-1/report.json",
+          "sha256": "1caf64575c4efd1e7cd47f39199fb3665e6646ede5484cffb97236de66beffc0",
+          "bytes": 5368
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/memory-control-1/restart-heap-histogram.txt",
+          "sha256": "3c39b62ce5c24a703152308b5569e0cddce7a2ed902084ef30609a6ecc6d87a8",
+          "bytes": 1903757
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/memory-control-1/restart-mca.json",
+          "sha256": "2ced7230f15c75a952b454929ae1a7995a55df614e6eb686a21896b7296adcdd",
+          "bytes": 461462
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/memory-control-1/restart-pid.json",
+          "sha256": "921eed50c3a4265ded47f2a771ec19f75e0d7931de60737e62ecee2d165a2de2",
+          "bytes": 475
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/memory-control-1/restart-report.json",
+          "sha256": "a5800b002f14930929aed0ddfbb536238c7290d28cd650aae981c40d4369cc08",
+          "bytes": 18770
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/memory-control-1/restart.log",
+          "sha256": "adcf5a9f1e4e93cbc2e5e1575fb6c94d1defba87af3d6712c9fc175acd47ad80",
+          "bytes": 13404
+        }
+      ]
+    },
+    {
+      "run": "memory-control-2",
+      "driverStatus": "PASS_CONSOLE_SAMPLE",
+      "files": [
+        {
+          "path": "build/stage6-audit-20260909/runs/memory-control-2/first-heap-histogram.txt",
+          "sha256": "ebb649a9599773fbdfd12ab5940999bec866c77df7327141df3a5bf13cd762f4",
+          "bytes": 1908414
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/memory-control-2/first-mca.json",
+          "sha256": "d3e2be45f0ec1c122fb394dca579f7dc368fb64ad94bba3b8d2ab647340d443a",
+          "bytes": 461454
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/memory-control-2/first-pid.json",
+          "sha256": "f2dfecae893cea3fd911f231ad0162de7dea53c5c57d23c69af296a80f76132e",
+          "bytes": 475
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/memory-control-2/first-report.json",
+          "sha256": "986850bf34326b612757bd42a4fed885f139e489e9258139d847ca3689d4da5a",
+          "bytes": 23406
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/memory-control-2/first.log",
+          "sha256": "1dde6cb570a05ecb7933538ce9df22cfa2209dd6261d17c5b56832b73c14074d",
+          "bytes": 14354
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/memory-control-2/installed.json",
+          "sha256": "2acec7f091e61b4f8ec4762d9e4184eb8f9532701dd60afbd2a6db4961b613f8",
+          "bytes": 6264
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/memory-control-2/plan.json",
+          "sha256": "9b7b0c570aae5c74d0b668e0ffca8833586ef9d1d1c98367b257cde06f41f4fc",
+          "bytes": 2527
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/memory-control-2/report.json",
+          "sha256": "96ce80a3120b67cbf29c532623559ff69a35972b683b765cfa44e294c5827d2d",
+          "bytes": 5382
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/memory-control-2/restart-heap-histogram.txt",
+          "sha256": "f8015a54396317140d81ca3abc626c9527145ae9db198074faa1ddf2ffca7638",
+          "bytes": 1903756
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/memory-control-2/restart-mca.json",
+          "sha256": "daff097b24c73af791c1400f31ce83695a897e0ba395512392ed1de009e4301d",
+          "bytes": 461462
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/memory-control-2/restart-pid.json",
+          "sha256": "6e16d2b6ab8dfd76970f830a7774a601068082e935a55ffabb10e985fb73c7e5",
+          "bytes": 474
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/memory-control-2/restart-report.json",
+          "sha256": "c7719a5dd616c462df72f4306d9747f75fa7e6205289b3e80a2403718adfbafd",
+          "bytes": 18722
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/memory-control-2/restart.log",
+          "sha256": "f76c937dd72e9fed76730a9fffb919dc459e1f846948342a96ac544b846bb0c2",
+          "bytes": 13404
+        }
+      ]
+    },
+    {
+      "run": "memory-control-3",
+      "driverStatus": "PASS_CONSOLE_SAMPLE",
+      "files": [
+        {
+          "path": "build/stage6-audit-20260909/runs/memory-control-3/first-heap-histogram.txt",
+          "sha256": "299e2258a132f92e23bc4397c68d46baef9e19eab7c9a950ac085c0e77b90fde",
+          "bytes": 1907771
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/memory-control-3/first-mca.json",
+          "sha256": "128d045dbde25f7a2e1749399659f98b3473df62b13478f8089a8ec1176247e6",
+          "bytes": 461454
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/memory-control-3/first-pid.json",
+          "sha256": "bc3f69b38b259d87b1b52ca1d57813c72c959c47edc47da4afe75bb6040f999f",
+          "bytes": 474
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/memory-control-3/first-report.json",
+          "sha256": "195a3395bc41a779b0c8fd864c441e260de3e70f87323ba870c561f8b029da65",
+          "bytes": 23638
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/memory-control-3/first.log",
+          "sha256": "15b151284d515ce08ed068b41077d4bf63e7d76e284551002e557bce50051134",
+          "bytes": 14353
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/memory-control-3/installed.json",
+          "sha256": "2acec7f091e61b4f8ec4762d9e4184eb8f9532701dd60afbd2a6db4961b613f8",
+          "bytes": 6264
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/memory-control-3/plan.json",
+          "sha256": "9b7b0c570aae5c74d0b668e0ffca8833586ef9d1d1c98367b257cde06f41f4fc",
+          "bytes": 2527
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/memory-control-3/report.json",
+          "sha256": "68bce8bb7fa7c73fe5904a28ca162a8c97f879aeed8e2e0bb2821477e55f4a28",
+          "bytes": 5378
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/memory-control-3/restart-heap-histogram.txt",
+          "sha256": "e6c816ff068df66e69d628d3fc8f9f34fac8e933c443c588a51666da72b3e486",
+          "bytes": 1903756
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/memory-control-3/restart-mca.json",
+          "sha256": "acf5f9489cc23c1d94f645de90290963cce2893aa95cbeb687bf91a099bacfaf",
+          "bytes": 461462
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/memory-control-3/restart-pid.json",
+          "sha256": "119368853272413691c10eb3ee3d81575e42e27319c64f640af5cb8e4ffb6b41",
+          "bytes": 474
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/memory-control-3/restart-report.json",
+          "sha256": "aea4819e3b09a0f19331990c416c9c36b500687b28efffc5e4d1995ee093dd75",
+          "bytes": 19007
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/memory-control-3/restart.log",
+          "sha256": "08c148312091cdc04b9add0fbcfe784a57f8d10855922a91133a5563613dec49",
+          "bytes": 13404
+        }
+      ]
+    },
+    {
+      "run": "native-generation-control-w1",
+      "driverStatus": "PASS_CONSOLE_SAMPLE",
+      "files": [
+        {
+          "path": "build/stage6-audit-20260909/runs/native-generation-control-w1/first-mca.json",
+          "sha256": "f019a1b340928cb83435be04aa9b9d96b3e5088b57d35877036413f4f5f0064d",
+          "bytes": 952159
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/native-generation-control-w1/first-pid.json",
+          "sha256": "abcb2f3a86e4d769301b40d3e9e358aceaf7545bb601fedc7819751cc883d0d5",
+          "bytes": 475
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/native-generation-control-w1/first-report.json",
+          "sha256": "43318d3aa90617fe153f5063706097339d91126165dc1e4e3ffcd188c6fd147b",
+          "bytes": 26933
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/native-generation-control-w1/first.log",
+          "sha256": "2022e4ba6f2e47106bad4c219aae723615079e3b874740a97af7402bb7c1b6db",
+          "bytes": 14451
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/native-generation-control-w1/installed.json",
+          "sha256": "2acec7f091e61b4f8ec4762d9e4184eb8f9532701dd60afbd2a6db4961b613f8",
+          "bytes": 6264
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/native-generation-control-w1/plan.json",
+          "sha256": "cd9e6305a6b32eee9ac579a35870426e07250804afb80209fe9bd661089fd744",
+          "bytes": 2424
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/native-generation-control-w1/report.json",
+          "sha256": "5467817f6de4fe6101a578aed41598eedc3fac3bfd2eb9ec57869adf73dd1510",
+          "bytes": 5424
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/native-generation-control-w1/restart-mca.json",
+          "sha256": "2004bb70133702ef7673a8e14f8685dcddecf909477ad5ab59718ed72868e78f",
+          "bytes": 946168
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/native-generation-control-w1/restart-pid.json",
+          "sha256": "ff8df867c1b3d492ec206bac7895bb88776dcb34681cb7b8a358197613f28383",
+          "bytes": 475
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/native-generation-control-w1/restart-report.json",
+          "sha256": "f5b340eecc27ee07877574b77f7bb505dd0e296e9f24e55aa062fa4a58e561a6",
+          "bytes": 18729
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/native-generation-control-w1/restart.log",
+          "sha256": "871260804e39a508ab2d9a67048cfd4bb9a6c82d84ea1eec6f66758b13dc6d27",
+          "bytes": 13428
+        }
+      ]
+    },
+    {
+      "run": "native-generation-control-w4",
+      "driverStatus": "PASS_CONSOLE_SAMPLE",
+      "files": [
+        {
+          "path": "build/stage6-audit-20260909/runs/native-generation-control-w4/first-mca.json",
+          "sha256": "5ae3107790ce3a5ed52837f632bd9a5aa06422e06a37e1580aa43191b475b9d8",
+          "bytes": 981311
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/native-generation-control-w4/first-pid.json",
+          "sha256": "9b869a5ba0180d8db574c0a778d3cfa9824ee2bb2439f7d3e279d5ab696a11e6",
+          "bytes": 475
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/native-generation-control-w4/first-report.json",
+          "sha256": "1795d44dc90fd13b1ac373b39bd392d6acdd9704ab7ec3c67a471cc3e27e1cf2",
+          "bytes": 27612
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/native-generation-control-w4/first.log",
+          "sha256": "40a3f51918f462eb19292a9f645f98d0d532058626ee4cefaa144700db5f9832",
+          "bytes": 14448
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/native-generation-control-w4/installed.json",
+          "sha256": "2acec7f091e61b4f8ec4762d9e4184eb8f9532701dd60afbd2a6db4961b613f8",
+          "bytes": 6264
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/native-generation-control-w4/plan.json",
+          "sha256": "d639dd9095e6114aefbebeb38c35392a3d6c2ba81ef7d865426d04bece6527c9",
+          "bytes": 2484
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/native-generation-control-w4/report.json",
+          "sha256": "48be1938e3a3e1f55c4bf55d40c0474ae141ba7f006bec7fca1995d20e67484c",
+          "bytes": 5424
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/native-generation-control-w4/restart-mca.json",
+          "sha256": "d923d3eb8f5463288eaf331967db88a198779d134784b949f4b8c79aab9c8205",
+          "bytes": 967211
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/native-generation-control-w4/restart-pid.json",
+          "sha256": "bc8e1f19203e3af1d2fcd2f4be216cbddfe25e50b49bdd14d7d177387bd17545",
+          "bytes": 475
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/native-generation-control-w4/restart-report.json",
+          "sha256": "18e1000e0c540e654b0c55cc3f73cafa013c1491ed0d8d828ab7ed5abc1df97d",
+          "bytes": 18913
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/native-generation-control-w4/restart.log",
+          "sha256": "91212fc0da44950735257771726ee010890814e12a73b1d22a6f841aca32d6de",
+          "bytes": 13427
+        }
+      ]
+    },
+    {
+      "run": "native-generation-fabric-control",
+      "driverStatus": "PASS_CONSOLE_SAMPLE",
+      "files": [
+        {
+          "path": "build/stage6-audit-20260909/runs/native-generation-fabric-control/first-mca.json",
+          "sha256": "1b7e012eeea72ac7d8014bb5c34b946ec927e1b969c7f5270745bcb5d6dd55c4",
+          "bytes": 952177
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/native-generation-fabric-control/first-pid.json",
+          "sha256": "f75d72800145ea9f673cc2e33b1a2d356cf6ff961d9b719d1c9c7a611a9c28b3",
+          "bytes": 475
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/native-generation-fabric-control/first-report.json",
+          "sha256": "1313215f7ab102285dcd3b34d529f6b01e56faae13add7e0ebc827314541e0de",
+          "bytes": 25622
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/native-generation-fabric-control/first.log",
+          "sha256": "d9c99cbad3fe1ed07625d2cfc0173e8cdc466421713d64e741a1e618203725c5",
+          "bytes": 11715
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/native-generation-fabric-control/installed.json",
+          "sha256": "2deb8f8d068e111a08ce868b522abb2f229703fd0729acfdd79e9b21f8e1a202",
+          "bytes": 5387
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/native-generation-fabric-control/plan.json",
+          "sha256": "d639dd9095e6114aefbebeb38c35392a3d6c2ba81ef7d865426d04bece6527c9",
+          "bytes": 2484
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/native-generation-fabric-control/report.json",
+          "sha256": "e74dcdb55c0767658938e4f73ceb79372be78a31e757a29f42cf0c55f33655ef",
+          "bytes": 3867
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/native-generation-fabric-control/restart-mca.json",
+          "sha256": "d8fe4025e6d44a253193e3e8b3b7195399f0caab376b1ba4feb634b9d2718052",
+          "bytes": 938077
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/native-generation-fabric-control/restart-pid.json",
+          "sha256": "55c1d1598e5a17b4e7808356e59ea256d3e1227e067a67f0997117f35c727591",
+          "bytes": 475
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/native-generation-fabric-control/restart-report.json",
+          "sha256": "e0a0707490db3f617be5ed8469f4592d469cd1e62264413c7b134e72e5768425",
+          "bytes": 17433
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/native-generation-fabric-control/restart.log",
+          "sha256": "4e09971e535b71ac41f290588ae358ecffe482934293a33b1076dcc66eac67b8",
+          "bytes": 10636
+        }
+      ]
+    },
+    {
+      "run": "network-control-w4",
+      "driverStatus": "SEE_CLIENT_LOG_AND_COMPARATOR",
+      "files": [
+        {
+          "path": "build/stage6-audit-20260909/runs/network-control-w4/evidence/process-metrics-first.json",
+          "sha256": "1863ad0eae34032313e5bd9da9eb2753d2fa41671308cadfbcbf95be14c7b2b6",
+          "bytes": 202
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/network-control-w4/evidence/process-metrics-restart.json",
+          "sha256": "1f15b2c74eed24e888a981240446e45627dd914577df1a737f39d8f9f4e469f8",
+          "bytes": 201
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/network-control-w4/evidence/production-identity-first.json",
+          "sha256": "0e8602e7e9e345324a7ff849d6c021e02dfc9ca1962cf6734cabf3b19101219c",
+          "bytes": 383
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/network-control-w4/evidence/production-identity-restart.json",
+          "sha256": "57c434643b8c4c9285dcd721106c85c7cf6c88688f98c4b1132c291879b8689e",
+          "bytes": 385
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/network-control-w4/evidence/STAGE4-CLIENT-before-restart-trace.json",
+          "sha256": "1ed6bbc79505f6e64884f0a9d8507302cdd0efc78104717a879e44d485742988",
+          "bytes": 168800
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/network-control-w4/evidence/STAGE4-CLIENT-reload-trace.json",
+          "sha256": "9daf6d08de27fd5ea0569834674ed4915fdadd9c6a241c8882fc3f3b8dc07c7b",
+          "bytes": 5163
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/network-control-w4/evidence/STAGE4-CLIENT-trace.json",
+          "sha256": "1ed6bbc79505f6e64884f0a9d8507302cdd0efc78104717a879e44d485742988",
+          "bytes": 168800
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/network-control-w4/evidence/STAGE4-CLIENT.json",
+          "sha256": "5c2ea26defe47c9c64101eeee8d5bc35de58f60fc7a9b2fafa00c709eee14873",
+          "bytes": 2078
+        }
+      ]
+    },
+    {
+      "run": "scalablelux-fabric-control",
+      "driverStatus": "PASS_CONSOLE_SAMPLE",
+      "files": [
+        {
+          "path": "build/stage6-audit-20260909/runs/scalablelux-fabric-control/first-mca.json",
+          "sha256": "4792bcd948610213f08fac410ccaa4c58c4446792c9d03f5831be0f1c49d8a1e",
+          "bytes": 461494
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/scalablelux-fabric-control/first-pid.json",
+          "sha256": "095b438d45bdb708c7970a02f29f7d646b2ad5f81ad49e9bc2d2da9b0963007c",
+          "bytes": 475
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/scalablelux-fabric-control/first-report.json",
+          "sha256": "96bc256964fe1ccb1f776f082597d935aaad64434d292ccd870d2bbc708c796e",
+          "bytes": 21725
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/scalablelux-fabric-control/first.log",
+          "sha256": "6f30143cb9f013a021baf37da2d0f0bb7fa42a9fc45b442da0c37c13701064b3",
+          "bytes": 11704
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/scalablelux-fabric-control/installed.json",
+          "sha256": "43f9312249482c3cb5997c251894ad2634c62b3a9df46de75002d86c5e3ec3a9",
+          "bytes": 6598
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/scalablelux-fabric-control/plan.json",
+          "sha256": "dc806d4c917d622bef2624e3d81dd07fa6c3a73f8583cf62c48eb489a641f892",
+          "bytes": 2232
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/scalablelux-fabric-control/report.json",
+          "sha256": "f1179d60ccf1dc038b5fcf505c5b2f91110412e2594c84e94b312567c4d7f901",
+          "bytes": 3984
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/scalablelux-fabric-control/restart-mca.json",
+          "sha256": "2cec723b12f947a93f4b8059099ba08f8a9d71a4aac7921f21e443b6f0deaa28",
+          "bytes": 461502
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/scalablelux-fabric-control/restart-pid.json",
+          "sha256": "26d104bbdbe7525d5ebc672df98029a582a920c94b6e937c567ed3e277fb8341",
+          "bytes": 475
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/scalablelux-fabric-control/restart-report.json",
+          "sha256": "a11853e75ea4f4b1eb79d118bbd34bd1352db13661a4c27140621b53faf0ebb6",
+          "bytes": 17232
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/scalablelux-fabric-control/restart.log",
+          "sha256": "de7cb481827a9fa4e0e2a236f6540d8a16e77303bebce43a45f5ac30e5bc1684",
+          "bytes": 10758
+        }
+      ]
+    },
+    {
+      "run": "scalablelux-w1",
+      "driverStatus": "UNRESOLVED",
+      "files": [
+        {
+          "path": "build/stage6-audit-20260909/runs/scalablelux-w1/first-mca.json",
+          "sha256": "788a080aa04c1359db7fafbba2e5a243c812d28caaf23eccddb8361432b10426",
+          "bytes": 461446
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/scalablelux-w1/first-pid.json",
+          "sha256": "06ebf7eb2a83bbffdabdef93560dcbd7f7d9fff142c9e2aac1d476b102ec71b8",
+          "bytes": 475
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/scalablelux-w1/first-report.json",
+          "sha256": "6a274660dff8538bad23e9e8b4df329841f48b714a506f3c011aeb55b912f384",
+          "bytes": 23053
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/scalablelux-w1/first.log",
+          "sha256": "c27a8c96d389ef560ad1b5d88395ded852d0d21b4eac73dff12c134aa8111832",
+          "bytes": 14408
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/scalablelux-w1/forced-startup-termination.json",
+          "sha256": "410282b0315475380e4dc0b7bc6dde06c3d3496232bbc0f1501e6be00f5bdeeb",
+          "bytes": 957
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/scalablelux-w1/installed.json",
+          "sha256": "608298e9eb69a477825478c399f139d29123ef7921f466425e4ecef653fbcec4",
+          "bytes": 7475
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/scalablelux-w1/plan.json",
+          "sha256": "dc806d4c917d622bef2624e3d81dd07fa6c3a73f8583cf62c48eb489a641f892",
+          "bytes": 2232
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/scalablelux-w1/pre-termination-threads.txt",
+          "sha256": "4d3f1db10875b3e3e46fb8d36e669c972e852a4df40310fc71c8aa863116d9eb",
+          "bytes": 18794
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/scalablelux-w1/report.json",
+          "sha256": "a5d1a4bdfc2b90191acde114c493c75c4e10c37ab5e17ea0eca8b226debf302a",
+          "bytes": 4649
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/scalablelux-w1/restart-pid.json",
+          "sha256": "2b629f9bd7b83852a5bc06f5fdc357475d7800082c2868c30a73b3ae6182ddfc",
+          "bytes": 475
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/scalablelux-w1/restart-report.json",
+          "sha256": "4ca8b2f79254d13e47d8c1c7c58e122d893d1b40856f5724af63812f6adb47f3",
+          "bytes": 139811
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/scalablelux-w1/restart-stall-threads.txt",
+          "sha256": "f60c7cfea4cc244a511983fb681765a0d23929b2f17a531c1052cbafe28caea5",
+          "bytes": 20236
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/scalablelux-w1/restart.log",
+          "sha256": "a8c4989fb2aaf6d000c4cd2fe989fe5879ad24befcaa187293b2241778aac2cd",
+          "bytes": 32666
+        }
+      ]
+    },
+    {
+      "run": "servercore-fabric-control",
+      "driverStatus": "PASS_CONSOLE_SAMPLE",
+      "files": [
+        {
+          "path": "build/stage6-audit-20260909/runs/servercore-fabric-control/first-mca.json",
+          "sha256": "71ba66e7f190f350cb3b7c6c275a52e9dcdfb7a809c15f39cf90d1c3c86c179d",
+          "bytes": 461490
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/servercore-fabric-control/first-pid.json",
+          "sha256": "b21872a52fce49f9fe1c098d6defe9cce6c518db07e0fc0d6a524d390bb83df0",
+          "bytes": 475
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/servercore-fabric-control/first-report.json",
+          "sha256": "1d390ead91ae80dbfbe216a3b5844008a2453fd38f70d64c93d009cdb330cddb",
+          "bytes": 22202
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/servercore-fabric-control/first.log",
+          "sha256": "64591f105cf50d8fb2300aac300d9abfce9045eb8181bc17c3a05f72e51ad619",
+          "bytes": 11843
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/servercore-fabric-control/installed.json",
+          "sha256": "4e63d5e764fbf6c78516497632bd2e35804b0d8517f29421dd4e254c7ff116f9",
+          "bytes": 6996
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/servercore-fabric-control/plan.json",
+          "sha256": "4d3210489d329f6db7b58dc2ceebd04d1f1ccd62edd8e3b1e9018245499c3b98",
+          "bytes": 2864
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/servercore-fabric-control/report.json",
+          "sha256": "9b0b8f7c7c51cd15749a767784dcefaa025b9076d2f4d95ea2a23a17e9000999",
+          "bytes": 3996
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/servercore-fabric-control/restart-mca.json",
+          "sha256": "d0726c3a4d7962080a36a158d5fdb04085b182d416d57dfbfaa8c78b6b2a9b29",
+          "bytes": 461498
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/servercore-fabric-control/restart-pid.json",
+          "sha256": "1cd7496d4245baead8635df403face0bd342e9e73d872fd68cb3a9c8be088cfd",
+          "bytes": 475
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/servercore-fabric-control/restart-report.json",
+          "sha256": "11c0851b9fd5000ebc92095a6b2be92b58a4f8a599be4dba535c90a99dab6f07",
+          "bytes": 17713
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/servercore-fabric-control/restart.log",
+          "sha256": "057db5576e2d45dcfb5e3c2d8a5e339871071a36b899bb54d81650ca850a4f26",
+          "bytes": 10896
+        }
+      ]
+    },
+    {
+      "run": "servercore-w1",
+      "driverStatus": "UNRESOLVED",
+      "files": [
+        {
+          "path": "build/stage6-audit-20260909/runs/servercore-w1/first-pid.json",
+          "sha256": "2d4c9224e44580c1be478aeba0e353d10285eee089971a92d465b129ce7f3b9b",
+          "bytes": 475
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/servercore-w1/first-report.json",
+          "sha256": "a4f5e9030f98a09d18a685f53d9a1a1fbedd5c008737c83a089d4de39ae0506c",
+          "bytes": 1841
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/servercore-w1/first.log",
+          "sha256": "0a0de7f9619b66d9fc6f883a022b10a1d4a031e1c506898ae4ecc01c746f3d88",
+          "bytes": 12922
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/servercore-w1/installed.json",
+          "sha256": "8397da64611accf442c8917c5326c96259aa7ef5c1d83f6477d94b94f6070879",
+          "bytes": 7873
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/servercore-w1/plan.json",
+          "sha256": "4d3210489d329f6db7b58dc2ceebd04d1f1ccd62edd8e3b1e9018245499c3b98",
+          "bytes": 2864
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/servercore-w1/report.json",
+          "sha256": "53ecd1bb1497b9963b9ab7438b787ae030d89018efb32d750a59321ecf63fc16",
+          "bytes": 1649
+        }
+      ]
+    },
+    {
+      "run": "servercore-w4",
+      "driverStatus": "UNRESOLVED",
+      "files": [
+        {
+          "path": "build/stage6-audit-20260909/runs/servercore-w4/first-pid.json",
+          "sha256": "4772e8ac4fa1c007f8c1e78bb7b87a15e0fe0aa5a09d4f33b7f90b02c4d001b1",
+          "bytes": 475
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/servercore-w4/first-report.json",
+          "sha256": "5f7cf6af12682703822dcc4db5f16ecf8349959685b59f3d5318fa47530d852d",
+          "bytes": 1840
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/servercore-w4/first.log",
+          "sha256": "4644a252381ee814233f3c34000dd0748f57eec1be2d8220f07ef8c99b77ddf9",
+          "bytes": 12922
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/servercore-w4/installed.json",
+          "sha256": "8397da64611accf442c8917c5326c96259aa7ef5c1d83f6477d94b94f6070879",
+          "bytes": 7873
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/servercore-w4/plan.json",
+          "sha256": "4d3210489d329f6db7b58dc2ceebd04d1f1ccd62edd8e3b1e9018245499c3b98",
+          "bytes": 2864
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/servercore-w4/report.json",
+          "sha256": "a7318a02097d5a793a6bfe84158b32c133ba0f27ea06ef51ffd48cb0559b5055",
+          "bytes": 1650
+        }
+      ]
+    },
+    {
+      "run": "slo-fabric-control",
+      "driverStatus": "PASS_CONSOLE_SAMPLE",
+      "files": [
+        {
+          "path": "build/stage6-audit-20260909/runs/slo-fabric-control/first-mca.json",
+          "sha256": "26665a204d1cceaf93da44dd1ad5519eb12b42528500bde6ddb17e3cf9ef5320",
+          "bytes": 981954
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/slo-fabric-control/first-pid.json",
+          "sha256": "6f413f01d1ef6726bb59fc1df399bf7a95888fa9423a764279cfae8e67d52356",
+          "bytes": 475
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/slo-fabric-control/first-report.json",
+          "sha256": "abb5c895e8fed67cd1ea0576ce3f43f0e5b9a1624f4eebbd96d94f2d542895e9",
+          "bytes": 25704
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/slo-fabric-control/first.log",
+          "sha256": "9bd5a5e355c762734e8b2f76d1204a52502dce092d1beae051d3f74078a3638f",
+          "bytes": 11748
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/slo-fabric-control/installed.json",
+          "sha256": "3d9d90f3f0cbd6ce5f222974036814f849bc3448c5643fdbb58db1bfd4e68fc2",
+          "bytes": 8244
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/slo-fabric-control/plan.json",
+          "sha256": "d639dd9095e6114aefbebeb38c35392a3d6c2ba81ef7d865426d04bece6527c9",
+          "bytes": 2484
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/slo-fabric-control/report.json",
+          "sha256": "f44e8d7689d8a3ce7efcaa258e11d7bebc936c4d9277215e7c4f76448c231b95",
+          "bytes": 4096
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/slo-fabric-control/restart-mca.json",
+          "sha256": "4bd683c554a99b80316c25dca68f1002dd40dd448674c0bcea2e8000499b2551",
+          "bytes": 967854
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/slo-fabric-control/restart-pid.json",
+          "sha256": "621bec324af8016d8af7adf0cdf204943f9617d9537fbd78d614f00a5d7a8be6",
+          "bytes": 475
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/slo-fabric-control/restart-report.json",
+          "sha256": "544fdb61c9b9a3e0b00b018365a1b88fb790568924a99758102d41693b29768c",
+          "bytes": 17599
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/slo-fabric-control/restart.log",
+          "sha256": "a3437045e64ba149a0040e111bbd8078dc58592943115c6ec0b731c2752cdf1a",
+          "bytes": 10671
+        }
+      ]
+    },
+    {
+      "run": "slo-w1",
+      "driverStatus": "PASS_CONSOLE_SAMPLE",
+      "files": [
+        {
+          "path": "build/stage6-audit-20260909/runs/slo-w1/first-mca.json",
+          "sha256": "5b05c55d085e9dc02e4992a97f2a3d85cd5ebe5f002ccbcaf582aa43c55356c8",
+          "bytes": 981222
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/slo-w1/first-pid.json",
+          "sha256": "cc12679d36603c924a6be925b8a24728772b19a8efa405c33b6af024e11ee1bc",
+          "bytes": 475
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/slo-w1/first-report.json",
+          "sha256": "5f668de5b6615d5d85d5ff84bd08e7ea966de226bf3b058657f565d7ebc6fcd3",
+          "bytes": 27795
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/slo-w1/first.log",
+          "sha256": "11ef2c7fbadc214259949c0ea7a00b4951bb994cbdcfae5d9a7b872bd1ca85d3",
+          "bytes": 14461
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/slo-w1/installed.json",
+          "sha256": "b9be7d6501e59a7192c247da0a9edf5588b3c58f74ec111dda23eb7d338c7159",
+          "bytes": 9121
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/slo-w1/plan.json",
+          "sha256": "d639dd9095e6114aefbebeb38c35392a3d6c2ba81ef7d865426d04bece6527c9",
+          "bytes": 2484
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/slo-w1/report.json",
+          "sha256": "65ee3fe7c7f3ff59c77713f75fd87d327b02b273d649fa5217b1efbf70cdadc7",
+          "bytes": 5619
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/slo-w1/restart-mca.json",
+          "sha256": "a95e6f0ab10b68aeab2724b006807c5cf8cb398a781fa9b6cac1520cb047cbaf",
+          "bytes": 967133
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/slo-w1/restart-pid.json",
+          "sha256": "9cfb50c98374a9abb0587a00392ece2a1b98d37b98626d81a47a2e361991b8b4",
+          "bytes": 475
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/slo-w1/restart-report.json",
+          "sha256": "7c228939174d9de40b9b9fb6d578f4cf2b0c3b12de46d60e36abd3c7ceb2bc88",
+          "bytes": 19057
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/slo-w1/restart.log",
+          "sha256": "2b83f40bed45dc71b52045b17f73baae318d6bbb03c982e86ecf62b76d7bdb81",
+          "bytes": 13440
+        }
+      ]
+    },
+    {
+      "run": "slo-w4",
+      "driverStatus": "PASS_CONSOLE_SAMPLE",
+      "files": [
+        {
+          "path": "build/stage6-audit-20260909/runs/slo-w4/first-mca.json",
+          "sha256": "39fdef8a74702ff89396a97717e16902fbd226fda8d7fb6b193a54cd745a753f",
+          "bytes": 952057
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/slo-w4/first-pid.json",
+          "sha256": "13e885cfd61684d637681b40bb06440a17e48813ac81bfe26905293ec185d1a9",
+          "bytes": 475
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/slo-w4/first-report.json",
+          "sha256": "dff0afd179f5ee05317efc854cc52baa2c60340320ce771ad93bd26b02568beb",
+          "bytes": 27687
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/slo-w4/first.log",
+          "sha256": "2191e60ac9fc636ec382cb1c913df5f84eaeba5b35df5c75e08ce0412a76dc95",
+          "bytes": 14460
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/slo-w4/installed.json",
+          "sha256": "b9be7d6501e59a7192c247da0a9edf5588b3c58f74ec111dda23eb7d338c7159",
+          "bytes": 9121
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/slo-w4/plan.json",
+          "sha256": "d639dd9095e6114aefbebeb38c35392a3d6c2ba81ef7d865426d04bece6527c9",
+          "bytes": 2484
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/slo-w4/report.json",
+          "sha256": "92efe7ebecb184e2574b594769b860b962950a85596a0d163980d33941b85ede",
+          "bytes": 5628
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/slo-w4/restart-mca.json",
+          "sha256": "713f18ca57a6e36f185aa639b37ca59539d4a23e86d8a23e77f832707b94f60b",
+          "bytes": 937956
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/slo-w4/restart-pid.json",
+          "sha256": "e1e03d30233f1cc94e5b0ebeaafea5b4f592727af0a5db4890a7b187eeb7de41",
+          "bytes": 475
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/slo-w4/restart-report.json",
+          "sha256": "e80079e4fd770452b761879e8515736330a42c5067b6efdff371addcf30b2e57",
+          "bytes": 19089
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/slo-w4/restart.log",
+          "sha256": "a7aa60996e54165d093247bd34dbbdd02ca647513056df5a93c6b0d2ddfdf684",
+          "bytes": 13438
+        }
+      ]
+    },
+    {
+      "run": "spark-w1",
+      "driverStatus": "UNRESOLVED",
+      "files": [
+        {
+          "path": "build/stage6-audit-20260909/runs/spark-w1/first-pid.json",
+          "sha256": "f39a8c377997c96b2b34858ca7455e138d0f7406fd43a28dca07bf14296e7a69",
+          "bytes": 474
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/spark-w1/first-report.json",
+          "sha256": "0e777fa60ae39c2bf3685d1982ce21e3c5b4a2fb500b9507d6c0a7ff1ad413bd",
+          "bytes": 73510
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/spark-w1/first.log",
+          "sha256": "ac24a50ff5aafc456769fd5a0f2541e423111d104a7590a755efd3e3ce3a3f32",
+          "bytes": 14339
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/spark-w1/installed.json",
+          "sha256": "0b33cfcb2affb0380806afa9a21f049efbda3bf0fdf6b94ebc0e75da9f464759",
+          "bytes": 7645
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/spark-w1/plan.json",
+          "sha256": "0c78c8aa39aaafd387b94fc070da2ce4796a8274a1d2e81a68a71f845053a13c",
+          "bytes": 545
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/spark-w1/report.json",
+          "sha256": "fe4f487fba9962ef2acfb024b14dc4a59591a5583a036543bc45258a57d668e5",
+          "bytes": 1817
+        }
+      ]
+    },
+    {
+      "run": "spark-w1-confirmed",
+      "driverStatus": "UNRESOLVED",
+      "files": [
+        {
+          "path": "build/stage6-audit-20260909/runs/spark-w1-confirmed/first-pid.json",
+          "sha256": "65ade2e2ad1932e9744eb111d7329f6e864ed21919239ed77feafb2d82241cf3",
+          "bytes": 475
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/spark-w1-confirmed/first-report.json",
+          "sha256": "f66c88db73762f440a1a9869e42d6b039b2e63aa9c59cf7854c458215db97a30",
+          "bytes": 77475
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/spark-w1-confirmed/first.log",
+          "sha256": "7b6969241afa02f98c38cfd5c6bb972e632b50a5cf481494b7195e3ae7fa486f",
+          "bytes": 17124
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/spark-w1-confirmed/installed.json",
+          "sha256": "0b33cfcb2affb0380806afa9a21f049efbda3bf0fdf6b94ebc0e75da9f464759",
+          "bytes": 7645
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/spark-w1-confirmed/plan.json",
+          "sha256": "893ccd87cd266a21c688f62babd19067daf82f6ae0cb8587b7a9b6c6f27d806a",
+          "bytes": 584
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/spark-w1-confirmed/report.json",
+          "sha256": "4a61fefbb998a099a44d0e73e9f4dd0b0753e8996237ceb7ccd45cb58dac1252",
+          "bytes": 1838
+        }
+      ]
+    },
+    {
+      "run": "spark-w1-final",
+      "driverStatus": "PASS_CONSOLE_SAMPLE",
+      "files": [
+        {
+          "path": "build/stage6-audit-20260909/runs/spark-w1-final/first-mca.json",
+          "sha256": "ce6313d8a9ceccd4898339dd2b31a509255e2594fe9da5bf77ad5f34a7b78fa6",
+          "bytes": 240123
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/spark-w1-final/first-pid.json",
+          "sha256": "15a0a05931d5caa6337c84e731fbb5fc28110fde2c8a0478bbae5eed36af51de",
+          "bytes": 475
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/spark-w1-final/first-report.json",
+          "sha256": "61adc74070f6fc5b1e04dc45b297bc138ebdb8c770eb2846bc1d00521bb524d7",
+          "bytes": 23711
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/spark-w1-final/first.log",
+          "sha256": "450ed9567ee2fbfccba4a8951c74ff7c15833cf599806c67924a40e04258b888",
+          "bytes": 16495
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/spark-w1-final/installed.json",
+          "sha256": "0b33cfcb2affb0380806afa9a21f049efbda3bf0fdf6b94ebc0e75da9f464759",
+          "bytes": 7645
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/spark-w1-final/plan.json",
+          "sha256": "e713b68d41a904d8e023953c870f6198d15d150e191aee5a616ec350313915cb",
+          "bytes": 612
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/spark-w1-final/report.json",
+          "sha256": "137a3374a6636c2e0fe2e46bc93bdc2471ae14719e2233a739ce19e3966e5e9c",
+          "bytes": 6897
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/spark-w1-final/restart-mca.json",
+          "sha256": "41154cf0e2a048841b1677a3226384ee0de99df79cb123487119ffc1e89876ce",
+          "bytes": 240131
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/spark-w1-final/restart-pid.json",
+          "sha256": "c87cac994fbe04c7957e4fdd2a65ce72adee910cd2b9f9c7741416622cfb500a",
+          "bytes": 475
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/spark-w1-final/restart-report.json",
+          "sha256": "ac79f5c4ef3c51a9101f3b2f8350e26772a772513ccb6b4d7cb809b4f12402e8",
+          "bytes": 16011
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/spark-w1-final/restart.log",
+          "sha256": "a9c0ca751847e20980603d04c343287f0c4af6af6ee0abd6239e9a78858b3f10",
+          "bytes": 12969
+        }
+      ]
+    },
+    {
+      "run": "via-chain-w1",
+      "driverStatus": "PASS_CONSOLE_SAMPLE",
+      "files": [
+        {
+          "path": "build/stage6-audit-20260909/runs/via-chain-w1/first-mca.json",
+          "sha256": "75b5051a44a0a63324b033f8ef1340d8bbd5daddc24f19338da54fa30ce0441a",
+          "bytes": 240115
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/via-chain-w1/first-pid.json",
+          "sha256": "0ee114645640408235f514a108221033543cebfc5d10a1f6aa407031bef25ea8",
+          "bytes": 475
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/via-chain-w1/first-report.json",
+          "sha256": "6908359f6d2f3e6048fbe33e39e516943ab902383b2d2f115483a225f6057a09",
+          "bytes": 16196
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/via-chain-w1/first.log",
+          "sha256": "1d344255ff2e1c2508c6860b762c6ad2771ede1fa39ba493dab5ab9aae0e2962",
+          "bytes": 13777
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/via-chain-w1/installed.json",
+          "sha256": "81f4bec6c03512d050f09ae5284235ab22ab4c27bf604d047914a22de11f51f2",
+          "bytes": 11141
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/via-chain-w1/plan.json",
+          "sha256": "a44179eb752c0ed3c6107aff9eeaea06503fd79b716d61630dc541ac8e66a070",
+          "bytes": 280
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/via-chain-w1/report.json",
+          "sha256": "f1b1727a021a8140d1c127ac00d0c44da5e2fe95c0890949a50667f89e3f3b1d",
+          "bytes": 5681
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/via-chain-w1/restart-mca.json",
+          "sha256": "6bc41ce3572b176f290f706e1ad0073eea1c9ee0d9394447a01c239dd7a20385",
+          "bytes": 240123
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/via-chain-w1/restart-pid.json",
+          "sha256": "191158b7907e524a358abbf03ee9940fd59740c7e7335c00cd651322b53c64c7",
+          "bytes": 475
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/via-chain-w1/restart-report.json",
+          "sha256": "20e2a4739b9e136144d93180a6f630ca1aea8165fe89d8f46995915941589661",
+          "bytes": 15617
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/via-chain-w1/restart.log",
+          "sha256": "2dec0500eed40bdc487710f1c2ae7e37785b6eb140af3647d2d0a935a8581731",
+          "bytes": 12958
+        }
+      ]
+    },
+    {
+      "run": "via-chain-w4",
+      "driverStatus": "SEE_CLIENT_LOG_AND_COMPARATOR",
+      "files": [
+        {
+          "path": "build/stage6-audit-20260909/runs/via-chain-w4/evidence/process-metrics-first.json",
+          "sha256": "a4a6eb9887e9310320bcd56779a6d260ad623882b33d1c8c33da7d7b1b41d393",
+          "bytes": 202
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/via-chain-w4/evidence/process-metrics-restart.json",
+          "sha256": "34a60f55132494a366638a2c4180bf747e6a9a28adb943e1e2f6803a1175e7ba",
+          "bytes": 200
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/via-chain-w4/evidence/production-identity-first.json",
+          "sha256": "2e70da8021328994e623b3aeb5c9796662c099142a044ce854233580fdfd83da",
+          "bytes": 377
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/via-chain-w4/evidence/production-identity-restart.json",
+          "sha256": "ab6705557d7f6ccce6e5aa77820dc0a39de9c01bc562e399f0626fc264f7160d",
+          "bytes": 379
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/via-chain-w4/evidence/STAGE4-CLIENT-before-restart-trace.json",
+          "sha256": "46d344fe0057e7134588328f9730832ae9f901129286f9f25b01953a214b89f2",
+          "bytes": 170683
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/via-chain-w4/evidence/STAGE4-CLIENT-reload-trace.json",
+          "sha256": "9f39db9bf16488a46ea29c83df340f0761ebe9fc23b305ca6ded3b6d15f06ceb",
+          "bytes": 5165
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/via-chain-w4/evidence/STAGE4-CLIENT-trace.json",
+          "sha256": "46d344fe0057e7134588328f9730832ae9f901129286f9f25b01953a214b89f2",
+          "bytes": 170683
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/via-chain-w4/evidence/STAGE4-CLIENT.json",
+          "sha256": "c7fbcef869c6203bac6f8151446123e578548bdcb64cd8c1fb99c8bf7f6fe38f",
+          "bytes": 2036
+        }
+      ]
+    },
+    {
+      "run": "viafabric-w1",
+      "driverStatus": "PASS_CONSOLE_SAMPLE",
+      "files": [
+        {
+          "path": "build/stage6-audit-20260909/runs/viafabric-w1/first-mca.json",
+          "sha256": "9cbca6ab1563c2c7059d8ca84972bc410327dca845c221bd67d0409fd48581e5",
+          "bytes": 240115
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/viafabric-w1/first-pid.json",
+          "sha256": "3833af6902f55ad83a41cc0c65289901c9209c4ac99c7e45537d82cd34061105",
+          "bytes": 474
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/viafabric-w1/first-report.json",
+          "sha256": "bc066557739ade00396834a9c7efe5ba36046e386a98fd8fa30461e8ffb71392",
+          "bytes": 16481
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/viafabric-w1/first.log",
+          "sha256": "c3103641a537b40f281abb0fa0585bd436125283d240381ffbb560225d923d87",
+          "bytes": 14049
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/viafabric-w1/installed.json",
+          "sha256": "dfd641126eb62bc2903c5f2428c8f8fce095ed8c37ecb53dfbed1f1bc748f399",
+          "bytes": 8575
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/viafabric-w1/plan.json",
+          "sha256": "a44179eb752c0ed3c6107aff9eeaea06503fd79b716d61630dc541ac8e66a070",
+          "bytes": 280
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/viafabric-w1/report.json",
+          "sha256": "7894c9d0d274f21f89c4aa319ffc24d6004fd4d773e559bf420d86f47a433cf2",
+          "bytes": 5471
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/viafabric-w1/restart-mca.json",
+          "sha256": "c91e0c626459bebea4af2faf24415700edf4d0c34ae6f3b1fa8fd0d66df384ec",
+          "bytes": 240123
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/viafabric-w1/restart-pid.json",
+          "sha256": "daaccaa224468306e5c4725396dbf7da7e83a4d9d7ec097b2c4ee6f8b072d255",
+          "bytes": 475
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/viafabric-w1/restart-report.json",
+          "sha256": "67f890341978b3992097138658fc2889aa0106a4722a99b33bb3f60b661af88f",
+          "bytes": 15661
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/viafabric-w1/restart.log",
+          "sha256": "fbfcb25485c7115c9e4e0974adca76d540ed29cf3dbe4c6dbf501c0629dc4720",
+          "bytes": 13171
+        }
+      ]
+    },
+    {
+      "run": "vmp-client-w4",
+      "driverStatus": "SEE_CLIENT_LOG_AND_COMPARATOR",
+      "files": [
+        {
+          "path": "build/stage6-audit-20260909/runs/vmp-client-w4/evidence/process-metrics-first.json",
+          "sha256": "57ef99a85a81dcf459f3dc9901f04d9d06f21637851fde806df431f1cbd7fcbd",
+          "bytes": 202
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/vmp-client-w4/evidence/process-metrics-restart.json",
+          "sha256": "3062b1f7b18724c78bb035e1e1aeac48010f2f49f0e461a27cb7fe4b7a153953",
+          "bytes": 203
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/vmp-client-w4/evidence/production-identity-first.json",
+          "sha256": "f57c39fba218b053b7902fd92eaab887f37dfd443f6c673727b77b64b9b117df",
+          "bytes": 378
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/vmp-client-w4/evidence/production-identity-restart.json",
+          "sha256": "98c6dea9d1181aba70827bf9b4e6e976c631309f56cece55fd70bbdafc886ce8",
+          "bytes": 380
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/vmp-client-w4/evidence/STAGE4-CLIENT-before-restart-trace.json",
+          "sha256": "f32a9a2aa2e85ed76271293ed020df0723cc81fc7e016edf2e637562e8de95cd",
+          "bytes": 70245
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/vmp-client-w4/evidence/STAGE4-CLIENT-trace.json",
+          "sha256": "f32a9a2aa2e85ed76271293ed020df0723cc81fc7e016edf2e637562e8de95cd",
+          "bytes": 70245
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/vmp-client-w4/evidence/STAGE4-CLIENT.json",
+          "sha256": "094382cf71335c379ffd3146fbd9bbaaae6d5fd03b4148a481745ec0dc6faafe",
+          "bytes": 2045
+        }
+      ]
+    },
+    {
+      "run": "vmp-w1",
+      "driverStatus": "PASS_CONSOLE_SAMPLE",
+      "files": [
+        {
+          "path": "build/stage6-audit-20260909/runs/vmp-w1/first-mca.json",
+          "sha256": "5aba1b59537c01114d628813e80ef574426ef871ada58183536b7c29d1a0c870",
+          "bytes": 240091
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/vmp-w1/first-pid.json",
+          "sha256": "ca8639a471908d95b03c20c66370856fa1607339f13f5ce7d98eabc8587907f7",
+          "bytes": 475
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/vmp-w1/first-report.json",
+          "sha256": "3aae8ba67d46986602e40f9a86b5cca83919eb5595e3efa4ffa0f977eba21d36",
+          "bytes": 15893
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/vmp-w1/first.log",
+          "sha256": "f5461d5cc09cea777d0c9a6bb9464492e547bb7367dbb29f9efbe82d98d76f9d",
+          "bytes": 13162
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/vmp-w1/installed.json",
+          "sha256": "c95526ac2bd1baaff9fa8dabe41a85f2d6278975aea7d8e2b7d45a8215a60cf3",
+          "bytes": 7528
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/vmp-w1/plan.json",
+          "sha256": "a44179eb752c0ed3c6107aff9eeaea06503fd79b716d61630dc541ac8e66a070",
+          "bytes": 280
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/vmp-w1/report.json",
+          "sha256": "33a77cea64513cf25a16b3f111648e310959e2e6c52de9144b447598f8511f7c",
+          "bytes": 5448
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/vmp-w1/restart-mca.json",
+          "sha256": "58c6d13e869cdb0c1cb707a1de739696ca385c138b7c34fb1c88e4f0c56e2c7a",
+          "bytes": 240099
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/vmp-w1/restart-pid.json",
+          "sha256": "5a317ee5ddfd18b8a3b12653bf89ec4a48f9016145070d01c7fba79507e56f46",
+          "bytes": 474
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/vmp-w1/restart-report.json",
+          "sha256": "4a0797d3035e21a1fd108d4969280e2f8bf2ef43c05ec3d4726af6c88f85050b",
+          "bytes": 15257
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/vmp-w1/restart.log",
+          "sha256": "80cfbc2eb4af3fec00cc8ca2cf8707d24b190195bd612496b09949b411b88ecd",
+          "bytes": 12284
+        }
+      ]
+    },
+    {
+      "run": "voice-w1",
+      "driverStatus": "PASS_CONSOLE_SAMPLE",
+      "files": [
+        {
+          "path": "build/stage6-audit-20260909/runs/voice-w1/first-mca.json",
+          "sha256": "9eabf0cd6876aa037f8b202077ed1743b58b693eb01da983f5bde89e33c3b46e",
+          "bytes": 240099
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/voice-w1/first-pid.json",
+          "sha256": "f60a74ed77b2c95a768d351c0e3762683bdb687f8aba7c266caebd443b6ee9c0",
+          "bytes": 475
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/voice-w1/first-report.json",
+          "sha256": "59dbdba41e82d34bea85108435d5e19a8ac87296dbac30efa23c28410bbc2c02",
+          "bytes": 15642
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/voice-w1/first.log",
+          "sha256": "e26bce96f984e30add1d94e9a514112cad7e76816e574241fda795005cab1628",
+          "bytes": 13358
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/voice-w1/installed.json",
+          "sha256": "25282e343b171688a782145194316335da92ca8e4f507c173313a2511817c8c7",
+          "bytes": 9987
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/voice-w1/plan.json",
+          "sha256": "cc3dceeb57604834481d82610b89ada7382830f1e1bf6a7fdc4746792f78e2eb",
+          "bytes": 460
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/voice-w1/report.json",
+          "sha256": "74d6016f1ba0c311cfd2d40d090e3b9c82e3c2c5dbec809ffc2c8410fc358829",
+          "bytes": 5475
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/voice-w1/restart-mca.json",
+          "sha256": "ea255d140f31d7e56ed0a0309d099296305597b47dc8d25c3f0c15e995d95045",
+          "bytes": 240107
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/voice-w1/restart-pid.json",
+          "sha256": "bc3f69b38b259d87b1b52ca1d57813c72c959c47edc47da4afe75bb6040f999f",
+          "bytes": 474
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/voice-w1/restart-report.json",
+          "sha256": "caab3bbcb305fc8bfbb4cf283011f25bbe425e94052b8975b5d796a7f4d4649a",
+          "bytes": 14983
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/voice-w1/restart.log",
+          "sha256": "eb4fa60c80deaed0c29cddee5e49710f946be514ab36bd421d32d317ff01028a",
+          "bytes": 12480
+        }
+      ]
+    },
+    {
+      "run": "voice-w4",
+      "driverStatus": "PASS_CONSOLE_SAMPLE",
+      "files": [
+        {
+          "path": "build/stage6-audit-20260909/runs/voice-w4/first-mca.json",
+          "sha256": "db3b01f22125c5d5c4934cd794f8f837de538cddf0d44016bd71a9fdaa542f29",
+          "bytes": 240099
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/voice-w4/first-pid.json",
+          "sha256": "03163131048f0f6aff4d9d3298723c7c0d5b0036ffc2a89bd39e588597838233",
+          "bytes": 475
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/voice-w4/first-report.json",
+          "sha256": "c5fcf22be7b80069c8c1ea048fd29b6e40a1ca498b398d7316e9fd32c8cb1074",
+          "bytes": 15644
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/voice-w4/first.log",
+          "sha256": "de48aff16821b5996b2833afc0cde54bfd0d085ddd6fa2698dc0a9c2a7071d23",
+          "bytes": 13356
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/voice-w4/installed.json",
+          "sha256": "25282e343b171688a782145194316335da92ca8e4f507c173313a2511817c8c7",
+          "bytes": 9987
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/voice-w4/plan.json",
+          "sha256": "cc3dceeb57604834481d82610b89ada7382830f1e1bf6a7fdc4746792f78e2eb",
+          "bytes": 460
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/voice-w4/report.json",
+          "sha256": "629c361a1869f7454574f2a1c2173df0a85f41d3675f1e6c4b837d88ca5b9de3",
+          "bytes": 5474
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/voice-w4/restart-mca.json",
+          "sha256": "393274fae7801335ce2f4c084a91acaf3fe1da0c9ba8bd0faec4d50de0254107",
+          "bytes": 240107
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/voice-w4/restart-pid.json",
+          "sha256": "09ee1fb477cb679cce23afa4d59801f9488d7b9c793de8be9c78979033f2bc4f",
+          "bytes": 475
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/voice-w4/restart-report.json",
+          "sha256": "bc647ea5ccb2ecd4faae5fe30546b3e368f6d13149b5acfd10a4b9f037afb3cc",
+          "bytes": 14970
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/voice-w4/restart.log",
+          "sha256": "dfaa5d513e64fd3bf3fb6cc6ee7ff906f566c79c80bf7d35c7984fba632ade33",
+          "bytes": 12479
+        }
+      ]
+    },
+    {
+      "run": "xp-control-w1",
+      "driverStatus": "PASS_CONSOLE_SAMPLE",
+      "files": [
+        {
+          "path": "build/stage6-audit-20260909/runs/xp-control-w1/first-mca.json",
+          "sha256": "5ed1ba579ca6e73d97c7abffed54ad4a5408b26777c90a60f2da01c12037cc9c",
+          "bytes": 461442
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/xp-control-w1/first-pid.json",
+          "sha256": "5a462d303d65d96031bacbe5b963db9195577402952a6c242a681274ca25dacd",
+          "bytes": 475
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/xp-control-w1/first-report.json",
+          "sha256": "f98b6c3bb5272df4bcd1704c052ea9aebad7ed246a2ce498b34681e33a4da857",
+          "bytes": 28137
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/xp-control-w1/first.log",
+          "sha256": "964a930411b5325f3fa64617a490e95bb3c8b873de576deb7db25b24e9b67078",
+          "bytes": 15501
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/xp-control-w1/installed.json",
+          "sha256": "2acec7f091e61b4f8ec4762d9e4184eb8f9532701dd60afbd2a6db4961b613f8",
+          "bytes": 6264
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/xp-control-w1/plan.json",
+          "sha256": "94fc988de72f27f7d03901b02528ab1449aff20cc4d680750fffbbb1101d0c75",
+          "bytes": 3078
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/xp-control-w1/report.json",
+          "sha256": "fe86f45e9d661c7e5c53a30f74836a547afabca26e11e0f0bf88af1d268884f1",
+          "bytes": 6134
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/xp-control-w1/restart-mca.json",
+          "sha256": "e1c1dfc417a5665537a4d7e437ed81275d602d9f3d025ebb847201338a037450",
+          "bytes": 461450
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/xp-control-w1/restart-pid.json",
+          "sha256": "5e55bb0ce1d25f43e70d2c634588076c308c46afda3a065220c03b743baf491e",
+          "bytes": 475
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/xp-control-w1/restart-report.json",
+          "sha256": "62b3561b385ae1a639fde26fd050fa97739fcac9f827b1c05b54be6d86f62a5a",
+          "bytes": 19743
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/xp-control-w1/restart.log",
+          "sha256": "01715389b40869ccfa803909a3275ebda1d04896632600bf1eeef08f349075dd",
+          "bytes": 14139
+        }
+      ]
+    },
+    {
+      "run": "zfastnoise-w1",
+      "driverStatus": "PASS_CONSOLE_SAMPLE",
+      "files": [
+        {
+          "path": "build/stage6-audit-20260909/runs/zfastnoise-w1/first-mca.json",
+          "sha256": "c515d892ac569f3ea56b659d226d07d01abb0e9dd8e006aafdfd365e3e562870",
+          "bytes": 981422
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/zfastnoise-w1/first-pid.json",
+          "sha256": "ec96d56cc4f1d42c60c35a17b738dbba15c9d257a8cd242d85ff0e4878d236f7",
+          "bytes": 475
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/zfastnoise-w1/first-report.json",
+          "sha256": "ee839b83e78cf597e1663e214e0daa664da7e286f6382f069b5204aec44e6a03",
+          "bytes": 27969
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/zfastnoise-w1/first.log",
+          "sha256": "818b8e2e986bc79ae222b4cf4981b9cadc347c1c48f56c2e24d9e0e3a09edfb1",
+          "bytes": 14823
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/zfastnoise-w1/installed.json",
+          "sha256": "f5debdb7349acfc5bba4484f3f42c243edffe781c1d1002807b65e8410733791",
+          "bytes": 8633
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/zfastnoise-w1/plan.json",
+          "sha256": "d639dd9095e6114aefbebeb38c35392a3d6c2ba81ef7d865426d04bece6527c9",
+          "bytes": 2484
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/zfastnoise-w1/report.json",
+          "sha256": "0377883dff6511d4132eed8d365759371cefbe5c751b0eac6f1281c5d087429b",
+          "bytes": 5604
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/zfastnoise-w1/restart-mca.json",
+          "sha256": "3d0ede4873e415fa74a4b8e1d94df1692c05c15cab8842d1bb05a36672a02179",
+          "bytes": 967322
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/zfastnoise-w1/restart-pid.json",
+          "sha256": "327dc8ff272cd650fdca822484e282d781f7916e2116f4ceb0fee431275a05e7",
+          "bytes": 475
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/zfastnoise-w1/restart-report.json",
+          "sha256": "69b1855812bfdfa2dc5e1556bc69c07707c9fcbe6b4b566676e65b66b884df19",
+          "bytes": 19341
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/zfastnoise-w1/restart.log",
+          "sha256": "67b9ac32ddc6da1dea927ae864c6fdb339c569407b7a92f2d03050efb011be4c",
+          "bytes": 13802
+        }
+      ]
+    },
+    {
+      "run": "zfastnoise-w4",
+      "driverStatus": "PASS_CONSOLE_SAMPLE",
+      "files": [
+        {
+          "path": "build/stage6-audit-20260909/runs/zfastnoise-w4/first-mca.json",
+          "sha256": "9db711ee16de80451a7aac8a5d628ead314855623d60e52d983b12119053b381",
+          "bytes": 981937
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/zfastnoise-w4/first-pid.json",
+          "sha256": "42412791fdb1c3a75a896b843bc9c48da17968c68fbf6dd9986bb1fe98e95f81",
+          "bytes": 475
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/zfastnoise-w4/first-report.json",
+          "sha256": "53220227b2d95439693052c660db78e52f9013f632e485e9689cb1d06576ca5c",
+          "bytes": 28248
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/zfastnoise-w4/first.log",
+          "sha256": "d249dbe5c2335b6bdf82f01869eec670ef5cc2a80c4f7210f4e1c5db7893e21b",
+          "bytes": 14822
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/zfastnoise-w4/installed.json",
+          "sha256": "f5debdb7349acfc5bba4484f3f42c243edffe781c1d1002807b65e8410733791",
+          "bytes": 8633
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/zfastnoise-w4/plan.json",
+          "sha256": "d639dd9095e6114aefbebeb38c35392a3d6c2ba81ef7d865426d04bece6527c9",
+          "bytes": 2484
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/zfastnoise-w4/report.json",
+          "sha256": "a5ae63a8f16f74d05aff5ec1a4d0862bc0e0206282230ecb50d9a6f46dd12fb0",
+          "bytes": 5587
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/zfastnoise-w4/restart-mca.json",
+          "sha256": "ccf1238b10b7faf57fdaba7ce39f3b6a959eef599f6d754fbaf941ec3a62281e",
+          "bytes": 967846
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/zfastnoise-w4/restart-pid.json",
+          "sha256": "3a3bd365b826cded7a81686a4e7b355e8b6b64dd15bb4e665c7a1850bec203d1",
+          "bytes": 475
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/zfastnoise-w4/restart-report.json",
+          "sha256": "11f5b9f53f95ea79e495f1239207b8dfee2a21e04a99ac362d543920f293ef40",
+          "bytes": 19502
+        },
+        {
+          "path": "build/stage6-audit-20260909/runs/zfastnoise-w4/restart.log",
+          "sha256": "f758445127f64b78687108a6e9f95f12f6337b22f21a23d797997f43390cd4b4",
+          "bytes": 13800
+        }
+      ]
+    }
+  ],
+  "keyFiles": [
+    {
+      "path": "build/stage6-audit-20260909/client-comparisons.json",
+      "sha256": "85674328a4d080bb7882f30c0f1b469a2024c12a5d9fa752abd08aeb66440ee9"
+    },
+    {
+      "path": "build/stage6-audit-20260909/frozen-health-comparison-final.json",
+      "sha256": "5ff40e9a9c6788818224c50fad7b5f466c9510de7984bd08946a327fe35e6cb9"
+    },
+    {
+      "path": "build/stage6-audit-20260909/frozen-health-comparison.json",
+      "sha256": "5696373f0ac284df8469a8cd719d5f59e87d2f86dbcdb3e42b824328753056aa"
+    },
+    {
+      "path": "build/stage6-audit-20260909/generation-comparison.json",
+      "sha256": "4b54a2ab513ee5ddb043a78161b56c95aadfb7d6f94e6ec3bce6d507c8f008b0"
+    },
+    {
+      "path": "build/stage6-audit-20260909/krypton-client-w1-comparison.json",
+      "sha256": "7bc8c71bfcd7e389d3fe920d1fb2cb698b92fb0bbd89a82ef16781b2117b10f1"
+    },
+    {
+      "path": "build/stage6-audit-20260909/krypton-w4-comparison.json",
+      "sha256": "7bc8c71bfcd7e389d3fe920d1fb2cb698b92fb0bbd89a82ef16781b2117b10f1"
+    },
+    {
+      "path": "build/stage6-audit-20260909/via-chain-w4-comparison.json",
+      "sha256": "7bc8c71bfcd7e389d3fe920d1fb2cb698b92fb0bbd89a82ef16781b2117b10f1"
+    },
+    {
+      "path": "build/stage6-audit-20260909/vmp-client-w4-comparison.json",
+      "sha256": "df4b556be85b0156b9cd1bddde231d4c1dfa71ee85b2bccb3c444e4eaf4405c7"
+    },
+    {
+      "path": "build/stage6-audit-20260909/confirmation-commands.json",
+      "sha256": "3065406d72b5c00f3836e1e9ba50e9e375724ae32401319e583009e94e201d32"
+    },
+    {
+      "path": "build/stage6-audit-20260909/final-batch-commands.json",
+      "sha256": "d62e67a1427fa79302a25e4b3e4e71a349a5841a8c4b334986428dc9fa99a2c2"
+    },
+    {
+      "path": "build/stage6-audit-20260909/memory-screening.json",
+      "sha256": "419d5c6789868e7ba20e768777e2d9aa22a41cd405ec2098c8838bfc8485f00b"
+    },
+    {
+      "path": "build/stage6-audit-20260909/control-identity.json",
+      "sha256": "b3266f581995885f713c26d61b178247905d9c0f57b78ee904ceaf94f669744f"
+    },
+    {
+      "path": "build/stage6-audit-20260909/api-command-module-diff.json",
+      "sha256": "98e783d927c3c2f3a6d312b22fbee40b132197ff94d9021a1c9e00e0689c30f9"
+    },
+    {
+      "path": "build/stage6-audit-20260909/api-reconciliation.json",
+      "sha256": "e807b41d814e818453952b47369718c2f69a464d16db0f33ddb60ae521d04ddf"
+    },
+    {
+      "path": "build/stage6-audit-20260909/krypton-selection.json",
+      "sha256": "acf6b2774f3a48285e2f3c5b75bfd74c6c2a9c2213c3537c2ca54fdbea2160d1"
+    },
+    {
+      "path": "build/stage6-audit-20260909/logic-config-selection.json",
+      "sha256": "0ca529874de980cc1578189c22a3d5baa48b168aff81bc30f04cf086839d3bf2"
+    },
+    {
+      "path": "build/stage6-audit-20260909/logic-stack-selection.json",
+      "sha256": "60a5dc618a3cd53955b192416a3c979cec77ca372a51e06a796602317512e096"
+    },
+    {
+      "path": "build/stage6-audit-20260909/network-control-selection.json",
+      "sha256": "22a166b075ccabc970387f36a8c726ad8fcb12187485d7ec1250bf39bfaa52de"
+    },
+    {
+      "path": "build/stage6-audit-20260909/via-chain-selection.json",
+      "sha256": "d77a16d8f71c6fd3d59312ea66057b6327d2a421979eeb90e12893f4f8290a6f"
+    },
+    {
+      "path": "build/stage6-audit-20260909/vmp-selection.json",
+      "sha256": "3deb737faac0119fc231cd16b5ff48e2d5121ba1a9723d5fc28cc23d21b75d1a"
+    }
+  ]
+}

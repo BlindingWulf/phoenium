@@ -1,0 +1,18 @@
+{
+  "description": "Voice server startup, separate local UDP listener and clean restart only; no audio client acceptance.",
+  "first": [
+    {
+      "command": "list",
+      "expect": "players online"
+    }
+  ],
+  "restart": [
+    {
+      "command": "list",
+      "expect": "players online"
+    }
+  ],
+  "configs": {
+    "config/voicechat/voicechat-server.properties": "port=24455\nbind_address=127.0.0.1\nthreaded_server_support=true\n"
+  }
+}

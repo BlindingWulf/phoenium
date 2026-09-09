@@ -1,0 +1,18 @@
+{
+  "description": "Load/save/restart screening only; no feature-compatibility claim.",
+  "first": [
+    {
+      "command": "list",
+      "expect": "players online"
+    }
+  ],
+  "restart": [
+    {
+      "command": "list",
+      "expect": "players online"
+    }
+  ],
+  "configs": {
+    "config/Geyser-Fabric/config.yml": "bedrock:\n  address: 127.0.0.1\n  port: 19135\njava:\n  auth-type: floodgate\nenable-metrics: false\n"
+  }
+}

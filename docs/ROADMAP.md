@@ -103,11 +103,13 @@ unrestricted clients, native FULL fresh/reload, churn/adverse/persistence, zero-
 receipts and the 24-run Phoenium-only benchmark. Natural original gameplay overlaps
 under current independent claims. Four workers provide modest distributed benefit;
 concentrated work regresses. Stage 4 remains the immutable serial reference.
-No Stage 6 compatibility work has begun.
+Stage 6 now has a closed bounded audit; see its PARTIAL status below.
 
 Exit criteria: deterministic serial-versus-parallel harness results, zero ownership violations, and benchmark evidence for Phoenium itself.
 
 ## Stage 6 — required-stack compatibility audit
+
+**Status: AUDIT PARTIAL, bounded pass closed 2026-09-09.** See [STAGE6_AUDIT_REPORT.md](STAGE6_AUDIT_REPORT.md), [STAGE6_AUDIT_MATRIX.md](STAGE6_AUDIT_MATRIX.md), and [STAGE7_AUDIT_BACKLOG.md](STAGE7_AUDIT_BACKLOG.md). No production acceptance or automatic Stage 7 work follows from this audit.
 
 Audit the official required stack from [COMPATIBILITY_MATRIX.md](COMPATIBILITY_MATRIX.md) with no claim based on boot alone. Start with C2ME; test Krypton last and independently. Classify every finding under the documented hierarchy and retain reproduced failures, invariant evidence, configuration coverage, and interaction evidence.
 

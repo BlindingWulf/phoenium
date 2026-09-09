@@ -1,0 +1,39 @@
+// Add hash-locked server artifacts to the existing account-free client harness.
+// The production/probe tasks and their original assertions remain unchanged.
+import groovy.json.JsonSlurper
+import java.security.MessageDigest
+
+gradle.projectsEvaluated {
+    def project = gradle.rootProject
+    def selectionFile = project.findProperty('stage6Selection')
+    if (selectionFile == null) throw new GradleException('stage6Selection is required')
+    def selection = new JsonSlurper().parse(project.file(selectionFile))
+    project.tasks.named('prepareStage4ClientServer').configure {
+        doLast {
+            def server = project.file(project.property('stage4ServerDirectory')).canonicalFile
+            def auditRoot = project.file('build/stage6-audit-20260909').canonicalFile.toPath()
+            if (!server.toPath().startsWith(auditRoot)) throw new GradleException('Not an isolated Stage 6 server')
+            def mods = new File(server, 'mods')
+            // Full API bundle supersedes these exact frozen modules only in this control.
+            ['fabric-api-base.jar', 'fabric-command-api-v2-3.1.0+00cb03469e.jar',
+             'fabric-lifecycle-events-v1.jar'].each { name ->
+                def file = new File(mods, name)
+                if (file.exists() && !file.delete()) throw new GradleException('Cannot replace API module ' + name)
+            }
+            selection.artifacts.each { artifact ->
+                def source = project.file(artifact.path)
+                def digest = { file -> MessageDigest.getInstance('SHA-256').digest(file.bytes).encodeHex().toString() }
+                if (!digest(source).equalsIgnoreCase(artifact.sha256)) throw new GradleException('Source artifact hash mismatch')
+                project.copy { from source; into mods }
+                if (!digest(new File(mods, source.name)).equalsIgnoreCase(artifact.sha256)) throw new GradleException('Copied artifact hash mismatch')
+            }
+            (selection.configs ?: [:]).each { name, contents ->
+                def destination = new File(server, name).canonicalFile
+                if (!destination.toPath().startsWith(server.toPath())) throw new GradleException('Config escaped isolated server')
+                destination.parentFile.mkdirs()
+                destination.setText(contents, 'UTF-8')
+            }
+            project.copy { from project.file(selectionFile); into server; rename { 'stage6-selection.json' } }
+        }
+    }
+}
