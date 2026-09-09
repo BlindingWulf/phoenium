@@ -1,6 +1,8 @@
 # Handoff
 
-Current result: **Stage 6 AUDIT PARTIAL, finite audit closed 2026-09-09**. Read [STAGE6_AUDIT_REPORT.md](STAGE6_AUDIT_REPORT.md), the single [STAGE6_AUDIT_MATRIX.md](STAGE6_AUDIT_MATRIX.md), and [STAGE7_AUDIT_BACKLOG.md](STAGE7_AUDIT_BACKLOG.md). Locked artifacts and evidence hashes are in the Stage 6 manifest/index. Local branch: `stage6/bounded-compatibility-audit`. No automatic continuation or Stage 7 implementation is authorized; historical task-specific instructions to keep going are superseded for this closed audit. Correctness requirements remain unchanged.
+Current result: **Stage 7 first Chunky/asynchronous-FULL repair PASS; broader Chunky compatibility PARTIAL**. Read [STAGE7_CHUNKY_REPAIR_REPORT.md](STAGE7_CHUNKY_REPAIR_REPORT.md) and its [evidence index](STAGE7_CHUNKY_EVIDENCE_INDEX.json). Development branch: `stage7/chunky-async-full-repair`. The final candidate SHA-256 is `51A0DAF540A163C44D18FAE75EA5FCD418DBCC8841144F943DC388864AB167EA`. The pass is complete and stops here; no next mod or automatic continuation was started.
+
+**Stage 6 remains AUDIT PARTIAL; Stage 7 remains IN PROGRESS; Stage 8+ remains NOT STARTED.** The user authorized only this first repair, superseding the old closed-audit implementation prohibition for that scope. The [Stage 6 report](STAGE6_AUDIT_REPORT.md), [matrix](STAGE6_AUDIT_MATRIX.md), and [remaining Stage 7 backlog](STAGE7_AUDIT_BACKLOG.md) retain their other findings and missing acceptance gates. Audit HEAD `045834b4bf4208b193523d8d360d2d0288625050` and all freezes remain intact. The complete raw Stage 6 evidence has a verified durable copy at `run/stage6/frozen-audit-045834b/`; the original manifest/index and raw failures are preserved.
 
 Stage 5 is **STAGE5_PARALLEL_SCALING_FROZEN**. Start with the self-contained
 [STAGE5_CLOSURE_REPORT.md](STAGE5_CLOSURE_REPORT.md) and the short

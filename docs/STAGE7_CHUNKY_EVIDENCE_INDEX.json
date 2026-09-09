@@ -1,0 +1,1941 @@
+{
+  "schema": 1,
+  "root": "run/stage7/repair-20260909",
+  "note": "Pins final and failed receipts, exact artifacts, tests and commissioning diagnostics. Raw worlds and server distributions remain ignored; native region hashes are inside retained MCA/requested-record reports. Historical Stage 6 manifest/index are unchanged. Post-commit identity is a separate receipt to avoid a self-referential commit hash.",
+  "archiveMapping": {
+    "oldRoot": "build/stage6-audit-20260909",
+    "newRoot": "run/stage6/frozen-audit-045834b",
+    "verifiedFiles": 10477,
+    "indexedMatches": 604,
+    "unindexedFiles": 9873,
+    "failures": 0
+  },
+  "finalTests": {
+    "tests": 837,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0,
+    "suites": 88
+  },
+  "artifacts": [
+    {
+      "path": "run\\stage7\\repair-20260909\\final-artifacts\\phoenium-0.2.0-stage2.jar",
+      "sha256": "51A0DAF540A163C44D18FAE75EA5FCD418DBCC8841144F943DC388864AB167EA"
+    },
+    {
+      "path": "run\\stage7\\repair-20260909\\final-artifacts\\stage4-acceptance-probe.jar",
+      "sha256": "DC1FA87FA00CE6EBFF8E25BEF77617BF3FA856B6BD15E0589A24D8AA5C260ED6"
+    },
+    {
+      "path": "run\\stage7\\repair-20260909\\final-artifacts\\stage7-observations.jar",
+      "sha256": "FE9090B08D1D3A2D7AFCA07E7E6AF09B301ABF6F182F6C167593A9E473D3D5D9"
+    }
+  ],
+  "files": [
+    {
+      "path": "run/stage7/repair-20260909/candidate-preliminary/phoenium-0.2.0-stage2.jar",
+      "bytes": 1250964,
+      "sha256": "51A0DAF540A163C44D18FAE75EA5FCD418DBCC8841144F943DC388864AB167EA"
+    },
+    {
+      "path": "run/stage7/repair-20260909/chunky-fabricworld-bytecode.txt",
+      "bytes": 38465,
+      "sha256": "634B13DA53A7CC0D77305FCB2E1928EC3D8053FEFC01BFCA9C4AD6D488F114B8"
+    },
+    {
+      "path": "run/stage7/repair-20260909/concurrent-commission-w1/command.json",
+      "bytes": 1032,
+      "sha256": "74922D689D0E8E90CA43D73A5AB1F72100EA773D5EB4F16C9921DFFDF40ABBE9"
+    },
+    {
+      "path": "run/stage7/repair-20260909/concurrent-commission-w1/driver.log",
+      "bytes": 156,
+      "sha256": "D066AB7827B84AFF3C8EF16FD348F93596B361B07DEC3067BB085CAD6DB3787B"
+    },
+    {
+      "path": "run/stage7/repair-20260909/concurrent-commission-w1/plan.json",
+      "bytes": 6737,
+      "sha256": "23BCA35B2798482B1EC3093CCA64E8AC731554BD9AE0D2FA06D79AA6779B3075"
+    },
+    {
+      "path": "run/stage7/repair-20260909/concurrent-commission-w1/run/first-pid.json",
+      "bytes": 939,
+      "sha256": "82ED3F7CA7E40BB0E0495D29248E02AFCE6EF91EC4B193B5FA2D76B0FCABB196"
+    },
+    {
+      "path": "run/stage7/repair-20260909/concurrent-commission-w1/run/first-report.json",
+      "bytes": 3647,
+      "sha256": "89346C165FC334CB89BC9A8FB70B07388DACA16D4221242F3CED167B7DA14047"
+    },
+    {
+      "path": "run/stage7/repair-20260909/concurrent-commission-w1/run/first.log",
+      "bytes": 9613,
+      "sha256": "EE4CD2325055CAC0D6667AECF09A48E84F3A973823524F9978FA1F16708CE530"
+    },
+    {
+      "path": "run/stage7/repair-20260909/concurrent-commission-w1/run/installed.json",
+      "bytes": 8947,
+      "sha256": "84C0916FF29B394D41A18D3DEA8145F35428B5E7F6086A36044D9E488252DD3B"
+    },
+    {
+      "path": "run/stage7/repair-20260909/concurrent-commission-w1/run/plan.json",
+      "bytes": 6737,
+      "sha256": "23BCA35B2798482B1EC3093CCA64E8AC731554BD9AE0D2FA06D79AA6779B3075"
+    },
+    {
+      "path": "run/stage7/repair-20260909/concurrent-commission-w1/run/report.json",
+      "bytes": 2741,
+      "sha256": "C9D2BEB5945B14047F1C65B79F76C9F66136FF125C399AADCDA7F432DF0650E6"
+    },
+    {
+      "path": "run/stage7/repair-20260909/concurrent-commission-w1-v2/command.json",
+      "bytes": 1038,
+      "sha256": "490A26CB87FC4D516F1B274B374457F34F618534BB221E31B83EA43A15341F50"
+    },
+    {
+      "path": "run/stage7/repair-20260909/concurrent-commission-w1-v2/driver.log",
+      "bytes": 162,
+      "sha256": "A423FB011821037887C45637CE082063C3D4BF2280C997A15C201D482048C0ED"
+    },
+    {
+      "path": "run/stage7/repair-20260909/concurrent-commission-w1-v2/pending-thread-dump.txt",
+      "bytes": 26285,
+      "sha256": "5B78FB756C56319954C179E02CB26264D81569F180F8AEB43F0FDDCA74B43712"
+    },
+    {
+      "path": "run/stage7/repair-20260909/concurrent-commission-w1-v2/plan.json",
+      "bytes": 6743,
+      "sha256": "06C71F0BF28CD5309A12FD8ED34C6FC21BAEA643B26B5E100C2786B1A32AE370"
+    },
+    {
+      "path": "run/stage7/repair-20260909/concurrent-commission-w1-v2/run/first-pid.json",
+      "bytes": 946,
+      "sha256": "0C3E1138120E68845A76118D87B89616D0D49A5E64F75BB4B354BC3042A471D7"
+    },
+    {
+      "path": "run/stage7/repair-20260909/concurrent-commission-w1-v2/run/first-report.json",
+      "bytes": 60876,
+      "sha256": "1B8CEA6CF988DFD7F055940FBB80B5C305B3F88ECF17CE58D88CAE07E53CF697"
+    },
+    {
+      "path": "run/stage7/repair-20260909/concurrent-commission-w1-v2/run/first.log",
+      "bytes": 54134,
+      "sha256": "DFF96A10B85D152CC2D16B4DB0434094CADC9B25D93390F518CC2128A773EA68"
+    },
+    {
+      "path": "run/stage7/repair-20260909/concurrent-commission-w1-v2/run/installed.json",
+      "bytes": 8947,
+      "sha256": "F0D67BD0EAD88BD61AE0DBE902E40F97A413956529641346C5D4B4865FE02FF0"
+    },
+    {
+      "path": "run/stage7/repair-20260909/concurrent-commission-w1-v2/run/plan.json",
+      "bytes": 6743,
+      "sha256": "06C71F0BF28CD5309A12FD8ED34C6FC21BAEA643B26B5E100C2786B1A32AE370"
+    },
+    {
+      "path": "run/stage7/repair-20260909/concurrent-commission-w1-v2/run/report.json",
+      "bytes": 2804,
+      "sha256": "41A9B5235E779B053F4BE4DD548AB28062C18F2609F291AEBE2F8D9E5D53FB2C"
+    },
+    {
+      "path": "run/stage7/repair-20260909/concurrent-commission-w1-v2/run/server/crash-reports/crash-2026-09-08_23.52.27-server.txt",
+      "bytes": 42833,
+      "sha256": "C20EC0560F86B46B361759BE2041574B24A55AA3BBF48BD0C06E705DE3C916DD"
+    },
+    {
+      "path": "run/stage7/repair-20260909/concurrent-commission-w1-v3/command.json",
+      "bytes": 1038,
+      "sha256": "E203B633905F9FC874B894CED99112090061A3811099AE88EED85BD0A037AD69"
+    },
+    {
+      "path": "run/stage7/repair-20260909/concurrent-commission-w1-v3/driver.log",
+      "bytes": 162,
+      "sha256": "365F702562B1FAC5A0A395C25123DE360EF8128593A1306437A329B143571127"
+    },
+    {
+      "path": "run/stage7/repair-20260909/concurrent-commission-w1-v3/plan.json",
+      "bytes": 6789,
+      "sha256": "8272EF4216D982638A76F67012FA7018EC1B68198B6AFF06A6501F39771A507C"
+    },
+    {
+      "path": "run/stage7/repair-20260909/concurrent-commission-w1-v3/run/first-pid.json",
+      "bytes": 987,
+      "sha256": "66DCAA0D2101E48A6BC45D8B1E4587430C9E642C0B623F8654C32376216B0BF4"
+    },
+    {
+      "path": "run/stage7/repair-20260909/concurrent-commission-w1-v3/run/first-report.json",
+      "bytes": 59922,
+      "sha256": "16BA3A7C80B05D6D25457D5043BEEA33AA78C0EABE6510D6920A8A37CBE83527"
+    },
+    {
+      "path": "run/stage7/repair-20260909/concurrent-commission-w1-v3/run/first.log",
+      "bytes": 51733,
+      "sha256": "22DDB6C999C3719AA3FBE92ABCB3B450324D27BF0A6DA8E91DAE78C954455057"
+    },
+    {
+      "path": "run/stage7/repair-20260909/concurrent-commission-w1-v3/run/installed.json",
+      "bytes": 8947,
+      "sha256": "8C9FF4863A8374A0A8D7A08AE11250D997B88DA3E3DE1A9A7151C37D58B70DE3"
+    },
+    {
+      "path": "run/stage7/repair-20260909/concurrent-commission-w1-v3/run/plan.json",
+      "bytes": 6789,
+      "sha256": "8272EF4216D982638A76F67012FA7018EC1B68198B6AFF06A6501F39771A507C"
+    },
+    {
+      "path": "run/stage7/repair-20260909/concurrent-commission-w1-v3/run/report.json",
+      "bytes": 2853,
+      "sha256": "6AAC08891C1BD9040D3CEA0D86CE50D80B2D35B12052DC16ABB2DDF5BB10351A"
+    },
+    {
+      "path": "run/stage7/repair-20260909/concurrent-commission-w1-v3/run/server/crash-reports/crash-2026-09-08_23.59.33-server.txt",
+      "bytes": 40498,
+      "sha256": "A13D9309D507803CE55F443726E09A30FA3572C242233A774BE71210E11B1B5E"
+    },
+    {
+      "path": "run/stage7/repair-20260909/concurrent-commission-w1-v4/command.json",
+      "bytes": 1038,
+      "sha256": "0509672643D9CAE706B5625118E7418C7BBA808392FA9343888BB62C001D6B3C"
+    },
+    {
+      "path": "run/stage7/repair-20260909/concurrent-commission-w1-v4/driver.log",
+      "bytes": 122,
+      "sha256": "3C7031CB941802D231F0AC48DAEEB357B2E155B4E67C0FBA281120EFAA328DDB"
+    },
+    {
+      "path": "run/stage7/repair-20260909/concurrent-commission-w1-v4/gameplay/after.json",
+      "bytes": 2480,
+      "sha256": "211746D54E9C7BBF567EF4224FD5DF49697029934607338A6CC3E6A2E502A240"
+    },
+    {
+      "path": "run/stage7/repair-20260909/concurrent-commission-w1-v4/gameplay/before.json",
+      "bytes": 2470,
+      "sha256": "63FB29BA15F3C0F622CCF5AA3E162245AB3989FAC6C7F633951DFE149620B4B2"
+    },
+    {
+      "path": "run/stage7/repair-20260909/concurrent-commission-w1-v4/observations.json",
+      "bytes": 79750,
+      "sha256": "06C3F95648A7834AA86F06C249866F0256564BFCCB03B1A08505E4C365A3B20F"
+    },
+    {
+      "path": "run/stage7/repair-20260909/concurrent-commission-w1-v4/plan.json",
+      "bytes": 6789,
+      "sha256": "A38AD0BFC9A2BF2A03FF73E89CDBFBE95EE093D14721FFB81BC21DD42948E666"
+    },
+    {
+      "path": "run/stage7/repair-20260909/concurrent-commission-w1-v4/run/first-mca.json",
+      "bytes": 1527266,
+      "sha256": "DE9009237475BD8FAC70DE9B4EA9856DF162735735631E17A06BEED6F55C8511"
+    },
+    {
+      "path": "run/stage7/repair-20260909/concurrent-commission-w1-v4/run/first-pid.json",
+      "bytes": 987,
+      "sha256": "76B7FCEA49BB7D51D255DA21C8EC44B528A9954CE70D1435CE9397D1F8EFF0B7"
+    },
+    {
+      "path": "run/stage7/repair-20260909/concurrent-commission-w1-v4/run/first-report.json",
+      "bytes": 30546,
+      "sha256": "54203064D8B11FB9E7C2F157C7EEE8C442BC36D34E2623F15F99A1F20F1F22A6"
+    },
+    {
+      "path": "run/stage7/repair-20260909/concurrent-commission-w1-v4/run/first-requested-full.json",
+      "bytes": 12858,
+      "sha256": "F061DFF5864F1B2184239E461A9F8753286120B177AA62DBEBADE1A0FFC0A7EB"
+    },
+    {
+      "path": "run/stage7/repair-20260909/concurrent-commission-w1-v4/run/first.log",
+      "bytes": 18530,
+      "sha256": "10C77EEF073DCA3443D4226A3B3200DC9D7FCBE6622BD5A161735755A5B123A6"
+    },
+    {
+      "path": "run/stage7/repair-20260909/concurrent-commission-w1-v4/run/installed.json",
+      "bytes": 8947,
+      "sha256": "4AA14BC0F7FE3C50D77DD2766E8269B22955776ABE08C47E37BCB4831C34D5A9"
+    },
+    {
+      "path": "run/stage7/repair-20260909/concurrent-commission-w1-v4/run/plan.json",
+      "bytes": 6789,
+      "sha256": "A38AD0BFC9A2BF2A03FF73E89CDBFBE95EE093D14721FFB81BC21DD42948E666"
+    },
+    {
+      "path": "run/stage7/repair-20260909/concurrent-commission-w1-v4/run/report.json",
+      "bytes": 4338,
+      "sha256": "29C7241B99D2B3938F7513DF53D44BB20ED04644956D291EF0F688A160DA5FC0"
+    },
+    {
+      "path": "run/stage7/repair-20260909/concurrent-commission-w1-v4/run/server/thread-dump-stage6-first.txt",
+      "bytes": 45552,
+      "sha256": "66081AF70F86D34AEEC9CE7BD038B24CA5D1436889E2DEF55143BFC4F444E448"
+    },
+    {
+      "path": "run/stage7/repair-20260909/concurrent-commission-w1-v5/command.json",
+      "bytes": 1038,
+      "sha256": "DC02F5A7B2B1A23AE3B6495BFC059CC5BD790EDDA4909FF97C36BD53E08001F0"
+    },
+    {
+      "path": "run/stage7/repair-20260909/concurrent-commission-w1-v5/driver.log",
+      "bytes": 122,
+      "sha256": "6736BC4C208C4C00A94256553AB9E1278B27A95FC2F1B7A421960699BD755B7F"
+    },
+    {
+      "path": "run/stage7/repair-20260909/concurrent-commission-w1-v5/gameplay/after.json",
+      "bytes": 2480,
+      "sha256": "A482FEE80C25D30610DD7AD0D3751D20FC83D93A75D12654CEA2B56FD80A3D20"
+    },
+    {
+      "path": "run/stage7/repair-20260909/concurrent-commission-w1-v5/gameplay/before.json",
+      "bytes": 2470,
+      "sha256": "98EF82A6E65687EDD77814FE63D0CEEB9CDBC3123EC7240FA883F68AD840F956"
+    },
+    {
+      "path": "run/stage7/repair-20260909/concurrent-commission-w1-v5/observations.json",
+      "bytes": 73783,
+      "sha256": "E5D196C8B01A3B63FC4149F62EC1F0DEFDDCBED3BF572CF8F61C263991A2EC5E"
+    },
+    {
+      "path": "run/stage7/repair-20260909/concurrent-commission-w1-v5/plan.json",
+      "bytes": 6789,
+      "sha256": "B81060B7B7C537D4551E2F6C7C5C787A5805E3BBAE5217DE26606D512A0AFBEE"
+    },
+    {
+      "path": "run/stage7/repair-20260909/concurrent-commission-w1-v5/run/first-mca.json",
+      "bytes": 1485729,
+      "sha256": "ABC546DB36430265CE09D1BAF0D43A32B23D6B29B7C4516308ADC9D9F52A05A9"
+    },
+    {
+      "path": "run/stage7/repair-20260909/concurrent-commission-w1-v5/run/first-pid.json",
+      "bytes": 987,
+      "sha256": "0DBE52E82F6527DD29E62140991CC6DDDEE82E1D579B5927A8A39A9A7212ABF3"
+    },
+    {
+      "path": "run/stage7/repair-20260909/concurrent-commission-w1-v5/run/first-report.json",
+      "bytes": 30203,
+      "sha256": "AC73DA138EDD5A62E45631A0C5383D4E7E2DCBC8192D3ADBB263410133D441C3"
+    },
+    {
+      "path": "run/stage7/repair-20260909/concurrent-commission-w1-v5/run/first-requested-full.json",
+      "bytes": 12858,
+      "sha256": "BDF1CFFF08E9E75A32283D5F255B45E207BC0DCC61CCCF5A761A087CAED83E85"
+    },
+    {
+      "path": "run/stage7/repair-20260909/concurrent-commission-w1-v5/run/first.log",
+      "bytes": 18532,
+      "sha256": "8D2F756D4CC9DC6E5996FAB4F78FC0994A2B2BF91BDA5CD07CE38C427D0D83E9"
+    },
+    {
+      "path": "run/stage7/repair-20260909/concurrent-commission-w1-v5/run/installed.json",
+      "bytes": 8947,
+      "sha256": "B2F30389749688B2F91E9348CACB2C1E3ECAE8530EDD7AD6D6AA646BCDD2A4F1"
+    },
+    {
+      "path": "run/stage7/repair-20260909/concurrent-commission-w1-v5/run/plan.json",
+      "bytes": 6789,
+      "sha256": "B81060B7B7C537D4551E2F6C7C5C787A5805E3BBAE5217DE26606D512A0AFBEE"
+    },
+    {
+      "path": "run/stage7/repair-20260909/concurrent-commission-w1-v5/run/report.json",
+      "bytes": 4337,
+      "sha256": "A1EFDE3101A6DBF5D6104728B5CFD7FE1761FFF9CB5E60F9AB37227654B46EB0"
+    },
+    {
+      "path": "run/stage7/repair-20260909/concurrent-commission-w1-v5/run/server/thread-dump-stage6-first.txt",
+      "bytes": 48504,
+      "sha256": "7E9DBA036F4059F7666CAFD30EF7D151707202524F96A4A2D0C1ABD31FC14F4B"
+    },
+    {
+      "path": "run/stage7/repair-20260909/diagnostic-artifact/phoenium-0.2.0-stage2.jar",
+      "bytes": 1250988,
+      "sha256": "E54DE30472A314B17D0DBE5315E69DC09E9EB37D6B9D76D0C4D346E12702804D"
+    },
+    {
+      "path": "run/stage7/repair-20260909/diagnostic-artifact/sha256.txt",
+      "bytes": 64,
+      "sha256": "7056A025FE59CFFAB20C06BDA09523C8ECA6BA247490F0F2123EC870CB26C12B"
+    },
+    {
+      "path": "run/stage7/repair-20260909/diagnostic-command.json",
+      "bytes": 673,
+      "sha256": "C936912D22C902AE84EBC635555D8848414815C1A7C899D087ECA63C60CED0F1"
+    },
+    {
+      "path": "run/stage7/repair-20260909/diagnostic-driver.log",
+      "bytes": 164,
+      "sha256": "35A005834B58931585976101DEFA948C7DA2589318F964930C982B737B7C117A"
+    },
+    {
+      "path": "run/stage7/repair-20260909/diagnostic-plan.json",
+      "bytes": 1005,
+      "sha256": "59A4B2ADA34D56DA12650E8FC34A554B55C141DEBE5462488D5100062E353329"
+    },
+    {
+      "path": "run/stage7/repair-20260909/diagnostic-w1/first-pid.json",
+      "bytes": 474,
+      "sha256": "09577978800FED8127C6CF99370B9D6496F0BE5321DDDC48CF09C3EABBB09EA0"
+    },
+    {
+      "path": "run/stage7/repair-20260909/diagnostic-w1/first-report.json",
+      "bytes": 82107,
+      "sha256": "4A31A9B987AC31582D95D68006D4A230C805DF32D7271AEEB09C12B3512B4886"
+    },
+    {
+      "path": "run/stage7/repair-20260909/diagnostic-w1/first.log",
+      "bytes": 17550,
+      "sha256": "384EDD08EB426ECFB586ED70749F547E8A4982061E1C3D7BD632D7860F4F6E1B"
+    },
+    {
+      "path": "run/stage7/repair-20260909/diagnostic-w1/installed.json",
+      "bytes": 7610,
+      "sha256": "5BE451204CD5C04C6BE7A43D373F081BD97ACD16C4612FA4815E56AED1B757C2"
+    },
+    {
+      "path": "run/stage7/repair-20260909/diagnostic-w1/plan.json",
+      "bytes": 1005,
+      "sha256": "59A4B2ADA34D56DA12650E8FC34A554B55C141DEBE5462488D5100062E353329"
+    },
+    {
+      "path": "run/stage7/repair-20260909/diagnostic-w1/report.json",
+      "bytes": 5050,
+      "sha256": "32A74CE6E53291E294B8ECFFD3994E82B90F1499A04A3928C40AF38298B0900C"
+    },
+    {
+      "path": "run/stage7/repair-20260909/diagnostic-w1/server/thread-dump-stage6-failed-first.txt",
+      "bytes": 20026,
+      "sha256": "65DA635B7CBABA21F1F42477E831D571F3C8D0473ABFA29075FDACD0D9035D63"
+    },
+    {
+      "path": "run/stage7/repair-20260909/final-artifacts/manifest.json",
+      "bytes": 799,
+      "sha256": "CA032E10A62141257AB4B1836B4D4A33D4B06CB5095471817F786DDAD9A5F8DF"
+    },
+    {
+      "path": "run/stage7/repair-20260909/final-artifacts/phoenium-0.2.0-stage2.jar",
+      "bytes": 1250964,
+      "sha256": "51A0DAF540A163C44D18FAE75EA5FCD418DBCC8841144F943DC388864AB167EA"
+    },
+    {
+      "path": "run/stage7/repair-20260909/final-artifacts/stage4-acceptance-probe.jar",
+      "bytes": 118373,
+      "sha256": "DC1FA87FA00CE6EBFF8E25BEF77617BF3FA856B6BD15E0589A24D8AA5C260ED6"
+    },
+    {
+      "path": "run/stage7/repair-20260909/final-artifacts/stage7-observations.jar",
+      "bytes": 16016,
+      "sha256": "FE9090B08D1D3A2D7AFCA07E7E6AF09B301ABF6F182F6C167593A9E473D3D5D9"
+    },
+    {
+      "path": "run/stage7/repair-20260909/final-batch.json",
+      "bytes": 7511,
+      "sha256": "BB29571B76D99BCF70E1B6F98E5013BBF8EDFD640DA3077836EE1798EF5B1217"
+    },
+    {
+      "path": "run/stage7/repair-20260909/final-batch.py",
+      "bytes": 1529,
+      "sha256": "D00735CFE5D19BC100426C51C30D35114700C095F583F5530F1FF9036BDCE18C"
+    },
+    {
+      "path": "run/stage7/repair-20260909/final-build.log",
+      "bytes": 2723,
+      "sha256": "BBCE6471DD40A98C47D6B80F380E54B5C22F7F7F2CF43A3358618879320B2547"
+    },
+    {
+      "path": "run/stage7/repair-20260909/final-cancel-w1/command.json",
+      "bytes": 967,
+      "sha256": "AFAE313DB21A33B687A4CC79CDFBDC1A306864D0AF3F7E18CD05055E1B86F26F"
+    },
+    {
+      "path": "run/stage7/repair-20260909/final-cancel-w1/driver.log",
+      "bytes": 123,
+      "sha256": "84D1F79440AC5446D406B79AAAEAC9453610DEA7565006970D41605F6E6C644D"
+    },
+    {
+      "path": "run/stage7/repair-20260909/final-cancel-w1/lifetime-verification.json",
+      "bytes": 139,
+      "sha256": "EA1E5F9AFC7637527BB4CAA125A7857303035B10D65E263AFF7483DE47048D14"
+    },
+    {
+      "path": "run/stage7/repair-20260909/final-cancel-w1/observations.json",
+      "bytes": 8841,
+      "sha256": "2AA732E9A869F72A57A3793FE773DFE971FC1CD9640F02FF07658FEDED840EC5"
+    },
+    {
+      "path": "run/stage7/repair-20260909/final-cancel-w1/plan.json",
+      "bytes": 1146,
+      "sha256": "C8A1E4A71D56FC699C0309CE251AD1B9C55BEC642295F6D6663EB0D618F6398D"
+    },
+    {
+      "path": "run/stage7/repair-20260909/final-cancel-w1/run/first-mca.json",
+      "bytes": 485199,
+      "sha256": "92D524B632A28CF7BFAFC9A1168F0CA305D20A5B40C52021FEC44A4C31DB4893"
+    },
+    {
+      "path": "run/stage7/repair-20260909/final-cancel-w1/run/first-pid.json",
+      "bytes": 631,
+      "sha256": "450CED412177B93CD009C04713B46F42B1C121D399BC4B94FEBFE761B7C7B4DF"
+    },
+    {
+      "path": "run/stage7/repair-20260909/final-cancel-w1/run/first-report.json",
+      "bytes": 20638,
+      "sha256": "8B77633C95F517D52C35F004E5E84C53D460F7FF0BCCCC6F42E2AE013DAA12C9"
+    },
+    {
+      "path": "run/stage7/repair-20260909/final-cancel-w1/run/first.log",
+      "bytes": 14176,
+      "sha256": "77E4DB96FC2670F8086885C034B34A6CC50D47C26D61D642AE24AD802DD098C1"
+    },
+    {
+      "path": "run/stage7/repair-20260909/final-cancel-w1/run/installed.json",
+      "bytes": 8246,
+      "sha256": "EB4D63562D6553A336DE258280DD91562BFAD738D6B562EF432BEC07AA14814D"
+    },
+    {
+      "path": "run/stage7/repair-20260909/final-cancel-w1/run/plan.json",
+      "bytes": 1146,
+      "sha256": "C8A1E4A71D56FC699C0309CE251AD1B9C55BEC642295F6D6663EB0D618F6398D"
+    },
+    {
+      "path": "run/stage7/repair-20260909/final-cancel-w1/run/report.json",
+      "bytes": 3842,
+      "sha256": "42AA23766A9B2B0BAA498CC8F2EC7453E277590561D8D18177CD22D50D5C1C9C"
+    },
+    {
+      "path": "run/stage7/repair-20260909/final-cancel-w1/run/server/thread-dump-stage6-first.txt",
+      "bytes": 49444,
+      "sha256": "020EB00F12155A506A1255EFF04628538270B330FC4CA3C224D2F7C03BC492C5"
+    },
+    {
+      "path": "run/stage7/repair-20260909/final-cancel-w1-batch.log",
+      "bytes": 136,
+      "sha256": "2908CDBAF1B29B0EBC1F17E4945979C8578506AB2D2BB5B63FD63F838DCACDED"
+    },
+    {
+      "path": "run/stage7/repair-20260909/final-cancel-w4/command.json",
+      "bytes": 967,
+      "sha256": "A9CC35E97EEC2C6053D97C12941B49E2BDC87F84978FF11450BBC07348700C02"
+    },
+    {
+      "path": "run/stage7/repair-20260909/final-cancel-w4/driver.log",
+      "bytes": 123,
+      "sha256": "36C020D9CF86EB9E2628956B9FC6ACC4E52433835FC3313EA919FE39A1D51651"
+    },
+    {
+      "path": "run/stage7/repair-20260909/final-cancel-w4/lifetime-verification.json",
+      "bytes": 139,
+      "sha256": "EA1E5F9AFC7637527BB4CAA125A7857303035B10D65E263AFF7483DE47048D14"
+    },
+    {
+      "path": "run/stage7/repair-20260909/final-cancel-w4/observations.json",
+      "bytes": 8841,
+      "sha256": "126E4B4666E406F43212CB5A9B9F728D7BE31B87724185D2B5C7EFB99FF8CD04"
+    },
+    {
+      "path": "run/stage7/repair-20260909/final-cancel-w4/plan.json",
+      "bytes": 1146,
+      "sha256": "0211AD8A08EB0A5CB285317CDC172EC676D99718B4BE8230E0029EF3D2951387"
+    },
+    {
+      "path": "run/stage7/repair-20260909/final-cancel-w4/run/first-mca.json",
+      "bytes": 485199,
+      "sha256": "E06A4682F9F3FE8442DF9056A830B3007CEDC70C284DBAE23D373A207FCA4ADB"
+    },
+    {
+      "path": "run/stage7/repair-20260909/final-cancel-w4/run/first-pid.json",
+      "bytes": 631,
+      "sha256": "AF49E0C19A4579E30F320DE641204CAAE0257237D130E708E20B69934132E178"
+    },
+    {
+      "path": "run/stage7/repair-20260909/final-cancel-w4/run/first-report.json",
+      "bytes": 20636,
+      "sha256": "A524F33F789A3EB97B44846A4DCD33AF723D9B0FED763D63784DC5FC0495F213"
+    },
+    {
+      "path": "run/stage7/repair-20260909/final-cancel-w4/run/first.log",
+      "bytes": 14173,
+      "sha256": "A4AE03535528DD227AAB86B18E31D67C23AFCF8CA0A0A8B4811AC22E441B17FD"
+    },
+    {
+      "path": "run/stage7/repair-20260909/final-cancel-w4/run/installed.json",
+      "bytes": 8246,
+      "sha256": "EB4D63562D6553A336DE258280DD91562BFAD738D6B562EF432BEC07AA14814D"
+    },
+    {
+      "path": "run/stage7/repair-20260909/final-cancel-w4/run/plan.json",
+      "bytes": 1146,
+      "sha256": "0211AD8A08EB0A5CB285317CDC172EC676D99718B4BE8230E0029EF3D2951387"
+    },
+    {
+      "path": "run/stage7/repair-20260909/final-cancel-w4/run/report.json",
+      "bytes": 3841,
+      "sha256": "C07EC95060894E083A981AF433C3BB5EB7DD630E2D92668C7EFC9A45BC702DD3"
+    },
+    {
+      "path": "run/stage7/repair-20260909/final-cancel-w4/run/server/thread-dump-stage6-first.txt",
+      "bytes": 49967,
+      "sha256": "1D87DE12D9C20DADBBBCB71AAA58DAEEF9F70BB7B19E8F0DF40AE83C819FE869"
+    },
+    {
+      "path": "run/stage7/repair-20260909/final-cancel-w4-batch.log",
+      "bytes": 136,
+      "sha256": "4B846A38731633667C43673E9DF7265B979DE4EBD96CACC12E39CA2745DEE2C2"
+    },
+    {
+      "path": "run/stage7/repair-20260909/final-concurrent-w1/command.json",
+      "bytes": 1068,
+      "sha256": "4FE0783EABAEF96CBD2B60FC6AA2F22CFDD6A61CD60184F31069BFD3B1FBCC46"
+    },
+    {
+      "path": "run/stage7/repair-20260909/final-concurrent-w1/concurrent-verification.json",
+      "bytes": 166591,
+      "sha256": "FCACE236E3B2D0E66643FFC5D8F3A8C2BDE5096CBAE77CC6B5E78B178B94BB1F"
+    },
+    {
+      "path": "run/stage7/repair-20260909/final-concurrent-w1/driver.log",
+      "bytes": 111,
+      "sha256": "C906E22F0F459CF165F0E0A7C3F7DDAC82A54DE43D8FE39C3354AA70BE82E7FE"
+    },
+    {
+      "path": "run/stage7/repair-20260909/final-concurrent-w1/gameplay/after.json",
+      "bytes": 2480,
+      "sha256": "193F93146E4B53979E030E7A7FEE642D632D6FAEFD752B8E2F71B29DE6814118"
+    },
+    {
+      "path": "run/stage7/repair-20260909/final-concurrent-w1/gameplay/before.json",
+      "bytes": 2470,
+      "sha256": "B0BD5BA814521A1C56130DAAE2649615D3E2B63AA4DADD2DCFD70B4976572D31"
+    },
+    {
+      "path": "run/stage7/repair-20260909/final-concurrent-w1/observations.json",
+      "bytes": 77002,
+      "sha256": "7FDA4A203FA0B9B93B479E4F0856F50FB752BB864239A6699246476EC0142C3D"
+    },
+    {
+      "path": "run/stage7/repair-20260909/final-concurrent-w1/plan.json",
+      "bytes": 6934,
+      "sha256": "E9D52EAF654A1902A7D2E3AC49A366B9E5CAC0702D1A79D0445CE80916F9BBAF"
+    },
+    {
+      "path": "run/stage7/repair-20260909/final-concurrent-w1/run/first-mca.json",
+      "bytes": 1522970,
+      "sha256": "7986532AAEBBEE73F2C9DD83FEDEA749E67C24B2EB73E8865D116D495F2A5EFF"
+    },
+    {
+      "path": "run/stage7/repair-20260909/final-concurrent-w1/run/first-pid.json",
+      "bytes": 970,
+      "sha256": "1AB4A240114CA1064DD47BDAA00B2656CD2727A3706781B24540C3B91E08AF64"
+    },
+    {
+      "path": "run/stage7/repair-20260909/final-concurrent-w1/run/first-report.json",
+      "bytes": 31019,
+      "sha256": "E1B5E539400E6FE563DDD968599A92D42F40C832EF2E7021A5A27D0B1FBF5340"
+    },
+    {
+      "path": "run/stage7/repair-20260909/final-concurrent-w1/run/first-requested-full.json",
+      "bytes": 12842,
+      "sha256": "B5E77021A118A71CE69D9958D96C0BC1A9531E8AE80BD6093AFFD3B7FD0BE7A4"
+    },
+    {
+      "path": "run/stage7/repair-20260909/final-concurrent-w1/run/first.log",
+      "bytes": 18649,
+      "sha256": "F187DCCB23763BA4730B01DA4A2ED55F39F775B0ABCDE7913887CFB5B36596A8"
+    },
+    {
+      "path": "run/stage7/repair-20260909/final-concurrent-w1/run/installed.json",
+      "bytes": 8947,
+      "sha256": "B2F30389749688B2F91E9348CACB2C1E3ECAE8530EDD7AD6D6AA646BCDD2A4F1"
+    },
+    {
+      "path": "run/stage7/repair-20260909/final-concurrent-w1/run/plan.json",
+      "bytes": 6934,
+      "sha256": "E9D52EAF654A1902A7D2E3AC49A366B9E5CAC0702D1A79D0445CE80916F9BBAF"
+    },
+    {
+      "path": "run/stage7/repair-20260909/final-concurrent-w1/run/report.json",
+      "bytes": 4332,
+      "sha256": "7DA8A71F37F20C1241AF7D0B8781E2C7C0E2AD06BF0D7E6CEA834133E711DA72"
+    },
+    {
+      "path": "run/stage7/repair-20260909/final-concurrent-w1/run/server/thread-dump-stage6-first.txt",
+      "bytes": 49089,
+      "sha256": "CC1EF4CB0560ADD31C7F4AA67890F754276EB2FAC070DE576BE0B30DB8820FB4"
+    },
+    {
+      "path": "run/stage7/repair-20260909/final-concurrent-w4/command.json",
+      "bytes": 1068,
+      "sha256": "8ABEF7C9DF5078E86E1EBABF549015D5B39AC396FEA97C697408D23658B8BC18"
+    },
+    {
+      "path": "run/stage7/repair-20260909/final-concurrent-w4/concurrent-verification.json",
+      "bytes": 180976,
+      "sha256": "F228E6C52AE773B17BFA5FEF45483DE1087D89D1461571BECFCE07F136BC6228"
+    },
+    {
+      "path": "run/stage7/repair-20260909/final-concurrent-w4/driver.log",
+      "bytes": 122,
+      "sha256": "F5414EF9006305FD862C5FF8E9DFBA40CD1E9013CAC5B29789B07F993F30B763"
+    },
+    {
+      "path": "run/stage7/repair-20260909/final-concurrent-w4/gameplay/after.json",
+      "bytes": 2480,
+      "sha256": "EA4AE0B757709EB19FBB984F21BA1984B111EDCC22F94DF50209E318FF6C8747"
+    },
+    {
+      "path": "run/stage7/repair-20260909/final-concurrent-w4/gameplay/before.json",
+      "bytes": 2470,
+      "sha256": "E46382047E1C0A37E493CD47E3B8821E214628FA1EF72CE556FD5CFC4B45EA31"
+    },
+    {
+      "path": "run/stage7/repair-20260909/final-concurrent-w4/observations.json",
+      "bytes": 82336,
+      "sha256": "E6787B5370414EE08B988100FD914FE3E0EB0F114228AE2AB219D60B57B068AF"
+    },
+    {
+      "path": "run/stage7/repair-20260909/final-concurrent-w4/plan.json",
+      "bytes": 6934,
+      "sha256": "BD22575A6488D762A15C028695E34E86A0F8988D7E37BD14E354390402B0B82E"
+    },
+    {
+      "path": "run/stage7/repair-20260909/final-concurrent-w4/run/first-mca.json",
+      "bytes": 1543969,
+      "sha256": "0089C122324AA4BEF20EF50420659EF1E11050175B722D5B74BD02E7CDE7DE19"
+    },
+    {
+      "path": "run/stage7/repair-20260909/final-concurrent-w4/run/first-pid.json",
+      "bytes": 971,
+      "sha256": "13A727756877A180385C8BED45BC8C9505C349F3E5E72FFD5A7AB8C39DB5BE20"
+    },
+    {
+      "path": "run/stage7/repair-20260909/final-concurrent-w4/run/first-report.json",
+      "bytes": 31512,
+      "sha256": "B8DFE114733BA192B725543A11CF974532536B339E2B6FA75DF837C92EC1018C"
+    },
+    {
+      "path": "run/stage7/repair-20260909/final-concurrent-w4/run/first-requested-full.json",
+      "bytes": 12842,
+      "sha256": "527D90B7B88921E29F0FBFF4729610E1B6EDC72B2E9DA8B25BC8ECB7763DCCD8"
+    },
+    {
+      "path": "run/stage7/repair-20260909/final-concurrent-w4/run/first.log",
+      "bytes": 18647,
+      "sha256": "1385245ECEFC8A270C51E9571D65B2A4A7DCCBB0855D0727ECEAF0FA9FC8775A"
+    },
+    {
+      "path": "run/stage7/repair-20260909/final-concurrent-w4/run/installed.json",
+      "bytes": 8947,
+      "sha256": "B2F30389749688B2F91E9348CACB2C1E3ECAE8530EDD7AD6D6AA646BCDD2A4F1"
+    },
+    {
+      "path": "run/stage7/repair-20260909/final-concurrent-w4/run/plan.json",
+      "bytes": 6934,
+      "sha256": "BD22575A6488D762A15C028695E34E86A0F8988D7E37BD14E354390402B0B82E"
+    },
+    {
+      "path": "run/stage7/repair-20260909/final-concurrent-w4/run/report.json",
+      "bytes": 4342,
+      "sha256": "0AB212AB1024ACD8A76FF1F706F62330C048D7CED187D257A6CD99E055C2C2BC"
+    },
+    {
+      "path": "run/stage7/repair-20260909/final-concurrent-w4/run/server/thread-dump-stage6-first.txt",
+      "bytes": 52904,
+      "sha256": "8B1A74EE298681876429E1AED744CDFA2FDA0E1A0353846D4A1AC3AE0FE7CED9"
+    },
+    {
+      "path": "run/stage7/repair-20260909/final-concurrent-w4-batch.log",
+      "bytes": 144,
+      "sha256": "E79088D5B171AC9AA96BBA4BBE5149C067372B588316841C2479D24A8548F86F"
+    },
+    {
+      "path": "run/stage7/repair-20260909/final-native-w1/first-mca.json",
+      "bytes": 981406,
+      "sha256": "2144F34067BE6AFF8EE2FB58AB5F8747660FC131860001C7FAC74229266A0470"
+    },
+    {
+      "path": "run/stage7/repair-20260909/final-native-w1/first-pid.json",
+      "bytes": 474,
+      "sha256": "299AA890BD2349B8B7D41972B7A701A1C541F89602496E8F38F2401DB2850DEB"
+    },
+    {
+      "path": "run/stage7/repair-20260909/final-native-w1/first-report.json",
+      "bytes": 27639,
+      "sha256": "C58C5C41FEF3732ABD057AAE29B9AF8EA90EFB5AEFAC653BE1DEF9DCFE0F2E5A"
+    },
+    {
+      "path": "run/stage7/repair-20260909/final-native-w1/first.log",
+      "bytes": 14393,
+      "sha256": "621476CDEA36A7C1D243A2553BE34D7CBC8BDDE638944E89D565B9C8CF15A7A7"
+    },
+    {
+      "path": "run/stage7/repair-20260909/final-native-w1/installed.json",
+      "bytes": 6264,
+      "sha256": "2135ED27381114DDAAF0D1BAAE207DFAAA2D5A83F756E2C214690F950F559867"
+    },
+    {
+      "path": "run/stage7/repair-20260909/final-native-w1/plan.json",
+      "bytes": 2424,
+      "sha256": "CD9E6305A6B32EEE9AC579A35870426E07250804AFB80209FE9BD661089FD744"
+    },
+    {
+      "path": "run/stage7/repair-20260909/final-native-w1/report.json",
+      "bytes": 5646,
+      "sha256": "126F9D0AC7945CF9C43A8661DDFD706CF3289E5AFDC91DA86F6E145724C8DE19"
+    },
+    {
+      "path": "run/stage7/repair-20260909/final-native-w1/restart-mca.json",
+      "bytes": 975415,
+      "sha256": "1F631BF03E608EBC9DEE26125AE1F7D8312D0E4C48A1885E62366D8D7FEAA7D4"
+    },
+    {
+      "path": "run/stage7/repair-20260909/final-native-w1/restart-pid.json",
+      "bytes": 475,
+      "sha256": "39CE2A9A5849B3C98A39AFBB0058EA86DAA6A7EE7B77E9833582D20AFACE05BD"
+    },
+    {
+      "path": "run/stage7/repair-20260909/final-native-w1/restart-report.json",
+      "bytes": 19052,
+      "sha256": "2232525461E73DD0DF496BB062D03FB76020B95BF41989D6995E2625BB3BA37D"
+    },
+    {
+      "path": "run/stage7/repair-20260909/final-native-w1/restart.log",
+      "bytes": 13372,
+      "sha256": "354252222B32CF81F47890525485399FF3725097CF9316C7C81283AD2B88724C"
+    },
+    {
+      "path": "run/stage7/repair-20260909/final-native-w1/server/thread-dump-stage6-first.txt",
+      "bytes": 42481,
+      "sha256": "3CFA10BE12F5470005E93F6A3D334B1827E780FB68E5436FD969EFBD4BC0E643"
+    },
+    {
+      "path": "run/stage7/repair-20260909/final-native-w1/server/thread-dump-stage6-restart.txt",
+      "bytes": 37735,
+      "sha256": "A3B6208D1B0E7ADCDE44404F6B305D3761C07D5C7F38B3C7AACA466F8EBC180A"
+    },
+    {
+      "path": "run/stage7/repair-20260909/final-native-w1-batch.log",
+      "bytes": 247,
+      "sha256": "4504AFE5AED7AD4F9EB9BE5F44F0D9C66EA51E5B1C2C2F2DAAF6CF169EBB4B0B"
+    },
+    {
+      "path": "run/stage7/repair-20260909/final-native-w4/first-mca.json",
+      "bytes": 981933,
+      "sha256": "F573D6A641D8C9DAB99858A0F78B05F66E46915DC441B0D4463752D02136EFD7"
+    },
+    {
+      "path": "run/stage7/repair-20260909/final-native-w4/first-pid.json",
+      "bytes": 475,
+      "sha256": "DB6F791CCF1CCF0568560D9422F9DCF3939A88B0D7AD9A4CF45BABF7B55F86E1"
+    },
+    {
+      "path": "run/stage7/repair-20260909/final-native-w4/first-report.json",
+      "bytes": 27535,
+      "sha256": "FF79E57633EC7A7176A10142A0ABD0DB95105753745CF58C19FEE88D864E7745"
+    },
+    {
+      "path": "run/stage7/repair-20260909/final-native-w4/first.log",
+      "bytes": 14392,
+      "sha256": "03C12BA0A249B1ABDCFFCF7160878F2AC4AFB23624A5257FD04DD9C90D275401"
+    },
+    {
+      "path": "run/stage7/repair-20260909/final-native-w4/installed.json",
+      "bytes": 6264,
+      "sha256": "2135ED27381114DDAAF0D1BAAE207DFAAA2D5A83F756E2C214690F950F559867"
+    },
+    {
+      "path": "run/stage7/repair-20260909/final-native-w4/plan.json",
+      "bytes": 2484,
+      "sha256": "D639DD9095E6114AEFBEBEB38C35392A3D6C2BA81EF7D865426D04BECE6527C9"
+    },
+    {
+      "path": "run/stage7/repair-20260909/final-native-w4/report.json",
+      "bytes": 5630,
+      "sha256": "9659D7BE9D5A3E01AC3F49399BD35E62A8269164DD8778B1D8C4F550D58F1211"
+    },
+    {
+      "path": "run/stage7/repair-20260909/final-native-w4/restart-mca.json",
+      "bytes": 967842,
+      "sha256": "B2D2B513E6A0E62004828C7440A9993008C78E0A65BC23DB159C4B9DB52DB42C"
+    },
+    {
+      "path": "run/stage7/repair-20260909/final-native-w4/restart-pid.json",
+      "bytes": 475,
+      "sha256": "44E9D01B677230216BCC5D5839E31BEED9928B6BD7EAE07FF58E6C8E0A3497F1"
+    },
+    {
+      "path": "run/stage7/repair-20260909/final-native-w4/restart-report.json",
+      "bytes": 19228,
+      "sha256": "703A3B1C5999832A905E91BCC9A2D4F0CD7479AA336244D62C5460AADE2CD436"
+    },
+    {
+      "path": "run/stage7/repair-20260909/final-native-w4/restart.log",
+      "bytes": 13370,
+      "sha256": "02F910CBCEC957A768D05ABC2954FAA48DDB95EEA6651BCA86A20284D5AC018E"
+    },
+    {
+      "path": "run/stage7/repair-20260909/final-native-w4/server/thread-dump-stage6-first.txt",
+      "bytes": 41140,
+      "sha256": "4949D42354BB493AD86E48DD509E9D9769D97D73FF1B1746D4D69E03E128C131"
+    },
+    {
+      "path": "run/stage7/repair-20260909/final-native-w4/server/thread-dump-stage6-restart.txt",
+      "bytes": 36351,
+      "sha256": "0F9C74C3D5FD949FB796FD6C19CCA84EF6F86559E0A27CA4CCDBD923D05E5FC6"
+    },
+    {
+      "path": "run/stage7/repair-20260909/final-native-w4-batch.log",
+      "bytes": 247,
+      "sha256": "50C6A12753FC498C45687EC725E50ADD74A00D966CBCC497084EFD28EF430FD2"
+    },
+    {
+      "path": "run/stage7/repair-20260909/final-original-w1/command.json",
+      "bytes": 882,
+      "sha256": "851150EE9E1B53996D53D5E4EBDE417D03B0166EBED1129728A3C07591AF2BF0"
+    },
+    {
+      "path": "run/stage7/repair-20260909/final-original-w1/driver.log",
+      "bytes": 246,
+      "sha256": "BF69EB10C97789C3BB552F2B7B4750D8A4CACB9E58202806835774EBAB9FED4A"
+    },
+    {
+      "path": "run/stage7/repair-20260909/final-original-w1/plan.json",
+      "bytes": 16016,
+      "sha256": "7D827CB4A29C5817D4CEC957E9CAB9EDDD620795CFEB6DA8F3324AAD73581E1B"
+    },
+    {
+      "path": "run/stage7/repair-20260909/final-original-w1/run/first-mca.json",
+      "bytes": 825648,
+      "sha256": "C3872647D62D419FC831FAD69E35C31EC0A718CD6C0413D37859967F65BFBC72"
+    },
+    {
+      "path": "run/stage7/repair-20260909/final-original-w1/run/first-pid.json",
+      "bytes": 475,
+      "sha256": "9C469DB7846C6641B076ABBB3B0BCDD17E168C3ECAFFF62A1B78AFBB09C92373"
+    },
+    {
+      "path": "run/stage7/repair-20260909/final-original-w1/run/first-report.json",
+      "bytes": 27794,
+      "sha256": "BFC72176FE0379891976129E640D792875116EDB2603F552B8B26AE071CAE586"
+    },
+    {
+      "path": "run/stage7/repair-20260909/final-original-w1/run/first-requested-full.json",
+      "bytes": 12838,
+      "sha256": "1A4993503171F0696FC0ED306C4A42AA082F1AEBCF4863219C04C7432C109972"
+    },
+    {
+      "path": "run/stage7/repair-20260909/final-original-w1/run/first.log",
+      "bytes": 15471,
+      "sha256": "4C1BA3BEFB38AFCACA9DCCBFD3B873B5231EE19CC4484DB3DD168DF70B44D5ED"
+    },
+    {
+      "path": "run/stage7/repair-20260909/final-original-w1/run/installed.json",
+      "bytes": 7610,
+      "sha256": "E8C91A1C95F36D70C20431760921E519828CE17BC71A42C6F507CE204A19F9FE"
+    },
+    {
+      "path": "run/stage7/repair-20260909/final-original-w1/run/plan.json",
+      "bytes": 16016,
+      "sha256": "7D827CB4A29C5817D4CEC957E9CAB9EDDD620795CFEB6DA8F3324AAD73581E1B"
+    },
+    {
+      "path": "run/stage7/repair-20260909/final-original-w1/run/report.json",
+      "bytes": 5926,
+      "sha256": "0B60AA36A63D21D4E7E7FEE7D03B5B575B8787943DC288882FC848F611B7E9CD"
+    },
+    {
+      "path": "run/stage7/repair-20260909/final-original-w1/run/restart-mca.json",
+      "bytes": 1728029,
+      "sha256": "F79741FCA5F63CC52E850B3D89ED0342FBB3BF88DE69829BEF02AF77FA8FCAE3"
+    },
+    {
+      "path": "run/stage7/repair-20260909/final-original-w1/run/restart-pid.json",
+      "bytes": 475,
+      "sha256": "346E3447E14EE1C387DDFAE272FAD2339BA609F256416E4F1D79B28003A0FB65"
+    },
+    {
+      "path": "run/stage7/repair-20260909/final-original-w1/run/restart-report.json",
+      "bytes": 54545,
+      "sha256": "7F433F81C34FFA342360D177A4E704BC414CA4B898637525D7B8E6FA92C2A25F"
+    },
+    {
+      "path": "run/stage7/repair-20260909/final-original-w1/run/restart-requested-full.json",
+      "bytes": 12842,
+      "sha256": "1586A9130F638F9ECDF24A77AF05640A937768E34EB043ACB0E263F285F93879"
+    },
+    {
+      "path": "run/stage7/repair-20260909/final-original-w1/run/restart.log",
+      "bytes": 25732,
+      "sha256": "B682BBF28CC1A441BA5ED96A87DE0D2F41EC9CC9EE84F3C45A75083A18E9C4DB"
+    },
+    {
+      "path": "run/stage7/repair-20260909/final-original-w1/run/server/thread-dump-stage6-first.txt",
+      "bytes": 46057,
+      "sha256": "655B519AF72D30116DCD84FB96EA784DE244A83F612C48640A8B1CF66D63AAB0"
+    },
+    {
+      "path": "run/stage7/repair-20260909/final-original-w1/run/server/thread-dump-stage6-restart.txt",
+      "bytes": 38105,
+      "sha256": "59C6787093980FDB0D8FCE11AB5C9471BDCDF9393EA2A77164F415383E4665F0"
+    },
+    {
+      "path": "run/stage7/repair-20260909/final-original-w1-batch.log",
+      "bytes": 140,
+      "sha256": "14A55E6A1F9269A5A2C3B8DC551A4270B72C6FD89996086C04222904F40C799B"
+    },
+    {
+      "path": "run/stage7/repair-20260909/final-original-w4/command.json",
+      "bytes": 882,
+      "sha256": "1DAA2FEA48B4EFDEF007B453C0ED1FB130C46092802E01AB881FD59D1CFA2EAE"
+    },
+    {
+      "path": "run/stage7/repair-20260909/final-original-w4/driver.log",
+      "bytes": 246,
+      "sha256": "1C70C8568499D2E848EED1B05A2061BB8031B2C1745F7A4CFBCC92D8BE0ACAF4"
+    },
+    {
+      "path": "run/stage7/repair-20260909/final-original-w4/plan.json",
+      "bytes": 16016,
+      "sha256": "BC7EBF2C1DE4121BAF19AD7BF325FE899BB380BF136853FE90AEFA1A9D101637"
+    },
+    {
+      "path": "run/stage7/repair-20260909/final-original-w4/run/first-mca.json",
+      "bytes": 789537,
+      "sha256": "9B43FA94A00C25366F2E8D6E56E85730895082CFE0B93A613C97CB8A4238B960"
+    },
+    {
+      "path": "run/stage7/repair-20260909/final-original-w4/run/first-pid.json",
+      "bytes": 475,
+      "sha256": "930AD859CFE44EA32592511CCC37A614AC8ADA729A4EEB6C11CB9E9B5696A212"
+    },
+    {
+      "path": "run/stage7/repair-20260909/final-original-w4/run/first-report.json",
+      "bytes": 28046,
+      "sha256": "B16CE886D755DDAB1727D7A979B525FCC9E5898C51C24B99919BA9BD9D19ACB0"
+    },
+    {
+      "path": "run/stage7/repair-20260909/final-original-w4/run/first-requested-full.json",
+      "bytes": 12838,
+      "sha256": "3FCD8BD74507399436D0A5296A9C2BCB62AAB13EA5E086FD047F8983B03480CE"
+    },
+    {
+      "path": "run/stage7/repair-20260909/final-original-w4/run/first.log",
+      "bytes": 15469,
+      "sha256": "9EEAFA8C818406FE28F52C3EF48E1BEA381AC77181A8A443E58612DF3E77053F"
+    },
+    {
+      "path": "run/stage7/repair-20260909/final-original-w4/run/installed.json",
+      "bytes": 7610,
+      "sha256": "E8C91A1C95F36D70C20431760921E519828CE17BC71A42C6F507CE204A19F9FE"
+    },
+    {
+      "path": "run/stage7/repair-20260909/final-original-w4/run/plan.json",
+      "bytes": 16016,
+      "sha256": "BC7EBF2C1DE4121BAF19AD7BF325FE899BB380BF136853FE90AEFA1A9D101637"
+    },
+    {
+      "path": "run/stage7/repair-20260909/final-original-w4/run/report.json",
+      "bytes": 5921,
+      "sha256": "E6034098C963F4A94D19F053B2DE9CE2A8A1C27FCBAA3123DFFA10FA6A4517E7"
+    },
+    {
+      "path": "run/stage7/repair-20260909/final-original-w4/run/restart-mca.json",
+      "bytes": 1691581,
+      "sha256": "EA9E56F099861BCD63918362040CB61ECCBA365741881BC2A6A9F68A14CB5899"
+    },
+    {
+      "path": "run/stage7/repair-20260909/final-original-w4/run/restart-pid.json",
+      "bytes": 474,
+      "sha256": "363367129280D7775B3AF71A035E38E1F4AC0C67F9E6FE56EB5796D6C0F1B8DE"
+    },
+    {
+      "path": "run/stage7/repair-20260909/final-original-w4/run/restart-report.json",
+      "bytes": 54666,
+      "sha256": "D0DC568178EA368D07AC772B875950C2015BF0658086E992FEFE57E80C2B279A"
+    },
+    {
+      "path": "run/stage7/repair-20260909/final-original-w4/run/restart-requested-full.json",
+      "bytes": 12842,
+      "sha256": "CEE8F33C18EF7C7EFADDBFB26C1E89679672B474FE9CBE64B5A3213A55446375"
+    },
+    {
+      "path": "run/stage7/repair-20260909/final-original-w4/run/restart.log",
+      "bytes": 25730,
+      "sha256": "3AAC80ABB9FD5741F636F8D5F2F5D2009E3F05924C95C42C148A6D575660E2A5"
+    },
+    {
+      "path": "run/stage7/repair-20260909/final-original-w4/run/server/thread-dump-stage6-first.txt",
+      "bytes": 45560,
+      "sha256": "57D3C8078DCD7F547D7B316F5005FA7E3175F9AC5CB821FECF7179F024CEF152"
+    },
+    {
+      "path": "run/stage7/repair-20260909/final-original-w4/run/server/thread-dump-stage6-restart.txt",
+      "bytes": 40846,
+      "sha256": "0CCFB17A1699B5D43427D73E0E88DF8507052381665A90323960E60497F31A63"
+    },
+    {
+      "path": "run/stage7/repair-20260909/final-original-w4-batch.log",
+      "bytes": 140,
+      "sha256": "88DDE9DD9281EB9C4B50C8D76FB48F5DF671282750DFB26DA3D68CE20F73DEDD"
+    },
+    {
+      "path": "run/stage7/repair-20260909/final-stop-w1/command.json",
+      "bytes": 963,
+      "sha256": "16FFF24A0CD70CC400D6E5F4FEF6CAD178D74D229BBD6EE706F22AD0E3DFDE0B"
+    },
+    {
+      "path": "run/stage7/repair-20260909/final-stop-w1/driver.log",
+      "bytes": 122,
+      "sha256": "8FBFCEA32D7F9C4CE1B5F44D28D172BED8FBF380F04225AF0C4D2058ADE20365"
+    },
+    {
+      "path": "run/stage7/repair-20260909/final-stop-w1/lifetime-verification.json",
+      "bytes": 145,
+      "sha256": "8B3121A6954BCB4A16B691094CA41C09958273C09FC0CA537B9CEFED7FF9EF06"
+    },
+    {
+      "path": "run/stage7/repair-20260909/final-stop-w1/observations.json",
+      "bytes": 8837,
+      "sha256": "C35E12CB4E9BAB3D2C753406395C4689EB4AE824239983055313DD5E17A6FF5A"
+    },
+    {
+      "path": "run/stage7/repair-20260909/final-stop-w1/plan.json",
+      "bytes": 910,
+      "sha256": "C7441C52B7DE76BB224AECEFFAE50B81FAAAE4C5FE76EB245A87AFD16C3A6A01"
+    },
+    {
+      "path": "run/stage7/repair-20260909/final-stop-w1/run/first-mca.json",
+      "bytes": 240423,
+      "sha256": "03B20D2A09885048AF38B12583FBB6E0EDAFE7509A68E71FE36C847728DEC75C"
+    },
+    {
+      "path": "run/stage7/repair-20260909/final-stop-w1/run/first-pid.json",
+      "bytes": 628,
+      "sha256": "B935B3CD9145BF90F6D0614C56B1F810C0C6CFB715C79BB84E335D121B380B90"
+    },
+    {
+      "path": "run/stage7/repair-20260909/final-stop-w1/run/first-report.json",
+      "bytes": 17466,
+      "sha256": "175EDFB2E551BD1CEFA177C0BE5F6E0392F80F997C86041DBDCA16597DE432EA"
+    },
+    {
+      "path": "run/stage7/repair-20260909/final-stop-w1/run/first.log",
+      "bytes": 13180,
+      "sha256": "A105426B48FA2A22A8C57645C3A2F249B8DB40F6096813CD134D9288680CD011"
+    },
+    {
+      "path": "run/stage7/repair-20260909/final-stop-w1/run/installed.json",
+      "bytes": 8246,
+      "sha256": "EB4D63562D6553A336DE258280DD91562BFAD738D6B562EF432BEC07AA14814D"
+    },
+    {
+      "path": "run/stage7/repair-20260909/final-stop-w1/run/plan.json",
+      "bytes": 910,
+      "sha256": "C7441C52B7DE76BB224AECEFFAE50B81FAAAE4C5FE76EB245A87AFD16C3A6A01"
+    },
+    {
+      "path": "run/stage7/repair-20260909/final-stop-w1/run/report.json",
+      "bytes": 3134,
+      "sha256": "BAC7495304FF857C450F573EFACB379C3E20BC655383B78ED93D8C025E76E405"
+    },
+    {
+      "path": "run/stage7/repair-20260909/final-stop-w1-batch.log",
+      "bytes": 132,
+      "sha256": "C77D0EF538FABDD48EBF05F179A46F5C5EEAC9985F7823C6C8954BDED2900A93"
+    },
+    {
+      "path": "run/stage7/repair-20260909/final-stop-w4/command.json",
+      "bytes": 963,
+      "sha256": "099417891D2AB86B5A9790D10C8D236C51EA30DD5AB07165F41F0EBD362F69A9"
+    },
+    {
+      "path": "run/stage7/repair-20260909/final-stop-w4/driver.log",
+      "bytes": 122,
+      "sha256": "8FBFCEA32D7F9C4CE1B5F44D28D172BED8FBF380F04225AF0C4D2058ADE20365"
+    },
+    {
+      "path": "run/stage7/repair-20260909/final-stop-w4/lifetime-verification.json",
+      "bytes": 145,
+      "sha256": "8B3121A6954BCB4A16B691094CA41C09958273C09FC0CA537B9CEFED7FF9EF06"
+    },
+    {
+      "path": "run/stage7/repair-20260909/final-stop-w4/observations.json",
+      "bytes": 8837,
+      "sha256": "590020277D97EB186381BFF6A6EA6E800CACF4D642BFA2A74E0F471ECD0AA56A"
+    },
+    {
+      "path": "run/stage7/repair-20260909/final-stop-w4/plan.json",
+      "bytes": 910,
+      "sha256": "8B34177A8F0AAC825C625BEE0053F8F232077C9EA39378DB795C54D599918296"
+    },
+    {
+      "path": "run/stage7/repair-20260909/final-stop-w4/run/first-mca.json",
+      "bytes": 240421,
+      "sha256": "6EF3926EF39457225FEB117FB87795AE71315D9AEA51DE4F5C4434A284B2FB09"
+    },
+    {
+      "path": "run/stage7/repair-20260909/final-stop-w4/run/first-pid.json",
+      "bytes": 629,
+      "sha256": "DCA15C5A3AA894FE4D00DAE0DC310CD5ED95F57C26049366707B3197886008EB"
+    },
+    {
+      "path": "run/stage7/repair-20260909/final-stop-w4/run/first-report.json",
+      "bytes": 17615,
+      "sha256": "C589C88841065973E2AEA53C0C658D843A92C57BA4967952620DE33033E998DD"
+    },
+    {
+      "path": "run/stage7/repair-20260909/final-stop-w4/run/first.log",
+      "bytes": 13178,
+      "sha256": "C8CBDFCD08797D87384A32ACC230FE8068FCC3B11C85A44A56675A7BE20AB599"
+    },
+    {
+      "path": "run/stage7/repair-20260909/final-stop-w4/run/installed.json",
+      "bytes": 8246,
+      "sha256": "EB4D63562D6553A336DE258280DD91562BFAD738D6B562EF432BEC07AA14814D"
+    },
+    {
+      "path": "run/stage7/repair-20260909/final-stop-w4/run/plan.json",
+      "bytes": 910,
+      "sha256": "8B34177A8F0AAC825C625BEE0053F8F232077C9EA39378DB795C54D599918296"
+    },
+    {
+      "path": "run/stage7/repair-20260909/final-stop-w4/run/report.json",
+      "bytes": 3135,
+      "sha256": "A1E68255D87A97DF646F7AFE21329829499E6E30B7775D59B8916DC764D75D4D"
+    },
+    {
+      "path": "run/stage7/repair-20260909/final-stop-w4-batch.log",
+      "bytes": 132,
+      "sha256": "50CEFC4FAF1B74BEB5D5864DFCEAFC5A85446B0E051C431F846F80B4F21FECBC"
+    },
+    {
+      "path": "run/stage7/repair-20260909/final-test-xml/TEST-dev.phoenium.adversestop.AdverseStopProbeContractTest.xml",
+      "bytes": 1167,
+      "sha256": "64FCF7C4BF297C8777662FAD60B45BE35603C4F146920B601F1B84AA80FC0E61"
+    },
+    {
+      "path": "run/stage7/repair-20260909/final-test-xml/TEST-dev.phoenium.chunk.ChunkAdapterInfrastructureTest.xml",
+      "bytes": 2129,
+      "sha256": "8CB4EE637AE759824BC68A95D5C391C23A0E4C567D2A40C63369035425EAAA70"
+    },
+    {
+      "path": "run/stage7/repair-20260909/final-test-xml/TEST-dev.phoenium.chunk.ChunkCustodyModelTest.xml",
+      "bytes": 2115,
+      "sha256": "7DB4502D1DF34380C92898A88AF6944482ECE92B1C5A5A68869B01F791D2B10F"
+    },
+    {
+      "path": "run/stage7/repair-20260909/final-test-xml/TEST-dev.phoenium.chunk.ChunkMetadataAuthorizationTest.xml",
+      "bytes": 1959,
+      "sha256": "C39C47FCA6A5F44E186EE57289478EADC6E0D38399559FC50A4A12348DC8C32C"
+    },
+    {
+      "path": "run/stage7/repair-20260909/final-test-xml/TEST-dev.phoenium.chunk.ChunkMetadataVanillaContractTest.xml",
+      "bytes": 78398,
+      "sha256": "654FE4E86A3A2D7C56F1F543134A65537F0ED93ACF163B9774BF8E69D3D0DCA5"
+    },
+    {
+      "path": "run/stage7/repair-20260909/final-test-xml/TEST-dev.phoenium.chunk.ChunkPrerequisiteServicesTest.xml",
+      "bytes": 3288,
+      "sha256": "C500A312E05E66F3A70FA077ECCE2D9BB185F447951132816E99FB950D4F1970"
+    },
+    {
+      "path": "run/stage7/repair-20260909/final-test-xml/TEST-dev.phoenium.chunk.ChunkQueryFailureBindingTest.xml",
+      "bytes": 169012,
+      "sha256": "C067BAC7E178DF732EAEA50AFA121DDBEDAA185058FA4B94FBC56D9120BD0576"
+    },
+    {
+      "path": "run/stage7/repair-20260909/final-test-xml/TEST-dev.phoenium.chunk.ChunkReloadPrerequisiteOrderTest.xml",
+      "bytes": 656,
+      "sha256": "2C41C2314402D508E06C857000D0231ABE0CA386C2CEFA3ECBFA4C9C488BCD83"
+    },
+    {
+      "path": "run/stage7/repair-20260909/final-test-xml/TEST-dev.phoenium.chunk.ChunkRouteClassificationTest.xml",
+      "bytes": 2041,
+      "sha256": "46E36D3EC49D273AD25E1C7ED12B41D8FB62A0968276F2E1E7E5B737BF7589C6"
+    },
+    {
+      "path": "run/stage7/repair-20260909/final-test-xml/TEST-dev.phoenium.chunk.ChunkSaveRetentionTest.xml",
+      "bytes": 489,
+      "sha256": "A2DB6AEE661037A48522A2E51F6BE4BCBA69B4E547B752EA33332E58065D89D1"
+    },
+    {
+      "path": "run/stage7/repair-20260909/final-test-xml/TEST-dev.phoenium.chunk.FailedStopNativeCleanupTest.xml",
+      "bytes": 658,
+      "sha256": "0CD81DC1198CD59A9A2CFF702AC4169BE0734452C9AB770A4D1002C04EA54262"
+    },
+    {
+      "path": "run/stage7/repair-20260909/final-test-xml/TEST-dev.phoenium.chunk.FullAuthoritativeFinishingTest.xml",
+      "bytes": 35598,
+      "sha256": "F8AC1BD423EC2E5F25A33AEB7F214A4EF94C73963CF8E4A40BD43470FC33F77E"
+    },
+    {
+      "path": "run/stage7/repair-20260909/final-test-xml/TEST-dev.phoenium.chunk.FullCallbackAuthorityContractTest.xml",
+      "bytes": 12689,
+      "sha256": "9F8E76FE861E560915873695211CDDABCA3EEACE53821ECD9118C9979F493EF2"
+    },
+    {
+      "path": "run/stage7/repair-20260909/final-test-xml/TEST-dev.phoenium.chunk.FullContextMetadataLockTest.xml",
+      "bytes": 702,
+      "sha256": "C8E5BCA433658B3355670328D1FCCEF178772EA5ADC668E4043502D739A8BD1E"
+    },
+    {
+      "path": "run/stage7/repair-20260909/final-test-xml/TEST-dev.phoenium.chunk.FullContextRefinementTest.xml",
+      "bytes": 1472,
+      "sha256": "C6E21299A04766808C93D1A6572926AFA4568203BC31BD70F1D2B5C33BC68798"
+    },
+    {
+      "path": "run/stage7/repair-20260909/final-test-xml/TEST-dev.phoenium.chunk.FullEntityFactsTest.xml",
+      "bytes": 2394,
+      "sha256": "4231565092047C0BBCF6E8645D2AA4E123817D0E12F66B89D1C0145D635DC347"
+    },
+    {
+      "path": "run/stage7/repair-20260909/final-test-xml/TEST-dev.phoenium.chunk.FullEntityPredicateInputTest.xml",
+      "bytes": 1001,
+      "sha256": "34AA57FAC9E527B566BEB84B2C677822DCF89DA952A7285A82B653679B458161"
+    },
+    {
+      "path": "run/stage7/repair-20260909/final-test-xml/TEST-dev.phoenium.chunk.FullEntityPropertyExecutionTest.xml",
+      "bytes": 846,
+      "sha256": "5DCA7F1D1D998E98AFAEEEFF822B3711D667567222A17E01FEE3409377BBC4A5"
+    },
+    {
+      "path": "run/stage7/repair-20260909/final-test-xml/TEST-dev.phoenium.chunk.FullEntityReferenceDecisionTest.xml",
+      "bytes": 2059,
+      "sha256": "9EDCB2D8D039623E17B1C7408F3A687E6C4E6D57425D1B332499EF24475D600D"
+    },
+    {
+      "path": "run/stage7/repair-20260909/final-test-xml/TEST-dev.phoenium.chunk.FullFinishingQueriesTest.xml",
+      "bytes": 110024,
+      "sha256": "6E108157F13F72B27E399017A862051AAE370D76E7C2EFC799B75E0698BE5779"
+    },
+    {
+      "path": "run/stage7/repair-20260909/final-test-xml/TEST-dev.phoenium.chunk.FullFinishingServicesTest.xml",
+      "bytes": 2233,
+      "sha256": "0BA26BE22D7655332B81D386D2440BA56B7C5423CA79C3511F59A96DED208F83"
+    },
+    {
+      "path": "run/stage7/repair-20260909/final-test-xml/TEST-dev.phoenium.chunk.FullGenerationShutdownContinuationTest.xml",
+      "bytes": 701,
+      "sha256": "11343689286F419A5F3E03A55754FCC69FF466A04303C1CD74C0EB6D45A711A8"
+    },
+    {
+      "path": "run/stage7/repair-20260909/final-test-xml/TEST-dev.phoenium.chunk.FullInitializedInputBindingTest.xml",
+      "bytes": 38742,
+      "sha256": "7A9920840FE8A7F224C1C8C8AEA6F68DE3886E68E10AA57279FDA8F32FF14BC1"
+    },
+    {
+      "path": "run/stage7/repair-20260909/final-test-xml/TEST-dev.phoenium.chunk.FullInputAcknowledgementTest.xml",
+      "bytes": 1215,
+      "sha256": "B59954C879F16CF130162400CB85AF541FD441A2BDFC95778080CCF1CA119F18"
+    },
+    {
+      "path": "run/stage7/repair-20260909/final-test-xml/TEST-dev.phoenium.chunk.FullInputCapacityProgressTest.xml",
+      "bytes": 853,
+      "sha256": "5A0B91B3A701C5016F2FD789A1FCC9471E4DFFFD0E12A77E004A9F0204E29064"
+    },
+    {
+      "path": "run/stage7/repair-20260909/final-test-xml/TEST-dev.phoenium.chunk.FullLegacyOwnerCacheTest.xml",
+      "bytes": 1566,
+      "sha256": "152CBD7E73E8D8152175B15096FC64631EBA4178F48FF3C1E348B43471314274"
+    },
+    {
+      "path": "run/stage7/repair-20260909/final-test-xml/TEST-dev.phoenium.chunk.FullLegacyOwnerDecisionTest.xml",
+      "bytes": 12646,
+      "sha256": "71C39D833A63487E778A84BDCE70AC960EA1A3EFC86B3A55EC30C56FDC9450C2"
+    },
+    {
+      "path": "run/stage7/repair-20260909/final-test-xml/TEST-dev.phoenium.chunk.FullLegacyOwnersTest.xml",
+      "bytes": 1979,
+      "sha256": "73C29F6EB1E181A2E715CD6704AF6BCE5535AC5D59899D500847AB041B9BE92C"
+    },
+    {
+      "path": "run/stage7/repair-20260909/final-test-xml/TEST-dev.phoenium.chunk.FullLocationPredicateInputTest.xml",
+      "bytes": 885,
+      "sha256": "EED791690DBB775929FD7F22F1155170661F9EAA9C2C03F04669B1C4137AE420"
+    },
+    {
+      "path": "run/stage7/repair-20260909/final-test-xml/TEST-dev.phoenium.chunk.FullNestedQueryBoundaryTest.xml",
+      "bytes": 249643,
+      "sha256": "B8F7B2E0EE772E384B6849AA0D650C79D87CEE067229FE2E9593FE0B2F8B3A26"
+    },
+    {
+      "path": "run/stage7/repair-20260909/final-test-xml/TEST-dev.phoenium.chunk.FullNonselfInputDecisionTest.xml",
+      "bytes": 274823,
+      "sha256": "DBC6AB768C7AD3434CD01B01429D8A240716009C06D8B2D4EE09F85780DB2152"
+    },
+    {
+      "path": "run/stage7/repair-20260909/final-test-xml/TEST-dev.phoenium.chunk.FullPendingBlockTextInputTest.xml",
+      "bytes": 2315,
+      "sha256": "4C7029428684146D0284ADB16B93FD2BF5E04FCA540EB6A5EFCCB3C9E6E8420A"
+    },
+    {
+      "path": "run/stage7/repair-20260909/final-test-xml/TEST-dev.phoenium.chunk.FullPostLoadScoreboardContractTest.xml",
+      "bytes": 1287,
+      "sha256": "859291F6B6FAE757E2FC525AA6F99A2C56C40AF3592C2C783D8EBFEE4C137DAE"
+    },
+    {
+      "path": "run/stage7/repair-20260909/final-test-xml/TEST-dev.phoenium.chunk.FullProductionBoundaryTest.xml",
+      "bytes": 2341,
+      "sha256": "65992C8D64AD5698E8660E465A9540D4B37C2308D6A8953FF36A5CD3B6F3BF49"
+    },
+    {
+      "path": "run/stage7/repair-20260909/final-test-xml/TEST-dev.phoenium.chunk.FullProductionRegistrationTest.xml",
+      "bytes": 73143,
+      "sha256": "C30CC2967CAF52F979E8344E5135F2AD1ADA4460DB8679191242793379B03658"
+    },
+    {
+      "path": "run/stage7/repair-20260909/final-test-xml/TEST-dev.phoenium.chunk.FullPublishedInputBindingTest.xml",
+      "bytes": 104241,
+      "sha256": "E43899AF2BF3F692DF1CFC0623E81296EB159BE1EB7D492CF06839FEBD751325"
+    },
+    {
+      "path": "run/stage7/repair-20260909/final-test-xml/TEST-dev.phoenium.chunk.FullRegisteredPredicateExecutionTest.xml",
+      "bytes": 1173,
+      "sha256": "DB33A9544A834CAB59168E7F41FD2534F7E649E2615834DC0974E268E04A35FD"
+    },
+    {
+      "path": "run/stage7/repair-20260909/final-test-xml/TEST-dev.phoenium.chunk.FullRegistrationFixtureSaveBridgeTest.xml",
+      "bytes": 842,
+      "sha256": "BFA45AB0FF32C28AF47CC4FD60E17E416CCE9582DCF3099C938B816581B105D9"
+    },
+    {
+      "path": "run/stage7/repair-20260909/final-test-xml/TEST-dev.phoenium.chunk.FullSavedContextInputTest.xml",
+      "bytes": 98209,
+      "sha256": "9020ED7EDA434E38F580B5FD4FF22253F018FFC42B8F03E0FDD5B166C9DB2478"
+    },
+    {
+      "path": "run/stage7/repair-20260909/final-test-xml/TEST-dev.phoenium.chunk.FullSavedEntityInputTest.xml",
+      "bytes": 4578,
+      "sha256": "E88884F475183F14FCB25E78DE01662EA9C63F9CA7141C19A4B2CAE94BAC9A1D"
+    },
+    {
+      "path": "run/stage7/repair-20260909/final-test-xml/TEST-dev.phoenium.chunk.FullSavedTextInputTest.xml",
+      "bytes": 1812,
+      "sha256": "30208EECBD93704C8D40CC2E119DFFF2A8BFF54DAA5A6F9E0934BA1838E44591"
+    },
+    {
+      "path": "run/stage7/repair-20260909/final-test-xml/TEST-dev.phoenium.chunk.FullSavedVillagerInputTest.xml",
+      "bytes": 1666,
+      "sha256": "156C522A42C0EAEBD466D6C4B0C2B3FE2807BAA482DE6BC791FD35E69FF28812"
+    },
+    {
+      "path": "run/stage7/repair-20260909/final-test-xml/TEST-dev.phoenium.chunk.FullSelectorPredicateInputsTest.xml",
+      "bytes": 2286,
+      "sha256": "BFD40B0B97285692747C527A2CEC6E7E384391D2F5B43E01980F082F2C83B07A"
+    },
+    {
+      "path": "run/stage7/repair-20260909/final-test-xml/TEST-dev.phoenium.chunk.FullServerShutdownFailureOrderTest.xml",
+      "bytes": 1558,
+      "sha256": "EB72FCF86CB5C7CC695C341804C1468FD7971991556EC2CC360BC08C93882BE1"
+    },
+    {
+      "path": "run/stage7/repair-20260909/final-test-xml/TEST-dev.phoenium.chunk.FullServerTaskSchedulingTest.xml",
+      "bytes": 1387,
+      "sha256": "B1770EE83F624B203E5BE5268F70EA457FA852C83A53CE1E2AC4C6F32C65C1C4"
+    },
+    {
+      "path": "run/stage7/repair-20260909/final-test-xml/TEST-dev.phoenium.chunk.FullStructureDemandTest.xml",
+      "bytes": 836,
+      "sha256": "005D9B4288058AA9F7F0DA23EFB2F24C22C3655C5549613AE1CD0C7FC05DE600"
+    },
+    {
+      "path": "run/stage7/repair-20260909/final-test-xml/TEST-dev.phoenium.chunk.FullStructureInputTest.xml",
+      "bytes": 687,
+      "sha256": "35E34128888367A2888EADE0F7FBA6CA58341F1275917B30A9F61A5E67469157"
+    },
+    {
+      "path": "run/stage7/repair-20260909/final-test-xml/TEST-dev.phoenium.chunk.FullStructureMutationTurnsTest.xml",
+      "bytes": 1042,
+      "sha256": "79DDE2432E9E7C0C7EBE727CC4A181F464C8BDB24583091DC4746E92F28AD651"
+    },
+    {
+      "path": "run/stage7/repair-20260909/final-test-xml/TEST-dev.phoenium.chunk.FullTadpoleDecisionTest.xml",
+      "bytes": 105629,
+      "sha256": "CFCC4A74AC6D88C10E5F06AF1E0A911AF4F12F6B65FAA8DF9C270E38937D02F3"
+    },
+    {
+      "path": "run/stage7/repair-20260909/final-test-xml/TEST-dev.phoenium.chunk.FullWorldgenEnvironmentTest.xml",
+      "bytes": 1154,
+      "sha256": "98044A80D6E67DC0CBC0FED918379E57685649ED6448FE209489165D03A9B673"
+    },
+    {
+      "path": "run/stage7/repair-20260909/final-test-xml/TEST-dev.phoenium.chunk.LightIngressAdversarialTest.xml",
+      "bytes": 3983,
+      "sha256": "6DA76A742646DE011E8C57545B0A444F8FAB4539E1F365AF849D8C3FD4E146C6"
+    },
+    {
+      "path": "run/stage7/repair-20260909/final-test-xml/TEST-dev.phoenium.chunk.LightIngressProtocolTest.xml",
+      "bytes": 14511,
+      "sha256": "EE0E3F07441D76E47BB7919B255B0003432D6DBD3F9E8A944B867DCE46E05061"
+    },
+    {
+      "path": "run/stage7/repair-20260909/final-test-xml/TEST-dev.phoenium.chunk.LiveTickPhaseBoundaryTest.xml",
+      "bytes": 1229,
+      "sha256": "52370CC7F6EBFA2E802F2C31D5168240617D7C15D32E65A3D51BFFECC7063FC7"
+    },
+    {
+      "path": "run/stage7/repair-20260909/final-test-xml/TEST-dev.phoenium.chunk.LiveTickReadinessTest.xml",
+      "bytes": 959,
+      "sha256": "052E2F1004D77D3CA5EA338D6D11DCEE56FD56100A66562019F56D5EDD1E8EE5"
+    },
+    {
+      "path": "run/stage7/repair-20260909/final-test-xml/TEST-dev.phoenium.chunk.ParsedApplyFutureBindingTest.xml",
+      "bytes": 3766,
+      "sha256": "F4827115C6048C1C63CF82ACBB2285A79687BE41B56747E72AECC2197A8886A5"
+    },
+    {
+      "path": "run/stage7/repair-20260909/final-test-xml/TEST-dev.phoenium.chunk.PoiLoadBookkeepingTest.xml",
+      "bytes": 772,
+      "sha256": "8BEC68BC9B42644166CBED34B67FC9301A5529E5B3566B3FEABF71624E7A062B"
+    },
+    {
+      "path": "run/stage7/repair-20260909/final-test-xml/TEST-dev.phoenium.chunk.RegionalDaytimeSiegeTest.xml",
+      "bytes": 490,
+      "sha256": "4836F8C6E3FC0C452E747E9DD8430781DEC8B4D5AF5FCCF83B86812DDAAC110D"
+    },
+    {
+      "path": "run/stage7/repair-20260909/final-test-xml/TEST-dev.phoenium.chunk.RegionalSiegeRetainedOriginTest.xml",
+      "bytes": 687,
+      "sha256": "E85AD6CE5282B2711C5B579EB8AA05549F3EAD5E4902EE5A42FBFAA6BAB883ED"
+    },
+    {
+      "path": "run/stage7/repair-20260909/final-test-xml/TEST-dev.phoenium.CoreAcceptanceTest.xml",
+      "bytes": 3592,
+      "sha256": "FECCDBB7BE2F43C6EEE2234A062089B0022D6FD6578620D84048223B4F4E4E49"
+    },
+    {
+      "path": "run/stage7/repair-20260909/final-test-xml/TEST-dev.phoenium.InteractionAdmissionTest.xml",
+      "bytes": 1127,
+      "sha256": "5964F996CB423CD50677D53F9DAB64D90745EA7D1AC419EAB3E850AD834BD935"
+    },
+    {
+      "path": "run/stage7/repair-20260909/final-test-xml/TEST-dev.phoenium.live.EntityIndexLifetimeTest.xml",
+      "bytes": 495,
+      "sha256": "C7111DEDF359DF61768F9C6DA64F8265861FB7877AA38EAD9CF89D13877AAFF1"
+    },
+    {
+      "path": "run/stage7/repair-20260909/final-test-xml/TEST-dev.phoenium.live.PhoeniumLiveRuntimePhaseProgressionTest.xml",
+      "bytes": 866,
+      "sha256": "7147E3860EB6C0722C59FCC8CF7286DE2959297154F4D50E6B6167541E8EF5B6"
+    },
+    {
+      "path": "run/stage7/repair-20260909/final-test-xml/TEST-dev.phoenium.LiveMovementAdmissionTest.xml",
+      "bytes": 1233,
+      "sha256": "C169E95C96E5536327542108EDD96C3E081CE792602689B0EEA4ED9B9C42F64A"
+    },
+    {
+      "path": "run/stage7/repair-20260909/final-test-xml/TEST-dev.phoenium.mixin.FailedStopNativeTargetTest.xml",
+      "bytes": 1099,
+      "sha256": "67F1BFBAD992C4C9700D2EF4B6A35F5E8A1767607AD1243225F1F6875B4170B3"
+    },
+    {
+      "path": "run/stage7/repair-20260909/final-test-xml/TEST-dev.phoenium.mixin.RegionalNaturalSpawnerDescriptorTest.xml",
+      "bytes": 526,
+      "sha256": "34241C9AEB63F91C7EF7A020D0CE391EDE3A99E12E4109329A4FE99A539849DB"
+    },
+    {
+      "path": "run/stage7/repair-20260909/final-test-xml/TEST-dev.phoenium.mixin.ServerLevelEntityLifecycleTargetTest.xml",
+      "bytes": 842,
+      "sha256": "E2E7F7D1E7BB99D44AEA7D7808F11AA132A6265F4D587596720C8F3DDD5098CD"
+    },
+    {
+      "path": "run/stage7/repair-20260909/final-test-xml/TEST-dev.phoenium.RealClientReadinessTest.xml",
+      "bytes": 1275,
+      "sha256": "010C9F05AA726C3537FC08D2A6933A4CAF8D769667055AE869555B565791AB02"
+    },
+    {
+      "path": "run/stage7/repair-20260909/final-test-xml/TEST-dev.phoenium.RegionLeaseReleaseTest.xml",
+      "bytes": 766,
+      "sha256": "E29D46B271FAE8B71219DDB84DCC90E9FB41DD0DB5A4D50E7788EF7990D46F2A"
+    },
+    {
+      "path": "run/stage7/repair-20260909/final-test-xml/TEST-dev.phoenium.save.RegionalSaveCoordinatorTest.xml",
+      "bytes": 1985,
+      "sha256": "95E24C324C47B7777EBF6863325EA470D68EE2693963DC532482EE0AFB95ABCC"
+    },
+    {
+      "path": "run/stage7/repair-20260909/final-test-xml/TEST-dev.phoenium.save.RetainedChunkSnapshotTest.xml",
+      "bytes": 487,
+      "sha256": "DF46C87EABBDDFC20AC40FD179C8D2AF6F417B7A28BE46B8C0CE23E17A5F3D8A"
+    },
+    {
+      "path": "run/stage7/repair-20260909/final-test-xml/TEST-dev.phoenium.save.SaveTopologyCutTest.xml",
+      "bytes": 775,
+      "sha256": "3E8D07AADBF8D4E2B5DA7F62D460ECF1227F782BEDB99C1E7BDB7121841D36CA"
+    },
+    {
+      "path": "run/stage7/repair-20260909/final-test-xml/TEST-dev.phoenium.service.BoundedGameplaySchedulerTest.xml",
+      "bytes": 2720,
+      "sha256": "85F33DADA5C285DA599673C4378060E1C4085556C29C592841EB5C926F6E25C9"
+    },
+    {
+      "path": "run/stage7/repair-20260909/final-test-xml/TEST-dev.phoenium.service.LiveRegionRetentionTest.xml",
+      "bytes": 499,
+      "sha256": "85D52FD01710B4944E60A05620C9CA813CFE9A31671911057B74DC64DD9F7B4F"
+    },
+    {
+      "path": "run/stage7/repair-20260909/final-test-xml/TEST-dev.phoenium.service.RegionalBlockEntityTickOrderTest.xml",
+      "bytes": 998,
+      "sha256": "FC320C46F46F780A71F7387C69BAE3EB4FEE914FBACD6C25104CB58E59649377"
+    },
+    {
+      "path": "run/stage7/repair-20260909/final-test-xml/TEST-dev.phoenium.service.RegionalBlockEventServiceTest.xml",
+      "bytes": 1126,
+      "sha256": "258F56E0973FA01117F65E2859248A5AA11D35F2CD50A42B4C3C564A4B6D5FFF"
+    },
+    {
+      "path": "run/stage7/repair-20260909/final-test-xml/TEST-dev.phoenium.service.RegionalCustomSpawnerBoundaryTest.xml",
+      "bytes": 686,
+      "sha256": "5959B0E012DD81441CC682B5CE63448CB96B84483D85D0C3F43581D5EA650049"
+    },
+    {
+      "path": "run/stage7/repair-20260909/final-test-xml/TEST-dev.phoenium.service.RegionalMovementTrackingTest.xml",
+      "bytes": 505,
+      "sha256": "F4A6F6437558FB79E1E3FAFAA40F21FC44E91FFAC9339777998EA7F2DE77BB60"
+    },
+    {
+      "path": "run/stage7/repair-20260909/final-test-xml/TEST-dev.phoenium.service.RegionalScheduledTickServiceTest.xml",
+      "bytes": 3658,
+      "sha256": "E5B3467F44D19DBC25C4458E7F245F238B3126D00AAD063EA557AF68AE3FA2A8"
+    },
+    {
+      "path": "run/stage7/repair-20260909/final-test-xml/TEST-dev.phoenium.service.RegionalServiceDispatcherTest.xml",
+      "bytes": 1778,
+      "sha256": "4D9CA0A3FA24A94059E49F6FCA219E13D13CA55BD59603C45E9C5691FE956A50"
+    },
+    {
+      "path": "run/stage7/repair-20260909/final-test-xml/TEST-dev.phoenium.service.RegionalTrackingAdapterContractTest.xml",
+      "bytes": 679,
+      "sha256": "C951177227BEAA784389D827C3ABAFB4BB8760F95B474B6DF9D9E56485F82043"
+    },
+    {
+      "path": "run/stage7/repair-20260909/final-test-xml/TEST-dev.phoenium.service.RegionalTrackingPartitionsTest.xml",
+      "bytes": 979,
+      "sha256": "DC311B2F6839EC08ECF10FECEA97F6172C9F56C096C17BE52E35BBF360746612"
+    },
+    {
+      "path": "run/stage7/repair-20260909/final-test-xml/TEST-dev.phoenium.service.RegionalWorldServiceLifetimeTest.xml",
+      "bytes": 682,
+      "sha256": "FBA157A8074E17490DB3D0097B51397C5E3551A6CD269F0FB0D6818DB10B07B6"
+    },
+    {
+      "path": "run/stage7/repair-20260909/final-test-xml/TEST-dev.phoenium.Stage3MovementTest.xml",
+      "bytes": 2174,
+      "sha256": "78CB04EB11EA69BC3D58FF3F71916D5D6D08D73DF8084B3D019D1D838DED9DE4"
+    },
+    {
+      "path": "run/stage7/repair-20260909/final-test-xml/TEST-dev.phoenium.Stage3OwnershipTest.xml",
+      "bytes": 3111,
+      "sha256": "1BF7EE8DF0F2B113F6443B273B3ECBB76D46D5632002F9185A7B2CA337539BAB"
+    },
+    {
+      "path": "run/stage7/repair-20260909/final-test-xml/TEST-dev.phoenium.Stage4FixtureSupportTest.xml",
+      "bytes": 492,
+      "sha256": "1F495BDA263D675CA717BFBF5B260E417E3A9E49C1C3286485920BC4FA9F4073"
+    },
+    {
+      "path": "run/stage7/repair-20260909/final-test-xml/TEST-dev.phoenium.stage4probe.Stage4TeleportTopologyTest.xml",
+      "bytes": 1375,
+      "sha256": "C0A9F51D38697DEF0426EC5E41F1E57D7E92B47F1257C616BD32117160B2DE7C"
+    },
+    {
+      "path": "run/stage7/repair-20260909/final-test-xml/TEST-dev.phoenium.testmixin.FullRegistrationSaveBindingMixinContractTest.xml",
+      "bytes": 707,
+      "sha256": "95B6707C120F12B3CCF563A8CE642FBCA2057674E3C1C7D246831991BA6206F4"
+    },
+    {
+      "path": "run/stage7/repair-20260909/final-test-xml/TEST-dev.phoenium.topology.TopologyCoordinatorMigrationTest.xml",
+      "bytes": 1726,
+      "sha256": "A346DC4FA1A8705AAC6C806401FC5C966A62F8C1F8A28DAB28A1DD636DB0EB63"
+    },
+    {
+      "path": "run/stage7/repair-20260909/finalize_evidence.py",
+      "bytes": 4055,
+      "sha256": "8DA93A7BA20CE25073443B6106B0917BFEA3EB2B77126392361355F3662F68A3"
+    },
+    {
+      "path": "run/stage7/repair-20260909/fixture-support-build.log",
+      "bytes": 697,
+      "sha256": "E7D21A105636176460E19EA33C390ECE973DA14DBDA9D2A2D3294A8427CA52CE"
+    },
+    {
+      "path": "run/stage7/repair-20260909/fixture-wrapper-build.log",
+      "bytes": 697,
+      "sha256": "60BAC2A8A809D3D77A0AFF32A6322BCEB7F53D192ABA81B8EBDC1518B92093E9"
+    },
+    {
+      "path": "run/stage7/repair-20260909/inner-observer-build.log",
+      "bytes": 697,
+      "sha256": "60BAC2A8A809D3D77A0AFF32A6322BCEB7F53D192ABA81B8EBDC1518B92093E9"
+    },
+    {
+      "path": "run/stage7/repair-20260909/native-demand-diagnostic/first-pid.json",
+      "bytes": 983,
+      "sha256": "4E629B2BF3F3AA742B09EB58CFAE79283564667588A65B79E03E3C713A968B04"
+    },
+    {
+      "path": "run/stage7/repair-20260909/native-demand-diagnostic/first-report.json",
+      "bytes": 60596,
+      "sha256": "A5ECAE6C18E5FCFF2BBAC5658765F2C5D98FE2105CF6A98D30B8878E136C8BB3"
+    },
+    {
+      "path": "run/stage7/repair-20260909/native-demand-diagnostic/first.log",
+      "bytes": 86540,
+      "sha256": "1797FF749E2E68FA055D938C7316538756F930D1B2A1465A181FB275A727ED68"
+    },
+    {
+      "path": "run/stage7/repair-20260909/native-demand-diagnostic/installed.json",
+      "bytes": 8947,
+      "sha256": "05F96894F0BE12C60D3332A890671D2BE137AB22BB2036A824C614AB5DC06D4B"
+    },
+    {
+      "path": "run/stage7/repair-20260909/native-demand-diagnostic/plan.json",
+      "bytes": 902,
+      "sha256": "F027D204F2F92B703F2F5EBC9E18DB8CEC9E61D58ACDBA66223F023C22C49B63"
+    },
+    {
+      "path": "run/stage7/repair-20260909/native-demand-diagnostic/report.json",
+      "bytes": 2600,
+      "sha256": "5164936A73032A50784AE5635D9BFE561EFB3A5423F85CEAB407F30A81154CB1"
+    },
+    {
+      "path": "run/stage7/repair-20260909/native-demand-diagnostic/server/crash-reports/crash-2026-09-08_23.55.47-server.txt",
+      "bytes": 41686,
+      "sha256": "69111F8C04FB7595C55FF40F819E2F5B5193DDE0FD2F67683767DA994D7DE2DA"
+    },
+    {
+      "path": "run/stage7/repair-20260909/native-demand-diagnostic-2/first-pid.json",
+      "bytes": 983,
+      "sha256": "3F26C095566AFBF33817B5D56EA80C75E30F8341A4E16864F149781C58E00D4E"
+    },
+    {
+      "path": "run/stage7/repair-20260909/native-demand-diagnostic-2/first-report.json",
+      "bytes": 59794,
+      "sha256": "D9F54CB0ED11B62886F56F1EB5DEAFA18F7BA83C479E00764210265B8FD05A01"
+    },
+    {
+      "path": "run/stage7/repair-20260909/native-demand-diagnostic-2/first.log",
+      "bytes": 90011,
+      "sha256": "5A4D3C69BDFE4C3E99279CC8AD6EA7E1AAE39D19B2B57BE9EEED76B681D21B02"
+    },
+    {
+      "path": "run/stage7/repair-20260909/native-demand-diagnostic-2/installed.json",
+      "bytes": 8947,
+      "sha256": "260CD63035D6220E08BEBA0E70A67C4FDAB626E95AB289A582967230EF4321EF"
+    },
+    {
+      "path": "run/stage7/repair-20260909/native-demand-diagnostic-2/plan.json",
+      "bytes": 902,
+      "sha256": "F027D204F2F92B703F2F5EBC9E18DB8CEC9E61D58ACDBA66223F023C22C49B63"
+    },
+    {
+      "path": "run/stage7/repair-20260909/native-demand-diagnostic-2/report.json",
+      "bytes": 2604,
+      "sha256": "56FB1E1C4515C35A52277BEBF029DD0C605B44DF2F86B977A99246A9AFCD83E9"
+    },
+    {
+      "path": "run/stage7/repair-20260909/native-demand-diagnostic-2/server/crash-reports/crash-2026-09-08_23.57.34-server.txt",
+      "bytes": 40514,
+      "sha256": "4416533547B512858C51742A3ACE00DB94380298994E019F0CB24433B62A5B52"
+    },
+    {
+      "path": "run/stage7/repair-20260909/native-demand-diagnostic-driver-2.log",
+      "bytes": 162,
+      "sha256": "9F5C951E15FB3B7E6A00A7AFA6A058E63259F99EBE32DA17B72383B714151B6C"
+    },
+    {
+      "path": "run/stage7/repair-20260909/native-demand-diagnostic-driver.log",
+      "bytes": 162,
+      "sha256": "68C5400EC3DCE796DE063E6C21B2591AC1C894B5977B26BDA692E34483BB63DB"
+    },
+    {
+      "path": "run/stage7/repair-20260909/native-demand-diagnostic-plan-2.json",
+      "bytes": 902,
+      "sha256": "F027D204F2F92B703F2F5EBC9E18DB8CEC9E61D58ACDBA66223F023C22C49B63"
+    },
+    {
+      "path": "run/stage7/repair-20260909/native-demand-diagnostic-plan.json",
+      "bytes": 902,
+      "sha256": "F027D204F2F92B703F2F5EBC9E18DB8CEC9E61D58ACDBA66223F023C22C49B63"
+    },
+    {
+      "path": "run/stage7/repair-20260909/observer-build.log",
+      "bytes": 2670,
+      "sha256": "AC7CF5D622DA5A57A389DB542636A575233B7FD778A189423C7F68B950B26B31"
+    },
+    {
+      "path": "run/stage7/repair-20260909/observer-packaging.log",
+      "bytes": 697,
+      "sha256": "60BAC2A8A809D3D77A0AFF32A6322BCEB7F53D192ABA81B8EBDC1518B92093E9"
+    },
+    {
+      "path": "run/stage7/repair-20260909/old-final-regression-xml/TEST-dev.phoenium.chunk.FullFinishingQueriesTest.xml",
+      "bytes": 9203,
+      "sha256": "985DB26996483D440BA25BF6083EF2A6B3B08424812427A4C7D48AD286E78FF6"
+    },
+    {
+      "path": "run/stage7/repair-20260909/old-final-regression.log",
+      "bytes": 2695,
+      "sha256": "6F93D83334AD5E4A395EEBDA1E1203FFBEBEC733BBB2CC87152357087739B432"
+    },
+    {
+      "path": "run/stage7/repair-20260909/old-regression-build.log",
+      "bytes": 3336,
+      "sha256": "051EF9814B8969A4C6E4FFE6407680D47BF420B2BC27BA9F83ED80D252F42F49"
+    },
+    {
+      "path": "run/stage7/repair-20260909/old-regression.log",
+      "bytes": 2456,
+      "sha256": "4EAC67E2C035AD6C73302A1BDD83F37DEDD4C5090DF4F27434E71E2854092D6E"
+    },
+    {
+      "path": "run/stage7/repair-20260909/original-preliminary-w1/first-mca.json",
+      "bytes": 788842,
+      "sha256": "E0474663E7D195789D31E4AA59B3EA9D128928021AE5C3BEF1527937DEB00FED"
+    },
+    {
+      "path": "run/stage7/repair-20260909/original-preliminary-w1/first-pid.json",
+      "bytes": 475,
+      "sha256": "CA8639A471908D95B03C20C66370856FA1607339F13F5CE7D98EABC8587907F7"
+    },
+    {
+      "path": "run/stage7/repair-20260909/original-preliminary-w1/first-report.json",
+      "bytes": 27458,
+      "sha256": "AE47EBA00E7FA864AA3772338F6D205E6847C9DA58411E1D6B6CDEFCF998DB3B"
+    },
+    {
+      "path": "run/stage7/repair-20260909/original-preliminary-w1/first.log",
+      "bytes": 15478,
+      "sha256": "8AE522501EC912AE755849B21F3D67CBFA64252A3DFA01D68D2E84DE99A57D4B"
+    },
+    {
+      "path": "run/stage7/repair-20260909/original-preliminary-w1/installed.json",
+      "bytes": 7610,
+      "sha256": "E8C91A1C95F36D70C20431760921E519828CE17BC71A42C6F507CE204A19F9FE"
+    },
+    {
+      "path": "run/stage7/repair-20260909/original-preliminary-w1/plan.json",
+      "bytes": 2967,
+      "sha256": "4F15EE53EC6E719ADF9BF8E524BBF5D1CA92EC3090E194514F55E7FC518EABA2"
+    },
+    {
+      "path": "run/stage7/repair-20260909/original-preliminary-w1/report.json",
+      "bytes": 5738,
+      "sha256": "8D2A6BB26EAA1045B285DCBA1DACED368FCC5F28ECB0A8F94DB4874C3018E751"
+    },
+    {
+      "path": "run/stage7/repair-20260909/original-preliminary-w1/restart-mca.json",
+      "bytes": 778306,
+      "sha256": "42514DB514CE2FD6F2CC4839230D95D6D6CA11EB370CCC9FA6CAB5D042CF4AFD"
+    },
+    {
+      "path": "run/stage7/repair-20260909/original-preliminary-w1/restart-pid.json",
+      "bytes": 475,
+      "sha256": "61F1302974F4A884B6444256E24B213CDF34939988FC9BA45C7DF28ACFC1C9C6"
+    },
+    {
+      "path": "run/stage7/repair-20260909/original-preliminary-w1/restart-report.json",
+      "bytes": 18744,
+      "sha256": "C35DAA2C57723247D07CB6B3BC1ED76C22715D076ED607E55D6D9AD4B1F89ED6"
+    },
+    {
+      "path": "run/stage7/repair-20260909/original-preliminary-w1/restart.log",
+      "bytes": 13545,
+      "sha256": "2E626D715B907F9668F57F03EF66B2E2FF40D88100AE3D99756D6A1CEDA0A5C4"
+    },
+    {
+      "path": "run/stage7/repair-20260909/original-preliminary-w1/server/thread-dump-stage6-first.txt",
+      "bytes": 46336,
+      "sha256": "F0C5EB6706075135506D00A66424E4A4A8F32671055420FE2F6D7B7D63D71B34"
+    },
+    {
+      "path": "run/stage7/repair-20260909/original-preliminary-w1/server/thread-dump-stage6-restart.txt",
+      "bytes": 41032,
+      "sha256": "13B5B678E08F290E07703F69E2A64682ED93F8B741A6F683175C74EE016EB712"
+    },
+    {
+      "path": "run/stage7/repair-20260909/precommit-verification.json",
+      "bytes": 3307,
+      "sha256": "90AB8C562C7C25499EDF0E34B926A4F5DDE54886F96EC7BD1A577EA29DD7CF40"
+    },
+    {
+      "path": "run/stage7/repair-20260909/preliminary-command.json",
+      "bytes": 696,
+      "sha256": "1FB1968AED7FAA033EFE4CEF7CBD4F1B19052F2D469AAB118B46CB31425D6933"
+    },
+    {
+      "path": "run/stage7/repair-20260909/preliminary-driver.log",
+      "bytes": 245,
+      "sha256": "68DC07E47D09042BA7DFA4C71EEFBA480C740DCE5FE6A03C0EEEE4DF9A8B06AC"
+    },
+    {
+      "path": "run/stage7/repair-20260909/preliminary.py",
+      "bytes": 879,
+      "sha256": "B16F455BFBC658B9986BEF0EE654834EFD589F58843BE37D40F41001031249C6"
+    },
+    {
+      "path": "run/stage7/repair-20260909/preservation.json",
+      "bytes": 4583288,
+      "sha256": "F9C757EA32E13848969A4D847244CB2EE1080C0967F6255DC9D53450E8CC6DAE"
+    },
+    {
+      "path": "run/stage7/repair-20260909/preserve.py",
+      "bytes": 1989,
+      "sha256": "01391C430EA00A0051757ADDC89590DEC5722BCAA13DA9C385F27F3DA18E820B"
+    },
+    {
+      "path": "run/stage7/repair-20260909/red-final.py",
+      "bytes": 943,
+      "sha256": "7AEF6DB085FE32D6EFBAA8F4CA95A34BE0A4174DCB379BED635A963338155C89"
+    },
+    {
+      "path": "run/stage7/repair-20260909/red-tests/TEST-dev.phoenium.chunk.FullFinishingQueriesTest.xml",
+      "bytes": 12239,
+      "sha256": "9C180A6075E48FA421973317A2A306852423EA330A6D73EB4EDF95FACFAD3040"
+    },
+    {
+      "path": "run/stage7/repair-20260909/refinement-green.log",
+      "bytes": 2070,
+      "sha256": "1316AA7BBD1FDC1A8B14DF6D473BC04338CA5813B257C256F2A3EBCADA89FCC4"
+    },
+    {
+      "path": "run/stage7/repair-20260909/reproduce.py",
+      "bytes": 1238,
+      "sha256": "0AC44A8DCB52D2525B9CC20717E1C0749B204A1DC9DB4B00861E2E0B49427B3A"
+    },
+    {
+      "path": "run/stage7/repair-20260909/session.json",
+      "bytes": 448,
+      "sha256": "C0CC2E2F1B5E60B8903531BFB11EF040902E20B6F7939F0ED3460F27A98F438D"
+    },
+    {
+      "path": "run/stage7/repair-20260909/STAGE6_CANDIDATE_MANIFEST.json",
+      "bytes": 208858,
+      "sha256": "F06E0B925968366E0DE8C895474374E8E92F1BBD37C1A99BB99B777333757CAE"
+    },
+    {
+      "path": "run/stage7/repair-20260909/STAGE6_EVIDENCE_INDEX.json",
+      "bytes": 143176,
+      "sha256": "78429FA857F03B8BECB408A5887B7004BD36B469B4E4F42315C1DFD74D243A19"
+    },
+    {
+      "path": "run/stage7/repair-20260909/stall-probe-build-2.log",
+      "bytes": 697,
+      "sha256": "E7D21A105636176460E19EA33C390ECE973DA14DBDA9D2A2D3294A8427CA52CE"
+    },
+    {
+      "path": "run/stage7/repair-20260909/stall-probe-build.log",
+      "bytes": 697,
+      "sha256": "60BAC2A8A809D3D77A0AFF32A6322BCEB7F53D192ABA81B8EBDC1518B92093E9"
+    },
+    {
+      "path": "run/stage7/repair-20260909/targeted-green-2.log",
+      "bytes": 2752,
+      "sha256": "5753239D7C4ACC04C776988D9E95451F615F6C0A9F83A0EE300BEBC243BC27A3"
+    },
+    {
+      "path": "run/stage7/repair-20260909/targeted-green-3.log",
+      "bytes": 2099,
+      "sha256": "A9183A4B2028BFF6D21CBE4615987D874917AA93493F296E61419D9A999B5224"
+    },
+    {
+      "path": "run/stage7/repair-20260909/targeted-green.log",
+      "bytes": 3245,
+      "sha256": "1A10F67DAEF92ACE8A93E8C5B3787C31EEB210CD5C562839262B220338243221"
+    }
+  ]
+}

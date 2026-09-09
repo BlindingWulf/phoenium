@@ -42,6 +42,13 @@ public final class FullInitializedInputs {
                     lowerSlot, publicSlot, generationRetention, reservation, route, ticketLevel, publication, biomes, null, null);
         }
         public Target { purposes = Set.copyOf(purposes); }
+        /** An absent create=false chunk query carries validated absence, not a chunk
+         * capability. Entity context still requires its routed spatial authority even
+         * without a chunk holder. Use the same footprint before and inside the claim. */
+        public boolean requiresRegionalAuthority() {
+            return holder != null && availability != Availability.ABSENT
+                    || purposes.contains(Purpose.ENTITY_CONTEXT);
+        }
     }
     public record Receipt(Object server, ServerLevel world, ChunkCustodyModel.WorkId source,
                           ChunkCustodyModel.StageId operation, long plan, long savedRevision,

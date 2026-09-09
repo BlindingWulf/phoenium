@@ -183,6 +183,87 @@ final class FullFinishingQueriesTest {
         } finally { close(f); }
     }
 
+    @ParameterizedTest @org.junit.jupiter.params.provider.ValueSource(booleans = {false, true})
+    void asynchronousFullCompletesWithAnAbsentInputRoutedToAnotherOwner(boolean reload) throws Exception {
+        var f = new FullRegistrationFixture(false);
+        var x = ChunkPos.ZERO; var y = new ChunkPos(1, 0);
+        try {
+            var generation = new TopologyGeneration(2);
+            var sourceKey = new dev.phoenium.topology.RoutingKey(f.worldId, x.x(), x.z());
+            var absentKey = new dev.phoenium.topology.RoutingKey(f.worldId, y.x(), y.z());
+            f.directory.publish(generation, Map.of(
+                    sourceKey, new dev.phoenium.topology.RegionRoute(f.ownerId, generation, f.owner.ownerEpoch()),
+                    absentKey, new dev.phoenium.topology.RegionRoute(f.otherId, generation, f.other.ownerEpoch())));
+            saved(f, x, reload, tag(15.8, 8, Tadpole.ticksToBeFrog));
+            f.start(x, ChunkStatus.FULL);
+            var requested = f.holder(x).scheduleChunkGenerationTask(ChunkStatus.FULL, f.fixtureMap);
+            assertFalse(requested.isDone());
+            // Establish absence before discovery can request legitimate shared FULL work.
+            f.holder(y).eligibility(100, f.fixtureMap);
+            f.runtime.inputs.changed(); f.drain();
+            var graph = f.runtime.graph(f.holder(x));
+            var absent = target(graph, y);
+            assertEquals(FullInitializedInputs.Availability.ABSENT, absent.availability());
+            assertEquals(f.otherId, absent.route().region());
+            assertFalse(graph.contextFootprint(graph.inputReceipt().targets()).contains(absentKey));
+            var actual = graph.prepared().orElseThrow().actual();
+            installGetterAndContext(f);
+            int[] absentQueries = {0};
+            f.world.queryEndpoint = args -> {
+                var result = f.world.cache.getChunk((int) args[0], (int) args[1], (ChunkStatus) args[2], (boolean) args[3]);
+                if ((int) args[0] == y.x() && (int) args[1] == y.z()) {
+                    assertNull(result); absentQueries[0]++;
+                }
+                return result;
+            };
+            f.runtime.inputs.changed(); f.drain(); f.runGenerationTasks(); f.drain();
+            assertFalse(f.barrier.tripped(), () -> f.barrier.record().toString());
+            assertTrue(requested.isDone(), "the actual original FULL subscriber must complete");
+            assertSame(actual, requested.join().orElse(null));
+            assertSame(actual, f.holder(x).getChunkIfPresent(ChunkStatus.FULL));
+            assertTrue(absentQueries[0] > 0, "original finishing must execute the absent query");
+            assertEquals(1, f.world.sounds, "original entity conversion effect executes once");
+            assertSame(actual, graph.adjacent().join().orElse(null),
+                    "the exact source publication must acknowledge its original result; shared work may also publish");
+            assertEquals(f.otherId, f.directory.resolve(absentKey).orElseThrow().region());
+            assertTrue(f.world.tickets.getTickets(y.pack()).isEmpty());
+            assertNull(f.holder(y).getChunkIfPresentUnchecked(ChunkStatus.FULL));
+        } finally { close(f); }
+        assertCleanup(f);
+    }
+
+    @Test void newlyEligibleAbsentInputInvalidatesItsReceiptAndConvergesBeforeCompletion() throws Exception {
+        var f = new FullRegistrationFixture(false);
+        var x = ChunkPos.ZERO; var y = new ChunkPos(1, 0);
+        try {
+            var generation = new TopologyGeneration(2);
+            var sourceKey = new dev.phoenium.topology.RoutingKey(f.worldId, x.x(), x.z());
+            var neighborKey = new dev.phoenium.topology.RoutingKey(f.worldId, y.x(), y.z());
+            f.directory.publish(generation, Map.of(
+                    sourceKey, new dev.phoenium.topology.RegionRoute(f.ownerId, generation, f.owner.ownerEpoch()),
+                    neighborKey, new dev.phoenium.topology.RegionRoute(f.otherId, generation, f.other.ownerEpoch())));
+            saved(f, x, false, tag(15.8, 8, Tadpole.ticksToBeFrog));
+            f.start(x, ChunkStatus.FULL);
+            f.holder(y).eligibility(100, f.fixtureMap); f.drain();
+            var graph = f.runtime.graph(f.holder(x)); var absence = graph.inputReceipt();
+            assertEquals(FullInitializedInputs.Availability.ABSENT, target(graph, y).availability());
+            f.holder(y).eligibility(33, f.fixtureMap);
+            assertEquals(FullInitializedInputs.State.STALE, graph.validateInputs(graph.finishing.stage(), absence).state());
+            f.drain();
+            var actual = graph.prepared().orElseThrow().actual();
+            installGetterAndContext(f);
+            f.runtime.inputs.changed(); f.drain(); f.runGenerationTasks(); f.drain();
+            assertFalse(f.barrier.tripped(), () -> f.barrier.record().toString());
+            assertTrue(graph.adjacent().isDone());
+            assertSame(actual, graph.adjacent().join().orElse(null));
+            assertNotEquals(generation, f.directory.snapshot().generation());
+            assertEquals(f.directory.resolve(sourceKey), f.directory.resolve(neighborKey),
+                    "a newly present input requires actual quiescent convergence");
+            assertEquals(1, f.world.sounds);
+        } finally { close(f); }
+        assertCleanup(f);
+    }
+
     @Test void unrelatedGetterCannotBorrowPreparedNeighborFromAnActiveFinishingScope() throws Exception {
         var f = new FullRegistrationFixture(true);
         try {
@@ -305,4 +386,3 @@ final class FullFinishingQueriesTest {
         f.stop(); FullFinishingServices.stopped(f.world.level.getServer());
     }
 }
-

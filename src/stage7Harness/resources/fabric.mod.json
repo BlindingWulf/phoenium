@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  "id": "phoenium-stage7-observations",
+  "version": "1.0.0",
+  "name": "Disposable Stage 7 concurrent activity observations",
+  "environment": "server",
+  "entrypoints": { "server": ["dev.phoenium.stage7.Stage7ConcurrentProbe"] },
+  "mixins": ["stage7-observations.mixins.json"],
+  "depends": { "phoenium": "*", "chunky": "1.5.3" }
+}

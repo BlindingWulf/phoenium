@@ -32,10 +32,11 @@ def inventory(server):
     return entries
 
 
-def lifecycle(server, output, phase, command, actions, expected):
+def lifecycle(server, output, phase, command, actions, expected, flush_before_stop=True):
     if inventory(server) != expected:
         raise RuntimeError("Installed artifact identity changed before " + phase)
     lines = queue.Queue()
+    history = []
     start = time.monotonic()
     report = dict(phase=phase, command=command, commands=[], metrics=[], status="UNRESOLVED")
     process = subprocess.Popen(command, cwd=server, stdin=subprocess.PIPE,
@@ -50,6 +51,7 @@ def lifecycle(server, output, phase, command, actions, expected):
             for line in process.stdout:
                 stream.write(line)
                 stream.flush()
+                history.append(line.rstrip())
                 lines.put(line)
 
     def sample():
@@ -106,7 +108,23 @@ def lifecycle(server, output, phase, command, actions, expected):
             wait_for(marker)
             item = dict(action=action, atSeconds=time.monotonic()-start)
             report["commands"].append(item)
-            if "capture" in action:
+            if "await" in action:
+                # Observe a real asynchronous receipt even when intervening gameplay
+                # commands already consumed it from the console queue.
+                prior = next((i for i, line in enumerate(history) if action["after"] in line), None)
+                if prior is None:
+                    raise RuntimeError("Missing asynchronous start receipt: " + action["after"])
+                deadline = time.monotonic() + action.get("timeout", 90)
+                while True:
+                    observed = list(history[prior + 1:])
+                    if any(action["await"] in line for line in observed):
+                        item["observed"] = observed
+                        break
+                    if process.poll() is not None or time.monotonic() >= deadline:
+                        raise RuntimeError("Missing asynchronous completion receipt: " + action["await"])
+                    complete.wait(0.05)
+                item["elapsedSeconds"] = time.monotonic()-start-item["atSeconds"]
+            elif "capture" in action:
                 result = subprocess.run(["jcmd", str(process.pid), *action["capture"]],
                     stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, timeout=30)
                 path = output / (phase + "-" + action["label"] + ".txt")
@@ -124,9 +142,12 @@ def lifecycle(server, output, phase, command, actions, expected):
                 item["elapsedSeconds"] = time.monotonic()-start-item["atSeconds"]
             if action.get("settleSeconds"):
                 complete.wait(min(action["settleSeconds"], 30))
-        send("save-all flush")
-        report["save"] = wait_for("Saved the game")
-        report["threadDump"] = capture_thread_dump(server, process, "stage6-" + phase)
+        if flush_before_stop:
+            send("save-all flush")
+            report["save"] = wait_for("Saved the game")
+            report["threadDump"] = capture_thread_dump(server, process, "stage6-" + phase)
+        else:
+            report["stopWithOutstandingRequested"] = True
         send("stop")
         process.wait(timeout=90)
         if process.returncode != 0:
@@ -191,18 +212,27 @@ def main():
     parser.add_argument("--without-phoenium", action="store_true")
     parser.add_argument("--workers", type=int, choices=[1, 4], default=1)
     parser.add_argument("--port", type=int, default=25635)
+    parser.add_argument("--production", type=Path, help="Explicit repair candidate; requires --production-sha256")
+    parser.add_argument("--production-sha256")
+    parser.add_argument("--prepared-server", type=Path, default=ROOT / "build/stage3-client-server")
     args = parser.parse_args()
     plan = json.loads(args.plan.read_text())
     output = args.output.resolve()
     if output.exists():
         raise SystemExit("Refusing existing output " + str(output))
-    production = ROOT / "run/stage5/final-artifacts/phoenium-0.2.0-stage2.jar"
-    if sha256(production) != FROZEN:
+    frozen = ROOT / "run/stage5/final-artifacts/phoenium-0.2.0-stage2.jar"
+    if sha256(frozen) != FROZEN:
         raise SystemExit("Frozen production artifact changed")
+    if bool(args.production) != bool(args.production_sha256):
+        raise SystemExit("Candidate path and expected SHA-256 must be supplied together")
+    production = args.production or frozen
+    production_hash = args.production_sha256.upper() if args.production else FROZEN
+    if sha256(production) != production_hash:
+        raise SystemExit("Selected production artifact differs from expected SHA-256")
     output.mkdir(parents=True)
     server = output / "server"
     server.mkdir()
-    prepared = ROOT / "build/stage3-client-server"
+    prepared = args.prepared_server
     for name in ("fabric-server-launch.jar", ".fabric", "libraries", "versions"):
         src = prepared / name
         if src.is_dir():
@@ -241,23 +271,34 @@ def main():
         "-Dphoenium.stage3.chunkTrace=true", "-Dphoenium.stage4.candidate=true",
         f"-Dphoenium.gameplay.workers={args.workers}", *plan.get("jvm", []),
         "-jar", "fabric-server-launch.jar", "nogui"]
-    report = dict(status="UNRESOLVED", planSha256=sha256(args.plan), productionSha256=FROZEN,
+    report = dict(status="UNRESOLVED", planSha256=sha256(args.plan), productionSha256=production_hash,
         phoeniumInstalled=not args.without_phoenium, workers=args.workers,
         sourceHead=subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=ROOT, text=True).strip(),
         invocation=__import__("sys").argv, phases=[])
     for phase in ("first", "restart"):
         if phase not in plan:
             continue
-        result = lifecycle(server, output, phase, command, plan[phase], installed)
+        result = lifecycle(server, output, phase, command, plan[phase], installed,
+                           flush_before_stop=not plan.get("stopWithOutstanding", False))
         report["phases"].append({k:v for k,v in result.items() if k not in ("metrics", "startup", "commands")})
         if result["status"] != "PASS_CONSOLE_SAMPLE":
             break
         snapshot = output / (phase + "-mca")
         snapshot_mca(server / properties["level-name"], snapshot)
         (output / (phase + "-mca.json")).write_text(json.dumps(inspect_mca(snapshot, plan.get("positions", [])), indent=2))
+        if plan.get("requiredFullChunks"):
+            from check_stage7_chunky import requested_records
+            try:
+                verified = requested_records(snapshot, plan["requiredFullChunks"])
+            except Exception as failure:
+                report["persistenceFailure"] = repr(failure)
+                (output / "report.json").write_text(json.dumps(report, indent=2))
+                raise
+            (output / (phase + "-requested-full.json")).write_text(json.dumps(verified, indent=2))
     else:
         report["status"] = "PASS_CONSOLE_SAMPLE"
-    report["controlUnchanged"] = sha256(production) == FROZEN
+    report["controlUnchanged"] = sha256(frozen) == FROZEN
+    report["candidateUnchanged"] = sha256(production) == production_hash
     (output / "report.json").write_text(json.dumps(report, indent=2))
     raise SystemExit(0 if report["status"] == "PASS_CONSOLE_SAMPLE" else 1)
 

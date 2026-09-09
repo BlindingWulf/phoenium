@@ -454,6 +454,15 @@ tasks.register('stage4AcceptanceHarness', Jar) {
     }
     from('src/stage4AcceptanceHarness/resources')
 }
+tasks.register('stage7ObservationHarness', Jar) {
+    description = 'Build bounded read-only observations of Chunky demand and original gameplay.'
+    dependsOn tasks.named('compileTestJava')
+    archiveFileName = 'stage7-observations.jar'
+    destinationDirectory = layout.buildDirectory.dir('test-harness')
+    from(sourceSets.test.output.classesDirs) { include 'dev/phoenium/stage7/**' }
+    from('src/stage7Harness/resources')
+}
+
 tasks.register('prepareFullAcceptanceServer', Copy) {
     dependsOn tasks.named('prepareStage3ClientServer'), tasks.named('fullAcceptanceHarness')
     from(tasks.named('fullAcceptanceHarness'))

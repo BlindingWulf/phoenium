@@ -522,8 +522,7 @@ public final class FullRegistrationRuntime {
                 var route = authority.directory().resolve(lifecycle.chunkKey()).orElse(null);
                 if (route == null) return LightInputService.Readiness.NOT_REGISTERED;
                 for (var target : inputReceipt().targets()) {
-                    if (((target.holder() != null && target.availability() != FullInitializedInputs.Availability.ABSENT)
-                            || target.purposes().contains(FullInitializedInputs.Purpose.ENTITY_CONTEXT))
+                    if (target.requiresRegionalAuthority()
                             && !route.equals(target.route())) return LightInputService.Readiness.NOT_REGISTERED;
                     var generation = generations.get(target.holder());
                     if (target.availability() != FullInitializedInputs.Availability.BIOMES
@@ -602,8 +601,7 @@ public final class FullRegistrationRuntime {
             if (serviceReservation == null) missing.add("finishing service reservation");
             var route = authority.directory().resolve(lifecycle.chunkKey()).orElse(null);
             if (inputReceipt() != null && inputReceipt().targets().stream().anyMatch(target ->
-                    ((target.holder() != null && target.availability() != FullInitializedInputs.Availability.ABSENT)
-                            || target.purposes().contains(FullInitializedInputs.Purpose.ENTITY_CONTEXT))
+                    target.requiresRegionalAuthority()
                             && !Objects.equals(route, target.route())))
                 missing.add("regional enclosure convergence");
             return List.copyOf(missing);
@@ -630,17 +628,18 @@ public final class FullRegistrationRuntime {
             if (receipt == null || receipt != claimedInputs || receipt != inputReceipt()
                     || validateInputs(finishing.stage(), receipt).state() != FullInitializedInputs.State.SATISFIED)
                 throw new ChunkProtocolException("FULL suffix lacks its exact claimed input receipt");
-            for (var target : receipt.targets()) if (target.route() != null
-                    && (!target.route().region().equals(claim.frozenRoute().region())
-                    || !target.route().generation().equals(claim.frozenRoute().generation())))
-                throw new ChunkProtocolException("FULL input outside the claimed regional enclosure");
+            for (var target : receipt.targets()) if (target.requiresRegionalAuthority()
+                    && !claim.frozenRoute().equals(target.route()))
+                throw new ChunkProtocolException("FULL input outside the claimed regional enclosure: source="
+                        + lifecycle.chunkKey() + " work=" + work + " claim=" + claim.frozenRoute()
+                        + " target=" + target.position() + " availability=" + target.availability()
+                        + " purposes=" + target.purposes() + " holder=" + (target.holder() != null)
+                        + " ticket=" + target.ticketLevel() + " targetRoute=" + target.route());
         }
         Set<RoutingKey> contextFootprint(List<FullInitializedInputs.Target> targets) {
             Set<RoutingKey> keys = new LinkedHashSet<>();
             keys.add(lifecycle.chunkKey());
-            for (var target : targets) if ((target.holder() != null
-                    && target.availability() != FullInitializedInputs.Availability.ABSENT)
-                    || target.purposes().contains(FullInitializedInputs.Purpose.ENTITY_CONTEXT))
+            for (var target : targets) if (target.requiresRegionalAuthority())
                 keys.add(new RoutingKey(authority.world(), target.position().x(), target.position().z()));
             return Set.copyOf(keys);
         }
