@@ -17,12 +17,16 @@ public final class PhoeniumMixinConfigPlugin implements IMixinConfigPlugin {
     private static final String LITHIUM_SERVER = "dev.phoenium.mixin.LithiumServerChunkCacheMixin";
     private static final String BASE_LEVEL = "dev.phoenium.mixin.FullFinishingLevelQueriesMixin";
     private static final String LITHIUM_LEVEL = "dev.phoenium.mixin.LithiumFullFinishingLevelQueriesMixin";
+    private static final String GEYSER_FLOODGATE_SKIN = "dev.phoenium.mixin.GeyserFloodgateSkinUploaderMixin";
     private boolean lithium;
     private boolean lithiumChunkAccess;
+    private boolean geyserFloodgate;
 
     @Override public void onLoad(String mixinPackage) {
         lithium = FabricLoader.getInstance().isModLoaded("lithium");
         lithiumChunkAccess = lithium && lithiumChunkAccessEnabled(FabricLoader.getInstance().getConfigDir());
+        geyserFloodgate = FabricLoader.getInstance().isModLoaded("geyser-fabric")
+            && FabricLoader.getInstance().isModLoaded("floodgate");
     }
 
     @Override public String getRefMapperConfig() { return null; }
@@ -32,6 +36,7 @@ public final class PhoeniumMixinConfigPlugin implements IMixinConfigPlugin {
         if (mixinClassName.equals(LITHIUM_SERVER)) return lithiumChunkAccess;
         if (mixinClassName.equals(BASE_LEVEL)) return !lithiumChunkAccess;
         if (mixinClassName.equals(LITHIUM_LEVEL)) return lithiumChunkAccess;
+        if (mixinClassName.equals(GEYSER_FLOODGATE_SKIN)) return geyserFloodgate;
         return true;
     }
 
