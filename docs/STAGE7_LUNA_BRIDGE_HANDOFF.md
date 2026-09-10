@@ -2,7 +2,7 @@
 
 Status: `STAGE 7 IN PROGRESS`; Stage 6 remains `AUDIT PARTIAL`; Stage 8 and later remain `NOT STARTED`.
 
-This document records the bounded Stage 7 continuation performed on 2026-09-09 in the user-selected Luna MAX session. It is the durable handoff for the ScalableLux persisted-light repair, the Lithium chunk/ticker adapter, and the next provider queue. It does not promote the overall compatibility campaign to a release decision.
+This document records the bounded Stage 7 continuation performed on 2026-09-09/10 in the user-selected Luna MAX session. It is the durable handoff for the ScalableLux persisted-light repair, the Lithium chunk/ticker adapter, the ServerCore entity-callback adapter, and the next provider queue. It does not promote the overall compatibility campaign to a release decision.
 
 ## Boundary and preserved identity
 
@@ -10,18 +10,22 @@ This document records the bounded Stage 7 continuation performed on 2026-09-09 i
 - Branch: `stage7/scalablelux-persisted-light-repair`
 - ScalableLux repair commit: `28a7aa87e3e03185045fc2a77f0e32d0a3df475e` (`stage7: bridge ScalableLux persisted light reload`)
 - Lithium repair commit: `c6dd6a29b56e3572b892ff009b5d6f2009e89a18` (`stage7: bridge Lithium chunk and ticker paths`)
+- ServerCore repair commit: `72626a94239b86fce1b99a443d7fc02d67f66021` (`stage7: bridge ServerCore entity activation callback`)
 - Source baseline used by the ScalableLux campaigns: `7d2029b23c4cb1772039229a9852c0b7762b6679`
 - Source head recorded by the final Lithium campaigns: `bdc71b1eb3381e619b3ea083265dbf8bccf93956` (the artifact contains the committed `c6dd6a2` source)
 - Final Phoenium artifact: `build/libs/phoenium-0.2.0-stage2.jar`
-- Final Phoenium artifact SHA-256: `F3F63A32A265F1D2F97A7BB3D077B16F571D3F210DB1337965AD191B0CF99033`
+- Final Phoenium artifact SHA-256: `4FA66A418EC3F32B3616FBB8AD4823D596DB0488F1377F726EC4C10744B55499`
 - Locked ScalableLux artifact: `run/stage6/frozen-audit-045834b/research/artifacts/scalablelux/ScalableLux-fabric-0.3.0-alpha.0.3-all.jar`
 - Locked ScalableLux SHA-256: `8D76CF27589DCC8E16C34BA0709A9EE2134CFCD60B90862F8CBD204EA9B6C7C8`
 - ScalableLux reviewed source identity: repository `RelativityMC/ScalableLux`, branch `ver/26.2.0`, reviewed source commit `77c290c4c84be1c87d006bc8221e5361d98e0c9a`
 - Locked Lithium artifact: `run/stage6/frozen-audit-045834b/research/artifacts/lithium/lithium-fabric-0.25.3+mc26.2.jar`
 - Locked Lithium SHA-256: `FDDE92E238E8075F89AD7F701F2A3D5854AF88BA9A67657184A4407B104AC563`
+- Locked ServerCore artifact: `run/stage6/frozen-audit-045834b/research/artifacts/servercore/servercore-fabric-1.5.19+26.2.jar`
+- Locked ServerCore SHA-256: `4F7C9FB3B35B364D8F6500D04F0D5481656F617A83BC69742B47F39ADFF59666`
+- ServerCore preservation plan SHA-256: `4D3210489D329F6DB7B58DC2CEEBD04D1F1CCD62EDD8E3B1E9018245499C3B98`
 - Stage 5 frozen production remains commit `01909eafad8ae95b83f04c7d9bd52ce0facd3cb1`, SHA-256 `59BB31DC058351C7F4BC9DB572FEC1DE2B298FF623614FC4CB3EAFAEB5A772D5`.
 
-The source tree is clean after the two repair commits. Preserved historical evidence was not overwritten: the original ScalableLux failure remains under `run/stage7/scalablelux-prepatch-current-w1/`, the older Stage 6 ScalableLux reproduction remains under `run/stage6/frozen-audit-045834b/runs/scalablelux-w1/`, and the original Lithium client failure remains under `run/stage6/frozen-audit-045834b/runs/lithium-client-w4/`.
+The source tree is clean after the recorded Stage 7 repair commits. Preserved historical evidence was not overwritten: the original ScalableLux failure remains under `run/stage7/scalablelux-prepatch-current-w1/`, the older Stage 6 ScalableLux reproduction remains under `run/stage6/frozen-audit-045834b/runs/scalablelux-w1/`, the original Lithium client failure remains under `run/stage6/frozen-audit-045834b/runs/lithium-client-w4/`, and the original ServerCore callback-drift runs remain under `run/stage6/frozen-audit-045834b/runs/servercore-w1/` and `servercore-w4/`.
 
 ## ScalableLux finding
 
@@ -51,6 +55,18 @@ Commit `c6dd6a29b56e3572b892ff009b5d6f2009e89a18` keeps the repair narrow:
 3. `LocalRebindableBlockEntityTickerMixin` exposes only the current delegate of the existing vanilla wrapper; it retains no parallel lifecycle state. `LithiumSleepingTickerBridge` bypasses only the exact wrapper-to-Lithium-sentinel identity. A non-wrapper null position still fails closed, and a wake delegate returns to the normal position/eligibility/tick sequence.
 
 This is a provider-specific compatibility adapter, not a null-position bypass, a dropped sleeping ticker, a second ticker registry, or a weakening of owner routing and original block-entity behavior.
+
+## ServerCore finding and contained repair
+
+The locked ServerCore mixin adds `servercore$activateEntities(BooleanSupplier, CallbackInfo)` immediately before the native `EntityTickList.forEach` call in `ServerLevel.tick`. Its native body reads `MinecraftServer.getTickCount()`, runs only when `tickCount % 20 == 0`, and calls `ActivationRange.activateEntities(ServerLevel, int)`. The preservation profile keeps activation range, dynamic distance, breeding caps, feature switches and all five optional optimization switches disabled; that configuration does not remove the callback, so the callback boundary itself still has to be accounted for.
+
+Commit `72626a94239b86fce1b99a443d7fc02d67f66021` accepts only that locked shape:
+
+1. `LiveTickPhaseBoundary.requireInstalledLevelCallbacks` recognizes the exact ServerCore handler name suffix and descriptor, requires its call to remain immediately before `EntityTickList.forEach`, and verifies the merged twelve-instruction body, its single `% 20` branch, its `ActivationRange.activateEntities` target, its ordinary instance execution state and its single fall-through label.
+2. Because Mixin inserts the callback receiver and `CallbackInfo` arguments between the original entity consumer and `forEach`, the adapter anchors the copied entity phase at the original `InvokeDynamic` consumer rather than treating those preparation instructions as native entity-list work. The callback is copied once into `phoenium$runEntityTicks`, where the owner-free final coordinator invokes the original body before regional entity admission; it is never replayed once per region.
+3. The focused boundary test proves the reviewed callback is retained and rejects a moved callback, a changed cadence constant, and an otherwise unreviewed shape. The native ServerCore body is not replaced, deleted or executed through a second registry.
+
+This is a callback-boundary adapter, not acceptance of ServerCore's policy modules. If activation range or other behavior-changing policies are enabled later, their global entity scan and activation-state writes require a separate semantic review against ownership, movement, removal, save/restart and AI requirements.
 
 ## Verification evidence
 
@@ -84,6 +100,19 @@ The preserved configuration control was rerun as `run/stage7/lithium-adapter-cli
 
 The full unit suite after the Lithium repair is `843` tests across `89` suites with zero failures or skips: `./gradlew.bat test`. It includes the explicit unknown-null-position fail-closed test and the negative wrapper-identity sentinel test in `RegionalBlockEntityTickOrderTest`. The jar build and `git diff --check` also pass.
 
+### ServerCore evidence
+
+The locked ServerCore preservation plan is `scripts/stage6-plans/servercore-preserve.json` (plan SHA-256 `4D3210489D329F6DB7B58DC2CEEBD04D1F1CCD62EDD8E3B1E9018245499C3B98`). It writes the same behavior-preserving configuration to each isolated server: activation range, dynamic, breeding-cap and listed feature modules are disabled, as are `reduce-sync-loads`, `cache-ticking-chunks`, `optimize-command-blocks`, `fast-biome-lookups` and `cancel-duplicate-fluid-ticks`. The final candidate SHA-256 is `4FA66A418EC3F32B3616FBB8AD4823D596DB0488F1377F726EC4C10744B55499`; both reports now identify committed source head `72626a94239b86fce1b99a443d7fc02d67f66021`.
+
+| Profile | Result | First / restart | Evidence |
+| --- | --- | --- | --- |
+| W1 (`run/stage7/servercore-final-w1/`) | `PASS_CONSOLE_SAMPLE` | 14.297 s / 10.250 s | Native save/stop and restart pass; zero duplicate, bypass, fallback, ownership-violation, unleased and barrier counts |
+| W4 (`run/stage7/servercore-final-w4/`) | `PASS_CONSOLE_SAMPLE` | 14.390 s / 10.219 s | Same preservation plan and clean health counters with `parallel=ON`; `controlUnchanged=true`, `candidateUnchanged=true` |
+
+The strict real-client cases are `run/stage7/servercore-adapter-client2-w1/` and `run/stage7/servercore-adapter-client2-w4/`, using the hash-locked selection in `run/stage7/servercore-adapter-client-selection.json`. Both have real TCP connection, account-free identity, native save/unpack/deadline PASS, and `STAGE4_TRACE_RESULT PASS` in the first and pre-restart traces. The strict comparator outputs `run/stage7/servercore-adapter-client-comparison-w1.json` and `run/stage7/servercore-adapter-client-comparison-w4.json`, each `PASS` with 132 ordered events, saved delay 186, original tracker-call counts `{00000009...:323, 00000005...:187, 00000001...:515}`, and digest `6AB41117A5099DD52A7E10C358A6E30887EB489B7A038C4E1F1A5078E4385A96` for both reference and candidate. The raw post-restart reload trace remains `PARTIAL` because of the existing non-contract event omissions; the native restart validator and strict comparator still pass, and this handoff does not relabel that raw trace.
+
+The ServerCore boundary test is included in the full `844`-test, `89`-suite run after commit `72626a9`, with zero failures, errors or skips. The jar build and `git diff --check` pass.
+
 The stale campaign-owned server process left by the earlier diagnostic failure was stopped only after its command line and test-port ownership were confirmed. The Gradle daemon was left running; no unrelated process was stopped.
 
 ## Scope result and remaining risk
@@ -92,13 +121,15 @@ The ScalableLux persisted-light startup item is now a `SCOPED PASS`, not a full 
 
 The Lithium collision/sleeping-ticker item is now a `SCOPED ADAPTER PASS`, not full Lithium production acceptance. The evidence covers the locked release, default and explicitly disabled `world.chunk_access` configurations, collision-query boot, the real-client furnace workload across save/restart, W1/W4 redstone save/restart, strict client traces and clean shutdown. It does not yet cover every Lithium optimization, every block-entity type, large entity populations, all owner-movement/removal permutations, or combined Lithium/FerriteCore/VMP acceptance. Keep those combinations withheld until independently exercised.
 
+The ServerCore external-callback item is now a `SCOPED ADAPTER PASS`, not full ServerCore production acceptance. The evidence covers the locked release, exact callback/body/boundary recognition, W1/W4 preservation-profile save/restart, real-client W1/W4 strict comparison and clean shutdown. It does not accept activation-range, dynamic-distance, breeding-cap, villager, mob-spawning, pearl-loading or optional optimization behavior; those remain separately unproven and are intentionally disabled in the preserved profile.
+
 ## Next bounded queue
 
-The next work item is ServerCore callback ownership. Start from the preserved evidence rather than cycling runtime toggles. Lithium's remaining broad-coverage rows stay partial and are not a reason to reopen its already-scoped adapter.
+The next work item is Clumps entity identity/publication. Start from the preserved evidence rather than cycling runtime toggles. Lithium and ServerCore's remaining broad-coverage/policy rows stay partial and are not a reason to reopen their already-scoped adapters.
 
-1. Isolate ServerCore's `activateEntities` callback boundary and state the owner/lifecycle contract precisely; its optional behavior-changing policies must remain disabled during the preservation profile.
-2. Preserve callback order, original entity activation semantics, removal, owner movement, save/restart, W1/W4 and strict client comparator behavior. Disabling the provider's runtime features is not itself an integration fix.
-3. If the contract can be stated precisely, implement one narrow adapter and verify it before testing ServerCore policy modules separately. If it cannot be stated precisely, record the exact evidence and move to Clumps without weakening the gate or guessing configurations.
+1. Isolate Clumps' mod-created/replaced/removed XP entity identity and publication seam; preserve heterogeneous-value grouping, total XP, pickup/Mending/removal and save/restart semantics.
+2. Require exact current-owner publication and route evidence for every alias; do not make the prior `FullEntityFacts.trackingCandidate:273` failure disappear by accepting a stale identity or adding a second registry.
+3. If the contract can be stated precisely, implement one narrow adapter and verify it before broader Clumps behavior. If it cannot be stated precisely, record the exact evidence and move to VMP/Geyser/SLO/FastNoise according to the queue without weakening the gate.
 
 After ServerCore, the bounded queue is Clumps entity identity/publication, then VMP/Geyser/SLO/FastNoise follow-ups as their evidence warrants. C2ME runtime integration remains behind its existing safety gate: do not integrate replacement generation/FULL/save ownership or combine it with ScalableLux until its readiness, publication, save, cancellation and stop invariants are proven.
 
