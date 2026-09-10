@@ -5,7 +5,7 @@ Updated: 2026-09-10
 ## Repository state
 
 - Branch: `stage7/scalablelux-persisted-light-repair`
-- Current HEAD: `e0bc54b` (`fix: guard Geyser delayed skin reconnect`)
+- Current HEAD: `b50312b` (`docs: refresh Stage 7 Sol handoff`)
 - Production JAR: `build/libs/phoenium-0.2.0-stage2.jar`
 - Production JAR SHA-256: `D095C007C1B81698440F3BF0145E38A23DC6078F7033D713324F61F15F2C3CC9`
 - Last recorded full deterministic suite: `847` tests across `91` suites, zero failures/errors/skips, after the Geyser/Floodgate lifecycle repair.
@@ -20,18 +20,19 @@ Updated: 2026-09-10
 - ServerCore reviewed entity-activation callback adapter: implementation commit `72626a9`; scoped preservation-profile checkpoint PASS. Overall ServerCore compatibility remains PARTIAL because behavior-changing policy modules are outside this scoped acceptance.
 - Clumps merge/removal lifecycle: SCOPED PASS. Implementation `b394978`; checkpoint docs `3a6c6ed`. Native removed-entity tick-list boundary restored before owner-published tracking facts are required. Post-commit locked Clumps W1/W4 fresh+restart, real-client pickup/Mending/removal, full suite, and ServerCore W4 overlap regression pass against production SHA `0B80154F...867C4`.
 - Geyser/Floodgate stale skin-uploader reconnect: scoped lifecycle PASS_ADAPTER. A delayed Geyser reconnect queued before shutdown is now guarded at execution by the provider's own `closed` state. Locked combined W1/W4 fresh+restart and Geyser-only W1 control pass; Bedrock feature acceptance remains PARTIAL.
+- Structure Layout Optimizer strict seed-parity policy: provider-attributed upstream blocker. Locked SLO with its parity-breaking option disabled still changes the trial chamber from 338 to 273 pieces identically with and without Phoenium. Excluded from the strict-parity profile pending upstream fix or explicit changed-layout policy.
 
 ## Current provider
 
-Next independent Stage 7 provider item. Geyser/Floodgate lifecycle isolation is closed as a scoped PASS_ADAPTER; VMP remains an exact architecture blocker for this Sol High campaign.
+FastNoise comparator-boundary repair. SLO policy is closed without a Phoenium production change; VMP remains an exact architecture blocker and Geyser/Floodgate feature acceptance still needs a real Bedrock client.
 
 ### Exact first unresolved item
 
-Select the next unresolved Stage 7 audit row that can be closed without prohibited architecture work or unavailable external-client hardware. Geyser/Floodgate still needs a real Bedrock client for feature acceptance, so do not turn the lifecycle repair into an overall PASS.
+FastNoise terrain attribution is still inconclusive because matched controls changed block state after the live command sequence. The next task is to freeze a deterministic generation/snapshot boundary before comparing provider output.
 
 ### Shortest reproduction / verification
 
-Start from `docs/STAGE7_AUDIT_BACKLOG.md` and the frozen Stage 6 matrix/evidence. Prefer a self-contained provider defect with an existing finite reproduction. Before every live Minecraft run reread `docs/AGENT_MINECRAFT_TESTING.md` and recheck Java/Minecraft processes.
+Start from the frozen Stage 6 generation harness and `generation-comparison.json`; identify the current random-tick/live-activity window between requested chunk completion and snapshot. Before any live run reread `docs/AGENT_MINECRAFT_TESTING.md` and recheck Java/Minecraft processes.
 
 ## Tests/evidence already recorded passing
 
@@ -50,6 +51,7 @@ Start from `docs/STAGE7_AUDIT_BACKLOG.md` and the frozen Stage 6 matrix/evidence
 - Production artifact SHA-256 on disk: `0B80154F4AA99E0D833C5DC119A39A2087AF6CDA3B2AC286DAD0477E3F5867C4`.
 - VMP investigation: historical stop-trace ambiguity resolved to a real disconnect lifecycle failure. The real `seenBy` listener survives provider removal; VMP's optimized tracker is a full `ChunkMap.tick()` overwrite that Phoenium's regional tracker cancels. Console W1/W4 alone are insufficient. No VMP production repair was accepted; see `STAGE7_VMP_XHIGH_HANDOFF.md`.
 - Geyser/Floodgate lifecycle repair: historical W1 late WebSocket orphan attributed to Geyser's queued `FloodgateSkinUploader` reconnect. Locked combined W1/W4 fresh+restart all exit 0 with the exact adapter; Geyser-only W1 control also passes. Full suite `847` tests / `91` suites / zero failures/errors/skips. Production SHA `D095C007...C3CC9`.
+- SLO attribution: native/no-SLO controls retain `338` trial-chamber pieces and NBT `552c736c...759fe`; SLO W1/W4 and Fabric+SLO control all retain `273` and NBT `00c9bd5e...7b89c` with the explicit parity-breaking config false. Upstream default semantics intend parity; no current 26.x release/config closes the divergence.
 
 ## Known architecture boundaries
 
@@ -60,6 +62,7 @@ Start from `docs/STAGE7_AUDIT_BACKLOG.md` and the frozen Stage 6 matrix/evidence
 - Required provider functionality must remain enabled for any claimed accepted path; preservation-profile disabled modules are exclusions from the scoped ServerCore result, not proof of their compatibility.
 - VMP optimized nearby-entity tracking is BLOCKED/PARTIAL for this campaign. A future adapter must integrate VMP's own staging/area-map/player-index lifecycle; private-index patching, cross-owner waits, or broad tracker closure are rejected.
 - Geyser/Floodgate lifecycle PASS is scoped to the stale reconnect defect. Bedrock login/identity/gameplay/persistence remain unaccepted without a real supported Bedrock client.
+- SLO is excluded only from the strict vanilla-seed-parity profile. Do not patch Phoenium to counteract provider RNG/layout behavior or claim PASS_CONFIG while no supported provider switch restores it.
 
 ## Running processes
 
@@ -67,6 +70,6 @@ Start from `docs/STAGE7_AUDIT_BACKLOG.md` and the frozen Stage 6 matrix/evidence
 
 ## Next 3 actions
 
-1. Re-read `STAGE7_AUDIT_BACKLOG.md` and choose the next unresolved self-contained provider row with locally reproducible evidence.
-2. Preserve the accepted Geyser/Floodgate adapter while checking overlap only when the next provider actually shares the touched lifecycle or mixin boundary.
-3. Keep VMP, Bedrock-client feature acceptance, legacy Via client acceptance and voice/audio acceptance scoped to their documented external or architecture gates instead of manufacturing substitutes.
+1. Trace the frozen generation harness from chunk request completion through save/snapshot and identify all live/random-tick activity that can mutate compared terrain.
+2. Add the smallest deterministic FastNoise/control snapshot boundary with fixed seed and explicit chunk/status set; prove two no-provider controls match before attributing provider output.
+3. If controls are stable, compare locked FastNoise W1/W4 at that same boundary; if controls still diverge, document the exact remaining nondeterministic Minecraft state and stop the comparator campaign.
