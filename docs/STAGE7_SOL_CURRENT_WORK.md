@@ -5,7 +5,7 @@ Updated: 2026-09-10
 ## Repository state
 
 - Branch: `stage7/scalablelux-persisted-light-repair`
-- Current HEAD: `b50312b` (`docs: refresh Stage 7 Sol handoff`)
+- Current HEAD: `1c8f1ab` (`docs: resolve SLO seed parity policy`)
 - Production JAR: `build/libs/phoenium-0.2.0-stage2.jar`
 - Production JAR SHA-256: `D095C007C1B81698440F3BF0145E38A23DC6078F7033D713324F61F15F2C3CC9`
 - Last recorded full deterministic suite: `847` tests across `91` suites, zero failures/errors/skips, after the Geyser/Floodgate lifecycle repair.
@@ -21,18 +21,19 @@ Updated: 2026-09-10
 - Clumps merge/removal lifecycle: SCOPED PASS. Implementation `b394978`; checkpoint docs `3a6c6ed`. Native removed-entity tick-list boundary restored before owner-published tracking facts are required. Post-commit locked Clumps W1/W4 fresh+restart, real-client pickup/Mending/removal, full suite, and ServerCore W4 overlap regression pass against production SHA `0B80154F...867C4`.
 - Geyser/Floodgate stale skin-uploader reconnect: scoped lifecycle PASS_ADAPTER. A delayed Geyser reconnect queued before shutdown is now guarded at execution by the provider's own `closed` state. Locked combined W1/W4 fresh+restart and Geyser-only W1 control pass; Bedrock feature acceptance remains PARTIAL.
 - Structure Layout Optimizer strict seed-parity policy: provider-attributed upstream blocker. Locked SLO with its parity-breaking option disabled still changes the trial chamber from 338 to 273 pieces identically with and without Phoenium. Excluded from the strict-parity profile pending upstream fix or explicit changed-layout policy.
+- FastNoise fixed FULL-chunk comparator: provider attribution remains BLOCKED/PARTIAL. Two fresh no-FastNoise controls under a frozen clock and exact 64-FULL core still differ by 47 feature-like block placements across 6 chunks and `WORLD_SURFACE` in 3 chunks; biomes/structures are 64/64 stable. No FastNoise candidate verdict was attempted after the control gate failed.
 
 ## Current provider
 
-FastNoise comparator-boundary repair. SLO policy is closed without a Phoenium production change; VMP remains an exact architecture blocker and Geyser/Floodgate feature acceptance still needs a real Bedrock client.
+Next independent bounded Stage 7 item. SLO policy and the FastNoise FULL-chunk comparator campaign are closed; VMP remains an exact architecture blocker and Geyser/Floodgate feature acceptance still needs a real Bedrock client.
 
 ### Exact first unresolved item
 
-FastNoise terrain attribution is still inconclusive because matched controls changed block state after the live command sequence. The next task is to freeze a deterministic generation/snapshot boundary before comparing provider output.
+Select the next unresolved item that can be advanced without unavailable external clients or architecture-heavy provider integration. Panda-native protection policy/design is the strongest self-contained candidate.
 
 ### Shortest reproduction / verification
 
-Start from the frozen Stage 6 generation harness and `generation-comparison.json`; identify the current random-tick/live-activity window between requested chunk completion and snapshot. Before any live run reread `docs/AGENT_MINECRAFT_TESTING.md` and recheck Java/Minecraft processes.
+Start from the Panda source-only behavior inventory and the preserved gameplay requirements in the Stage 6/7 docs. Define ownership-safe, per-dimension identities and exact caps/fairness/cleanup semantics before production code. Do not copy known Panda bucket/removal bugs.
 
 ## Tests/evidence already recorded passing
 
@@ -52,6 +53,7 @@ Start from the frozen Stage 6 generation harness and `generation-comparison.json
 - VMP investigation: historical stop-trace ambiguity resolved to a real disconnect lifecycle failure. The real `seenBy` listener survives provider removal; VMP's optimized tracker is a full `ChunkMap.tick()` overwrite that Phoenium's regional tracker cancels. Console W1/W4 alone are insufficient. No VMP production repair was accepted; see `STAGE7_VMP_XHIGH_HANDOFF.md`.
 - Geyser/Floodgate lifecycle repair: historical W1 late WebSocket orphan attributed to Geyser's queued `FloodgateSkinUploader` reconnect. Locked combined W1/W4 fresh+restart all exit 0 with the exact adapter; Geyser-only W1 control also passes. Full suite `847` tests / `91` suites / zero failures/errors/skips. Production SHA `D095C007...C3CC9`.
 - SLO attribution: native/no-SLO controls retain `338` trial-chamber pieces and NBT `552c736c...759fe`; SLO W1/W4 and Fabric+SLO control all retain `273` and NBT `00c9bd5e...7b89c` with the explicit parity-breaking config false. Upstream default semantics intend parity; no current 26.x release/config closes the divergence.
+- FastNoise control gate: fresh fixed-boundary control A/B each save exactly 64 requested FULL chunks; comparison is 58/64 block chunks, 64/64 biomes, 61/64 heightmaps, 64/64 structures. Exact remaining state is 47 feature-like block differences and only `WORLD_SURFACE` heightmap variation. Candidate comparison stopped before provider attribution.
 
 ## Known architecture boundaries
 
@@ -63,6 +65,7 @@ Start from the frozen Stage 6 generation harness and `generation-comparison.json
 - VMP optimized nearby-entity tracking is BLOCKED/PARTIAL for this campaign. A future adapter must integrate VMP's own staging/area-map/player-index lifecycle; private-index patching, cross-owner waits, or broad tracker closure are rejected.
 - Geyser/Floodgate lifecycle PASS is scoped to the stale reconnect defect. Bedrock login/identity/gameplay/persistence remain unaccepted without a real supported Bedrock client.
 - SLO is excluded only from the strict vanilla-seed-parity profile. Do not patch Phoenium to counteract provider RNG/layout behavior or claim PASS_CONFIG while no supported provider switch restores it.
+- FastNoise FULL-chunk strict parity is not an accepted oracle while no-provider controls vary. Do not call those differences FastNoise behavior or filter them away to manufacture a pass; a future attempt needs an earlier deterministic generation-stage boundary.
 
 ## Running processes
 
@@ -70,6 +73,6 @@ Start from the frozen Stage 6 generation harness and `generation-comparison.json
 
 ## Next 3 actions
 
-1. Trace the frozen generation harness from chunk request completion through save/snapshot and identify all live/random-tick activity that can mutate compared terrain.
-2. Add the smallest deterministic FastNoise/control snapshot boundary with fixed seed and explicit chunk/status set; prove two no-provider controls match before attributing provider output.
-3. If controls are stable, compare locked FastNoise W1/W4 at that same boundary; if controls still diverge, document the exact remaining nondeterministic Minecraft state and stop the comparator campaign.
+1. Review the retained Panda reference/source inventory and extract only the desired protections: per-area projectile caps, per-player pearl caps, and bounded mob/vehicle staggering.
+2. Write invariant-first native policy with per-dimension buckets, deterministic/fair removal or deferral rules, cleanup on world/entity/player lifecycle, and opt-in defaults that preserve unaffected gameplay.
+3. Add deterministic adversarial tests before deciding whether Phoenium production primitives are sufficient for a native implementation; stop at design if they are not.

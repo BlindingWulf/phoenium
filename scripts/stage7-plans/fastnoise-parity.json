@@ -1,0 +1,46 @@
+{
+  "description": "Stage 7 FastNoise strict generation comparator: exact 8x8 core under a frozen clock, with no live fixture writes or tick steps between target demand and snapshot.",
+  "first": [
+    {
+      "command": "tick freeze",
+      "expect": "The game is frozen"
+    },
+    {
+      "command": "forceload add 96 -64 223 63",
+      "expect": "Marked"
+    },
+    {
+      "command": "execute if loaded 96 64 -64 run say PARITY_NW_LOADED",
+      "expect": "PARITY_NW_LOADED",
+      "pollReadiness": true
+    },
+    {
+      "command": "execute if loaded 223 64 -64 run say PARITY_NE_LOADED",
+      "expect": "PARITY_NE_LOADED",
+      "pollReadiness": true
+    },
+    {
+      "command": "execute if loaded 96 64 63 run say PARITY_SW_LOADED",
+      "expect": "PARITY_SW_LOADED",
+      "pollReadiness": true
+    },
+    {
+      "command": "execute if loaded 223 64 63 run say PARITY_SE_LOADED",
+      "expect": "PARITY_SE_LOADED",
+      "pollReadiness": true
+    }
+  ],
+  "properties": {
+    "level-type": "minecraft:normal"
+  },
+  "requiredFullChunks": [
+    {"x": 6, "z": -4}, {"x": 7, "z": -4}, {"x": 8, "z": -4}, {"x": 9, "z": -4}, {"x": 10, "z": -4}, {"x": 11, "z": -4}, {"x": 12, "z": -4}, {"x": 13, "z": -4},
+    {"x": 6, "z": -3}, {"x": 7, "z": -3}, {"x": 8, "z": -3}, {"x": 9, "z": -3}, {"x": 10, "z": -3}, {"x": 11, "z": -3}, {"x": 12, "z": -3}, {"x": 13, "z": -3},
+    {"x": 6, "z": -2}, {"x": 7, "z": -2}, {"x": 8, "z": -2}, {"x": 9, "z": -2}, {"x": 10, "z": -2}, {"x": 11, "z": -2}, {"x": 12, "z": -2}, {"x": 13, "z": -2},
+    {"x": 6, "z": -1}, {"x": 7, "z": -1}, {"x": 8, "z": -1}, {"x": 9, "z": -1}, {"x": 10, "z": -1}, {"x": 11, "z": -1}, {"x": 12, "z": -1}, {"x": 13, "z": -1},
+    {"x": 6, "z": 0}, {"x": 7, "z": 0}, {"x": 8, "z": 0}, {"x": 9, "z": 0}, {"x": 10, "z": 0}, {"x": 11, "z": 0}, {"x": 12, "z": 0}, {"x": 13, "z": 0},
+    {"x": 6, "z": 1}, {"x": 7, "z": 1}, {"x": 8, "z": 1}, {"x": 9, "z": 1}, {"x": 10, "z": 1}, {"x": 11, "z": 1}, {"x": 12, "z": 1}, {"x": 13, "z": 1},
+    {"x": 6, "z": 2}, {"x": 7, "z": 2}, {"x": 8, "z": 2}, {"x": 9, "z": 2}, {"x": 10, "z": 2}, {"x": 11, "z": 2}, {"x": 12, "z": 2}, {"x": 13, "z": 2},
+    {"x": 6, "z": 3}, {"x": 7, "z": 3}, {"x": 8, "z": 3}, {"x": 9, "z": 3}, {"x": 10, "z": 3}, {"x": 11, "z": 3}, {"x": 12, "z": 3}, {"x": 13, "z": 3}
+  ]
+}
