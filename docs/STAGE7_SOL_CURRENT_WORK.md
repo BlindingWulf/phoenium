@@ -5,10 +5,10 @@ Updated: 2026-09-10
 ## Repository state
 
 - Branch: `stage7/scalablelux-persisted-light-repair`
-- Current HEAD: `72626a94239b86fce1b99a443d7fc02d67f66021`
+- Current HEAD: `3a6c6ed` (`docs: close Clumps Stage 7 checkpoint`)
 - Production JAR: `build/libs/phoenium-0.2.0-stage2.jar`
-- Production JAR SHA-256: `4FA66A418EC3F32B3616FBB8AD4823D596DB0488F1377F726EC4C10744B55499`
-- Last recorded full deterministic suite: `844` tests across `89` suites, zero failures/errors/skips, after ServerCore commit `72626a9`.
+- Production JAR SHA-256: `0B80154F4AA99E0D833C5DC119A39A2087AF6CDA3B2AC286DAD0477E3F5867C4`
+- Last recorded full deterministic suite: `845` tests across `90` suites, zero failures/errors/skips, after the Clumps lifecycle repair.
 - Stage status: `STAGE 7 IN PROGRESS`; Stage 6 remains `AUDIT PARTIAL`; Stage 8+ are `NOT STARTED`.
 
 ## Completed Stage 7 scoped repairs preserved at current HEAD
@@ -17,23 +17,20 @@ Updated: 2026-09-10
 - C2ME reviewed tick-phase callback integration: PASS; deep C2ME runtime integration remains BLOCKED behind the safety gate. Commit `7d2029b`.
 - ScalableLux persisted-light reload adapter: scoped PASS. Commit `28a7aa8`.
 - Lithium chunk/ticker adapter: scoped adapter PASS. Implementation `c6dd6a2`; handoff `5df8e8d`.
-- ServerCore reviewed entity-activation callback adapter: implementation commit `72626a9`; preservation-profile checkpoint evidence is present and is being closed/documented in the current worktree. Overall ServerCore compatibility remains PARTIAL because behavior-changing policy modules are outside this scoped acceptance.
+- ServerCore reviewed entity-activation callback adapter: implementation commit `72626a9`; scoped preservation-profile checkpoint PASS. Overall ServerCore compatibility remains PARTIAL because behavior-changing policy modules are outside this scoped acceptance.
+- Clumps merge/removal lifecycle: SCOPED PASS. Implementation `b394978`; checkpoint docs `3a6c6ed`. Native removed-entity tick-list boundary restored before owner-published tracking facts are required. Post-commit locked Clumps W1/W4 fresh+restart, real-client pickup/Mending/removal, full suite, and ServerCore W4 overlap regression pass against production SHA `0B80154F...867C4`.
 
 ## Current provider
 
-ServerCore checkpoint closure.
+Geyser/Floodgate lifecycle isolation. VMP investigation is closed as an exact architecture blocker for this Sol High campaign.
 
 ### Exact first unresolved item
 
-Luna left `docs/STAGE7_LUNA_BRIDGE_HANDOFF.md` modified after implementation commit `72626a9`. The recorded post-commit W1/W4 and strict-client evidence must be checked against the on-disk reports/artifact identity, then the handoff/matrix/backlog state must be made coherent and committed before moving to Clumps.
+Stage 6 `geyser-floodgate-w1` completed Minecraft save/stop but retained late non-daemon WebSocket threads on restart; the W4 confirmation exited normally. Attribution to Geyser alone, Floodgate, first-run/update timing, or the combined stack is still unknown.
 
 ### Shortest reproduction / verification
 
-Focused adapter regression:
-
-`./gradlew.bat test --tests dev.phoenium.chunk.LiveTickPhaseBoundaryTest`
-
-The locked ServerCore installed profile is `scripts/stage6-plans/servercore-preserve.json`; existing final evidence directories are `run/stage7/servercore-final-w1/`, `run/stage7/servercore-final-w4/`, `run/stage7/servercore-adapter-client2-w1/`, and `run/stage7/servercore-adapter-client2-w4/`.
+Use the frozen Stage 6 Geyser/Floodgate artifacts and lifecycle evidence. Isolate Geyser alone when supported, Geyser+Floodgate, and a Fabric-only provider control using bounded repeated start/stop runs. Before every live run reread `docs/AGENT_MINECRAFT_TESTING.md` and recheck Java/Minecraft processes.
 
 ## Tests/evidence already recorded passing
 
@@ -44,7 +41,13 @@ The locked ServerCore installed profile is `scripts/stage6-plans/servercore-pres
 - ServerCore real-client W4 strict comparison: PASS, 132 ordered events.
 - Native save/unpack/deadline checks: PASS in the accepted client cases.
 - Health counters recorded zero for duplicate/bypass/fallback/ownership/unleased/barrier failures.
-- Production artifact SHA-256 on disk: `4FA66A418EC3F32B3616FBB8AD4823D596DB0488F1377F726EC4C10744B55499`.
+- Clumps focused removed-alias regression + `FullEntityFactsTest`: PASS.
+- Clumps locked post-commit W1/W4 fresh/restart: PASS; reports identify source head `b394978` and production SHA `0B80154F...867C4`; one live orb, total XP 10, `clumpedMap {3:1,7:1}` persists across restart.
+- Clumps real-client W1: PASS provider probe; pickup removed the merged orb, Mending reduced pickaxe damage `100 -> 80`, explicit second-orb removal left zero live orbs, native restart receipts pass, server exit code 0.
+- Full deterministic suite after repair: `845` tests / `90` suites / zero failures/errors/skips.
+- ServerCore preservation-profile W4 fresh/restart overlap regression: PASS against the repaired production artifact.
+- Production artifact SHA-256 on disk: `0B80154F4AA99E0D833C5DC119A39A2087AF6CDA3B2AC286DAD0477E3F5867C4`.
+- VMP investigation: historical stop-trace ambiguity resolved to a real disconnect lifecycle failure. The real `seenBy` listener survives provider removal; VMP's optimized tracker is a full `ChunkMap.tick()` overwrite that Phoenium's regional tracker cancels. Console W1/W4 alone are insufficient. No VMP production repair was accepted; see `STAGE7_VMP_XHIGH_HANDOFF.md`.
 
 ## Known architecture boundaries
 
@@ -53,6 +56,7 @@ The locked ServerCore installed profile is `scripts/stage6-plans/servercore-pres
 - Keep the final C2ME safety gate. Deep C2ME generation/FULL/save/unload integration is not a Sol High repair target unless an existing Phoenium primitive clearly represents the lifecycle.
 - Scoped provider repairs do not imply whole-provider PASS. ServerCore behavior-changing modules remain separately unaccepted.
 - Required provider functionality must remain enabled for any claimed accepted path; preservation-profile disabled modules are exclusions from the scoped ServerCore result, not proof of their compatibility.
+- VMP optimized nearby-entity tracking is BLOCKED/PARTIAL for this campaign. A future adapter must integrate VMP's own staging/area-map/player-index lifecycle; private-index patching, cross-owner waits, or broad tracker closure are rejected.
 
 ## Running processes
 
@@ -60,6 +64,6 @@ The locked ServerCore installed profile is `scripts/stage6-plans/servercore-pres
 
 ## Next 3 actions
 
-1. Validate ServerCore final W1/W4/client reports, artifact hashes, committed-source identity, and the `844`-test full-suite record; rerun only a missing check if the evidence is incomplete.
-2. Finish and commit coherent ServerCore handoff/matrix/backlog/current-work documentation, keeping the status as scoped adapter PASS / overall PARTIAL.
-3. Move to Clumps: reproduce the current tracking-alias failure and trace XP-orb merge/replacement through existing Phoenium insertion/removal/addressability/tracking hooks before deciding whether a contained adapter is sufficient.
+1. Inspect the frozen Geyser/Floodgate artifacts, lifecycle plans, W1/W4 logs and retained thread/process evidence; identify the shortest isolated provider/control runs.
+2. Reproduce the late WebSocket lifetime with Geyser alone and Geyser+Floodgate only as needed, checking whether new non-daemon threads appear after shutdown begins.
+3. If a narrow supported lifecycle/configuration correction is proved, implement and verify it; otherwise record exact upstream/provider attribution and move to the next independent Stage 7 item.
