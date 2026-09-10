@@ -20,6 +20,8 @@ public final class LiveTickPhaseBoundary {
     public static void requireInstalledLevelCallbacks(ClassNode node) {
         MethodNode method = original(node, "(" + BOOL + ")V");
         int cut = method.instructions.indexOf(unique(method, CACHE, "tick", "(" + BOOL + "Z)V"));
+        MethodInsnNode entityTicks = unique(method, "net/minecraft/world/level/entity/EntityTickList", "forEach",
+            "(Ljava/util/function/Consumer;)V");
         int starts = 0, ends = 0;
         for (AbstractInsnNode instruction : method.instructions) if (instruction instanceof MethodInsnNode call
                 && call.owner.equals(LEVEL) && call.name.startsWith("handler$")) {
@@ -28,9 +30,52 @@ public final class LiveTickPhaseBoundary {
                 require(method.instructions.indexOf(call) < cut, "start-level event moved after readiness"); starts++;
             } else if (call.name.endsWith("$fabric-lifecycle-events-v1$endLevelTick")) {
                 require(method.instructions.indexOf(call) > cut, "end-level event moved before readiness"); ends++;
+            } else if (call.name.endsWith("$servercore$activateEntities")) {
+                requireServerCoreActivationCallback(node, method, call, entityTicks);
             } else throw drift("unreviewed tick callback " + call.name);
         }
         require(starts == 1 && ends == 1, "installed level-tick event inventory changed");
+    }
+
+    /**
+     * ServerCore's activation-range mixin is an external callback at the entity-list boundary.
+     * Keep it only when the locked release still has the reviewed callback shape: one native
+     * call immediately before the list invocation, with the original twenty-tick cadence and no
+     * extra state or control flow.  The copied entity phase then executes this callback once from
+     * the owner-free coordinator before regional entity admission; it is never run per owner.
+     */
+    private static void requireServerCoreActivationCallback(ClassNode node, MethodNode tick,
+            MethodInsnNode callback, MethodInsnNode entityTicks) {
+        require(next(callback) == entityTicks, "ServerCore activation callback moved from entity-list boundary");
+        serverCoreEntityConsumer(callback);
+        require(callback.desc.equals("(" + BOOL + "Lorg/spongepowered/asm/mixin/injection/callback/CallbackInfo;)V"),
+            "ServerCore activation callback descriptor changed");
+        List<MethodNode> bodies = node.methods.stream().filter(method -> method.name.equals(callback.name)
+            && method.desc.equals(callback.desc)).toList();
+        require(bodies.size() == 1, "ServerCore activation callback body inventory changed");
+        MethodNode body = bodies.getFirst();
+        require((body.access & (Opcodes.ACC_STATIC | Opcodes.ACC_SYNCHRONIZED | Opcodes.ACC_ABSTRACT
+                | Opcodes.ACC_NATIVE)) == 0 && body.tryCatchBlocks.isEmpty(),
+            "ServerCore activation callback body has unsupported execution state");
+        List<AbstractInsnNode> code = new ArrayList<>();
+        for (AbstractInsnNode instruction : body.instructions) if (instruction.getOpcode() >= 0) code.add(instruction);
+        require(code.size() == 12
+                && variable(code.get(0), Opcodes.ALOAD, 0)
+                && field(code.get(1), Opcodes.GETFIELD, LEVEL, "server", "Lnet/minecraft/server/MinecraftServer;")
+                && call(code.get(2), Opcodes.INVOKEVIRTUAL, "net/minecraft/server/MinecraftServer", "getTickCount", "()I", false)
+                && variable(code.get(3), Opcodes.ISTORE, 3)
+                && variable(code.get(4), Opcodes.ILOAD, 3)
+                && code.get(5).getOpcode() == Opcodes.BIPUSH && ((IntInsnNode) code.get(5)).operand == 20
+                && code.get(6).getOpcode() == Opcodes.IREM
+                && code.get(7) instanceof JumpInsnNode jump && jump.getOpcode() == Opcodes.IFNE
+                && variable(code.get(8), Opcodes.ALOAD, 0)
+                && variable(code.get(9), Opcodes.ILOAD, 3)
+                && call(code.get(10), Opcodes.INVOKESTATIC,
+                    "me/wesley1808/servercore/common/activation_range/ActivationRange", "activateEntities",
+                    "(L" + LEVEL + ";I)V", false)
+                && code.get(11).getOpcode() == Opcodes.RETURN
+                && ((JumpInsnNode) code.get(7)).label == nextLabel(body.instructions, code.get(7), code.get(11)),
+            "ServerCore activation callback body changed");
     }
 
     public static void installLevel(ClassNode node) {
@@ -116,7 +161,18 @@ public final class LiveTickPhaseBoundary {
         retainLocalAcrossFrames(events, eventState, LEVEL_STATE);
 
         MethodInsnNode entityTicks = unique(original, "net/minecraft/world/level/entity/EntityTickList", "forEach", "(Ljava/util/function/Consumer;)V");
-        AbstractInsnNode entityStartNode = previous(previous(previous(previous(previous(previous(entityTicks))))));
+        MethodInsnNode serverCoreActivation = null;
+        for (AbstractInsnNode instruction : original.instructions) if (instruction instanceof MethodInsnNode call
+                && call.owner.equals(LEVEL) && call.name.startsWith("handler$")
+                && call.name.endsWith("$servercore$activateEntities")) {
+            require(serverCoreActivation == null, "duplicate ServerCore activation callback");
+            requireServerCoreActivationCallback(node, original, call, entityTicks);
+            serverCoreActivation = call;
+        }
+        InvokeDynamicInsnNode entityConsumer = serverCoreActivation == null ? null : serverCoreEntityConsumer(serverCoreActivation);
+        AbstractInsnNode entityStartNode = serverCoreActivation == null
+            ? previous(previous(previous(previous(previous(previous(entityTicks))))))
+            : previous(previous(previous(previous(previous(entityConsumer)))));
         require(variable(entityStartNode, Opcodes.ALOAD, 0), "entity tick receiver changed");
         int entityStart = original.instructions.indexOf(entityStartNode), entityEnd = original.instructions.indexOf(entityTicks) + 1;
         FieldInsnNode emptyCondition = null;
@@ -421,6 +477,35 @@ public final class LiveTickPhaseBoundary {
             require(found == null, "duplicate " + owner + "." + name); found = call;
         }
         require(found != null, "missing " + owner + "." + name); return found;
+    }
+    private static boolean field(AbstractInsnNode node, int opcode, String owner, String name, String desc) {
+        return node instanceof FieldInsnNode field && field.getOpcode() == opcode && field.owner.equals(owner)
+            && field.name.equals(name) && field.desc.equals(desc);
+    }
+    private static boolean call(AbstractInsnNode node, int opcode, String owner, String name, String desc, boolean itf) {
+        return node instanceof MethodInsnNode call && call.getOpcode() == opcode && call.owner.equals(owner)
+            && call.name.equals(name) && call.desc.equals(desc) && call.itf == itf;
+    }
+    private static InvokeDynamicInsnNode serverCoreEntityConsumer(MethodInsnNode callback) {
+        AbstractInsnNode nullArgument = previous(callback), booleanSupplier = previous(nullArgument), receiver = previous(booleanSupplier);
+        require(nullArgument != null && nullArgument.getOpcode() == Opcodes.ACONST_NULL
+                && variable(booleanSupplier, Opcodes.ALOAD, 1) && variable(receiver, Opcodes.ALOAD, 0),
+            "ServerCore activation callback arguments changed");
+        AbstractInsnNode consumer = previous(receiver);
+        require(consumer instanceof InvokeDynamicInsnNode dynamic && dynamic.name.equals("accept")
+                && dynamic.desc.equals("(L" + LEVEL + ";Lnet/minecraft/world/TickRateManager;"
+                    + "Lnet/minecraft/util/profiling/ProfilerFiller;)Ljava/util/function/Consumer;"),
+            "ServerCore activation callback moved from the original entity consumer");
+        return (InvokeDynamicInsnNode) consumer;
+    }
+    private static LabelNode nextLabel(InsnList instructions, AbstractInsnNode jump, AbstractInsnNode terminal) {
+        if (!(jump instanceof JumpInsnNode branch)) return null;
+        AbstractInsnNode cursor = branch.label;
+        while (cursor != null && cursor != terminal) {
+            if (cursor.getOpcode() >= 0) return null;
+            cursor = cursor.getNext();
+        }
+        return cursor == terminal ? branch.label : null;
     }
     private static boolean variable(AbstractInsnNode node, int opcode, int local) { return node instanceof VarInsnNode var && var.getOpcode() == opcode && var.var == local; }
     private static AbstractInsnNode previous(AbstractInsnNode node) { do { node = node.getPrevious(); } while (node != null && node.getOpcode() < 0); return node; }

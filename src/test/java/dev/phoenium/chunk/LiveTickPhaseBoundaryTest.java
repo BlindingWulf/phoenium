@@ -116,10 +116,82 @@ final class LiveTickPhaseBoundaryTest {
         assertThrows(IllegalStateException.class, () -> LiveTickPhaseBoundary.requireInstalledLevelCallbacks(level));
     }
 
+    @Test void reviewedServerCoreActivationCallbackStaysAtTheEntityBoundary() throws Exception {
+        ClassNode level = original(ServerLevel.class);
+        MethodNode tick = tick(level, "(Ljava/util/function/BooleanSupplier;)V");
+        tick.instructions.insert(event("startLevelTick"));
+        tick.instructions.insertBefore(tick.instructions.getLast(), event("endLevelTick"));
+        MethodInsnNode entityTicks = call(tick, "forEach");
+        String name = "handler$test$servercore$activateEntities";
+        tick.instructions.insertBefore(entityTicks, new VarInsnNode(Opcodes.ALOAD, 0));
+        tick.instructions.insertBefore(entityTicks, new VarInsnNode(Opcodes.ALOAD, 1));
+        tick.instructions.insertBefore(entityTicks, new InsnNode(Opcodes.ACONST_NULL));
+        tick.instructions.insertBefore(entityTicks, serverCoreCallback(name));
+        level.methods.add(serverCoreCallbackBody(name));
+        assertDoesNotThrow(() -> LiveTickPhaseBoundary.requireInstalledLevelCallbacks(level));
+        LiveTickPhaseBoundary.installLevel(level);
+        assertEquals(1, allCalls(named(level, "phoenium$runEntityTicks")).stream()
+            .filter(call -> call.owner.equals(LiveTickPhaseBoundary.LEVEL)
+                && call.name.equals(name)).count());
+
+        ClassNode moved = original(ServerLevel.class);
+        MethodNode movedTick = tick(moved, "(Ljava/util/function/BooleanSupplier;)V");
+        movedTick.instructions.insert(event("startLevelTick"));
+        movedTick.instructions.insertBefore(movedTick.instructions.getLast(), event("endLevelTick"));
+        MethodInsnNode movedEntityTicks = call(movedTick, "forEach");
+        movedTick.instructions.insert(movedEntityTicks, serverCoreCallback(name));
+        moved.methods.add(serverCoreCallbackBody(name));
+        assertThrows(IllegalStateException.class, () -> LiveTickPhaseBoundary.requireInstalledLevelCallbacks(moved));
+
+        ClassNode changed = original(ServerLevel.class);
+        MethodNode changedTick = tick(changed, "(Ljava/util/function/BooleanSupplier;)V");
+        changedTick.instructions.insert(event("startLevelTick"));
+        changedTick.instructions.insertBefore(changedTick.instructions.getLast(), event("endLevelTick"));
+        MethodInsnNode changedEntityTicks = call(changedTick, "forEach");
+        changedTick.instructions.insertBefore(changedEntityTicks, new VarInsnNode(Opcodes.ALOAD, 0));
+        changedTick.instructions.insertBefore(changedEntityTicks, new VarInsnNode(Opcodes.ALOAD, 1));
+        changedTick.instructions.insertBefore(changedEntityTicks, new InsnNode(Opcodes.ACONST_NULL));
+        changedTick.instructions.insertBefore(changedEntityTicks, serverCoreCallback(name));
+        MethodNode changedBody = serverCoreCallbackBody(name);
+        changedBody.instructions.set(changedBody.instructions.get(5), new IntInsnNode(Opcodes.BIPUSH, 19));
+        changed.methods.add(changedBody);
+        assertThrows(IllegalStateException.class, () -> LiveTickPhaseBoundary.requireInstalledLevelCallbacks(changed));
+    }
+
     private static MethodInsnNode event(String name) {
         return new MethodInsnNode(Opcodes.INVOKEVIRTUAL, LiveTickPhaseBoundary.LEVEL,
                 "handler$test$fabric-lifecycle-events-v1$" + name,
                 "(Ljava/util/function/BooleanSupplier;Lorg/spongepowered/asm/mixin/injection/callback/CallbackInfo;)V", false);
+    }
+
+    private static MethodInsnNode serverCoreCallback(String name) {
+        return new MethodInsnNode(Opcodes.INVOKEVIRTUAL, LiveTickPhaseBoundary.LEVEL, name,
+            "(Ljava/util/function/BooleanSupplier;Lorg/spongepowered/asm/mixin/injection/callback/CallbackInfo;)V", false);
+    }
+
+    private static MethodNode serverCoreCallbackBody(String name) {
+        String descriptor = "(Ljava/util/function/BooleanSupplier;Lorg/spongepowered/asm/mixin/injection/callback/CallbackInfo;)V";
+        MethodNode body = new MethodNode(Opcodes.ACC_PRIVATE, name, descriptor, null, null);
+        LabelNode skip = new LabelNode();
+        body.instructions.add(new VarInsnNode(Opcodes.ALOAD, 0));
+        body.instructions.add(new FieldInsnNode(Opcodes.GETFIELD, LiveTickPhaseBoundary.LEVEL, "server",
+            "Lnet/minecraft/server/MinecraftServer;"));
+        body.instructions.add(new MethodInsnNode(Opcodes.INVOKEVIRTUAL, "net/minecraft/server/MinecraftServer",
+            "getTickCount", "()I", false));
+        body.instructions.add(new VarInsnNode(Opcodes.ISTORE, 3));
+        body.instructions.add(new VarInsnNode(Opcodes.ILOAD, 3));
+        body.instructions.add(new IntInsnNode(Opcodes.BIPUSH, 20));
+        body.instructions.add(new InsnNode(Opcodes.IREM));
+        body.instructions.add(new JumpInsnNode(Opcodes.IFNE, skip));
+        body.instructions.add(new VarInsnNode(Opcodes.ALOAD, 0));
+        body.instructions.add(new VarInsnNode(Opcodes.ILOAD, 3));
+        body.instructions.add(new MethodInsnNode(Opcodes.INVOKESTATIC,
+            "me/wesley1808/servercore/common/activation_range/ActivationRange", "activateEntities",
+            "(L" + LiveTickPhaseBoundary.LEVEL + ";I)V", false));
+        body.instructions.add(skip);
+        body.instructions.add(new InsnNode(Opcodes.RETURN));
+        body.maxLocals = 4; body.maxStack = 2;
+        return body;
     }
 
     static ClassNode original(Class<?> type) throws Exception {
