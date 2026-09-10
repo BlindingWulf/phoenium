@@ -9,14 +9,23 @@ import net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents;
 import net.minecraft.commands.Commands;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
+import net.minecraft.core.registries.Registries;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.world.entity.EquipmentSlot;
+import net.minecraft.world.entity.ExperienceOrb;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.Items;
+import net.minecraft.world.item.enchantment.Enchantments;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.ButtonBlock;
+import net.minecraft.world.level.entity.EntityTypeTest;
 import net.minecraft.world.level.block.state.properties.AttachFace;
 import net.minecraft.world.level.block.state.properties.BlockStateProperties;
 import net.minecraft.world.level.material.Fluids;
+import net.minecraft.world.phys.AABB;
+import net.minecraft.world.phys.Vec3;
 import net.minecraft.world.ticks.ScheduledTick;
 import net.minecraft.world.ticks.TickPriority;
 import net.minecraft.world.level.levelgen.structure.BoundingBox;
@@ -207,6 +216,22 @@ public final class Stage4AcceptanceProbe implements DedicatedServerModInitialize
                 .then(Commands.literal("require-tracking-lifecycle").executes(context -> {
                     Stage4Trace.requestTrackingLifecycle();
                     Stage4Trace.event("tracking.lifecycle.required");
+                    return 1;
+                }))
+                .then(Commands.literal("clumps-mending-setup").executes(context -> {
+                    clumpsMendingSetup(context.getSource().getLevel());
+                    return 1;
+                }))
+                .then(Commands.literal("clumps-merged-check").executes(context -> {
+                    clumpsMergedCheck(context.getSource().getLevel());
+                    return 1;
+                }))
+                .then(Commands.literal("clumps-pickup-check").executes(context -> {
+                    clumpsPickupCheck(context.getSource().getLevel());
+                    return 1;
+                }))
+                .then(Commands.literal("clumps-removal-check").executes(context -> {
+                    clumpsRemovalCheck(context.getSource().getLevel());
                     return 1;
                 }))
                 .then(Commands.literal("block-probe-a").executes(context -> {
@@ -404,6 +429,67 @@ public final class Stage4AcceptanceProbe implements DedicatedServerModInitialize
             failure.printStackTrace();
             throw failure;
         }
+    }
+
+    private static final Vec3 CLUMPS_ORB_CENTER = new Vec3(24.0, 65.0, 8.0);
+    private static final AABB CLUMPS_ORB_AREA = AABB.ofSize(CLUMPS_ORB_CENTER, 8.0, 8.0, 8.0);
+
+    private static void clumpsMendingSetup(ServerLevel level) {
+        ServerPlayer player = level.players().stream().findFirst()
+            .orElseThrow(() -> new IllegalStateException("Clumps fixture player is not connected"));
+        ItemStack pickaxe = new ItemStack(Items.DIAMOND_PICKAXE);
+        pickaxe.setDamageValue(100);
+        pickaxe.enchant(level.registryAccess().lookupOrThrow(Registries.ENCHANTMENT)
+            .getOrThrow(Enchantments.MENDING), 1);
+        player.setItemSlot(EquipmentSlot.MAINHAND, pickaxe);
+        player.setExperiencePoints(0);
+        player.setExperienceLevels(0);
+        player.totalExperience = 0;
+        player.experienceProgress = 0.0F;
+        System.out.println("STAGE7_CLUMPS_MENDING_SETUP damage=" + pickaxe.getDamageValue()
+            + " totalExperience=" + player.totalExperience);
+    }
+
+    private static List<ExperienceOrb> clumpsOrbs(ServerLevel level) {
+        return level.getEntities(EntityTypeTest.forClass(ExperienceOrb.class), CLUMPS_ORB_AREA,
+            orb -> !orb.isRemoved());
+    }
+
+    private static void clumpsMergedCheck(ServerLevel level) {
+        List<ExperienceOrb> orbs = clumpsOrbs(level);
+        int totalXp = orbs.stream().mapToInt(ExperienceOrb::getValue).sum();
+        if (orbs.size() != 1 || totalXp != 10)
+            throw new IllegalStateException("Clumps merge fixture expected one live orb / XP 10, got count="
+                + orbs.size() + " totalXp=" + totalXp);
+        System.out.println("STAGE7_CLUMPS_MERGED count=1 totalXp=10 uuid=" + orbs.getFirst().getUUID());
+    }
+
+    private static void clumpsPickupCheck(ServerLevel level) {
+        ServerPlayer player = level.players().stream().findFirst()
+            .orElseThrow(() -> new IllegalStateException("Clumps fixture player disconnected"));
+        List<ExperienceOrb> orbs = clumpsOrbs(level);
+        ItemStack pickaxe = player.getItemBySlot(EquipmentSlot.MAINHAND);
+        int damage = pickaxe.getDamageValue();
+        if (!orbs.isEmpty())
+            throw new IllegalStateException("Clumps pickup left " + orbs.size() + " live XP orb(s)");
+        if (damage >= 100)
+            throw new IllegalStateException("Clumps pickup did not exercise Mending; damage=" + damage);
+        System.out.println("STAGE7_CLUMPS_PICKUP_MENDING pass=true damage=" + damage
+            + " totalExperience=" + player.totalExperience);
+    }
+
+    private static void clumpsRemovalCheck(ServerLevel level) {
+        ServerPlayer player = level.players().stream().findFirst()
+            .orElseThrow(() -> new IllegalStateException("Clumps fixture player disconnected"));
+        List<ExperienceOrb> orbs = clumpsOrbs(level);
+        if (!orbs.isEmpty())
+            throw new IllegalStateException("Clumps explicit removal left " + orbs.size() + " live XP orb(s)");
+        player.setItemSlot(EquipmentSlot.MAINHAND, ItemStack.EMPTY);
+        player.setExperiencePoints(0);
+        player.setExperienceLevels(0);
+        player.totalExperience = 0;
+        player.experienceProgress = 0.0F;
+        System.out.println("STAGE7_CLUMPS_REMOVAL pass=true liveOrbs=0");
     }
 
     private static boolean reportedFailure;

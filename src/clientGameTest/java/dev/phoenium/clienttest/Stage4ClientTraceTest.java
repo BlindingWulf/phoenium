@@ -97,6 +97,8 @@ public final class Stage4ClientTraceTest implements FabricClientGameTest {
             // while each client-side FULL receipt proves the native holder future completed.
             context.waitFor(client -> client.player != null, CONNECT_TIMEOUT_TICKS);
             topologyTeleport(context, server, log, 8, 65, 8, new int[][] {{0, 0}});
+            if (Boolean.getBoolean("phoenium.stage7.clumps"))
+                runClumpsProviderProbe(context, server, log);
             command(server, "stage4trace prepare-a");
             awaitLog(context, server, log, "STAGE4_TRACE_PREPARED_POINT label=A", START_TIMEOUT_TICKS);
             topologyTeleport(context, server, log, 120, 65, 8, new int[][] {{7, 0}});
@@ -595,6 +597,32 @@ public final class Stage4ClientTraceTest implements FabricClientGameTest {
                 || contents.contains("An unexpected error occurred while trying to execute that command")
                 || contents.contains("Encountered an unexpected exception"))
             throw new AssertionError("server failed during Stage 4 workload; evidence=" + log);
+    }
+
+    private static void runClumpsProviderProbe(ClientGameTestContext context, Process server, Path log) throws IOException {
+        command(server, "stage4trace clumps-mending-setup");
+        awaitLog(context, server, log, "STAGE7_CLUMPS_MENDING_SETUP", START_TIMEOUT_TICKS);
+        command(server, "summon minecraft:experience_orb 23.8 65 8 {Value:3s,Count:1,NoGravity:1b,Motion:[0.0d,0.0d,0.0d]}");
+        command(server, "summon minecraft:experience_orb 24.2 65 8 {Value:7s,Count:1,NoGravity:1b,Motion:[0.0d,0.0d,0.0d]}");
+        for (int tick = 0; tick < 80; tick++) context.waitTick();
+        command(server, "stage4trace clumps-merged-check");
+        awaitLog(context, server, log, "STAGE7_CLUMPS_MERGED count=1 totalXp=10", START_TIMEOUT_TICKS);
+
+        topologyTeleport(context, server, log, 24, 65, 8, new int[][] {{1, 0}});
+        for (int tick = 0; tick < 40; tick++) context.waitTick();
+        command(server, "stage4trace clumps-pickup-check");
+        awaitLog(context, server, log, "STAGE7_CLUMPS_PICKUP_MENDING pass=true", START_TIMEOUT_TICKS);
+
+        topologyTeleport(context, server, log, 8, 65, 8, new int[][] {{0, 0}});
+        command(server, "summon minecraft:experience_orb 23.8 65 8 {Value:3s,Count:1,NoGravity:1b,Motion:[0.0d,0.0d,0.0d]}");
+        command(server, "summon minecraft:experience_orb 24.2 65 8 {Value:7s,Count:1,NoGravity:1b,Motion:[0.0d,0.0d,0.0d]}");
+        for (int tick = 0; tick < 80; tick++) context.waitTick();
+        command(server, "stage4trace clumps-merged-check");
+        awaitLog(context, server, log, "STAGE7_CLUMPS_MERGED count=1 totalXp=10", START_TIMEOUT_TICKS);
+        command(server, "kill @e[type=minecraft:experience_orb]");
+        for (int tick = 0; tick < 10; tick++) context.waitTick();
+        command(server, "stage4trace clumps-removal-check");
+        awaitLog(context, server, log, "STAGE7_CLUMPS_REMOVAL pass=true liveOrbs=0", START_TIMEOUT_TICKS);
     }
 
     private static String read(Path path) {

@@ -280,7 +280,7 @@ public final class RegionalChunkGameplayService {
         FullFinishingServices.requireWorld(level, FullFinishingServices.Kind.ENTITY_REGISTRY);
         FullFinishingServices.requireWorld(level, FullFinishingServices.Kind.TRACKER);
         FullFinishingServices.requireServer(level.getServer(), FullFinishingServices.Kind.CONNECTIONS);
-        entities.forEach(entity -> {
+        forEachLiveEntityTickAlias(entities, entity -> {
             FullEntityFacts.Candidate source = finishing.entityFacts.trackingCandidate(level, entity);
             List<FullEntityFacts.Candidate> passengers = finishing.entityFacts.trackingPassengers(source);
             FullEntityFacts.VehicleRelation vehicle = finishing.entityFacts.trackingVehicle(source);
@@ -307,6 +307,15 @@ public final class RegionalChunkGameplayService {
                     throw new IllegalStateException("entity tick vehicle relation changed");
                 output.accept(entity);
             });
+        });
+    }
+
+    /** EntityTickList keeps iterating its old snapshot when an entity is removed during that
+     * iteration. ServerLevel's native consumer checks isRemoved() before any other entity work;
+     * preserve that boundary before requiring current owner-published tracking facts. */
+    static void forEachLiveEntityTickAlias(EntityTickList entities, Consumer<Entity> output) {
+        entities.forEach(entity -> {
+            if (!entity.isRemoved()) output.accept(entity);
         });
     }
 
