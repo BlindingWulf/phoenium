@@ -125,12 +125,12 @@ The ServerCore external-callback item is now a `SCOPED ADAPTER PASS`, not full S
 
 ## Next bounded queue
 
-The next work item is Clumps entity identity/publication. Start from the preserved evidence rather than cycling runtime toggles. Lithium and ServerCore's remaining broad-coverage/policy rows stay partial and are not a reason to reopen their already-scoped adapters.
+Clumps entity identity/publication is now a `SCOPED PASS`; see [STAGE7_CLUMPS_REPAIR_REPORT.md](STAGE7_CLUMPS_REPAIR_REPORT.md). The root cause was the ordering of Phoenium's tracking-fact admission relative to Minecraft's native removed-entity guard: Clumps legitimately discards the merged-away orb while `EntityTickList` is still iterating its old snapshot. Commit `b394978e349d3ca05c49bcdb789d24ecf8193aa6` restores native `isRemoved()` filtering before tracking facts are required without weakening live-alias validation or adding ownership state.
 
-1. Isolate Clumps' mod-created/replaced/removed XP entity identity and publication seam; preserve heterogeneous-value grouping, total XP, pickup/Mending/removal and save/restart semantics.
-2. Require exact current-owner publication and route evidence for every alias; do not make the prior `FullEntityFacts.trackingCandidate:273` failure disappear by accepting a stale identity or adding a second registry.
-3. If the contract can be stated precisely, implement one narrow adapter and verify it before broader Clumps behavior. If it cannot be stated precisely, record the exact evidence and move to VMP/Geyser/SLO/FastNoise according to the queue without weakening the gate.
+Post-commit W1/W4 evidence in `run/stage7/clumps-postcommit-w1/` and `run/stage7/clumps-postcommit-w4/` identifies the committed source and production SHA `0B80154F4AA99E0D833C5DC119A39A2087AF6CDA3B2AC286DAD0477E3F5867C4`. Fresh and restart phases pass with one XP-10 orb and `clumpedMap {3:1,7:1}`. The account-free real-client probe at `run/stage7/clumps-client-w1/` verifies pickup, Mending damage `100 -> 80`, explicit removal, native restart deadlines and clean shutdown. The complete suite is 845 tests / 90 suites / zero failures, errors or skips. ServerCore preservation-profile W4 also passes fresh+restart after the shared lifecycle change.
 
-After ServerCore, the bounded queue is Clumps entity identity/publication, then VMP/Geyser/SLO/FastNoise follow-ups as their evidence warrants. C2ME runtime integration remains behind its existing safety gate: do not integrate replacement generation/FULL/save ownership or combine it with ScalableLux until its readiness, publication, save, cancellation and stop invariants are proven.
+The next bounded item is VMP stop/trace integration. Classify the missing persisted terminal stop receipt as an observation/harness issue versus a real lifecycle failure before changing production. Preserve the existing PARTIAL label unless exact semantic evidence supports a narrower repair. After VMP, continue to the bounded Geyser/Floodgate lifecycle isolation, Structure Layout Optimizer policy research, and FastNoise comparator-boundary work.
+
+C2ME runtime integration remains behind its existing safety gate: do not integrate replacement generation/FULL/save ownership or combine it with ScalableLux until its readiness, publication, save, cancellation and stop invariants are proven.
 
 No Stage 8/9 work, Android/Phoenix work, public release, broad architecture rewrite, reset credit, or additional agent is authorized by this handoff.
