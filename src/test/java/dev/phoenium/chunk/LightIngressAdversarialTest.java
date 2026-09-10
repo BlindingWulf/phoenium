@@ -158,6 +158,18 @@ class LightIngressAdversarialTest {
         assertFalse(f.light.snapshot(f.batch).orElseThrow().occurrences().getFirst().inserted()); f.cleanup();
     }
 
+    @Test void explicitExternalOwnershipIsDistinctFromVanillaInsertion() {
+        var f = new LightProtocolFixture(); f.register(true);
+        f.ready((input,claim) -> {
+            f.light.invoke(claim,f.occurrences().getFirst(),LightInputService.Insertion::delegated);
+            return f.light.sealRead(claim,f.batch);
+        });
+        assertEquals(ChunkStageAdmission.Result.APPLIED,f.deliver());
+        var occurrence = f.light.snapshot(f.batch).orElseThrow().occurrences().getFirst();
+        assertFalse(occurrence.inserted()); assertTrue(occurrence.delegated());
+        f.cleanup();
+    }
+
     @Test void closedClaimAndInsertionWitnessCannotBeReusedAfterCleanup() {
         var f = new LightProtocolFixture(); f.register(true);
         var occurrence = f.occurrences().getFirst();

@@ -351,7 +351,8 @@ public final class ChunkBindingRuntime {
                     String order = snapshot.occurrences().stream().map(occurrence ->
                             occurrence.id().occurrenceSequence() + ":" + occurrence.id().kind() + "@"
                                     + occurrence.id().sectionKey() + ":" + occurrence.state() + ":inserted="
-                                    + occurrence.inserted()).collect(java.util.stream.Collectors.joining(","));
+                                    + occurrence.inserted() + ":delegated=" + occurrence.delegated())
+                            .collect(java.util.stream.Collectors.joining(","));
                     trace("LIGHT_ACCEPTED", token, "batch=" + batch.inputSequence() + " stage="
                             + batch.stage().stageSequence() + " sealed=" + snapshot.sealed() + " receipt="
                             + snapshot.receiptPresent() + " order=[" + order + "]");

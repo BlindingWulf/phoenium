@@ -12,7 +12,10 @@ import java.util.Optional;
 /**
  * Exact, ordered reload ingress. The custody fence protects scalar registration/attempt state;
  * it is never held across a physical call, a callback, or light computation. No payload, holder,
- * engine, callback or RegionLease is retained here. A successful ingress is not propagation.
+ * engine, callback or RegionLease is retained here. A successful ingress is not propagation. A
+ * provider that owns persisted light storage may explicitly acknowledge the same synchronous
+ * occurrence as delegated; that path remains distinct from a vanilla mailbox insertion and is
+ * only reachable through a provider-specific compatibility adapter.
  */
 public final class LightInputService implements ChunkLightingApplicationBridge {
     public enum Layer { BLOCK, SKY }
@@ -47,8 +50,10 @@ public final class LightInputService implements ChunkLightingApplicationBridge {
 
     /**
      * Synchronous same-site adapter: acknowledge actual mailbox insertion, not engine method
-     * entry/return. Report a swallowed dispatcher rejection through the insertion witness.
-     * This operation is invoked immediately; it is never stored or dispatched by the service.
+     * entry/return. Report a swallowed dispatcher rejection through the insertion witness. A
+     * provider-specific bridge may use the package-private delegated acknowledgment when that
+     * provider deliberately owns the persisted-light read. This operation is invoked immediately;
+     * it is never stored or dispatched by the service.
      */
     @FunctionalInterface public interface PhysicalIngress {
         void submit(Insertion insertion) throws Throwable;
@@ -56,12 +61,18 @@ public final class LightInputService implements ChunkLightingApplicationBridge {
 
     public static final class Insertion {
         private boolean inserted;
+        private boolean delegated;
         private boolean closed;
         private ChunkProtocolException rejection;
         private Insertion() { }
         public void inserted() {
-            if (closed || inserted) throw new ChunkProtocolException("duplicate or late ingress insertion acknowledgment");
+            if (closed || inserted || delegated) throw new ChunkProtocolException("duplicate or late ingress acknowledgment");
             inserted = true;
+        }
+        /** A known external light owner consumed this exact call without using the vanilla mailbox. */
+        void delegated() {
+            if (closed || inserted || delegated) throw new ChunkProtocolException("duplicate or late ingress acknowledgment");
+            delegated = true;
         }
         public void rejected(Throwable failure) {
             if (closed) throw new ChunkProtocolException("late synchronous ingress rejection", failure);
@@ -69,7 +80,7 @@ public final class LightInputService implements ChunkLightingApplicationBridge {
         }
     }
 
-    public record OccurrenceSnapshot(OccurrenceId id, State state, boolean inserted) { }
+    public record OccurrenceSnapshot(OccurrenceId id, State state, boolean inserted, boolean delegated) { }
     public record Snapshot(BatchId id, List<OccurrenceSnapshot> occurrences, boolean sealed,
                            State failure, boolean receiptPresent) { }
 
@@ -77,6 +88,7 @@ public final class LightInputService implements ChunkLightingApplicationBridge {
         final OccurrenceId id;
         State state = State.REGISTERED;
         boolean inserted;
+        boolean delegated;
         Occurrence(OccurrenceId id) { this.id = id; }
     }
     private static final class Batch {
@@ -168,7 +180,8 @@ public final class LightInputService implements ChunkLightingApplicationBridge {
         try {
             original.submit(insertion);
             if (insertion.rejection != null) throw insertion.rejection;
-            if (!insertion.inserted) throw new ChunkProtocolException("physical light call returned without witnessed insertion");
+            if (!insertion.inserted && !insertion.delegated)
+                throw new ChunkProtocolException("physical light call returned without witnessed insertion or external ownership");
         } catch (Throwable thrown) { failure = thrown; }
         finally { insertion.closed = true; }
 
@@ -176,6 +189,7 @@ public final class LightInputService implements ChunkLightingApplicationBridge {
         try {
             Batch batch = claimedBatchLocked(claim, id.batch());
             occurrence.inserted = insertion.inserted;
+            occurrence.delegated = insertion.delegated;
             if (failure == null && batch.failure == null) {
                 occurrence.state = State.ACCEPTED; batch.cursor++;
             } else {
@@ -247,7 +261,7 @@ public final class LightInputService implements ChunkLightingApplicationBridge {
         try {
             Batch batch = batches.get(id);
             return batch == null ? Optional.empty() : Optional.of(new Snapshot(id,
-                    batch.occurrences.stream().map(o -> new OccurrenceSnapshot(o.id, o.state, o.inserted)).toList(),
+                    batch.occurrences.stream().map(o -> new OccurrenceSnapshot(o.id, o.state, o.inserted, o.delegated)).toList(),
                     batch.sealed, batch.failure, batch.receipt != null));
         } finally { custody.gate().unlock(); }
     }
