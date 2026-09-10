@@ -1,6 +1,7 @@
 {
   "required": true,
   "package": "dev.phoenium.mixin",
+  "plugin": "dev.phoenium.mixin.PhoeniumMixinConfigPlugin",
   "compatibilityLevel": "JAVA_25",
   "mixins": [
     "LocalBlockEntityCrashMixin",
@@ -43,6 +44,7 @@
     "ServerGamePacketListenerMixin",
     "ServerGamePacketListenerInvoker",
     "ServerChunkCacheMixin",
+    "LithiumServerChunkCacheMixin",
     "ChunkStagePumpMixin",
     "ChunkMapDecisionAMixin",
     "GenerationHolderCompletionMixin",
@@ -66,6 +68,7 @@
     "FullFinishingEnvironmentMixin",
     "FullWorldgenEnvironmentMixin",
     "FullFinishingLevelQueriesMixin",
+    "LithiumFullFinishingLevelQueriesMixin",
     "FullFinishingDifficultyMixin",
     "FullFinishingBiomeMixin",
     "FullFinishingCollisionShapeMixin",

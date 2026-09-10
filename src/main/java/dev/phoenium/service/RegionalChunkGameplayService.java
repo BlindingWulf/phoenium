@@ -443,7 +443,11 @@ public final class RegionalChunkGameplayService {
             java.util.function.Predicate<BlockPos> shouldTick) {
         if (ticker.isRemoved()) return true;
         if (runs) {
-            if (!ticker.getPos().equals(retainedPosition))
+            if (LithiumSleepingTickerBridge.isSleepingSentinel(ticker)) return false;
+            BlockPos currentPosition = ticker.getPos();
+            if (currentPosition == null)
+                throw new IllegalStateException("block entity ticker returned null position");
+            if (!currentPosition.equals(retainedPosition))
                 throw new IllegalStateException("block entity ticker position changed");
             if (shouldTick.test(retainedPosition)) ticker.tick();
         }

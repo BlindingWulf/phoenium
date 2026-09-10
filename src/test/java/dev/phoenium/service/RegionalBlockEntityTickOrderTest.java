@@ -41,7 +41,23 @@ final class RegionalBlockEntityTickOrderTest {
         assertEquals(List.of("removed", "position"), ticker.calls);
     }
 
-    private static final class Trace implements TickingBlockEntity {
+    @Test void unknownNullPositionTickerFailsClosed() {
+        NullableTrace ticker = new NullableTrace();
+        IllegalStateException failure = assertThrows(IllegalStateException.class,
+            () -> RegionalChunkGameplayService.tickTicker(ticker, true, POS,
+                ignored -> fail("null position reached eligibility")));
+        assertEquals("block entity ticker returned null position", failure.getMessage());
+        assertEquals(List.of("removed", "position"), ticker.calls);
+    }
+
+    @Test void sentinelNameAndTypeDoNotBypassWrapperIdentity() {
+        TickingBlockEntity delegate = new Trace(false, null) {
+            @Override public String getType() { return "<lithium_sleeping>"; }
+        };
+        assertFalse(LithiumSleepingTickerBridge.isSleepingSentinel(new WrapperTrace(delegate)));
+    }
+
+    private static class Trace implements TickingBlockEntity {
         final List<String> calls = new ArrayList<>();
         final boolean removed;
         final BlockPos position;
@@ -54,5 +70,23 @@ final class RegionalBlockEntityTickOrderTest {
             return position;
         }
         @Override public String getType() { return "trace"; }
+    }
+
+    private static final class NullableTrace implements TickingBlockEntity {
+        final List<String> calls = new ArrayList<>();
+        @Override public void tick() { calls.add("tick"); }
+        @Override public boolean isRemoved() { calls.add("removed"); return false; }
+        @Override public BlockPos getPos() { calls.add("position"); return null; }
+        @Override public String getType() { return "unknown"; }
+    }
+
+    private static final class WrapperTrace implements TickingBlockEntity, WrappedBlockEntityTickerAccess {
+        private final TickingBlockEntity delegate;
+        WrapperTrace(TickingBlockEntity delegate) { this.delegate = delegate; }
+        @Override public void tick() { delegate.tick(); }
+        @Override public boolean isRemoved() { return delegate.isRemoved(); }
+        @Override public BlockPos getPos() { return delegate.getPos(); }
+        @Override public String getType() { return delegate.getType(); }
+        @Override public TickingBlockEntity phoenium$wrappedTicker() { return delegate; }
     }
 }
