@@ -8,8 +8,8 @@ Updated: 2026-09-11
 - Recovered baseline HEAD before this Panda design checkpoint: `c8ef3b5` (`test: bound FastNoise terrain comparator`). Use the latest branch commit as the current checkpoint; this handoff does not self-reference a commit hash that would change when the file is committed.
 - Production JAR: `build/libs/phoenium-0.2.0-stage2.jar`
 - Production JAR SHA-256: `D095C007C1B81698440F3BF0145E38A23DC6078F7033D713324F61F15F2C3CC9`
-- Last recorded full deterministic suite: `847` tests across `91` suites, zero failures/errors/skips, after the Geyser/Floodgate lifecycle repair.
-- Stage status: `STAGE 7 IN PROGRESS`; Stage 6 remains `AUDIT PARTIAL`; Stage 8+ are `NOT STARTED`.
+- Last recorded full deterministic suite: `857` tests across `92` suites, zero failures/errors/skips, at the Stage 7 bounded architecture closeout.
+- Bounded Stage 7 repair/architecture campaign: `CLOSED`; full Stage 7 roadmap exit remains `UNMET`. Stage 6 remains `AUDIT PARTIAL`; Stage 8+ are `NOT STARTED`. See `STAGE7_ARCHITECTURE_CLOSURE.md`.
 
 ## Completed Stage 7 scoped repairs preserved at current HEAD
 
@@ -23,17 +23,17 @@ Updated: 2026-09-11
 - Structure Layout Optimizer strict seed-parity policy: provider-attributed upstream blocker. Locked SLO with its parity-breaking option disabled still changes the trial chamber from 338 to 273 pieces identically with and without Phoenium. Excluded from the strict-parity profile pending upstream fix or explicit changed-layout policy.
 - FastNoise fixed FULL-chunk comparator: provider attribution remains BLOCKED/PARTIAL. Two fresh no-FastNoise controls under a frozen clock and exact 64-FULL core still differ by 47 feature-like block placements across 6 chunks and `WORLD_SURFACE` in 3 chunks; biomes/structures are 64/64 stable. No FastNoise candidate verdict was attempted after the control gate failed.
 
-## Current provider
+## Current architecture closure
 
-The Panda-derived native protection **design checkpoint is closed**. The policy and executable specification are complete, but no runtime feature is accepted: projectile accounting waits for a proved non-player cross-owner movement lifecycle, the per-player pearl cap needs a derived membership ledger plus one-way owner-routed cleanup, and whole-entity staggering is blocked until a Minecraft 26.2 simulation-preserving boundary/compensation contract exists.
+The bounded Stage 7 repair/architecture campaign is closed at this checkpoint. The Panda-derived native protection policy/executable specification is complete, the C2ME deep-integration rows are mapped behind the existing safety gate, and the VMP handoff is complete enough to resume later without inventing a patch. No blocked/PARTIAL row is converted to a compatibility PASS by this closure.
 
 ### Exact first unresolved item
 
-No further unresolved Stage 7 item is both self-contained and justified by the currently available facilities. VMP and C2ME require architecture-heavy provider integration; Geyser/Floodgate, legacy Via and voice acceptance require external clients/audio; Panda runtime integration now has explicit lifecycle prerequisites instead of an implementation guess.
+No further unresolved Stage 7 item is both self-contained and justified by the currently available facilities. VMP and C2ME require the architecture work pinned in `STAGE7_ARCHITECTURE_CLOSURE.md`; Geyser/Floodgate, legacy Via and voice acceptance require external clients/audio; Panda runtime integration has explicit relocation, derived-ledger and simulation-semantic prerequisites instead of an implementation guess.
 
 ### Shortest reproduction / verification
 
-The completed Panda design verification is `./gradlew test --tests dev.phoenium.stage7.NativeProtectionPolicyTest`. See `STAGE7_PANDA_NATIVE_PROTECTION_POLICY.md`. Do not wire the test model into the runtime as a shortcut around the listed movement, membership and simulation-semantic prerequisites.
+The completed Panda design verification is `./gradlew test --tests dev.phoenium.stage7.NativeProtectionPolicyTest`. See `STAGE7_PANDA_NATIVE_PROTECTION_POLICY.md` and `STAGE7_ARCHITECTURE_CLOSURE.md`. Do not wire the test model into the runtime as a shortcut around the listed movement, membership and simulation-semantic prerequisites.
 
 ## Tests/evidence already recorded passing
 
@@ -55,6 +55,7 @@ The completed Panda design verification is `./gradlew test --tests dev.phoenium.
 - SLO attribution: native/no-SLO controls retain `338` trial-chamber pieces and NBT `552c736c...759fe`; SLO W1/W4 and Fabric+SLO control all retain `273` and NBT `00c9bd5e...7b89c` with the explicit parity-breaking config false. Upstream default semantics intend parity; no current 26.x release/config closes the divergence.
 - FastNoise control gate: fresh fixed-boundary control A/B each save exactly 64 requested FULL chunks; comparison is 58/64 block chunks, 64/64 biomes, 61/64 heightmaps, 64/64 structures. Exact remaining state is 47 feature-like block differences and only `WORLD_SURFACE` heightmap variation. Candidate comparison stopped before provider attribution.
 - Panda-derived native protections: deterministic policy specification passes. Protections default inert; projectile identity includes world/region/type; pearl identity is per-player/per-dimension; overflow eviction is deterministic oldest-first; cleanup is incarnation-safe; players/controlled vehicles remain unstaggered; stride has a finite starvation bound. No live runtime behavior changed.
+- Architecture-closeout verification: focused `NativeProtectionPolicyTest` is `10/10`; full deterministic suite is `857` tests / `92` suites / zero failures/errors/skips; production artifact remains SHA-256 `D095C007C1B81698440F3BF0145E38A23DC6078F7033D713324F61F15F2C3CC9`.
 
 ## Known architecture boundaries
 
@@ -74,6 +75,6 @@ The completed Panda design verification is `./gradlew test --tests dev.phoenium.
 
 ## Next 3 actions
 
-1. Preserve this Panda design checkpoint; do not enable live protection code until its documented lifecycle prerequisite is solved and separately accepted.
+1. Preserve `STAGE7_ARCHITECTURE_CLOSURE.md` as the bounded-campaign checkpoint; do not enable live Panda protection code or remove the C2ME/VMP gates until their listed prerequisites are separately implemented and accepted.
 2. The next finite compatibility batch requires the facilities already listed in `STAGE7_AUDIT_BACKLOG.md`: supported Bedrock client, older Java client, or two working voice clients. Do not substitute server startup/UDP bind for those feature checks.
 3. Re-enter VMP/C2ME or Panda runtime implementation only with an explicit architecture that satisfies the existing no-cross-owner-wait, current-owner revalidation and lifecycle-settlement rules.

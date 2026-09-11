@@ -119,6 +119,8 @@ Exit criteria: each target remains `NOT_TESTED`, `PARTIAL`, `BLOCKED`, or advanc
 
 After an incompatibility is reproduced and the adapter evaluation is documented, implement the minimum correct answer: adapter, narrow upstream-compatible patch, maintained fork, or justified native replacement. Panda Anti-Lag behavior is considered here as a native Phoenium adaptation, not a final external runtime dependency.
 
+**Current status: full roadmap exit UNMET.** The bounded Stage 7 repair/architecture campaign closed on 2026-09-11; see [STAGE7_ARCHITECTURE_CLOSURE.md](STAGE7_ARCHITECTURE_CLOSURE.md). That checkpoint preserves scoped accepted repairs and pins the remaining Panda, C2ME and VMP gates, but does not promote PARTIAL/BLOCKED rows into Stage 7 exit acceptance.
+
 Exit criteria: each chosen path preserves the threading invariants; maintained forks have the required provenance, license, build, test, and divergence records; Phase A correctness/feature parity passes before Phase B integration work.
 
 ## Stage 8 — feature-complete required-stack compatibility
