@@ -16,6 +16,8 @@
     "FailedStopChunkMapMixin",
     "GeyserFloodgateSkinUploaderMixin",
     "C2meVanillaWorldGenerationDelegateMixin",
+    "C2meServerAccessibleMixin",
+    "C2meServerAccessibleChunkSendingMixin",
     "RegionalLevelTicksAccess",
     "RegionalEntityStorageMixin",
     "RegionalEntityStorageRemovalMixin",

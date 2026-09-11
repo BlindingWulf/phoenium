@@ -34,6 +34,7 @@ public final class PendingVanillaStage<I, O> {
     private PoiInstallService.InstallId prerequisitePoiId;
     private ChunkTypeMetadataService prerequisiteMetadata;
     private FullRegistrationRuntime.Graph full;
+    private ProviderFullBinding providerFull;
     private ClaimFence claimFence;
 
     /**
@@ -47,17 +48,23 @@ public final class PendingVanillaStage<I, O> {
     }
 
     void requireFull(FullRegistrationRuntime.Graph graph) {
-        if (inputBound || full != null || !work.equals(graph.work)) throw new ChunkProtocolException("wrong FULL stage binding");
+        if (inputBound || full != null || providerFull != null || !work.equals(graph.work)) throw new ChunkProtocolException("wrong FULL stage binding");
         full = Objects.requireNonNull(graph);
     }
+    void requireProviderFull(ProviderFullBinding binding) {
+        if (inputBound || full != null || providerFull != null || kind != ChunkStageKind.FULL_FINISH)
+            throw new ChunkProtocolException("wrong provider FULL stage binding");
+        providerFull = Objects.requireNonNull(binding);
+    }
     LightInputService.Readiness fullReadinessLocked() {
+        if (providerFull != null) return providerFull.readinessLocked(kind);
         if (full == null && kind != ChunkStageKind.FULL_PREPARE && kind != ChunkStageKind.FULL_FINISH)
             return LightInputService.Readiness.REGISTERED;
         return full == null ? LightInputService.Readiness.NOT_REGISTERED : full.readinessLocked(kind);
     }
-    void prepareFullServices() { if (full != null) full.prepareServices(kind); }
-    boolean reserveFullLocked() { return full == null || full.reserveLocked(kind); }
-    void unreserveFullLocked() { if (full != null) full.unreserveLocked(kind); }
+    void prepareFullServices() { if (full != null) full.prepareServices(kind); else if (providerFull != null) providerFull.prepare(kind); }
+    boolean reserveFullLocked() { return providerFull != null ? providerFull.reserveLocked(kind) : full == null || full.reserveLocked(kind); }
+    void unreserveFullLocked() { if (full != null) full.unreserveLocked(kind); else if (providerFull != null) providerFull.unreserveLocked(kind); }
     FullRegistrationRuntime.Graph contextGraphLocked() {
         return kind == ChunkStageKind.FULL_FINISH ? full : null;
     }
@@ -236,6 +243,7 @@ public final class PendingVanillaStage<I, O> {
         } finally { custody.gate().unlock(); }
         if (light != null) light.stageExited(lightBatch);
         if (full != null) full.stageExited(kind);
+        else if (providerFull != null) providerFull.stageExited(kind);
     }
     private void releaseInput() {
         custody.gate().lock();

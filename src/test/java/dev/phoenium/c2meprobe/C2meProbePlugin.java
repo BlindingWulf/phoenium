@@ -19,7 +19,8 @@ public final class C2meProbePlugin implements IMixinConfigPlugin {
             if (!(name.startsWith("phoenium$prepareChunkTick") || name.startsWith("phoenium$finishChunk")
                     || name.equals("runDistanceManagerUpdates") || name.equals("promoteChunkMap")
                     || name.equals("applyStep") || name.equals("apply") || name.equals("upgradeToThis")
-                    || name.equals("downgradeFromThis") || name.equals("save") || name.equals("saveAllChunks"))) continue;
+                    || name.equals("downgradeFromThis") || name.equals("save") || name.equals("saveAllChunks")
+                    || name.contains("$c2me-notickvd$lambda$upgradeToThis$1$"))) continue;
             if ((method.access & (Opcodes.ACC_ABSTRACT | Opcodes.ACC_NATIVE)) != 0) continue;
             String key = node.name + "." + name + method.desc;
             method.instructions.insert(mark(key + ".enter"));

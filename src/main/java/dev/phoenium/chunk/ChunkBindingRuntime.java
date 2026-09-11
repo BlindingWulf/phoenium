@@ -39,6 +39,7 @@ import net.minecraft.util.thread.BlockableEventLoop;
 import net.minecraft.world.entity.ai.village.poi.PoiManager;
 import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.level.chunk.ChunkAccess;
+import net.minecraft.world.level.chunk.ImposterProtoChunk;
 import net.minecraft.world.level.chunk.status.ChunkStatus;
 import net.minecraft.world.level.chunk.status.ChunkStep;
 import net.minecraft.world.level.chunk.storage.SerializableChunkData;
@@ -81,6 +82,8 @@ public final class ChunkBindingRuntime {
     private final IdentityHashMap<Object, C2meGenerationGraph> c2meSlots = new IdentityHashMap<>();
     private final Set<C2meGenerationGraph> c2meGenerationGraphs =
             java.util.Collections.newSetFromMap(new IdentityHashMap<>());
+    private final IdentityHashMap<Object, C2meFullGraph> c2meFullSlots = new IdentityHashMap<>();
+    private final Set<C2meFullGraph> c2meFullGraphs = java.util.Collections.newSetFromMap(new IdentityHashMap<>());
     private final Map<WorldId, WorldBinding> worlds = new ConcurrentHashMap<>();
     private final ConcurrentLinkedDeque<Delivery> deliveries = new ConcurrentLinkedDeque<>();
     private volatile boolean open = true;
@@ -88,6 +91,7 @@ public final class ChunkBindingRuntime {
     private long registrations, exactCaptures, poiInstalls, parsedApplications, recoveryApplications;
     private long publications, privateUnloads, staleReroutes, duplicateApplications, barriers;
     private long c2meRegistrations, c2meApplications, c2meControls, c2meProducerFailures;
+    private long c2meFullRegistrations, c2meFullApplications, c2meFullPublications, c2meSendApplications;
 
     public ChunkBindingRuntime(Authority authority, Logger logger) {
         this.authority = Objects.requireNonNull(authority); this.logger = Objects.requireNonNull(logger);
@@ -237,6 +241,179 @@ public final class ChunkBindingRuntime {
         return graph.returned;
     }
 
+    /** Captures the exact provider status slot when C2ME builds its Rx task; no Phoenium graph is retained until it runs. */
+    public Runnable c2meFullRunnable(Object context, Runnable original) {
+        Objects.requireNonNull(original, "original");
+        C2meFullAccess.Observation observation = C2meFullAccess.capture(context, C2meFullAccess.Kind.FULL);
+        return () -> runC2meFull(observation, original);
+    }
+
+    /** Delayed full events are a second provider Runnable on the same exact SERVER_ACCESSIBLE slot. */
+    public Runnable c2meDelayedFullEventsRunnable(Object context, Runnable original) {
+        Objects.requireNonNull(original, "original");
+        C2meFullAccess.Observation observation = C2meFullAccess.capture(context, C2meFullAccess.Kind.FULL);
+        return () -> runC2meDelayedFullEvents(observation, original);
+    }
+
+    /** The notickvd-overwritten sending status has a distinct provider slot and therefore a distinct stage. */
+    public Runnable c2meSendReadyRunnable(Object context, Runnable original) {
+        Objects.requireNonNull(original, "original");
+        C2meFullAccess.Observation observation = C2meFullAccess.capture(context, C2meFullAccess.Kind.SEND);
+        return () -> runC2meSendReady(observation, original);
+    }
+
+    /** Rebinds the exact notickvd fromRunnable node while retaining its exact subscribeOn scheduler instance. */
+    public Object c2meSendReadyGraph(Object context, Object providerGraph) {
+        Objects.requireNonNull(context, "context"); Objects.requireNonNull(providerGraph, "providerGraph");
+        return C2meFullAccess.rebindSendReadyGraph(providerGraph, original -> c2meSendReadyRunnable(context, original));
+    }
+
+    private void runC2meFull(C2meFullAccess.Observation observation, Runnable original) {
+        if (!open) throw new C2meProviderControlException(ChunkStageAdmission.Result.SHUTDOWN);
+        if (!observation.stillCurrent()) throw new C2meProviderControlException(ChunkStageAdmission.Result.SUPERSEDED);
+        ChunkAccess source = observation.requireProtoChunk();
+        ChunkMapLoadAccess map = (ChunkMapLoadAccess) (Object) observation.map();
+        WorldBinding world = world(authority.requireChunkWorld(map.phoenium$level()), observation.map(), map.phoenium$poi());
+        C2meFullGraph graph;
+        List<C2meFullGraph> stale = new ArrayList<>();
+        Optional<ChunkCustodyModel.LifecycleId> replacedLifecycle;
+        c2meGate.lock();
+        try {
+            C2meFullGraph existing = c2meFullSlots.get(observation.statusSlot());
+            if (existing != null) {
+                if (!existing.sameExactLineage(observation))
+                    throw breach(new ChunkProtocolException("C2ME FULL status-slot identity reused for different lineage"));
+                graph = existing;
+                replacedLifecycle = Optional.empty();
+            } else {
+                for (C2meFullGraph candidate : c2meFullGraphs)
+                    if (!candidate.terminal() && candidate.observation.sameTarget(observation)
+                            && candidate.observation.statusSlot() != observation.statusSlot()) stale.add(candidate);
+                RoutingKey key = new RoutingKey(world.authority.world(), observation.position().x(), observation.position().z());
+                replacedLifecycle = world.authority.services().lifecycles()
+                        .resolveCurrentLifecycle(world.authority.worldInstanceSequence(), key);
+                ChunkCustodyModel.LifecycleId lifecycle = world.authority.services().lifecycles()
+                        .activateHolder(world.authority.worldInstanceSequence(), key, observation.userDataHolder());
+                if (replacedLifecycle.isPresent() && replacedLifecycle.orElseThrow().equals(lifecycle))
+                    replacedLifecycle = Optional.empty();
+                world.authority.services().trackHolder(lifecycle, observation.userDataHolder());
+                long reservation = c2meReservationSequence++;
+                ChunkCustodyModel.WorkId work = world.authority.services().works().beginOrResolveSharedWork(lifecycle,
+                        new ChunkWorkRegistry.WorkReservation("c2me-provider", "SERVER_ACCESSIBLE", reservation));
+                graph = new C2meFullGraph(world, observation, lifecycle, work);
+                c2meFullSlots.put(observation.statusSlot(), graph);
+                c2meFullGraphs.add(graph);
+                c2meFullRegistrations++;
+            }
+        } finally { c2meGate.unlock(); }
+        if (replacedLifecycle.isPresent()) supersedeLifecycle(replacedLifecycle.orElseThrow());
+        for (C2meFullGraph old : stale) old.control(ChunkStageAdmission.Result.SUPERSEDED);
+        graph.runInitial(original, source);
+    }
+
+    private void runC2meDelayedFullEvents(C2meFullAccess.Observation observation, Runnable original) {
+        if (!open) throw new C2meProviderControlException(ChunkStageAdmission.Result.SHUTDOWN);
+        C2meFullGraph graph;
+        c2meGate.lock();
+        try { graph = c2meFullSlots.get(observation.statusSlot()); }
+        finally { c2meGate.unlock(); }
+        if (graph == null || graph.terminal() || !graph.sameExactLineage(observation))
+            throw new C2meProviderControlException(ChunkStageAdmission.Result.SUPERSEDED);
+        graph.runDelayed(original);
+    }
+
+    private void runC2meSendReady(C2meFullAccess.Observation observation, Runnable original) {
+        if (!open) throw new C2meProviderControlException(ChunkStageAdmission.Result.SHUTDOWN);
+        if (!observation.stillCurrent()) throw new C2meProviderControlException(ChunkStageAdmission.Result.SUPERSEDED);
+        ChunkMapLoadAccess map = (ChunkMapLoadAccess) (Object) observation.map();
+        WorldBinding world = world(authority.requireChunkWorld(map.phoenium$level()), observation.map(), map.phoenium$poi());
+        RoutingKey key = new RoutingKey(world.authority.world(), observation.position().x(), observation.position().z());
+        ChunkCustodyModel.LifecycleId lifecycle = world.authority.services().lifecycles()
+                .activateHolder(world.authority.worldInstanceSequence(), key, observation.userDataHolder());
+        world.authority.services().trackHolder(lifecycle, observation.userDataHolder());
+        long reservation = c2meReservationSequence++;
+        ChunkCustodyModel.WorkId work = world.authority.services().works().beginOrResolveSharedWork(lifecycle,
+                new ChunkWorkRegistry.WorkReservation("c2me-provider", "SERVER_ACCESSIBLE_CHUNK_SENDING", reservation));
+        var stage = new ChunkCustodyModel.StageId(work, ChunkStageKind.SEND_READY, "C2ME_SEND", 0);
+        PendingVanillaStage<Runnable, Void> pending = new PendingVanillaStage<>(world.authority.services().custody(),
+                lifecycle, work, stage, new dev.phoenium.task.TaskCorrelationId(work.workSequence()), (body, claim) -> {
+            claim.require(stage);
+            C2meFullAccess.FullState full = observation.requireFullState();
+            observation.requirePublication(full);
+            body.run();
+            observation.requireFullState(full);
+            observation.requirePublication(full);
+            return null;
+        });
+        pending.requireClaimFence(claim -> {
+            claim.require(stage);
+            if (!open) return ChunkStageAdmission.Result.SHUTDOWN;
+            if (!world.authority.services().lifecycles().observeSameHolder(lifecycle, observation.userDataHolder())
+                    || !observation.stillCurrent()) return ChunkStageAdmission.Result.SUPERSEDED;
+            return null;
+        });
+        boolean cancelled = false;
+        try {
+            executeProviderNow(world, pending, original);
+            c2meSendApplications++;
+        } catch (C2meProviderControlException control) {
+            cancelled = true; throw control;
+        } finally {
+            world.authority.services().works().retireWork(work, cancelled);
+            world.authority.services().works().releaseRetiredWork(work);
+            world.authority.services().tryReleaseRetiredLifecycle(lifecycle);
+        }
+    }
+
+    private <I, O> O executeProviderNow(WorldBinding world, PendingVanillaStage<I, O> pending, I input) {
+        pending.prepareFullServices();
+        if (!pending.bindInput(input)) throw new ChunkProtocolException("C2ME provider stage rejected its exact retained input");
+        pending.publishReady();
+        for (int attempt = 0; attempt < 8; attempt++) {
+            pending.prepareFullServices();
+            RegionDirectory.PendingChange change = world.authority.directory().pendingChange(pending.chunk()).orElse(null);
+            if (change != null && !change.completed()) {
+                pending.stageExited(); pending.control(ChunkStageAdmission.Result.NOT_READY);
+                throw new C2meProviderControlException(ChunkStageAdmission.Result.NOT_READY);
+            }
+            RegionRoute route = world.authority.directory().resolve(pending.chunk()).orElse(null);
+            if (route == null) {
+                pending.stageExited(); pending.control(ChunkStageAdmission.Result.NOT_READY);
+                throw new C2meProviderControlException(ChunkStageAdmission.Result.NOT_READY);
+            }
+            ChunkStageAdmission.Result result = world.executor.execute(pending, route.region(), route.generation());
+            if (result == ChunkStageAdmission.Result.STALE_ROUTE) continue;
+            if (result == ChunkStageAdmission.Result.NOT_READY) {
+                pending.control(result);
+                throw new C2meProviderControlException(result);
+            }
+            ChunkStageOutcome<O> outcome = pending.outcome().getNow(null);
+            if (outcome instanceof ChunkStageOutcome.Applied<O> applied) return applied.value();
+            if (outcome instanceof ChunkStageOutcome.Control<O> control) throw new C2meProviderControlException(control.result());
+            if (outcome instanceof ChunkStageOutcome.VanillaFailure<O> vanilla) throw unchecked(vanilla.failure());
+            if (outcome instanceof ChunkStageOutcome.BarrierFailure<O> barrier) throw unchecked(barrier.failure());
+            throw new ChunkProtocolException("C2ME provider stage has no terminal outcome after " + result);
+        }
+        pending.stageExited(); pending.control(ChunkStageAdmission.Result.NOT_READY);
+        throw new C2meProviderControlException(ChunkStageAdmission.Result.NOT_READY);
+    }
+
+    private static int c2meSavedOccurrenceSlots(ChunkAccess source) {
+        FullSavedInput saved = null;
+        if (source instanceof ImposterProtoChunk imposter
+                && imposter.getWrapped() instanceof FullSavedInput.PostLoadAccess access
+                && access.phoenium$postLoad() instanceof FullSavedInput.ReloadProcessor reload) saved = reload.input();
+        else if (source instanceof FullSavedInput.Access access) saved = access.phoenium$savedInput();
+        if (saved == null) return 0;
+        // Fresh generation owns an empty, dormant saved-input carrier. Only an activated reload
+        // lineage needs a detached occurrence snapshot before FULL service reservation.
+        if (!saved.tracking()) return 0;
+        FullSavedInput.Snapshot snapshot = saved.snapshot();
+        if (snapshot == null)
+            throw new ChunkProtocolException("C2ME FULL saved input has no immutable occurrence snapshot");
+        return snapshot.entities().size();
+    }
+
     /** SectionStorage's background iterator asks whether this exact Q is owned by a pending graph. */
     public boolean ownsPoiFuture(CompletableFuture<?> future) {
         indexGate.lock(); try { return poiIndex.containsKey(future); }
@@ -277,6 +454,7 @@ public final class ChunkBindingRuntime {
         List<ChunkLoadGraph> graphs = graphs();
         for (var graph : graphs) failures.run(graph::shutdown);
         for (var graph : c2meGraphs()) failures.run(() -> graph.control(ChunkStageAdmission.Result.SHUTDOWN));
+        for (var graph : c2meFullGraphs()) failures.run(() -> graph.control(ChunkStageAdmission.Result.SHUTDOWN));
         for (var world : java.util.List.copyOf(worlds.values())) failures.run(world.authority.services()::stopResidentHolders);
         Delivery delivery;
         while ((delivery = deliveries.pollFirst()) != null) {
@@ -297,7 +475,7 @@ public final class ChunkBindingRuntime {
     public int returnedIndexEntries() { indexGate.lock(); try { return returnedIndex.size(); } finally { indexGate.unlock(); } }
     public int poiIndexEntries() { indexGate.lock(); try { return poiIndex.size(); } finally { indexGate.unlock(); } }
     public int c2meRetainedGraphs() {
-        c2meGate.lock(); try { return c2meGenerationGraphs.size(); } finally { c2meGate.unlock(); }
+        c2meGate.lock(); try { return c2meGenerationGraphs.size() + c2meFullGraphs.size(); } finally { c2meGate.unlock(); }
     }
     public String diagnostics() {
         ServiceCounts service = serviceCounts();
@@ -308,7 +486,9 @@ public final class ChunkBindingRuntime {
                 + " retainedGraphs=" + retainedGraphs() + " returnedIndex=" + returnedIndexEntries()
                 + " poiIndex=" + poiIndexEntries() + " c2meRegistrations=" + c2meRegistrations
                 + " c2meApplications=" + c2meApplications + " c2meControls=" + c2meControls
-                + " c2meProducerFailures=" + c2meProducerFailures + " c2meRetained=" + c2meRetainedGraphs()
+                + " c2meProducerFailures=" + c2meProducerFailures + " c2meFullRegistrations=" + c2meFullRegistrations
+                + " c2meFullApplications=" + c2meFullApplications + " c2meFullPublications=" + c2meFullPublications
+                + " c2meSendApplications=" + c2meSendApplications + " c2meRetained=" + c2meRetainedGraphs()
                 + " synchronousInvocations=" + SynchronousChunkInvocation.retainedEntries()
                 + " lightBatches=" + service.lightBatches() + " lightOccurrences=" + service.lightOccurrences()
                 + " lightReceipts=" + service.lightReceipts() + " poiEntries=" + service.poiEntries()
@@ -483,6 +663,161 @@ public final class ChunkBindingRuntime {
             services.works().retireWork(work, cancelled);
             services.works().releaseRetiredWork(work);
             services.tryReleaseRetiredLifecycle(lifecycle);
+        }
+    }
+
+    private final class C2meFullGraph {
+        final WorldBinding world;
+        final C2meFullAccess.Observation observation;
+        final ChunkCustodyModel.LifecycleId lifecycle;
+        final ChunkCustodyModel.WorkId work;
+        private final AtomicBoolean initialStarted = new AtomicBoolean();
+        private final AtomicBoolean delayedStarted = new AtomicBoolean();
+        private final AtomicBoolean terminal = new AtomicBoolean();
+        private volatile C2meFullAccess.FullState fullState;
+        private volatile boolean delayed;
+
+        C2meFullGraph(WorldBinding world, C2meFullAccess.Observation observation,
+                      ChunkCustodyModel.LifecycleId lifecycle, ChunkCustodyModel.WorkId work) {
+            this.world = world; this.observation = observation; this.lifecycle = lifecycle; this.work = work;
+        }
+
+        boolean sameExactLineage(C2meFullAccess.Observation other) { return observation.sameExactLineage(other); }
+        boolean terminal() { return terminal.get(); }
+
+        void runInitial(Runnable original, ChunkAccess source) {
+            if (!initialStarted.compareAndSet(false, true)) throw new ChunkProtocolException("repeated C2ME FULL provider Runnable");
+            delayed = observation.delayFullEvents();
+            try {
+                var state = new AtomicReference<C2meFullAccess.FullState>();
+                var stage = new ChunkCustodyModel.StageId(work, ChunkStageKind.FULL_FINISH, "C2ME_SERVER_ACCESSIBLE", 0);
+                var services = new C2meFullServiceBinding(world, stage, observation.userDataHolder(), source);
+                PendingVanillaStage<Runnable, Void> pending = new PendingVanillaStage<>(world.authority.services().custody(),
+                        lifecycle, work, stage, new dev.phoenium.task.TaskCorrelationId(work.workSequence()), (body, claim) -> {
+                    claim.require(stage);
+                    try (var ignored = services.enter(claim)) {
+                        body.run();
+                        state.set(observation.requireFullState());
+                    }
+                    return null;
+                });
+                pending.requireProviderFull(services);
+                pending.requireClaimFence(claim -> fullClaimFence(claim, stage, null));
+                executeProviderNow(world, pending, original);
+                fullState = Objects.requireNonNull(state.get(), "C2ME FULL state receipt");
+                c2meFullApplications++;
+                if (!delayed) {
+                    publish();
+                    finish(false);
+                }
+            } catch (Throwable failure) {
+                finish(failure instanceof C2meProviderControlException);
+                throw unchecked(failure);
+            }
+        }
+
+        void runDelayed(Runnable original) {
+            if (!delayed || fullState == null) throw new ChunkProtocolException("C2ME delayed FULL events have no retained FULL state");
+            if (!delayedStarted.compareAndSet(false, true)) throw new ChunkProtocolException("repeated C2ME delayed FULL provider Runnable");
+            try {
+                var stage = new ChunkCustodyModel.StageId(work, ChunkStageKind.FULL_FINISH, "C2ME_FULL_EVENTS", 1);
+                var services = new C2meFullServiceBinding(world, stage, observation.userDataHolder(), fullState.protoChunk());
+                PendingVanillaStage<Runnable, Void> pending = new PendingVanillaStage<>(world.authority.services().custody(),
+                        lifecycle, work, stage, new dev.phoenium.task.TaskCorrelationId(work.workSequence()), (body, claim) -> {
+                    claim.require(stage);
+                    observation.requireFullState(fullState);
+                    try (var ignored = services.enter(claim)) { body.run(); }
+                    observation.requireFullState(fullState);
+                    return null;
+                });
+                pending.requireProviderFull(services);
+                pending.requireClaimFence(claim -> fullClaimFence(claim, stage, fullState));
+                executeProviderNow(world, pending, original);
+                publish();
+                finish(false);
+            } catch (Throwable failure) {
+                finish(failure instanceof C2meProviderControlException);
+                throw unchecked(failure);
+            }
+        }
+
+        void publish() {
+            var stage = new ChunkCustodyModel.StageId(work, ChunkStageKind.STATUS_PUBLISH, "C2ME_FULL", 2);
+            PendingVanillaStage<C2meFullAccess.FullState, Void> pending = new PendingVanillaStage<>(
+                    world.authority.services().custody(), lifecycle, work, stage,
+                    new dev.phoenium.task.TaskCorrelationId(work.workSequence()), (state, claim) -> {
+                claim.require(stage); observation.requirePublication(state); return null;
+            });
+            pending.requireClaimFence(claim -> fullClaimFence(claim, stage, fullState));
+            executeProviderNow(world, pending, fullState);
+            c2meFullPublications++;
+        }
+
+        ChunkStageAdmission.Result fullClaimFence(ChunkStageClaim claim, ChunkCustodyModel.StageId stage,
+                                                  C2meFullAccess.FullState expected) {
+            claim.require(stage);
+            if (!open) return ChunkStageAdmission.Result.SHUTDOWN;
+            if (!world.authority.services().lifecycles().observeSameHolder(lifecycle, observation.userDataHolder()))
+                return ChunkStageAdmission.Result.SUPERSEDED;
+            if (!observation.stillCurrent()) return ChunkStageAdmission.Result.SUPERSEDED;
+            if (expected != null) observation.requireFullState(expected);
+            return null;
+        }
+
+        void control(ChunkStageAdmission.Result reason) { finish(reason != ChunkStageAdmission.Result.SUPERSEDED); }
+
+        void finish(boolean cancelled) {
+            if (!terminal.compareAndSet(false, true)) return;
+            unbindC2meFull(this);
+            ChunkPrerequisiteServices services = world.authority.services();
+            services.works().retireWork(work, cancelled);
+            services.works().releaseRetiredWork(work);
+            services.tryReleaseRetiredLifecycle(lifecycle);
+        }
+    }
+
+    private final class C2meFullServiceBinding implements ProviderFullBinding {
+        final WorldBinding world;
+        final ChunkCustodyModel.StageId stage;
+        final GenerationChunkHolder holder;
+        final ChunkAccess source;
+        private FullFinishingServices.Reservation reservation;
+
+        C2meFullServiceBinding(WorldBinding world, ChunkCustodyModel.StageId stage,
+                               GenerationChunkHolder holder, ChunkAccess source) {
+            this.world = world; this.stage = stage; this.holder = holder; this.source = source;
+        }
+
+        @Override public LightInputService.Readiness readinessLocked(ChunkStageKind kind) {
+            if (kind != ChunkStageKind.FULL_FINISH) return LightInputService.Readiness.FAILED;
+            return reservation != null && reservation.valid(stage, holder)
+                    ? LightInputService.Readiness.REGISTERED : LightInputService.Readiness.NOT_REGISTERED;
+        }
+
+        @Override public void prepare(ChunkStageKind kind) {
+            if (kind != ChunkStageKind.FULL_FINISH || reservation != null) return;
+            ServerLevel level = ((ChunkMapLoadAccess) (Object) world.map).phoenium$level();
+            var server = level.getServer();
+            if (server == null) throw new ChunkProtocolException("C2ME FULL world has no server");
+            ArrayList<ServerLevel> levels = new ArrayList<>();
+            for (ServerLevel candidate : server.getAllLevels()) levels.add(candidate);
+            if (levels.stream().noneMatch(candidate -> candidate == level)) levels.add(level);
+            reservation = FullFinishingServices.forServer(server).tryReserve(stage, holder, levels,
+                    c2meSavedOccurrenceSlots(source));
+        }
+
+        @Override public boolean reserveLocked(ChunkStageKind kind) {
+            return readinessLocked(kind) == LightInputService.Readiness.REGISTERED;
+        }
+        @Override public void unreserveLocked(ChunkStageKind kind) { }
+        FullFinishingServices.Scope enter(ChunkStageClaim claim) {
+            if (reservation == null) throw new ChunkProtocolException("C2ME FULL has no service reservation");
+            return reservation.enter(claim);
+        }
+        @Override public void stageExited(ChunkStageKind kind) {
+            FullFinishingServices.Reservation current = reservation;
+            reservation = null;
+            if (current != null) current.close();
         }
     }
 
@@ -671,6 +1006,8 @@ public final class ChunkBindingRuntime {
         for (ChunkLoadGraph graph : graphs()) if (graph.token().lifecycle().equals(lifecycle)) graph.superseded();
         for (C2meGenerationGraph graph : c2meGraphs())
             if (graph.lifecycle.equals(lifecycle)) graph.control(ChunkStageAdmission.Result.SUPERSEDED);
+        for (C2meFullGraph graph : c2meFullGraphs())
+            if (graph.lifecycle.equals(lifecycle)) graph.control(ChunkStageAdmission.Result.SUPERSEDED);
     }
     private List<ChunkLoadGraph> graphs() {
         indexGate.lock(); try {
@@ -681,6 +1018,9 @@ public final class ChunkBindingRuntime {
     private List<C2meGenerationGraph> c2meGraphs() {
         c2meGate.lock(); try { return List.copyOf(c2meGenerationGraphs); } finally { c2meGate.unlock(); }
     }
+    private List<C2meFullGraph> c2meFullGraphs() {
+        c2meGate.lock(); try { return List.copyOf(c2meFullGraphs); } finally { c2meGate.unlock(); }
+    }
     private void unbindC2me(C2meGenerationGraph graph) {
         c2meGate.lock();
         try {
@@ -688,9 +1028,21 @@ public final class ChunkBindingRuntime {
             c2meGenerationGraphs.remove(graph);
         } finally { c2meGate.unlock(); }
     }
+    private void unbindC2meFull(C2meFullGraph graph) {
+        c2meGate.lock();
+        try {
+            c2meFullSlots.remove(graph.observation.statusSlot(), graph);
+            c2meFullGraphs.remove(graph);
+        } finally { c2meGate.unlock(); }
+    }
     private RuntimeException breach(Throwable failure) {
         barriers++; authority.chunkBarrier(failure);
         return failure instanceof RuntimeException runtime ? runtime : new ChunkProtocolException("chunk binding failure", failure);
+    }
+    private static RuntimeException unchecked(Throwable failure) {
+        if (failure instanceof Error error) throw error;
+        return failure instanceof RuntimeException runtime ? runtime
+                : new ChunkProtocolException("C2ME provider continuation failed", failure);
     }
     private void trace(String event, ChunkLoadGraph graph, String detail) { trace(event, graph.token(), detail); }
     private void trace(String event, ChunkLoadGraph.Token token, String detail) {

@@ -26,6 +26,14 @@ The production C2ME `breaks` declarations remain intact. Runtime mixin applicati
 
 Verification after the final lock-order correction: 888 tests / 96 suites / zero failures, errors, or skips; production JAR build PASS; `git diff --check` PASS. Production JAR SHA-256: `8C56B3F4B0E485D50C6447993E6D37C7D33CBFD2A89AB0A5ADA047710F9A18D4`. Disposable post-fix candidate SHA-256: `52F48EFED4D7D406CCCFD6216AFC7E79C3EAB575B204347C2E41245EB5ED5478`. Qwen final review: ACCEPT with no must-fix issue. Evidence: `run/stage8/entry-20260911/C2ME_GENERATION_MILESTONE.md` and `run/stage8/entry-20260911/QWEN_C2ME_GENERATION_FINAL_REVIEW.log`.
 
+### C2ME prerequisite milestone 3 — FULL and SEND_READY provider lifecycle binding
+
+Implemented the locked-provider `ServerAccessible` FULL and `ServerAccessibleChunkSending` SEND_READY bridges without fabricating vanilla FULL lineage. FULL publication is tied to the exact provider backing state and delayed provider continuation. SEND_READY remains a distinct provider lifecycle stage in the locked fat C2ME composition. The final installed composition wraps the untouched generic `upgradeToThis(Object, Cancellable)` bridge, lets notickvd construct its real RxJava `CompletableFromRunnable -> CompletableSubscribeOn` graph, then reconstructs that exact two-node shape with the original Runnable and scheduler while routing only the Runnable body through Phoenium owner admission. Reflection fails closed if that pinned graph shape drifts.
+
+Installed W1 evidence with the disposable C2ME candidate proves the provider path actually executes: generation still recorded 2,422 enter/return pairs; `ServerAccessible` typed/generic upgrade paths recorded 76/76; `ServerAccessibleChunkSending` typed/generic upgrade paths recorded 39/39; and the actual merged notickvd SEND_READY synthetic Runnable body recorded 39 enter/39 return with all 39 executions under Phoenium ownership on the Server thread. Shutdown diagnostics reported intercepted/dispatched/executed 99/99/99, duplicate 0, bypass 0, fallback 0, ownership violations 0, unleased 0, barriers 0, and save captures/acknowledgements 2/2. The run then advanced to the separate C2ME autosave lifetime boundary and failed closed at `FullFinishingServices.requireWorld -> RegionalSaveBinding.select` with `UNSAVED`.
+
+Verification: focused C2ME suite 29 tests PASS; full deterministic suite **901 tests / 98 suites / zero failures, errors, or skips**; production JAR build PASS; `git diff --check` PASS apart from line-ending warnings. Production JAR SHA-256: `7B2310322E1027D900B53EDAB27D531D55C867243C43492F0CE881A7B843ED3B`. Disposable installed candidate SHA-256: `08C2990DE958DA8CE873A4DEAFE835996868266A07288914F377473F00201FCF`. Locked C2ME outer artifact SHA-256 remains `B013229383F51789C57684CBCFC12981C8D791206F3B594866DFEB74AED3770B`. Final bounded local-Qwen review: ACCEPT. Durable receipts: `docs/C2ME_FULL_SEND_READY_MILESTONE.md` and `docs/QWEN_C2ME_FULL_SEND_READY_FINAL_REVIEW.md`.
+
 ### Panda-native prerequisite A1 — authoritative non-player cross-owner relocation
 
 Implemented the bounded physical-observation -> owner-free commit protocol required by the frozen Stage 7 architecture contract. Non-player cross-owner movement now invalidates the derived interaction target immediately, retains only the latest immutable relocation fact, and commits at the owner-free entity-management boundary. Source and destination are fenced with deterministic non-blocking delivery selections; busy or transitioning regions defer without owner-to-owner waiting. The commit revalidates object epoch/incarnation and destination topology, changes authority through the sole `ObjectOwnershipRegistry.transitionOwner()` path, republishes the derived index, and emits exactly one ordered relocation fact.
@@ -36,10 +44,9 @@ Verification after final Qwen review: 875 tests / 94 suites / zero failures, err
 
 ## Mandatory entry gates still open
 
-1. C2ME `ServerAccessible*` FULL conversion/publication/lifecycle split into preparation, owner-local finishing, and acknowledged publication.
-2. C2ME `ReadFromDisk*`, asynchronous serialization, cancellation/failure/stop lifetime and save acknowledgement binding; then co-installation composition and installed W1/W4 acceptance before removing the C2ME gate.
-3. Panda-native A2 pearl ledger/version-pinned lifecycle follows completed A1; A3 staggering remains unaccepted pending a semantic-preservation seam.
-4. External client facilities: real Bedrock gameplay, legacy Java/Via translation, and real Simple Voice Chat microphone/proximity/reconnect coverage.
+1. C2ME `ReadFromDisk*`, asynchronous serialization, cancellation/failure/stop lifetime and save acknowledgement binding, starting from the installed `UNSAVED` autosave failure; then co-installation composition and installed W1/W4 acceptance before removing the C2ME gate.
+2. Panda-native A2 pearl ledger/version-pinned lifecycle follows completed A1; A3 staggering remains unaccepted pending a semantic-preservation seam.
+3. External client facilities: real Bedrock gameplay, legacy Java/Via translation, and real Simple Voice Chat microphone/proximity/reconnect coverage.
 
 VMP remains optional. SLO remains excluded from strict seed-parity. FastNoise strict FULL parity attribution remains bounded by its documented nondeterministic-control limitation.
 
@@ -49,4 +56,4 @@ Windows Minecraft Bedrock package `Microsoft.MinecraftUWP` is installed and heal
 
 ## Next executable milestone
 
-Advance the next dependency-ready C2ME prerequisite: split `ServerAccessible` FULL conversion/provider-state mutation from full world publication and bind the relevant `ServerAccessibleChunkSending` provider lineage to Phoenium owner admission. In parallel, A2 may consume the accepted ordered A1 relocation fact stream for the version-pinned projectile/pearl membership ledger, and client preparation may proceed toward actual Bedrock gameplay evidence. Formal Stage 8 acceptance remains gated on all mandatory prerequisites above.
+Advance the C2ME disk/save/read/cancel/stop lifetime prerequisite from the installed `UNSAVED` autosave failure. Trace the locked provider's read/load/save/unload/cancel/replacement/shutdown paths first, then bind them to the accepted Phoenium lifecycle without replaying provider producers or creating a second ownership authority. In parallel, A2 may consume the accepted ordered A1 relocation fact stream for the version-pinned projectile/pearl membership ledger, and client preparation may proceed toward actual Bedrock gameplay evidence. Formal Stage 8 acceptance remains gated on all mandatory prerequisites above.
