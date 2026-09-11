@@ -79,7 +79,8 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
     private final ObjectOwnershipRegistry objects = new ObjectOwnershipRegistry(directory);
     private final Map<TaskCorrelationId, PendingPacket> packets = new ConcurrentHashMap<>();
     private final InteractionTargetIndex interactionTargets = new InteractionTargetIndex();
-    private final EntityIndexLifecycleAdapter entityIndexLifecycle = new EntityIndexLifecycleAdapter(objects, directory, interactionTargets);
+    private final EntityIndexLifecycleAdapter entityIndexLifecycle = new EntityIndexLifecycleAdapter(objects, directory, interactionTargets,
+        this::recordEntityRelocation);
     private final Map<TaskCorrelationId, ChunkWorkRequest> chunkRequests = new ConcurrentHashMap<>();
     private final java.util.Set<WorldId> observedChunkFutureWorlds = ConcurrentHashMap.newKeySet();
     private final LivePacketReplayGate movementReplay = new LivePacketReplayGate();
@@ -121,6 +122,7 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
     private long movementReplayCount, movementHandlerCompletion, movementRoutingReconciliation, movementSameOwnerEpochPreserved, movementStaleTicketRejected;
     private long interactionIngress, interactionIndexHit, interactionIndexMiss, interactionIncarnationRejected, interactionOwnerAdmission;
     private long interactionCrossOwnerRejected, interactionOwnerExecution, interactionReplay, interactionVanillaLookup, interactionHandlerCompletion, interactionStaleTicketRejected;
+    private long entityRelocations;
     private long chunkCompletionAdmissions;
     private long chunkCompletionApplications;
     private long chunkCompletionReroutes;
@@ -329,6 +331,10 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
                 try (var access = dev.phoenium.chunk.FullFinishingServices.forServer(pending.level().getServer()).referenceAccess()) {
                     phases.phoenium$runEntityManagement(pending.levelState);
                 }
+                // Entity movement observations made by the native body above are committed only
+                // here, after every owner callback has returned. Busy source/destination regions
+                // retain their bounded fact for the next tick instead of waiting on one another.
+                entityIndexLifecycle.advancePendingRelocations(runtimes);
                 queueTickPhase(pending, live, PendingTick.Step.FINAL_OWNER);
             }
             default -> throw new IllegalStateException("owner-free tick coordinator reached " + pending.step);
@@ -526,6 +532,7 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
             scheduler == null ? 1 : scheduler.workerCount(), scheduler != null && scheduler.workerCount() > 1,
             regions.size(), activeLeases, intercepts, dispatches, executions, duplicates, unexpectedBypasses, fallbacks,
             ownershipViolations, unleasedExecutions, hardBarriers, barrier.tripped(), objects.liveCount(), objects.playerCount(),
+            entityIndexLifecycle.pendingRelocationCount(), entityRelocations,
             packetAdmissions, packetExecutions, packetStaleReroutes, packetRejections, packetRecursions,
             chunkCompletionAdmissions, chunkCompletionApplications, chunkCompletionReroutes, chunkCompletionRejections, chunkCompletionDuplicates,
             producerThreadChunkMutations);
@@ -1002,6 +1009,7 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
         }
     }
     private boolean isRunning() { return state == State.RUNNING && scheduler != null && scheduler.lifecycle().acceptsSimulationWork(); }
+    private void recordEntityRelocation(EntityIndexLifecycleAdapter.RelocationFact ignored) { entityRelocations++; }
     private boolean acceptsGameplay() { return !gameplayAdmissionClosed && isRunning(); }
     private static WorldId worldId(ServerLevel level) { return new WorldId(level.dimension().identifier().toString()); }
     private static RegionRuntime readyRuntime(RegionId region) {
@@ -1027,7 +1035,7 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
         }
     }
 
-    /** A movement observation may refresh same-owner routing, but a cross-owner entity is invalidated, not transferred. */
+    /** Non-player cross-owner movement is observed here and committed later at the owner-free tick boundary. */
     public void onEntityRoutingObserved(Entity entity) {
         if (!isRunning() || !(entity.level() instanceof ServerLevel level) || entity.isRemoved()) return;
         WorldId world = worldId(level);

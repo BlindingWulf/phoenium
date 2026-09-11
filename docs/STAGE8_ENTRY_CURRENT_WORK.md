@@ -18,21 +18,28 @@ Implemented a locked-provider adapter for C2ME `BLOCK_TICKING` status-slot ident
 
 Verification: 865 tests / 93 suites / zero failures, errors, or skips; full production JAR build PASS; `git diff --check` PASS. Current JAR SHA-256: `37A8B73DFC22D56B7FEC6E7C99644CBCF7E86468A188E0837A6B3A31735A1124`. Qwen final review: ACCEPT. This does not establish installed C2ME compatibility.
 
+### Panda-native prerequisite A1 — authoritative non-player cross-owner relocation
+
+Implemented the bounded physical-observation -> owner-free commit protocol required by the frozen Stage 7 architecture contract. Non-player cross-owner movement now invalidates the derived interaction target immediately, retains only the latest immutable relocation fact, and commits at the owner-free entity-management boundary. Source and destination are fenced with deterministic non-blocking delivery selections; busy or transitioning regions defer without owner-to-owner waiting. The commit revalidates object epoch/incarnation and destination topology, changes authority through the sole `ObjectOwnershipRegistry.transitionOwner()` path, republishes the derived index, and emits exactly one ordered relocation fact.
+
+The implementation also retains an initially unresolved physical destination until topology publishes it, handles topology loss/republication, same-owner supersession, removal/re-addressing, shutdown, and post-commit sink failure. Live diagnostics now expose pending and committed relocation counts. Players remain on the existing classified packet movement protocol.
+
+Verification after final Qwen review: 875 tests / 94 suites / zero failures, errors, or skips; focused A1 + Stage 3 ownership/movement + real-client-readiness regressions PASS; full production JAR build PASS; `git diff --check` PASS. JAR SHA-256: `9DA1A5F006B0291CB77AD17D3C573A633B38DFF886DAC328D50C059B2247C9E6`. Qwen hostile review and exact final-delta review: ACCEPT. Evidence: `run/stage8/entry-20260911/QWEN_A1_RELOCATION_RECEIPT.md` and `run/stage8/entry-20260911/QWEN_A1_RELOCATION_REVIEW.md`.
+
 ## Mandatory entry gates still open
 
 1. C2ME direct `VanillaWorldGenerationDelegate` / `ChunkStep.apply` generation and status-completion adapter into Phoenium admission/retained-input/completion semantics.
 2. C2ME `ServerAccessible*` FULL conversion/publication/lifecycle split into preparation, owner-local finishing, and acknowledged publication.
 3. C2ME `ReadFromDisk*`, asynchronous serialization, cancellation/failure/stop lifetime and save acknowledgement binding; then co-installation composition and installed W1/W4 acceptance before removing the C2ME gate.
-4. Panda-native prerequisite A1: authoritative non-player cross-owner relocation with bounded pending facts, quiescent commit, exactly one object-epoch bump, stale/incarnation invalidation, no owner-to-owner blocking, derived-index republish, and exactly-once ordered relocation/accounting emission.
-5. Panda-native A2 pearl ledger/version-pinned lifecycle follows A1; A3 staggering remains unaccepted pending a semantic-preservation seam.
-6. External client facilities: real Bedrock gameplay, legacy Java/Via translation, and real Simple Voice Chat microphone/proximity/reconnect coverage.
+4. Panda-native A2 pearl ledger/version-pinned lifecycle follows completed A1; A3 staggering remains unaccepted pending a semantic-preservation seam.
+5. External client facilities: real Bedrock gameplay, legacy Java/Via translation, and real Simple Voice Chat microphone/proximity/reconnect coverage.
 
 VMP remains optional. SLO remains excluded from strict seed-parity. FastNoise strict FULL parity attribution remains bounded by its documented nondeterministic-control limitation.
 
 ## Client preparation already established
 
-Windows Minecraft Bedrock package `Microsoft.MinecraftUWP` is installed (package version observed `1.26.4501.0`) with a launch entry through `GameLaunchHelper.exe`. Minecraft Java Edition is installed. ADB is available and an authorized Samsung S20 FE 5G is connected, but its queried Minecraft package version was stale-looking and is not accepted as Bedrock gameplay evidence. Windows Bedrock is the stronger current actual-client candidate. No credential bypass, account change, purchase, or untrusted launcher is authorized.
+Windows Minecraft Bedrock package `Microsoft.MinecraftUWP` is installed and healthy (package version observed `1.26.4501.0`) with `gamelaunchhelper.exe` and `Minecraft.Windows.exe` present. Minecraft Java Edition is installed. ADB is available and the currently authorized device is the Moto G 2025 (`[device-serial]`, Android 16); that phone does not currently report a `com.mojang.minecraftpe` package, so it is not a Bedrock gameplay client. Windows Bedrock remains the current actual-client candidate. Evidence: `run/stage8/entry-20260911/CLIENT_ENVIRONMENT_PREP.md`. No credential bypass, account change, purchase, or untrusted launcher is authorized.
 
 ## Next executable milestone
 
-Implement and test A1 pending non-player cross-owner relocation while continuing independent client-facility preparation. Do not call `ObjectOwnershipRegistry.transitionOwner()` directly from `Entity.setPosRaw`; the existing contract requires a bounded pending fact and quiescent publication with exactly-once derived accounting.
+Advance the next hardest dependency-ready C2ME prerequisite: direct `VanillaWorldGenerationDelegate` / `ChunkStep.apply` integration into Phoenium immutable generation admission, retained-input lifetime, and completion semantics. In parallel, A2 may consume the now-accepted ordered A1 relocation fact stream for the version-pinned projectile/pearl membership ledger, and client preparation may proceed toward actual Bedrock gameplay evidence. Formal Stage 8 acceptance remains gated on all mandatory prerequisites above.

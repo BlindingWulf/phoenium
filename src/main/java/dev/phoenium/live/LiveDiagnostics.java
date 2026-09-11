@@ -8,7 +8,8 @@ public record LiveDiagnostics(
     int simulationWorkers, boolean parallelGameplay, int controlledWorlds, int activeLeases,
     long intercepted, long dispatched, long executed, long duplicates, long unexpectedBypasses, long fallbacks,
     long ownershipViolations, long unleasedExecutions, long hardBarriers, boolean barrierTripped,
-    int ownedEntities, int ownedPlayers, long packetAdmissions, long packetExecutions,
+    int ownedEntities, int ownedPlayers, int pendingEntityRelocations, long entityRelocations,
+    long packetAdmissions, long packetExecutions,
     long packetStaleReroutes, long packetRejections, long packetRecursions,
     long chunkCompletionAdmissions, long chunkCompletionApplications, long chunkCompletionReroutes,
     long chunkCompletionRejections, long chunkCompletionDuplicates, long producerThreadChunkMutations) {
@@ -19,6 +20,7 @@ public record LiveDiagnostics(
             + " dispatched=" + dispatched + " executed=" + executed + " duplicate=" + duplicates
             + " bypass=" + unexpectedBypasses + " fallback=" + fallbacks + " ownershipViolations=" + ownershipViolations
             + " unleased=" + unleasedExecutions + " barriers=" + hardBarriers + " entities=" + ownedEntities + " players=" + ownedPlayers
+            + " pendingEntityRelocations=" + pendingEntityRelocations + " entityRelocations=" + entityRelocations
             + " packetAdmissions=" + packetAdmissions + " packetExecutions=" + packetExecutions + " packetStaleReroutes=" + packetStaleReroutes
             + " packetRejections=" + packetRejections + " packetRecursions=" + packetRecursions
             + " chunkAdmissions=" + chunkCompletionAdmissions + " chunkApplications=" + chunkCompletionApplications
