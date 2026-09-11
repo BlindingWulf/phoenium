@@ -34,6 +34,17 @@ public final class PendingVanillaStage<I, O> {
     private PoiInstallService.InstallId prerequisitePoiId;
     private ChunkTypeMetadataService prerequisiteMetadata;
     private FullRegistrationRuntime.Graph full;
+    private ClaimFence claimFence;
+
+    /**
+     * A read-only provider-lineage fence evaluated under the winning owner lease immediately
+     * before the retained continuation is released. Returning a control result leaves provider
+     * obsolescence distinct from vanilla execution failure.
+     */
+    @FunctionalInterface
+    interface ClaimFence {
+        ChunkStageAdmission.Result validate(ChunkStageClaim claim);
+    }
 
     void requireFull(FullRegistrationRuntime.Graph graph) {
         if (inputBound || full != null || !work.equals(graph.work)) throw new ChunkProtocolException("wrong FULL stage binding");
@@ -108,6 +119,29 @@ public final class PendingVanillaStage<I, O> {
             input = readyInput; inputBound = true;
             return true;
         } finally { custody.gate().unlock(); }
+    }
+    void requireClaimFence(ClaimFence fence) {
+        custody.gate().lock();
+        try {
+            if (inputBound || claimFence != null) throw new ChunkProtocolException("late/duplicate claim fence binding");
+            claimFence = Objects.requireNonNull(fence, "fence");
+        } finally { custody.gate().unlock(); }
+    }
+    ChunkStageAdmission.Result claimControl(ChunkStageClaim claim) {
+        claim.require(stage);
+        ClaimFence fence;
+        custody.gate().lock();
+        try { fence = claimFence; }
+        finally { custody.gate().unlock(); }
+        if (fence == null) return null;
+        ChunkStageAdmission.Result result = fence.validate(claim);
+        if (result == null) return null;
+        if (result != ChunkStageAdmission.Result.SUPERSEDED
+                && result != ChunkStageAdmission.Result.CANCELLED
+                && result != ChunkStageAdmission.Result.SHUTDOWN
+                && result != ChunkStageAdmission.Result.NOT_READY)
+            throw new ChunkProtocolException("claim fence returned non-control result " + result);
+        return result;
     }
     void publishReady() {
         custody.gate().lock();
@@ -206,7 +240,7 @@ public final class PendingVanillaStage<I, O> {
     private void releaseInput() {
         custody.gate().lock();
         try {
-            input = null; continuation = null; publicationLight = null; publicationReceipt = null;
+            input = null; continuation = null; claimFence = null; publicationLight = null; publicationReceipt = null;
             prerequisitePoi = null; prerequisitePoiId = null; prerequisiteMetadata = null;
         }
         finally { custody.gate().unlock(); }
@@ -217,12 +251,12 @@ public final class PendingVanillaStage<I, O> {
         try {
             if (invoked || inputBound || published || outcome.isDone()
                     || custody.hasActiveUseLocked(stage)) return;
-            input = null; continuation = null; publicationLight = null; publicationReceipt = null;
+            input = null; continuation = null; claimFence = null; publicationLight = null; publicationReceipt = null;
             prerequisitePoi = null; prerequisitePoiId = null; prerequisiteMetadata = null;
         } finally { custody.gate().unlock(); }
     }
     boolean retainsInputOrContinuation() {
-        custody.gate().lock(); try { return input != null || continuation != null; } finally { custody.gate().unlock(); }
+        custody.gate().lock(); try { return input != null || continuation != null || claimFence != null; } finally { custody.gate().unlock(); }
     }
     void applied(O value) {
         // Retain the actual receipt before any completed-future consumer can reenter the graph.

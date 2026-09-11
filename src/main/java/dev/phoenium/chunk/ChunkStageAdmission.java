@@ -195,6 +195,11 @@ public final class ChunkStageAdmission {
         try (ChunkStageClaim claim = new ChunkStageClaim(custody, stage, route, lease, lightRegistration);
              ChunkSynchronousAccessGuard.Invocation queryFaults = ChunkSynchronousAccessGuard.forClaim(claim)) {
             claim.require(stage);
+            Result control = pending.claimControl(claim);
+            if (control != null) {
+                queryFaults.requireNoBreach(null);
+                return result(control);
+            }
             final O value;
             // Only the original, correctly admitted body is inside this vanilla-failure boundary.
             try { value = pending.invokeOriginal(claim); }

@@ -14,10 +14,14 @@ final class FullDecisionWitnessSupport {
     record Answer(Method method, Function<Object[], Object> function) { }
     private static int sequence;
     static <T> T stub(Class<T> parent, List<Answer> answers) throws Exception {
+        return stub(parent, answers, new Class<?>[0]);
+    }
+    static <T> T stub(Class<T> parent, List<Answer> answers, Class<?>... interfaces) throws Exception {
         String name = "dev/phoenium/chunk/DecisionEnvironment" + ++sequence;
         Type generated = Type.getObjectType(name), functions = Type.getType(Function[].class);
         ClassWriter writer = new ClassWriter(ClassWriter.COMPUTE_MAXS);
-        writer.visit(Opcodes.V17, Opcodes.ACC_PUBLIC, name, null, Type.getInternalName(parent), null);
+        writer.visit(Opcodes.V17, Opcodes.ACC_PUBLIC, name, null, Type.getInternalName(parent),
+                java.util.Arrays.stream(interfaces).map(Type::getInternalName).toArray(String[]::new));
         writer.visitField(Opcodes.ACC_PUBLIC, "functions", functions.getDescriptor(), null, null).visitEnd();
         for (int i = 0; i < answers.size(); i++) {
             Method method = answers.get(i).method();
