@@ -9,7 +9,7 @@ Updated: 2026-09-11
 - Production JAR: `build/libs/phoenium-0.2.0-stage2.jar`
 - Production JAR SHA-256: `D095C007C1B81698440F3BF0145E38A23DC6078F7033D713324F61F15F2C3CC9`
 - Last recorded full deterministic suite: `857` tests across `92` suites, zero failures/errors/skips, at the Stage 7 bounded architecture closeout.
-- Bounded Stage 7 repair/architecture campaign: `CLOSED`; full Stage 7 roadmap exit remains `UNMET`. Stage 6 remains `AUDIT PARTIAL`; Stage 8+ are `NOT STARTED`. See `STAGE7_ARCHITECTURE_CLOSURE.md`.
+- Bounded Stage 7 repair/architecture campaign: `CLOSED`; full Stage 7 roadmap exit remains `UNMET`. Stage 6 remains `AUDIT PARTIAL`; Stage 8+ are `NOT STARTED`. See `STAGE7_ARCHITECTURE_CLOSURE.md` and the fresh current-HEAD local-Qwen receipt in `STAGE7_QWEN_CLOSURE_EVIDENCE.md`.
 
 ## Completed Stage 7 scoped repairs preserved at current HEAD
 
@@ -25,7 +25,7 @@ Updated: 2026-09-11
 
 ## Current architecture closure
 
-The bounded Stage 7 repair/architecture campaign is closed at this checkpoint. The Panda-derived native protection policy/executable specification is complete, the C2ME deep-integration rows are mapped behind the existing safety gate, and the VMP handoff is complete enough to resume later without inventing a patch. No blocked/PARTIAL row is converted to a compatibility PASS by this closure.
+The bounded Stage 7 repair/architecture campaign is closed at this checkpoint. The Panda-derived native protection policy/executable specification is complete, the C2ME deep-integration rows are mapped behind the existing safety gate, and fresh current-HEAD Qwen inspection has tightened the VMP blocker to include provider connection-keyed `seenBy`, tracker-entry sync cadence, player-position/playerMap state and sibling nearby-player consumers. VMP therefore remains deliberately blocked until that sibling state is reconciled and a strict native tracker comparator exists. No blocked/PARTIAL row is converted to a compatibility PASS by this closure.
 
 ### Exact first unresolved item
 
@@ -50,7 +50,7 @@ The completed Panda design verification is `./gradlew test --tests dev.phoenium.
 - Full deterministic suite after repair: `845` tests / `90` suites / zero failures/errors/skips.
 - ServerCore preservation-profile W4 fresh/restart overlap regression: PASS against the repaired production artifact.
 - Production artifact SHA-256 on disk: `0B80154F4AA99E0D833C5DC119A39A2087AF6CDA3B2AC286DAD0477E3F5867C4`.
-- VMP investigation: historical stop-trace ambiguity resolved to a real disconnect lifecycle failure. The real `seenBy` listener survives provider removal; VMP's optimized tracker is a full `ChunkMap.tick()` overwrite that Phoenium's regional tracker cancels. Console W1/W4 alone are insufficient. No VMP production repair was accepted; see `STAGE7_VMP_XHIGH_HANDOFF.md`.
+- VMP investigation: historical stop-trace ambiguity resolved to a real disconnect lifecycle failure. The real `seenBy` listener survives provider removal; VMP's optimized tracker is a full `ChunkMap.tick()` overwrite that Phoenium's regional tracker cancels. Fresh locked-JAR review additionally requires integration of connection-keyed provider `seenBy`, entry sync/tick cadence, player previous-position and `playerMap`/movement state, plus sibling nearby-player lookup consumers. Console W1/W4 alone are insufficient. No VMP production repair was accepted; see `STAGE7_VMP_XHIGH_HANDOFF.md` and `STAGE7_QWEN_CLOSURE_EVIDENCE.md`.
 - Geyser/Floodgate lifecycle repair: historical W1 late WebSocket orphan attributed to Geyser's queued `FloodgateSkinUploader` reconnect. Locked combined W1/W4 fresh+restart all exit 0 with the exact adapter; Geyser-only W1 control also passes. Full suite `847` tests / `91` suites / zero failures/errors/skips. Production SHA `D095C007...C3CC9`.
 - SLO attribution: native/no-SLO controls retain `338` trial-chamber pieces and NBT `552c736c...759fe`; SLO W1/W4 and Fabric+SLO control all retain `273` and NBT `00c9bd5e...7b89c` with the explicit parity-breaking config false. Upstream default semantics intend parity; no current 26.x release/config closes the divergence.
 - FastNoise control gate: fresh fixed-boundary control A/B each save exactly 64 requested FULL chunks; comparison is 58/64 block chunks, 64/64 biomes, 61/64 heightmaps, 64/64 structures. Exact remaining state is 47 feature-like block differences and only `WORLD_SURFACE` heightmap variation. Candidate comparison stopped before provider attribution.
@@ -64,7 +64,7 @@ The completed Panda design verification is `./gradlew test --tests dev.phoenium.
 - Keep the final C2ME safety gate. Deep C2ME generation/FULL/save/unload integration is not a Sol High repair target unless an existing Phoenium primitive clearly represents the lifecycle.
 - Scoped provider repairs do not imply whole-provider PASS. ServerCore behavior-changing modules remain separately unaccepted.
 - Required provider functionality must remain enabled for any claimed accepted path; preservation-profile disabled modules are exclusions from the scoped ServerCore result, not proof of their compatibility.
-- VMP optimized nearby-entity tracking is BLOCKED/PARTIAL for this campaign. A future adapter must integrate VMP's own staging/area-map/player-index lifecycle; private-index patching, cross-owner waits, or broad tracker closure are rejected.
+- VMP optimized nearby-entity tracking is BLOCKED/PARTIAL for this campaign. A future adapter must integrate VMP's own staging/area-map/player-index lifecycle together with connection-keyed provider `seenBy`, entry sync cadence, player-position/playerMap state and sibling nearby-player consumers; private-index patching, cross-owner waits, or broad tracker closure are rejected. Build a strict native tracker comparator before live acceptance.
 - Geyser/Floodgate lifecycle PASS is scoped to the stale reconnect defect. Bedrock login/identity/gameplay/persistence remain unaccepted without a real supported Bedrock client.
 - SLO is excluded only from the strict vanilla-seed-parity profile. Do not patch Phoenium to counteract provider RNG/layout behavior or claim PASS_CONFIG while no supported provider switch restores it.
 - FastNoise FULL-chunk strict parity is not an accepted oracle while no-provider controls vary. Do not call those differences FastNoise behavior or filter them away to manufacture a pass; a future attempt needs an earlier deterministic generation-stage boundary.
@@ -76,5 +76,5 @@ The completed Panda design verification is `./gradlew test --tests dev.phoenium.
 ## Next 3 actions
 
 1. Preserve `STAGE7_ARCHITECTURE_CLOSURE.md` as the bounded-campaign checkpoint; do not enable live Panda protection code or remove the C2ME/VMP gates until their listed prerequisites are separately implemented and accepted.
-2. The next finite compatibility batch requires the facilities already listed in `STAGE7_AUDIT_BACKLOG.md`: supported Bedrock client, older Java client, or two working voice clients. Do not substitute server startup/UDP bind for those feature checks.
+2. Before any Stage 8 Bedrock feature acceptance, research and establish a legitimate repeatable Windows/Android Bedrock client setup with ownership/auth/version requirements, launch/input automation, useful logs/diagnostics and a reproducible Geyser/Floodgate join/gameplay/disconnect/restart flow. Reuse an existing local install/device where possible; do not assume Java-style `runClient`. The broader finite batch still needs the older Java client and two working voice clients. Protocol handshakes/server startup are not substitutes for actual-client gameplay or audio checks.
 3. Re-enter VMP/C2ME or Panda runtime implementation only with an explicit architecture that satisfies the existing no-cross-owner-wait, current-owner revalidation and lifecycle-settlement rules.

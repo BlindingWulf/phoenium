@@ -98,6 +98,31 @@ then from every tracker in that player's provider-owned `playerTrackers` set. If
 or retains a real `seenBy` relationship outside those provider-owned sets, VMP has no index entry
 from which to remove it at disconnect. That is consistent with the reproduced real-client leak.
 
+### Sibling optimized-tracking state that is also authoritative
+
+The fresh current-HEAD locked-JAR review on 2026-09-11 expanded the provider surface that a
+future adapter must preserve. The primary `MixinThreadedAnvilChunkStorage` overwrite is not the
+complete tracking engine.
+
+- `optimize_nearby_entity_tracking_lookups.MixinThreadedAnvilChunkStorageEntityTracker` retains
+  a provider-side `Set<ServerPlayerConnection> seenBy`, implements `updateListeners(...)`,
+  `tryTick()` and provider start-tracking/range behavior. Disconnect/removal must settle this
+  connection-keyed state as well as the native `TrackedEntity.seenBy` relationship.
+- `optimize_nearby_entity_tracking_lookups.MixinEntityTrackerEntry` owns provider data-sync cadence
+  through `vmp$tickAlways()` / `vmp$syncEntityData()` and tick/update/teleport counters.
+- `optimize_nearby_entity_tracking_lookups.MixinServerPlayerEntity` owns previous-position state
+  used by provider movement detection.
+- the primary storage mixin also participates in `playerMap` and movement-time tracker selection;
+  those paths are part of player/range transitions, not incidental caches.
+- `optimize_nearby_player_lookups` has sibling consumers in `MixinServerWorld`, `MixinMobEntity`
+  and `MixinSpawnDensityCapper`. They use nearby-player state for nearest-player queries, mob
+  targeting and local spawn-density caps. An adapter that changes area-map/player-index semantics
+  must keep those consumers coherent.
+
+These structures are provider-owned derived indexes/scheduling state, not a new Phoenium ownership
+authority. A future adapter must route their transitions through existing Phoenium owner/session
+facts while preserving the provider's lifecycle and fail closed if the locked provider shape drifts.
+
 ## Why the small repairs are rejected
 
 Refreshing or dropping Phoenium's cached listener set is invalid because the real `seenBy`
@@ -138,6 +163,24 @@ It must use current Phoenium ownership/incarnation/session receipts, keep VMP's 
 enabled, avoid blocking across owners, avoid a world-wide tracker closure, and fail closed on
 provider-shape drift.
 
+### Future lifecycle contract and acceptance matrix
+
+| Lifecycle row | Provider surface that must remain coherent | Required future contract | Minimum acceptance evidence |
+| --- | --- | --- | --- |
+| tracker staging and promotion | `stagingTrackers`, `tickStaging`, `tracker2ChunkPos`, `AreaMap` | admit staging/promotion as finite owner-routed transitions; preserve provider order and lifetime without global closure | deterministic staging/promotion fixture plus locked-provider runtime trace |
+| player indexes | `playerTrackers`, `playerMap`, connection-keyed tracker `seenBy` | one authoritative relationship transition updates every provider/native projection exactly once under the retained live session | add/remove/reconnect fixture proving no missing or duplicate listener/index entry |
+| area-map movement | `AreaMap.update`, provider previous-position state, movement tracker selection | route position/range change from the current entity/player owner; stale owner/incarnation work reroutes or rejects without cross-owner waits | crossing/range test with deterministic add/remove ordering and no stale cell membership |
+| server-entity tick/data sync | `trackerTickList`, `tryTick`, `vmp$tickAlways`, `vmp$syncEntityData` | preserve provider tick/data cadence while relationship mutation stays owner/session validated | native/provider comparator for position/data updates over a bounded movement script |
+| player disconnect | `NearbyEntityTracking.removePlayer`, staged trackers, `playerTrackers`, connection `seenBy` | retire the departing session from native and provider indexes exactly once; staged trackers must settle without gathering all owners into one closure | real-client disconnect/reconnect with zero retained departed connection and no session-cut failure |
+| staged/entity removal | `removeEntityTracker`, `stagingTrackers`, `areaMap`, tick list | removal invalidates later staged/move/tick work and settles every provider index exactly once | removal-before-promotion and removal-after-promotion fixtures plus real runtime trace |
+| `broadcastRemoved` / stop-tracking | redirected `TrackedEntity.broadcastRemoved`, listener/data-sync state | preserve provider/native stop-tracking order and prevent replay after relation retirement | strict ordered event comparator including packet/listener removal |
+| range and topology change | area-map queries, provider view distance, player lookup consumers, Phoenium region publication | retained relationships migrate using existing directory/object epochs; provider nearby-player consumers observe one coherent published state | boundary-crossing/topology test plus nearest-player/mob-cap consistency checks |
+| failure and server stop | all staged/index/tick state plus Phoenium session/ownership receipts | close admission, settle or invalidate outstanding provider transitions, then prove no retained connection/index state | injected failure plus normal stop with outstanding staged/tracking work and clean terminal receipts |
+
+The first implementation artifact should be the strict native/provider tracking comparator used by
+these rows. Building that comparator before a new live run prevents a disconnect-only symptom fix
+from being mistaken for engine compatibility.
+
 ## Shortest reproduction
 
 The strict real-client W4 path is the discriminating reproduction. Reuse the locked Stage 6 VMP
@@ -149,7 +192,8 @@ directory.
 
 ## Acceptance gate if architecture work resumes
 
-Do not remove this BLOCKED status until the locked VMP optimized tracker passes a real-client
-disconnect/reconnect lifecycle with no retained `seenBy` listener, then W1/W4 lifecycle and the
-strict native tracker comparator. A bounded multi-player tracking sample should follow if cheap.
-Console startup/save/restart alone is not sufficient.
+Do not remove this BLOCKED status until the locked VMP optimized tracker first has the strict
+native/provider comparator above, then passes a real-client disconnect/reconnect lifecycle with no
+retained native or provider connection listener, followed by W1/W4 fresh+restart lifecycle and the
+strict comparator on the accepted adapter. A bounded multi-player tracking sample should follow if
+cheap. Console startup/save/restart alone is not sufficient.

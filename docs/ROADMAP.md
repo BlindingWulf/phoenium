@@ -127,6 +127,8 @@ Exit criteria: each chosen path preserves the threading invariants; maintained f
 
 Prove the required stack in serial and parallel modes with major configuration modes, features, cross-stack interactions, ownership checks, save/restart, shutdown, and applicable stress tests. `PARTIAL` is not a production gate result.
 
+Entry prerequisite for Bedrock acceptance: first research and establish a legitimate repeatable Windows or Android Bedrock client setup with ownership/authentication and version requirements, launch/input automation, diagnostics/logging, and a reproducible Geyser/Floodgate join/gameplay/disconnect/restart procedure. Actual-client observations must remain distinct from protocol-only tests; do not assume a Java-style `runClient` equivalent or treat a bot/handshake/server startup as gameplay proof.
+
 Exit criteria: every official required target has a full `PASS_*` status backed by recorded evidence, or release is blocked.
 
 ## Stage 9 — fork-native optimization

@@ -21,7 +21,7 @@ No production/runtime implementation was added by this architecture closeout. Th
 
 ## Local Qwen worker acceptance
 
-The local Qwen worker was re-verified on 2026-09-11 as a real Codex CLI backend/subagent, not a plain llama.cpp chat call.
+The local Qwen worker was re-verified on 2026-09-11 as a real Codex CLI backend/subagent, not a plain llama.cpp chat call. The durable current-HEAD routing/tool-use receipt and the fresh A1/A2/A3/C2ME/VMP investigations are recorded in `STAGE7_QWEN_CLOSURE_EVIDENCE.md`.
 
 - active wrapper: `C:\AI\Models\qwen-subagent.ps1`
 - Codex CLI: `codex-cli 0.153.4`
@@ -32,7 +32,7 @@ The local Qwen worker was re-verified on 2026-09-11 as a real Codex CLI backend/
 - KV cache: `Q8_0/Q8_0`
 - investigation sandbox: `read-only`
 
-The worker used Codex repository tools to read the live branch, source and resources. It independently confirmed HEAD `12706fcadde7910344df4a16036ccbe8ee4bdf23`, found the Panda policy/test sources, reproduced the cross-owner invalidation blocker in `EntityIndexLifecycleAdapter.routingObserved`, and confirmed `fabric.mod.json` still rejects both `c2me` and `c2me-rewrites-chunk-system`.
+The fresh acceptance probe and bounded workers used Codex repository tools against parent HEAD `4e5592355d40cda3ca0bab3680bab353f6f5816b`. They independently found the Panda policy/test sources and executable eviction/starvation tests, reconfirmed the cross-owner invalidation blocker in `EntityIndexLifecycleAdapter.routingObserved`, verified the locked C2ME binary/safety gate, and tightened the VMP handoff after discovering additional sibling optimized-tracking state that must participate in any future adapter.
 
 The llama.cpp `/v1/models` response does not expose the `slug` field Codex's model registry expects, so Codex logs a nonfatal fallback-metadata warning. That warning did not prevent tool-driven repository inspection and is not treated as a compatibility or routing failure. No API key/token material is retained in this record.
 
@@ -169,14 +169,16 @@ The blocker is an engine-level lifecycle conflict. VMP replaces tracker insertio
 
 Retained Stage 6 evidence contains `removed tracker retains a connection outside the live session cut`; the Stage 7 fail-closed probe later showed `removed player remains in an authorized tracker projection`, proving a real `seenBy` relationship survives provider removal.
 
-`STAGE7_VMP_XHIGH_HANDOFF.md` is the durable future architecture contract. It covers staging/promotion, player indexes, area-map movement, server-entity tick, disconnect, staged/entity removal, `broadcastRemoved`, range/topology, failure and stop behavior with current ownership/incarnation/session receipts and no cross-owner blocking waits.
+`STAGE7_VMP_XHIGH_HANDOFF.md` is the durable future architecture contract, but the fresh current-HEAD review deliberately leaves implementation acceptance blocked. It now covers staging/promotion, player indexes, area-map movement, server-entity tick, disconnect, staged/entity removal, `broadcastRemoved`, range/topology, failure and stop behavior, and also enumerates the sibling provider state that an adapter must reconcile: connection-keyed provider `seenBy`, entry sync/tick cadence, player previous-position state, primary `playerMap`/movement state, and nearby-player consumer mixins.
+
+Future work must first design one authoritative owner-routed provider protocol that reconciles those sibling surfaces rather than treating only `NearbyEntityTracking` as the provider engine. The lifecycle matrix in the handoff remains intentionally unaccepted until contracts/tests exist for all nine rows.
 
 Two future checks remain explicit:
 
 - build the named strict native tracker comparator when VMP work resumes;
 - reconcile the sibling optimized-tracking mixins in the same provider package, not only the primary `MixinThreadedAnvilChunkStorage` overwrite.
 
-Acceptance order remains: real-client disconnect/reconnect with zero retained `seenBy` -> W1/W4 lifecycle -> strict native tracker comparator -> bounded multi-player sample.
+Acceptance order remains: sibling-state/provider-protocol reconciliation -> strict native tracker comparator -> real-client disconnect/reconnect with zero retained `seenBy` -> W1/W4 lifecycle fresh/restart -> bounded multi-player sample.
 
 Disposition: **VMP BLOCKED / PARTIAL and optional; no production patch accepted**.
 
@@ -197,6 +199,8 @@ Disposition: **VMP BLOCKED / PARTIAL and optional; no production patch accepted*
 | VMP optimized tracking | BLOCKED/PARTIAL; optional future architecture work |
 
 The external-client/audio rows are intentionally deferred: supported Bedrock gameplay/identity/persistence, an older Java client through the Via chain, and two working Java voice clients for actual audio/proximity/reconnect behavior. Boot, listener bind or provider initialization does not substitute for those feature checks.
+
+Before any Stage 8 Bedrock acceptance campaign, establish a legitimate repeatable Bedrock client test setup. Research must identify supported Windows or Android client options, ownership/authentication and version requirements, whether an existing local installation/device can be reused, launch/input automation, logging/diagnostics, and a reproducible Geyser/Floodgate join -> gameplay -> disconnect -> restart procedure. Actual game-client observations must be distinguished from narrower protocol tests; a synthetic bot, handshake or server startup is not Bedrock gameplay proof. Do not assume a Java-style `runClient` equivalent exists. Bedrock, legacy Via and voice/audio acceptance remain unclaimed until their corresponding facilities/tests exist.
 
 ## Closure verification
 
