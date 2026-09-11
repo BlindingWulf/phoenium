@@ -12,6 +12,7 @@ import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.function.BooleanSupplier;
 import java.util.function.Consumer;
+import com.ishland.c2me.rewrites.chunksystem.common.NewChunkHolderVanillaInterface;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.*;
 import net.minecraft.util.profiling.InactiveProfiler;
@@ -49,6 +50,70 @@ final class LiveTickReadinessTest {
         var receipt = LiveTickReadiness.await(f.level);
         assertEquals(2, f.waits); assertTrue(receipt.current()); assertFalse(old.isDone());
         set(replacement, ChunkHolder.class, "tickingChunkFuture", CompletableFuture.completedFuture(ChunkHolder.UNLOADED_LEVEL_CHUNK));
+        assertFalse(receipt.current());
+    }
+
+    @Test void churnedPublicWrappersUseStableProviderSlotWithoutBusySpin() throws Exception {
+        var f = new Fixture(); var holder = new ChurnHolder(f.actual);
+        set(holder, ChunkHolder.class, "ticketLevel", 32);
+        f.visible.clear(); f.visible.put(ChunkPos.ZERO.pack(), holder);
+        f.delivery = ready -> {
+            assertFalse(ready.getAsBoolean());
+            holder.slot.complete(null);
+            assertTrue(ready.getAsBoolean());
+        };
+        var first = holder.getTickingChunkFuture(); var second = holder.getTickingChunkFuture();
+        assertNotSame(first, second, "provider fixture must create a fresh public wrapper per observation");
+        var receipt = LiveTickReadiness.await(f.level);
+        assertEquals(1, f.waits); assertTrue(receipt.current()); assertEquals(1, receipt.count());
+    }
+
+    @Test void providerSlotReplacementReobservesWithoutCancellingTheOldIncarnation() throws Exception {
+        var f = new Fixture(); var holder = new ChurnHolder(f.actual);
+        set(holder, ChunkHolder.class, "ticketLevel", 32);
+        f.visible.clear(); f.visible.put(ChunkPos.ZERO.pack(), holder);
+        var old = holder.slot; var next = new CompletableFuture<Void>();
+        f.delivery = ready -> {
+            if (f.waits == 1) {
+                assertFalse(ready.getAsBoolean()); holder.slot = next; assertTrue(ready.getAsBoolean());
+            } else {
+                assertFalse(ready.getAsBoolean()); next.complete(null); assertTrue(ready.getAsBoolean());
+            }
+        };
+        var receipt = LiveTickReadiness.await(f.level);
+        assertEquals(2, f.waits); assertTrue(receipt.current()); assertFalse(old.isDone());
+        holder.slot = CompletableFuture.completedFuture(null);
+        assertFalse(receipt.current());
+    }
+
+    @Test void lockedC2meShapeCachesOnePublicWrapperPerStableStatusSlot() throws Exception {
+        var f = new Fixture(); var holder = new NewChunkHolderVanillaInterface(f.actual);
+        set(holder, ChunkHolder.class, "ticketLevel", 32);
+        f.visible.clear(); f.visible.put(ChunkPos.ZERO.pack(), holder);
+        f.delivery = ready -> {
+            assertFalse(ready.getAsBoolean()); holder.directSlot().complete(null); assertTrue(ready.getAsBoolean());
+        };
+        var receipt = LiveTickReadiness.await(f.level);
+        assertEquals(1, f.waits); assertTrue(receipt.current()); assertTrue(receipt.current());
+        assertEquals(1, holder.wrapperCalls(), "stable C2ME slot must retain exactly one public wrapper");
+    }
+
+    @Test void lockedC2meShapeReobservesSameHolderWhenStatusSlotIncarnationChanges() throws Exception {
+        var f = new Fixture(); var holder = new NewChunkHolderVanillaInterface(f.actual);
+        set(holder, ChunkHolder.class, "ticketLevel", 32);
+        f.visible.clear(); f.visible.put(ChunkPos.ZERO.pack(), holder);
+        var old = holder.directSlot(); var next = new CompletableFuture<Void>();
+        f.delivery = ready -> {
+            if (f.waits == 1) {
+                assertFalse(ready.getAsBoolean()); holder.replaceSlot(next); assertTrue(ready.getAsBoolean());
+            } else {
+                assertFalse(ready.getAsBoolean()); next.complete(null); assertTrue(ready.getAsBoolean());
+            }
+        };
+        var receipt = LiveTickReadiness.await(f.level);
+        assertEquals(2, f.waits); assertTrue(receipt.current()); assertFalse(old.isDone());
+        assertEquals(2, holder.wrapperCalls(), "each C2ME slot incarnation gets one retained public wrapper");
+        holder.replaceSlot(CompletableFuture.completedFuture(null));
         assertFalse(receipt.current());
     }
 
@@ -104,5 +169,20 @@ final class LiveTickReadinessTest {
         FullRegistrationFixture.Holder newHolder() throws Exception {
             var holder = new FullRegistrationFixture.Holder(ChunkPos.ZERO); set(holder, ChunkHolder.class, "ticketLevel", 32); return holder;
         }
+    }
+
+    private static final class ChurnHolder extends ChunkHolder implements LiveTickReadiness.TickingSlotAccess {
+        final LevelChunk actual;
+        volatile CompletableFuture<Void> slot = new CompletableFuture<>();
+        ChurnHolder(LevelChunk actual) {
+            super(ChunkPos.ZERO, 33, net.minecraft.world.level.LevelHeightAccessor.create(0, 256), null,
+                    (position, previous, next, setter) -> setter.accept(next), (position, borderOnly) -> List.of());
+            this.actual = actual;
+        }
+        @Override public CompletableFuture<ChunkResult<LevelChunk>> getTickingChunkFuture() {
+            CompletableFuture<Void> observed = slot;
+            return observed.thenApply(ignored -> ChunkResult.of(actual));
+        }
+        @Override public Object phoenium$tickingSlotIdentity() { return slot; }
     }
 }
