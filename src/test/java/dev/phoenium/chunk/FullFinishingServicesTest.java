@@ -80,6 +80,78 @@ final class FullFinishingServicesTest {
         }
         FullFinishingServices.stopped(server);
     }
+    @Test void providerSaveEntryCreatesOneSerialTurnOnlyWhenNoTurnIsAlreadyAdmitted() throws Exception {
+        MinecraftServer server = stub(MinecraftServer.class, List.of());
+        var service = FullFinishingServices.forServer(server);
+        assertEquals(42, FullFinishingServices.ensureSerial(server, FullFinishingServices.Phase.SAVE, () -> {
+            FullFinishingServices.requireServer(server, FullFinishingServices.Kind.UNSAVED);
+            return 42;
+        }));
+        assertEquals(1L, service.measurements().get("serialEntries"));
+        try (var serial = service.serial(FullFinishingServices.Phase.SERVER_TICK)) {
+            assertEquals(7, FullFinishingServices.ensureSerial(server, FullFinishingServices.Phase.SAVE, () -> {
+                FullFinishingServices.requireServer(server, FullFinishingServices.Kind.UNSAVED);
+                return 7;
+            }));
+            assertEquals(2L, service.measurements().get("serialEntries"),
+                    "provider save entry must reuse an already-admitted same-server turn");
+        }
+        FullFinishingServices.stopped(server);
+    }
+    @Test void providerSaveEntryRejectsRegionalOwnershipBeforeOpeningASerialTurn() throws Exception {
+        MinecraftServer server = stub(MinecraftServer.class, List.of());
+        var service = FullFinishingServices.forServer(server);
+        RegionId region = new RegionId(new WorldId("services"), "save-owner");
+        var manager = new RegionLeaseManager(region);
+        try (var lease = manager.acquire();
+             var owner = OwnershipContext.enter(region, lease.epoch(), OperationCategory.OWNER_TASK)) {
+            assertThrows(ChunkProtocolException.class, () -> FullFinishingServices.ensureSerial(server,
+                    FullFinishingServices.Phase.SAVE, () -> true));
+        }
+        assertEquals(0L, service.measurements().get("serialEntries"));
+        FullFinishingServices.stopped(server);
+    }
+    @Test void providerSaveEntryCannotReuseAParentSerialTurnAfterRegionalOwnershipBegins() throws Exception {
+        MinecraftServer server = stub(MinecraftServer.class, List.of());
+        var service = FullFinishingServices.forServer(server);
+        RegionId region = new RegionId(new WorldId("services"), "nested-save-owner");
+        var manager = new RegionLeaseManager(region);
+        try (var serial = service.serial(FullFinishingServices.Phase.SERVER_TICK);
+             var lease = manager.acquire();
+             var owner = OwnershipContext.enter(region, lease.epoch(), OperationCategory.OWNER_TASK)) {
+            assertThrows(ChunkProtocolException.class, () -> FullFinishingServices.ensureSerial(server,
+                    FullFinishingServices.Phase.SAVE, () -> true));
+            FullFinishingServices.requireServer(server, FullFinishingServices.Kind.UNSAVED);
+        }
+        assertEquals(1L, service.measurements().get("serialEntries"));
+        assertEquals(0L, service.measurements().get("active"));
+        FullFinishingServices.stopped(server);
+    }
+    @Test void providerSaveEntryCannotBorrowAServiceTurnFromAnotherServer() throws Exception {
+        MinecraftServer first = stub(MinecraftServer.class, List.of());
+        MinecraftServer second = stub(MinecraftServer.class, List.of());
+        var firstService = FullFinishingServices.forServer(first);
+        var secondService = FullFinishingServices.forServer(second);
+        try (var serial = firstService.serial(FullFinishingServices.Phase.SERVER_TASK)) {
+            assertThrows(ChunkProtocolException.class, () -> FullFinishingServices.ensureSerial(second,
+                    FullFinishingServices.Phase.SAVE, () -> true));
+            FullFinishingServices.requireServer(first, FullFinishingServices.Kind.UNSAVED);
+        }
+        assertEquals(0L, secondService.measurements().get("serialEntries"));
+        FullFinishingServices.stopped(first); FullFinishingServices.stopped(second);
+    }
+    @Test void providerSaveEntryClosesItsSerialTurnWhenTheOriginalBodyFails() throws Exception {
+        MinecraftServer server = stub(MinecraftServer.class, List.of());
+        var service = FullFinishingServices.forServer(server);
+        var exact = new IllegalStateException("provider save body failed");
+        assertSame(exact, assertThrows(IllegalStateException.class, () -> FullFinishingServices.ensureSerial(server,
+                FullFinishingServices.Phase.SAVE, () -> { throw exact; })));
+        assertEquals(0L, service.measurements().get("active"));
+        try (var serial = service.serial(FullFinishingServices.Phase.SERVER_TASK)) {
+            FullFinishingServices.requireServer(server, FullFinishingServices.Kind.UNSAVED);
+        }
+        FullFinishingServices.stopped(server);
+    }
     @Test void reservationOnAnotherThreadDoesNotInheritSerialAuthority() throws Exception {
         MinecraftServer server = stub(MinecraftServer.class, List.of());
         var service = FullFinishingServices.forServer(server);

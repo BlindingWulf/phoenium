@@ -102,7 +102,9 @@ abstract class RegionalChunkSaveMixin implements RegionalSaveBinding.MapAccess {
     @WrapMethod(method = "saveChunkIfNeeded")
     private boolean phoenium$selectedSave(ChunkHolder holder, long now, Operation<Boolean> original) {
         if (Phoenium.liveRuntime().regionalSaves() == null) return original.call(holder, now);
-        return RegionalSaveBinding.selectionScope((ChunkMap) (Object) this, () -> original.call(holder, now));
+        return dev.phoenium.chunk.FullFinishingServices.ensureSerial(level.getServer(),
+                dev.phoenium.chunk.FullFinishingServices.Phase.SAVE,
+                () -> RegionalSaveBinding.selectionScope((ChunkMap) (Object) this, () -> original.call(holder, now)));
     }
 
     @WrapMethod(method = "saveChunksEagerly")

@@ -175,6 +175,24 @@ public final class FullFinishingServices {
     }
 
     public static boolean finishing() { Scope scope = CURRENT.get(); return scope != null && scope.full(); }
+    /**
+     * Provider entry points can legitimately reach a shared-service boundary without passing
+     * through one of MinecraftServer's serial wrappers. Reuse an already-admitted operation for
+     * this exact server, otherwise create one before any regional ownership is acquired.
+     */
+    public static <T> T ensureSerial(MinecraftServer server, Phase phase, java.util.function.Supplier<T> body) {
+        Objects.requireNonNull(server); Objects.requireNonNull(phase); Objects.requireNonNull(body);
+        if (OwnershipContext.current().isPresent())
+            throw new ChunkProtocolException("provider serial service entered after regional admission");
+        Scope current = CURRENT.get();
+        if (current != null) {
+            current.requireCurrent();
+            if (current.service.server != server)
+                throw new ChunkProtocolException("serial service entry crossed server identity");
+            return body.get();
+        }
+        try (var turn = forServer(server).serial(phase)) { return body.get(); }
+    }
     public static Reservation currentReservation(MinecraftServer server) {
         Scope scope = CURRENT.get();
         if (scope == null || scope.service.server != server || !scope.full()) return null;
