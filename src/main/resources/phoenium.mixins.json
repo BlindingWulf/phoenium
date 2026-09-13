@@ -143,6 +143,7 @@
     "ChunkRuntimeTracePoiManagerMixin",
     "PlayerListLifecycleMixin",
     "EntityLifecycleMixin",
+    "ServerPlayerLifecycleMixin",
     "ServerLevelEntityLifecycleMixin"
   ],
   "injectors": {

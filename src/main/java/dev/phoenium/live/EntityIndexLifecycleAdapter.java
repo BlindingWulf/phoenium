@@ -47,21 +47,34 @@ public final class EntityIndexLifecycleAdapter {
     }
     public ObjectOwnership addressable(String objectId, OwnedObjectKind kind, WorldId world, int entityId,
                                        RoutingKey key, boolean requireExplicitRoute) {
-        pendingRelocations.remove(objectId);
         if (requireExplicitRoute && !directory.snapshot().routes().containsKey(key)) {
             throw new IllegalStateException("addressable entity lacks explicit topology route " + key);
         }
         ObjectOwnership binding = objects.current(objectId).orElseGet(() -> objects.admit(objectId, kind, key));
+        PendingRelocation pending = pendingRelocations.get(objectId);
+        // A player can be observed in its destination level before the owner-free relocation cut
+        // commits the cross-world owner transition. Preserve that bounded pending fact instead of
+        // attempting an unsafe routing-key update across RegionId worlds. The next packet is then
+        // rejected by the world-fenced movement ticket until the cut has published the destination.
+        if (pending != null && pending.kind() == kind && pending.world().equals(world)
+                && pending.entityId() == entityId
+                && (pending.destination().equals(key) || kind == OwnedObjectKind.PLAYER)
+                && pending.observedObjectEpoch().equals(binding.objectEpoch())) {
+            entityIds.put(objectId, entityId);
+            return binding;
+        }
+        pendingRelocations.remove(objectId);
         if (!binding.routingKey().equals(key)) binding = objects.updateRoutingKey(objectId, key, binding.objectEpoch());
         index.publish(world, entityId, binding);
         entityIds.put(objectId, entityId);
         return binding;
     }
     /**
-     * Movement observation is metadata-only. Same-owner routing may publish immediately; a non-player
-     * cross-owner observation invalidates the derived interaction candidate and retains only the latest
-     * immutable fact for an owner-free quiescent commit. Player packet movement keeps its separate
-     * classified-footprint protocol and is deliberately not admitted through this relocation path.
+     * Movement observation is metadata-only. Same-owner routing may publish immediately; a cross-owner
+     * observation invalidates the derived interaction candidate and retains only the latest immutable
+     * fact for an owner-free quiescent commit. Player packet movement keeps its separate
+     * classified-footprint protocol and is deliberately not admitted through this relocation path;
+     * this path is used for a player's native cross-world level change.
      */
     public void routingObserved(String objectId, WorldId world, int entityId, RoutingKey key) {
         ObjectOwnership current = objects.current(objectId).orElse(null);
@@ -72,16 +85,16 @@ public final class EntityIndexLifecycleAdapter {
             // A physical non-player can enter a key while topology publication is temporarily
             // incomplete. Keep the latest immutable observation so a later published route can
             // settle authority without requiring the entity to move a second time.
-            if (current.kind() == OwnedObjectKind.ENTITY) {
-                pendingRelocations.put(objectId, new PendingRelocation(objectId, world, entityId, key,
+            if (current.kind() == OwnedObjectKind.ENTITY || !current.routingKey().world().equals(world)) {
+                pendingRelocations.put(objectId, new PendingRelocation(objectId, current.kind(), world, entityId, key,
                     current.objectEpoch(), current.incarnation(), relocationSequence.incrementAndGet()));
             } else pendingRelocations.remove(objectId);
             return;
         }
         if (!route.region().equals(current.owner())) {
             index.invalidate(world, entityId, current.objectId(), current.incarnation());
-            if (current.kind() == OwnedObjectKind.ENTITY) {
-                pendingRelocations.put(objectId, new PendingRelocation(objectId, world, entityId, key,
+            if (current.kind() == OwnedObjectKind.ENTITY || !current.routingKey().world().equals(world)) {
+                pendingRelocations.put(objectId, new PendingRelocation(objectId, current.kind(), world, entityId, key,
                     current.objectEpoch(), current.incarnation(), relocationSequence.incrementAndGet()));
             } else pendingRelocations.remove(objectId);
             return;
@@ -146,7 +159,8 @@ public final class EntityIndexLifecycleAdapter {
                 pendingRelocations.remove(pending.objectId(), pending);
                 index.publish(pending.world(), pending.entityId(), moved);
                 entityIds.put(moved.objectId(), pending.entityId());
-                relocationSink.accept(new RelocationFact(rechecked.owner(), moved.owner(), moved.objectId(), moved.incarnation()));
+                if (pending.kind() == OwnedObjectKind.ENTITY)
+                    relocationSink.accept(new RelocationFact(rechecked.owner(), moved.owner(), moved.objectId(), moved.incarnation()));
                 committed++;
             }
         }
@@ -154,7 +168,7 @@ public final class EntityIndexLifecycleAdapter {
     }
 
     private static boolean matches(PendingRelocation pending, ObjectOwnership current) {
-        return current != null && current.kind() == OwnedObjectKind.ENTITY
+        return current != null && current.kind() == pending.kind()
             && current.incarnation() == pending.incarnation()
             && current.objectEpoch().equals(pending.observedObjectEpoch());
     }
@@ -185,7 +199,7 @@ public final class EntityIndexLifecycleAdapter {
             if (incarnation < 0) throw new IllegalArgumentException("negative relocation incarnation");
         }
     }
-    private record PendingRelocation(String objectId, WorldId world, int entityId, RoutingKey destination,
+    private record PendingRelocation(String objectId, OwnedObjectKind kind, WorldId world, int entityId, RoutingKey destination,
                                      dev.phoenium.core.OwnerEpoch observedObjectEpoch, long incarnation, long sequence) { }
 
     /** Non-authoritative, non-blocking two-region publication fence. */

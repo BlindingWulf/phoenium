@@ -36,6 +36,10 @@ public final class HarnessSmokeTest implements FabricClientGameTest {
             new Stage4ClientTraceTest().runTest(context);
             return;
         }
+        if ("panda-a2".equals(System.getProperty("phoenium.test.mode"))) {
+            new PandaA2ClientTest().runTest(context);
+            return;
+        }
         runSmokeTest(context);
     }
 

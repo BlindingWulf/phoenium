@@ -2,6 +2,7 @@ package dev.phoenium.mixin;
 
 import dev.phoenium.Phoenium;
 import dev.phoenium.chunk.FullEntityFacts;
+import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.Entity;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
@@ -18,6 +19,12 @@ abstract class EntityLifecycleMixin {
         Entity entity = (Entity) (Object) this;
         FullEntityFacts.routed(entity);
         Phoenium.liveRuntime().onEntityRoutingObserved(entity);
+    }
+
+    @Inject(method = "setLevel(Lnet/minecraft/world/level/Level;)V", at = @At("TAIL"), require = 1)
+    private void phoenium$playerLevelChanged(net.minecraft.world.level.Level level, CallbackInfo ci) {
+        Entity entity = (Entity) (Object) this;
+        if (entity instanceof ServerPlayer player) Phoenium.liveRuntime().onPlayerLevelChanged(player);
     }
 
     @Inject(method = "setRemoved(Lnet/minecraft/world/entity/Entity$RemovalReason;)V", at = @At("HEAD"), require = 1)

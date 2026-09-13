@@ -1,30 +1,59 @@
 # Stage 8 entry current work
 
-Updated: 2026-09-13. This is a Stage 7 prerequisite handoff. Formal combined-stack
+Updated: 2026-09-13. This is a Stage 7 continuation. Formal combined-stack
 Stage 8 acceptance has **not** started.
 
 ## WORK CARD
 
-Active milestone: **PANDA_A2_LIVE**.
+Active milestone: **PROJECTILE_CAP**.
 
-Next bounded work: recover the existing A2 pearl ownership/runtime ledger and
-run its real live overflow, removal and reconnect acceptance workload. Read the
-Stage 7 contract and existing A2 evidence before editing. Preserve the accepted
-C2ME settlement2, ScalableLux and overlapping provider pins recorded below.
-Do not infer separate projectile-cap, A3, Bedrock/Via/voice or Stage 8 acceptance
-from this C2ME result. No Panda work was performed in the Astra session.
+PANDA_A2_LIVE is accepted at the real client/server boundary. The next bounded
+work is the separate projectile runtime cap. Preserve the accepted A2 ledger,
+the C2ME settlement2 composition, ScalableLux and the overlapping provider pins
+recorded below. Do not reopen the resolved C2ME gate, start A3, or infer formal
+Stage 8 acceptance from this Stage 7 result.
 
 Exact short Luna continuation instruction:
 
-> Continue PANDA_A2_LIVE from docs/STAGE8_ENTRY_CURRENT_WORK.md. Preserve the
-> accepted C2ME settlement2 composition and evidence; do not reopen the resolved
-> C2ME gate or start A3 or formal Stage 8 acceptance.
+> Continue PROJECTILE_CAP from docs/STAGE8_ENTRY_CURRENT_WORK.md. PANDA_A2_LIVE
+> is accepted on the pinned C2ME settlement2 + ScalableLux stack; preserve that
+> evidence and do not reopen C2ME, start A3, or begin formal Stage 8 acceptance.
 
 First local command:
 
 ```powershell
 Get-Content docs/STAGE8_ENTRY_CURRENT_WORK.md
 ```
+
+## Completed bounded card — PANDA_A2_LIVE
+
+PANDA_A2_LIVE passed on 2026-09-13 with the same final production bytes in both
+worker configurations. The run used an actual Loom/Fabric Minecraft client over
+TCP to a separate dedicated server; the server retained the pinned C2ME
+settlement2 and ScalableLux artifacts. The production JAR SHA-256 is
+`99128021D613BCA7393EF56657C560880D5729C015F9A0E8243689B08860FA46`.
+
+* W1 evidence: `build/panda-a2-live/evidence-w1/PANDA-A2-LIVE.json`.
+* W4 evidence: `build/panda-a2-live/evidence-w4/PANDA-A2-LIVE.json`.
+* Both runs report `acceptancePass=true`, `failure=""`, `cap=2`, clean client
+  termination, clean server stop, and the exact pinned C2ME SHA-256
+  `8AE4F2BB5FB15A28E555816DE89F0E400EA6A55A11213673E60068BC43C13D53` plus
+  ScalableLux SHA-256
+  `8D76CF27589DCC8E16C34BA0709A9EE2134CFCD60B90862F8CBD204EA9B6C7C8`.
+* The accepted matrix covers ordinary below-cap gameplay, exact boundary,
+  oldest-overflow selection, duplicate idempotence, exactly-once overflow
+  cleanup, natural removal retirement, disconnect/reconnect preservation,
+  `UNLOADED_WITH_PLAYER`, cross-region identity and owner re-resolution,
+  cross-dimension independent scope/overflow, and zero stale membership at
+  teardown. The runtime diagnostics also show zero ownership violations and no
+  pending entity relocation or pearl cleanup residue.
+* The final focused regression set passed:
+  `LiveMovementAdmissionTest`, `EntityRelocationBoundaryTest`,
+  `PearlMembershipLedgerTest`, `PearlOwnerAccessTest`,
+  `PearlCleanupRoutingTest`, and `PhoeniumLiveRuntimePhaseProgressionTest`.
+
+The A2 acceptance is a bounded Stage 7 result; it does not accept the separate
+projectile cap, A3 staggering, or any formal combined-stack Stage 8 matrix.
 
 ## Accepted C2ME prerequisite
 
@@ -59,8 +88,9 @@ distinct settlement2 base version. No remote push was made.
 ## Remaining scope and preserved prerequisites
 
 A1 non-player cross-owner relocation remains implemented and verified through
-the existing owner-free transition boundary. A2's live pearl workload remains
-the next proof. The separate projectile runtime cap and A3 remain unaccepted.
+the existing owner-free transition boundary. A2's live pearl workload is now
+accepted. The separate projectile runtime cap is the next bounded proof, and A3
+remains unaccepted.
 Real Bedrock gameplay, legacy Java/Via gameplay and two-client voice
 microphone/proximity/reconnect coverage remain external-facility gates.
 VMP remains optional and blocked/partial; SLO strict seed parity remains excluded;
