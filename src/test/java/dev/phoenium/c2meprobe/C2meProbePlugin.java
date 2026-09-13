@@ -20,6 +20,8 @@ public final class C2meProbePlugin implements IMixinConfigPlugin {
                     || name.equals("runDistanceManagerUpdates") || name.equals("promoteChunkMap")
                     || name.equals("applyStep") || name.equals("apply") || name.equals("upgradeToThis")
                     || name.equals("downgradeFromThis") || name.equals("save") || name.equals("saveAllChunks")
+                    || name.equals("lambda$invokeAsyncLoad$0") || name.equals("lambda$invokeAsyncLoad$2")
+                    || name.equals("drainQueue")
                     || name.contains("$c2me-notickvd$lambda$upgradeToThis$1$"))) continue;
             if ((method.access & (Opcodes.ACC_ABSTRACT | Opcodes.ACC_NATIVE)) != 0) continue;
             String key = node.name + "." + name + method.desc;

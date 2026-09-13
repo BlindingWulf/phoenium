@@ -31,6 +31,7 @@ abstract class ChunkStagePumpMixin {
     @Inject(method = "pollTask()Z", at = @At("HEAD"), cancellable = true, require = 1, expect = 1)
     private void phoenium$pump(CallbackInfoReturnable<Boolean> cir) {
         if (Phoenium.liveRuntime().pumpSaveOne() || Phoenium.liveRuntime().pumpFullOne()
-                || Phoenium.liveRuntime().chunkBinding().pumpOne()) cir.setReturnValue(true);
+                || Phoenium.liveRuntime().chunkBinding().pumpOne()
+                || Phoenium.liveRuntime().pumpC2mePersistedReadOne()) cir.setReturnValue(true);
     }
 }

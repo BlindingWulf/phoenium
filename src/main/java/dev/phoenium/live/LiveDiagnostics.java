@@ -9,6 +9,8 @@ public record LiveDiagnostics(
     long intercepted, long dispatched, long executed, long duplicates, long unexpectedBypasses, long fallbacks,
     long ownershipViolations, long unleasedExecutions, long hardBarriers, boolean barrierTripped,
     int ownedEntities, int ownedPlayers, int pendingEntityRelocations, long entityRelocations,
+    int pearlMemberships, int pendingPearlCleanups, boolean pearlCapEnabled, int pearlCap,
+    long pearlCleanupAdmissions, long pearlCleanupExecutions, long pearlCleanupRejections,
     long packetAdmissions, long packetExecutions,
     long packetStaleReroutes, long packetRejections, long packetRecursions,
     long chunkCompletionAdmissions, long chunkCompletionApplications, long chunkCompletionReroutes,
@@ -21,6 +23,9 @@ public record LiveDiagnostics(
             + " bypass=" + unexpectedBypasses + " fallback=" + fallbacks + " ownershipViolations=" + ownershipViolations
             + " unleased=" + unleasedExecutions + " barriers=" + hardBarriers + " entities=" + ownedEntities + " players=" + ownedPlayers
             + " pendingEntityRelocations=" + pendingEntityRelocations + " entityRelocations=" + entityRelocations
+            + " pearlMemberships=" + pearlMemberships + " pendingPearlCleanups=" + pendingPearlCleanups
+            + " pearlCap=" + (pearlCapEnabled ? pearlCap : "OFF") + " pearlCleanupAdmissions=" + pearlCleanupAdmissions
+            + " pearlCleanupExecutions=" + pearlCleanupExecutions + " pearlCleanupRejections=" + pearlCleanupRejections
             + " packetAdmissions=" + packetAdmissions + " packetExecutions=" + packetExecutions + " packetStaleReroutes=" + packetStaleReroutes
             + " packetRejections=" + packetRejections + " packetRecursions=" + packetRecursions
             + " chunkAdmissions=" + chunkCompletionAdmissions + " chunkApplications=" + chunkCompletionApplications

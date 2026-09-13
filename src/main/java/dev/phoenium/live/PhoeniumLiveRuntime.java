@@ -9,6 +9,7 @@ import dev.phoenium.chunk.ChunkCustody;
 import dev.phoenium.chunk.ChunkWorkRequest;
 import dev.phoenium.chunk.ChunkPrerequisiteServices;
 import dev.phoenium.chunk.ChunkBindingRuntime;
+import dev.phoenium.chunk.FullEntityFacts;
 import dev.phoenium.ownership.ObjectOwnershipRegistry;
 import dev.phoenium.ownership.ObjectOwnership;
 import dev.phoenium.ownership.ObjectOperationExecutor;
@@ -24,6 +25,7 @@ import dev.phoenium.scheduler.OwnerGateway;
 import dev.phoenium.scheduler.RegionScheduler;
 import dev.phoenium.scheduler.SchedulerLifecycle;
 import dev.phoenium.service.RegionalServiceDispatcher;
+import dev.phoenium.service.RegionalServiceKind;
 import dev.phoenium.service.RegionalWorldServices;
 import dev.phoenium.task.AdmissionPolicy;
 import dev.phoenium.task.RegionTaskEnvelope;
@@ -40,6 +42,7 @@ import dev.phoenium.interaction.InteractionTargetRef;
 import dev.phoenium.interaction.LiveInteractionAdmission;
 import java.util.LinkedHashMap;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
@@ -56,6 +59,7 @@ import net.minecraft.server.level.ChunkResult;
 import net.minecraft.world.level.chunk.ChunkAccess;
 import net.minecraft.world.level.chunk.status.ChunkStatus;
 import net.minecraft.world.entity.Entity;
+import net.minecraft.world.entity.projectile.throwableitemprojectile.ThrownEnderpearl;
 import net.minecraft.world.level.BlockEventData;
 import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.ticks.LevelChunkTicks;
@@ -81,6 +85,11 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
     private final InteractionTargetIndex interactionTargets = new InteractionTargetIndex();
     private final EntityIndexLifecycleAdapter entityIndexLifecycle = new EntityIndexLifecycleAdapter(objects, directory, interactionTargets,
         this::recordEntityRelocation);
+    /** Derived pearl association only; current object ownership remains in {@link ObjectOwnershipRegistry}. */
+    private final PearlMembershipLedger pearlMemberships = new PearlMembershipLedger();
+    /** Exact live aliases retained only for an already-selected owner-routed cleanup body. */
+    private final Map<PearlMembershipLedger.PearlIdentity, Entity> pearlAliases = new ConcurrentHashMap<>();
+    private final Map<TaskCorrelationId, PendingPearlRemoval> pendingPearlRemovals = new ConcurrentHashMap<>();
     private final Map<TaskCorrelationId, ChunkWorkRequest> chunkRequests = new ConcurrentHashMap<>();
     private final java.util.Set<WorldId> observedChunkFutureWorlds = ConcurrentHashMap.newKeySet();
     private final LivePacketReplayGate movementReplay = new LivePacketReplayGate();
@@ -123,6 +132,9 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
     private long interactionIngress, interactionIndexHit, interactionIndexMiss, interactionIncarnationRejected, interactionOwnerAdmission;
     private long interactionCrossOwnerRejected, interactionOwnerExecution, interactionReplay, interactionVanillaLookup, interactionHandlerCompletion, interactionStaleTicketRejected;
     private long entityRelocations;
+    private long pearlCleanupAdmissions;
+    private long pearlCleanupExecutions;
+    private long pearlCleanupRejections;
     private long chunkCompletionAdmissions;
     private long chunkCompletionApplications;
     private long chunkCompletionReroutes;
@@ -186,6 +198,9 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
         state = State.RUNNING;
         ChunkRuntimeTrace.start();
         for (ServerLevel level : server.getAllLevels()) refreshEntityBindings(level);
+        // Rebuild the complete multi-world association set once, after all native worlds have
+        // been observed, so deterministic restart ordering is global rather than per-world.
+        schedulePearlCleanup(pearlMemberships.reconstructDeterministically());
         try (var turn = dev.phoenium.chunk.FullFinishingServices.forServer(server)
                 .serial(dev.phoenium.chunk.FullFinishingServices.Phase.SERVER_TASK)) {
             regionalServices.initializeTracking();
@@ -511,6 +526,11 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
             for (var services : java.util.List.copyOf(chunkPrerequisiteServices.values())) failures.run(services::shutdown);
             failures.run(() -> { if (regionalServices != null) regionalServices.unbindAll(); });
             failures.run(entityIndexLifecycle::close);
+            failures.run(() -> {
+                pendingPearlRemovals.clear();
+                pearlAliases.clear();
+                pearlMemberships.close();
+            });
         } finally {
             chunkPrerequisiteServices.clear();
             fullRegistrations.clear();
@@ -533,6 +553,8 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
             regions.size(), activeLeases, intercepts, dispatches, executions, duplicates, unexpectedBypasses, fallbacks,
             ownershipViolations, unleasedExecutions, hardBarriers, barrier.tripped(), objects.liveCount(), objects.playerCount(),
             entityIndexLifecycle.pendingRelocationCount(), entityRelocations,
+            pearlMemberships.membershipCount(), pendingPearlRemovals.size(), pearlMemberships.settings().enabled(), pearlMemberships.settings().cap(),
+            pearlCleanupAdmissions, pearlCleanupExecutions, pearlCleanupRejections,
             packetAdmissions, packetExecutions, packetStaleReroutes, packetRejections, packetRecursions,
             chunkCompletionAdmissions, chunkCompletionApplications, chunkCompletionReroutes, chunkCompletionRejections, chunkCompletionDuplicates,
             producerThreadChunkMutations);
@@ -617,6 +639,22 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
     }
     public boolean regionalTrackingAdd(net.minecraft.server.level.ChunkMap map, Entity entity, Runnable original) {
         return regionalServiceBound() && regionalServices.addTrackingEntity(map, entity, original);
+    }
+
+    /**
+     * C2ME's async final stage is waiting on its captured authoritative POI queue to run through
+     * a typed regional service and release that lease before the provider continuation resumes.
+     * Main-thread managedBlock/pollTask must therefore be able to advance the existing owner
+     * scheduler, but only while that exact service kind is pending. FIFO and trySelect/promote
+     * remain unchanged.
+     */
+    public boolean pumpC2mePersistedReadOne() {
+        if (OwnershipContext.current().isPresent() || dev.phoenium.chunk.FullFinishingServices.finishing()
+                || regionalDispatcher == null || scheduler == null
+                || !regionalDispatcher.hasPending(RegionalServiceKind.C2ME_PERSISTED_POI_RECONCILE)) return false;
+        long before = scheduler.advances();
+        scheduler.advanceOne();
+        return scheduler.advances() != before;
     }
     public dev.phoenium.scheduler.GameplayMeasurements.Snapshot gameplayMeasurements() {
         return scheduler == null ? null : scheduler.measurements().snapshot();
@@ -925,6 +963,14 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
     private void acknowledgeRejectedPacket(TaskPayload.OwnedObjectOperation operation) {
         if (OwnershipContext.current().isPresent())
             throw new IllegalStateException("rejected packet acknowledgement retained gameplay authority");
+        if (PearlMembershipLedger.DISCARD_OPERATION.equals(operation.operationKind())) {
+            PendingPearlRemoval pending = pendingPearlRemovals.remove(operation.correlationId());
+            if (pending == null) throw new IllegalStateException("missing rejected pearl cleanup " + operation.correlationId());
+            pearlMemberships.settleCleanup(pending.membership());
+            pearlAliases.remove(pending.membership().identity(), pending.entity());
+            pearlCleanupRejections++;
+            return;
+        }
         if (packets.remove(operation.correlationId()) == null)
             throw new IllegalStateException("missing rejected packet custody " + operation.correlationId());
         packetRejections++;
@@ -932,6 +978,10 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
 
     @Override
     public void execute(RegionRuntime runtime, TaskPayload.OwnedObjectOperation operation) {
+        if (PearlMembershipLedger.DISCARD_OPERATION.equals(operation.operationKind())) {
+            executePearlDiscard(runtime, operation);
+            return;
+        }
         ObjectOwnership executingPlayer = objects.requireCurrentOwner(operation.objectId(), operation.expectedObjectEpoch(), runtime.id());
         PendingPacket packet = packets.remove(operation.correlationId());
         if (packet == null) throw new IllegalStateException("missing admitted packet " + operation.correlationId());
@@ -964,6 +1014,31 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
             return;
         }
         throw new IllegalStateException("unknown admitted packet");
+    }
+
+    /** Exactly one native discard, after current-owner and exact-incarnation validation. */
+    private void executePearlDiscard(RegionRuntime runtime, TaskPayload.OwnedObjectOperation operation) {
+        ObjectOwnership current = objects.requireCurrentOwner(operation.objectId(), operation.expectedObjectEpoch(), runtime.id());
+        PendingPearlRemoval pending = pendingPearlRemovals.get(operation.correlationId());
+        if (pending == null) throw new IllegalStateException("missing admitted pearl cleanup " + operation.correlationId());
+        PearlMembershipLedger.Membership membership = pending.membership();
+        Entity entity = pending.entity();
+        if (!pearlMemberships.isCurrent(membership) || !(entity instanceof ThrownEnderpearl)
+                || !(entity instanceof FullEntityFacts.Access access)
+                || !entity.getUUID().toString().equals(membership.objectId())
+                || access.phoenium$entityIncarnation() != membership.incarnation()
+                || entity.isRemoved() || current.incarnation() != membership.incarnation()) {
+            pendingPearlRemovals.remove(operation.correlationId(), pending);
+            pearlMemberships.settleCleanup(membership);
+            pearlAliases.remove(membership.identity(), entity);
+            pearlCleanupRejections++;
+            return;
+        }
+        entity.discard();
+        pendingPearlRemovals.remove(operation.correlationId(), pending);
+        pearlMemberships.settleCleanup(membership);
+        pearlAliases.remove(membership.identity(), entity);
+        pearlCleanupExecutions++;
     }
 
     @Override
@@ -1022,16 +1097,87 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
      * spawn enumeration still include that exact insertion, so removed status cannot erase its
      * committed ownership lifetime. The later original removal callback retires the binding. */
     public void onEntityAddressable(Entity entity) {
+        onEntityAddressable(entity, true);
+    }
+
+    /**
+     * Bootstrap uses the same exact addressability edge but defers overflow delivery until every
+     * loaded pearl has been collected and deterministically reconstructed.
+     */
+    private void onEntityAddressable(Entity entity, boolean enforcePearlPolicy) {
         if (!isRunning() || !(entity.level() instanceof ServerLevel level)) return;
         WorldId world = worldId(level);
         RoutingKey key = new RoutingKey(world, entity.chunkPosition().x(), entity.chunkPosition().z());
+        ObjectOwnership binding;
         try {
-            ObjectOwnership binding = entityIndexLifecycle.addressable(entity.getUUID().toString(),
+            binding = entityIndexLifecycle.addressable(entity.getUUID().toString(),
                 entity instanceof ServerPlayer ? OwnedObjectKind.PLAYER : OwnedObjectKind.ENTITY,
                 world, entity.getId(), key, explicitFixture);
         } catch (RuntimeException unavailable) {
             // A target outside the finite explicit fixture has no derived candidate.  It cannot be
             // rediscovered from the ServerLevel index at packet ingress.
+            return;
+        }
+        observePearlAddress(entity, binding, enforcePearlPolicy);
+    }
+
+    private void observePearlAddress(Entity entity, ObjectOwnership binding, boolean enforcePearlPolicy) {
+        if (!(entity instanceof ThrownEnderpearl pearl) || binding.kind() != OwnedObjectKind.ENTITY
+                || !(entity.level() instanceof ServerLevel level) || !(entity instanceof FullEntityFacts.Access access)) return;
+        java.util.UUID playerId = PearlOwnerAccess.playerId(pearl);
+        if (playerId == null) return;
+        WorldId world = worldId(level);
+        PearlMembershipLedger.Admission admission = pearlMemberships.admit(
+            new PearlMembershipLedger.Scope(world, playerId), entity.getUUID().toString(), access.phoenium$entityIncarnation());
+        pearlAliases.put(admission.membership().identity(), entity);
+        if (enforcePearlPolicy) schedulePearlCleanup(admission.cleanup());
+    }
+
+    private void schedulePearlCleanup(List<PearlMembershipLedger.Membership> memberships) {
+        for (PearlMembershipLedger.Membership membership : memberships) {
+            Entity entity = pearlAliases.get(membership.identity());
+            if (entity == null) {
+                pearlMemberships.settleCleanup(membership);
+                pearlCleanupRejections++;
+                continue;
+            }
+            schedulePearlCleanup(membership, entity);
+        }
+    }
+
+    /** Queues identity only; the live alias remains in this bounded integration table. */
+    private void schedulePearlCleanup(PearlMembershipLedger.Membership membership, Entity entity) {
+        if (!pearlMemberships.isCurrent(membership)) return;
+        ObjectOwnership current = objects.current(membership.objectId()).orElse(null);
+        if (!isRunning() || objectGateway == null || entity.isRemoved() || current == null
+                || current.kind() != OwnedObjectKind.ENTITY || current.incarnation() != membership.incarnation()) {
+            pearlMemberships.settleCleanup(membership);
+            pearlAliases.remove(membership.identity(), entity);
+            pearlCleanupRejections++;
+            return;
+        }
+        TaskCorrelationId correlation = new TaskCorrelationId(++sequence);
+        PendingPearlRemoval pending = new PendingPearlRemoval(entity, membership);
+        pendingPearlRemovals.put(correlation, pending);
+        ObjectOwnerGateway.Delivery delivery;
+        try {
+            delivery = objectGateway.submit(new OwnedObjectEnvelope(current.objectId(), current.objectEpoch(),
+                PearlMembershipLedger.DISCARD_OPERATION, "phoenium-pearl-cap", correlation,
+                new TaskSequence(sequence), AdmissionPolicy.REROUTE));
+        } catch (RuntimeException | Error failure) {
+            pendingPearlRemovals.remove(correlation, pending);
+            pearlMemberships.settleCleanup(membership);
+            pearlAliases.remove(membership.identity(), entity);
+            pearlCleanupRejections++;
+            throw failure;
+        }
+        if (delivery == ObjectOwnerGateway.Delivery.QUEUED || delivery == ObjectOwnerGateway.Delivery.REROUTED) {
+            pearlCleanupAdmissions++;
+        } else {
+            pendingPearlRemovals.remove(correlation, pending);
+            pearlMemberships.settleCleanup(membership);
+            pearlAliases.remove(membership.identity(), entity);
+            pearlCleanupRejections++;
         }
     }
 
@@ -1045,8 +1191,35 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
 
     /** Removal invalidates the network-id candidate before vanilla can later reuse its numeric ID. */
     public void onEntityRemoved(Entity entity) {
+        onEntityRemoved(entity, null);
+    }
+
+    /**
+     * A pearl has a non-terminal player-disconnect lifecycle in 26.2: vanilla deliberately keeps
+     * its persisted owner association for {@code UNLOADED_WITH_PLAYER}.  Preserve the derived
+     * membership at that edge; all terminal/removal and world-unload reasons retire the exact
+     * incarnation before the normal object binding is removed.
+     */
+    public void onEntityRemoved(Entity entity, Entity.RemovalReason reason) {
         if (!isRunning() || !(entity.level() instanceof ServerLevel level)) return;
+        if (reason == Entity.RemovalReason.UNLOADED_WITH_PLAYER) preservePearlMembershipForReconnect(entity);
+        else retirePearlMembership(entity);
         entityIndexLifecycle.removed(entity.getUUID().toString(), worldId(level), entity.getId());
+    }
+
+    private void preservePearlMembershipForReconnect(Entity entity) {
+        if (!(entity instanceof ThrownEnderpearl) || !(entity instanceof FullEntityFacts.Access access)) return;
+        String objectId = entity.getUUID().toString();
+        if (pearlMemberships.preserveForReconnect(objectId, access.phoenium$entityIncarnation()))
+            pearlAliases.remove(new PearlMembershipLedger.PearlIdentity(objectId, access.phoenium$entityIncarnation()), entity);
+    }
+
+    private void retirePearlMembership(Entity entity) {
+        if (!(entity instanceof ThrownEnderpearl) || !(entity instanceof FullEntityFacts.Access access)) return;
+        PearlMembershipLedger.PearlIdentity identity = new PearlMembershipLedger.PearlIdentity(
+            entity.getUUID().toString(), access.phoenium$entityIncarnation());
+        pearlMemberships.retire(identity.objectId(), identity.incarnation());
+        pearlAliases.remove(identity, entity);
     }
 
     /** PlayerList placement is the required initial-ownership point before the first movement packet. */
@@ -1062,7 +1235,7 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
         for (Entity entity : level.getAllEntities()) {
             String id = entity.getUUID().toString();
             present.add(id);
-            onEntityAddressable(entity);
+            onEntityAddressable(entity, false);
         }
         for (var previous : objects.ownedInWorld(world)) if (!present.contains(previous.objectId())) {
             Integer entityId = entityIndexLifecycle.entityId(previous.objectId());
@@ -1108,6 +1281,7 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
                                    LiveInteractionAdmission.Ticket ticket) implements PendingPacket {
         @Override public void execute() { ((ServerGamePacketListenerInvoker) connection).phoenium$invokeInteract(packet); }
     }
+    private record PendingPearlRemoval(Entity entity, PearlMembershipLedger.Membership membership) { }
     private final class PacketExecutionScope implements AutoCloseable {
         private final ReplayIdentity marker;
         private boolean closed;

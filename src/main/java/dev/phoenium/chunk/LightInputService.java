@@ -201,6 +201,62 @@ public final class LightInputService implements ChunkLightingApplicationBridge {
         if (failure != null) throw failure;
     }
 
+    /**
+     * Exact C2ME async persisted-read ingress.  The private invocation is a worker-local,
+     * one-shot proof for this batch only; it is deliberately not a replacement for a
+     * {@link ChunkStageClaim} and cannot authorize a regional mutation.
+     */
+    void invokePrivateC2meRead(PrivateC2meReadInvocation invocation, OccurrenceId id,
+                               PhysicalIngress original) throws Throwable {
+        Objects.requireNonNull(invocation); Objects.requireNonNull(id); Objects.requireNonNull(original);
+        if (!invocation.authorizes(this, id.batch()))
+            throw new ChunkProtocolException("foreign private C2ME light capability");
+        final Occurrence occurrence;
+        custody.gate().lock();
+        try {
+            Batch batch = privateC2meBatchLocked(id.batch());
+            if (batch.failure != null || batch.sealed || batch.cursor >= batch.occurrences.size())
+                throw breach(batch, "private C2ME physical ingress after batch completion/failure");
+            occurrence = batch.occurrences.get(batch.cursor);
+            if (!occurrence.id.equals(id) || occurrence.state != State.REGISTERED)
+                throw breach(batch, "duplicate, unexpected or reordered private C2ME physical ingress");
+            occurrence.state = State.INVOKING;
+        } finally { custody.gate().unlock(); }
+
+        Insertion insertion = new Insertion();
+        Throwable failure = null;
+        try {
+            original.submit(insertion);
+            if (insertion.rejection != null) throw insertion.rejection;
+            if (!insertion.inserted && !insertion.delegated)
+                throw new ChunkProtocolException("private C2ME light call returned without witnessed insertion or external ownership");
+            if (!invocation.authorizes(this, id.batch()))
+                throw new ChunkProtocolException("private C2ME light capability changed during ingress");
+        } catch (Throwable thrown) { failure = thrown; }
+        finally { insertion.closed = true; }
+
+        custody.gate().lock();
+        try {
+            Batch batch = batches.get(id.batch());
+            if (batch == null) {
+                if (failure != null) throw failure;
+                throw new ChunkProtocolException("private C2ME light batch disappeared during ingress");
+            }
+            occurrence.inserted = insertion.inserted;
+            occurrence.delegated = insertion.delegated;
+            if (failure == null && open && custody.admissionsOpenLocked() && currentLocked(id.batch())
+                    && batch.failure == null) {
+                occurrence.state = State.ACCEPTED;
+                batch.cursor++;
+            } else {
+                if (failure == null) failure = new ChunkProtocolException("private C2ME ingress became stale during physical call");
+                occurrence.state = failure instanceof ChunkProtocolException ? State.FAILED_BARRIER : State.FAILED_VANILLA;
+                batch.failure = occurrence.state;
+            }
+        } finally { custody.gate().unlock(); }
+        if (failure != null) throw failure;
+    }
+
     /** Called only at normal SerializableChunkData.read return, including a genuinely empty read. */
     public LightInputReceipt sealRead(ChunkStageClaim claim, BatchId id) {
         claim.require(id.stage());
@@ -210,6 +266,21 @@ public final class LightInputService implements ChunkLightingApplicationBridge {
             if (batch.sealed || batch.failure != null || batch.cursor != batch.occurrences.size())
                 throw breach(batch, "normal read completion has an incomplete or already sealed light batch");
             batch.sealed = true; batch.receipt = new LightInputReceipt(id);
+            return batch.receipt;
+        } finally { custody.gate().unlock(); }
+    }
+
+    LightInputReceipt sealPrivateC2meRead(PrivateC2meReadInvocation invocation, BatchId id) {
+        Objects.requireNonNull(invocation); Objects.requireNonNull(id);
+        if (!invocation.authorizes(this, id))
+            throw new ChunkProtocolException("foreign private C2ME light seal capability");
+        custody.gate().lock();
+        try {
+            Batch batch = privateC2meBatchLocked(id);
+            if (batch.sealed || batch.failure != null || batch.cursor != batch.occurrences.size())
+                throw breach(batch, "normal private C2ME read completion has an incomplete or already sealed light batch");
+            batch.sealed = true;
+            batch.receipt = new LightInputReceipt(id);
             return batch.receipt;
         } finally { custody.gate().unlock(); }
     }
@@ -309,6 +380,12 @@ public final class LightInputService implements ChunkLightingApplicationBridge {
         if (!claim.belongsTo(custody) || !claim.stage().equals(id.stage()) || !boundInstance(id)
                 || !claimedLocked(id) || batch == null || !claim.bindsLight(batch.registration))
             throw new ChunkProtocolException("unregistered or mismatched light batch at physical ingress");
+        return batch;
+    }
+    private Batch privateC2meBatchLocked(BatchId id) {
+        Batch batch = batches.get(id);
+        if (!open || !custody.admissionsOpenLocked() || !currentLocked(id) || batch == null)
+            throw new ChunkProtocolException("stale or unregistered private C2ME light batch");
         return batch;
     }
     private boolean claimedLocked(BatchId id) { return custody.stageState(id.stage()).orElse(null) == ChunkCustodyModel.StageState.CLAIMED; }

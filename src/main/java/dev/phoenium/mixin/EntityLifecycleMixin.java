@@ -22,7 +22,7 @@ abstract class EntityLifecycleMixin {
 
     @Inject(method = "setRemoved(Lnet/minecraft/world/entity/Entity$RemovalReason;)V", at = @At("HEAD"), require = 1)
     private void phoenium$removed(Entity.RemovalReason reason, CallbackInfo ci) {
-        Phoenium.liveRuntime().onEntityRemoved((Entity) (Object) this);
+        Phoenium.liveRuntime().onEntityRemoved((Entity) (Object) this, reason);
     }
 
     @Inject(method = {"addPassenger", "removePassenger"}, at = @At("TAIL"), require = 2)

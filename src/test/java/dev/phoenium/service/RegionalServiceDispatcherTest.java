@@ -118,6 +118,42 @@ final class RegionalServiceDispatcherTest {
     }
 
     @Test
+    void c2mePersistedPoiHandleCompletesOnlyAfterItsOwnerLeaseIsReleased() {
+        Fixture f = new Fixture();
+        var dispatcher = f.dispatcher();
+        var reference = new java.util.concurrent.atomic.AtomicReference<RegionalServiceDispatcher.Handle>();
+        var handle = dispatcher.submitC2mePersistedPoiAfterRelease(f.aKey, execution -> {
+            assertTrue(OwnershipContext.current().isPresent());
+            assertTrue(f.a.leases().hasActiveLease());
+            assertFalse(reference.get().completed());
+            assertFalse(reference.get().completion().toCompletableFuture().isDone());
+            f.a.append("c2me-poi");
+        });
+        reference.set(handle);
+        var completionReleased = new java.util.concurrent.atomic.AtomicBoolean();
+        handle.completion().whenComplete((ignored, failure) -> {
+            assertNull(failure);
+            assertTrue(OwnershipContext.current().isEmpty(),
+                    "after-release continuation must not inherit owner authority");
+            assertFalse(f.a.leases().hasActiveLease(),
+                    "after-release continuation must observe the regional lease as released");
+            completionReleased.set(true);
+        });
+
+        assertTrue(dispatcher.hasPending(RegionalServiceKind.C2ME_PERSISTED_POI_RECONCILE));
+        assertFalse(handle.completion().toCompletableFuture().isDone());
+        f.scheduler.advanceOne();
+
+        assertEquals(List.of("c2me-poi"), f.a.immutableLog());
+        assertFalse(f.a.leases().hasActiveLease());
+        assertTrue(handle.completed());
+        assertTrue(handle.completion().toCompletableFuture().isDone());
+        assertTrue(completionReleased.get());
+        assertFalse(dispatcher.hasPending(RegionalServiceKind.C2ME_PERSISTED_POI_RECONCILE));
+        assertFalse(f.barrier.tripped());
+    }
+
+    @Test
     void staleQueuedServiceReroutesAtDeliveryWithoutReplayingBody() {
         Fixture f = new Fixture();
         var dispatcher = f.dispatcher();
