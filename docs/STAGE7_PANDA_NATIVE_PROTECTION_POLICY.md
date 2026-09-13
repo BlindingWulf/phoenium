@@ -1,10 +1,13 @@
 # Stage 7 Panda-derived native protection policy
 
-Updated: 2026-09-11
+Updated: 2026-09-13
 
 ## Result
 
-The Panda-derived protection item has an executable **DESIGN PASS**. Production runtime integration remains **PARTIAL / NOT ACCEPTED**.
+The Panda-derived protection item has an executable **DESIGN PASS**. The
+per-region/type projectile cap and per-player/dimension ender-pearl cap now have
+bounded production runtime acceptance at the real Minecraft client/server
+boundary. Mob/vehicle staggering remains design-only and unwired.
 
 Stage 7 now has explicit ownership-safe requirements for the three desired behaviors: per-area projectile caps, per-player ender-pearl caps, and bounded mob/vehicle staggering. The deterministic policy tests live in `src/test/java/dev/phoenium/stage7/NativeProtectionPolicyTest.java` with a test-only model in `NativeProtectionPolicyModel.java`.
 
@@ -52,7 +55,14 @@ Using the current ownership region avoids creating Panda's second static pseudo-
 
 ### Production boundary
 
-The policy itself is sufficient, but production wiring is deferred. Phoenium's current entity lifecycle index invalidates a cross-owner movement candidate rather than representing a completed non-player ownership transfer. Shipping a projectile counter before that movement lifecycle is accepted could leak or double-count fast projectiles at region boundaries.
+The runtime ledger is now wired to the accepted non-player relocation lifecycle.
+`Entity.setPosRaw` publishes the routing observation, the owner-free boundary
+commits the relocation, and derived projectile membership transfers only after
+the new owner is authoritative. Cleanup is re-resolved through the current owner
+and exact object incarnation, so stale discard work cannot remove a later
+binding. Real-client W1/W4 evidence is retained at
+`build/projectile-cap-live/stack16-w1/evidence-w1/PROJECTILE-CAP-LIVE.json` and
+`build/projectile-cap-live/stack16-w4/evidence-w4/PROJECTILE-CAP-LIVE.json`.
 
 ## Per-player ender-pearl cap
 
@@ -78,7 +88,10 @@ The global per-player requirement can be represented without a second ownership 
 
 Any selected excess pearl is then submitted through current object-owner resolution and revalidated at execution. If the pearl has moved or disappeared, the stale removal is rejected rather than executed under old authority. This is one-way owner work; no owner-to-owner blocking wait is permitted.
 
-That derived ledger and its restart/lifecycle reconstruction are new production machinery, so Stage 7 does not ship the pearl cap in this checkpoint.
+That derived ledger and its restart/lifecycle reconstruction are now production
+machinery accepted by the PANDA_A2_LIVE real-client W1/W4 receipts. Evidence is
+retained at `build/panda-a2-live/final-6194-w1/evidence-w1/PANDA-A2-LIVE.json`
+and `build/panda-a2-live/final-6194-w4/evidence-w4/PANDA-A2-LIVE.json`.
 
 ## Mob and vehicle staggering
 
@@ -108,14 +121,20 @@ Therefore Stage 7 does **not** wire whole-entity staggering into production yet.
 - stride is explicitly bounded;
 - every stable entity receives exactly one slot per stride window, including an adversarial group.
 
-These are specification tests. They are intentionally not evidence that live projectile/pearl removal or mob/vehicle ticking has been accepted.
+These specification tests remain useful adversarial coverage; the live
+projectile and pearl acceptance is recorded separately in the receipts above.
+They do not accept mob/vehicle staggering, which remains unwired.
 
 ## Stage 7 decision
 
-The design requirement is closed. Production implementation is intentionally split:
+The design requirement is closed for the two bounded live protections:
 
-- projectile cap: policy ready, runtime integration waits for accepted non-player cross-owner movement accounting;
-- per-player pearl cap: policy ready, runtime integration needs a derived membership ledger plus one-way current-owner removal delivery;
-- mob/vehicle staggering: fairness policy ready, runtime integration waits for a simulation-preserving 26.2 tick boundary or proved compensation contract.
+- projectile cap: **RUNTIME PASS** for `(RegionId, projectile type)` scope, exact
+  relocation/incarnation handling and owner-routed cleanup;
+- per-player pearl cap: **RUNTIME PASS** for `(WorldId, player UUID)` scope,
+  reconnect preservation and deterministic exact-once cleanup;
+- mob/vehicle staggering: **DESIGN PASS / RUNTIME UNWIRED**; implementation still
+  waits for a simulation-preserving 26.2 tick boundary or proved compensation
+  contract.
 
 No Phoenium ownership/lifecycle invariant is weakened to make the protection item appear complete.

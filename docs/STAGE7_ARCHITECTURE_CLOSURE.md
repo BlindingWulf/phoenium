@@ -2,6 +2,20 @@
 
 Updated: 2026-09-11
 
+## Subsequent Stage 7 continuation amendment — 2026-09-13
+
+The bounded continuation after this 2026-09-11 architecture closeout accepted
+the derived per-player pearl ledger through PANDA_A2_LIVE and the derived
+per-region/type projectile ledger through PROJECTILE_CAP. Both passed real
+Loom/Fabric client-to-dedicated-server W1/W4 receipts on the pinned C2ME
+settlement2 + ScalableLux composition; the final production artifact is
+`build/libs/phoenium-0.2.0-stage2.jar`, SHA-256
+`619485DAAF545D9D99C1D630BD60A392B4447BB2099DD44C262E3EFA890655CD`.
+The historical closure below remains unchanged as the architecture review at
+its original date. A3 staggering is still unwired and unaccepted, and formal
+combined-stack Stage 8 acceptance remains **NOT STARTED**. See
+`STAGE8_ENTRY_CURRENT_WORK.md` for the authoritative active card and receipts.
+
 ## Scope and outcome
 
 This record closes the bounded Stage 7 repair/architecture campaign that followed the Stage 6 audit. It does **not** declare the full Stage 7 roadmap exit criteria satisfied.

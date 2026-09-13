@@ -9,6 +9,7 @@ import dev.phoenium.chunk.ChunkCustody;
 import dev.phoenium.chunk.ChunkWorkRequest;
 import dev.phoenium.chunk.ChunkPrerequisiteServices;
 import dev.phoenium.chunk.ChunkBindingRuntime;
+import dev.phoenium.chunk.ChunkProtocolException;
 import dev.phoenium.chunk.FullEntityFacts;
 import dev.phoenium.ownership.ObjectOwnershipRegistry;
 import dev.phoenium.ownership.ObjectOwnership;
@@ -59,7 +60,9 @@ import net.minecraft.server.level.ChunkResult;
 import net.minecraft.world.level.chunk.ChunkAccess;
 import net.minecraft.world.level.chunk.status.ChunkStatus;
 import net.minecraft.world.entity.Entity;
+import net.minecraft.world.entity.projectile.Projectile;
 import net.minecraft.world.entity.projectile.throwableitemprojectile.ThrownEnderpearl;
+import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.world.level.BlockEventData;
 import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.ticks.LevelChunkTicks;
@@ -84,11 +87,23 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
     private final Map<TaskCorrelationId, PendingPacket> packets = new ConcurrentHashMap<>();
     /** Movement packets admitted before a native player-level change must retire before replay. */
     private final java.util.Set<TaskCorrelationId> invalidatedMovementPackets = ConcurrentHashMap.newKeySet();
+    /**
+     * A native dimension change has a short client-baseline convergence window.  During that
+     * window, a packet may arrive after the ServerPlayer has entered the destination level while
+     * still proposing the old world's coordinates.  Such a proposal must be deferred before it
+     * can enter an owner transaction and invoke vanilla collision lookup against an unprepared
+     * destination chunk.
+     */
+    private final Map<String, MovementTransitionFence> movementTransitionFences = new ConcurrentHashMap<>();
+    /** Monotonic lifecycle fence closes the admission/replay race around both transition edges. */
+    private final Map<String, Long> movementTransitionEpochs = new ConcurrentHashMap<>();
     private final InteractionTargetIndex interactionTargets = new InteractionTargetIndex();
     private final EntityIndexLifecycleAdapter entityIndexLifecycle = new EntityIndexLifecycleAdapter(objects, directory, interactionTargets,
         this::recordEntityRelocation);
     /** Derived pearl association only; current object ownership remains in {@link ObjectOwnershipRegistry}. */
     private final PearlMembershipLedger pearlMemberships = new PearlMembershipLedger();
+    /** Derived projectile association only; current object ownership remains in {@link ObjectOwnershipRegistry}. */
+    private final ProjectileMembershipLedger projectileMemberships = new ProjectileMembershipLedger();
     /** Exact live aliases retained only for a selected or deferred owner-routed cleanup body. */
     private final Map<PearlMembershipLedger.PearlIdentity, Entity> pearlAliases = new ConcurrentHashMap<>();
     private final Map<TaskCorrelationId, PendingPearlRemoval> pendingPearlRemovals = new ConcurrentHashMap<>();
@@ -98,6 +113,10 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
      * retried at the existing owner-free tick cut; it is not an entity-discovery index.
      */
     private final Map<PearlMembershipLedger.PearlIdentity, DeferredPearlCleanup> deferredPearlCleanups = new ConcurrentHashMap<>();
+    /** Exact aliases retained only for selected/deferred projectile cleanup identities. */
+    private final Map<ProjectileMembershipLedger.ProjectileIdentity, Entity> projectileAliases = new ConcurrentHashMap<>();
+    private final Map<TaskCorrelationId, PendingProjectileRemoval> pendingProjectileRemovals = new ConcurrentHashMap<>();
+    private final Map<ProjectileMembershipLedger.ProjectileIdentity, DeferredProjectileCleanup> deferredProjectileCleanups = new ConcurrentHashMap<>();
     private final Map<TaskCorrelationId, ChunkWorkRequest> chunkRequests = new ConcurrentHashMap<>();
     private final java.util.Set<WorldId> observedChunkFutureWorlds = ConcurrentHashMap.newKeySet();
     private final LivePacketReplayGate movementReplay = new LivePacketReplayGate();
@@ -143,6 +162,9 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
     private long pearlCleanupAdmissions;
     private long pearlCleanupExecutions;
     private long pearlCleanupRejections;
+    private long projectileCleanupAdmissions;
+    private long projectileCleanupExecutions;
+    private long projectileCleanupRejections;
     private long chunkCompletionAdmissions;
     private long chunkCompletionApplications;
     private long chunkCompletionReroutes;
@@ -209,6 +231,8 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
         // Rebuild the complete multi-world association set once, after all native worlds have
         // been observed, so deterministic restart ordering is global rather than per-world.
         schedulePearlCleanup(pearlMemberships.reconstructDeterministically());
+        if (projectileMemberships.settings().enabled())
+            scheduleProjectileCleanup(projectileMemberships.reconstructDeterministically());
         try (var turn = dev.phoenium.chunk.FullFinishingServices.forServer(server)
                 .serial(dev.phoenium.chunk.FullFinishingServices.Phase.SERVER_TASK)) {
             regionalServices.initializeTracking();
@@ -333,6 +357,7 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
                 // for movement first observed during this tick's entity body.
                 entityIndexLifecycle.advancePendingRelocations(runtimes);
                 retryDeferredPearlCleanups();
+                if (projectileMemberships.settings().enabled()) retryDeferredProjectileCleanups();
                 phases.phoenium$afterChunkTick(pending.levelState, pending.cacheState);
                 pending.step = PendingTick.Step.BLOCK_EVENTS_COORDINATOR;
             }
@@ -366,6 +391,7 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
                 // retain their bounded fact for the next tick instead of waiting on one another.
                 entityIndexLifecycle.advancePendingRelocations(runtimes);
                 retryDeferredPearlCleanups();
+                if (projectileMemberships.settings().enabled()) retryDeferredProjectileCleanups();
                 queueTickPhase(pending, live, PendingTick.Step.FINAL_OWNER);
             }
             default -> throw new IllegalStateException("owner-free tick coordinator reached " + pending.step);
@@ -531,6 +557,8 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
                 int abandoned = regionalDispatcher == null ? 0 : regionalDispatcher.abandonPending();
                 int packetCount = packets.size(); packets.clear();
                 invalidatedMovementPackets.clear();
+                movementTransitionFences.clear();
+                movementTransitionEpochs.clear();
                 for (var request : java.util.List.copyOf(chunkRequests.values())) {
                     chunkCustody.cancel(ChunkCustody.id(request));
                     chunkRequests.remove(request.correlationId());
@@ -548,6 +576,10 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
                 deferredPearlCleanups.clear();
                 pearlAliases.clear();
                 pearlMemberships.close();
+                pendingProjectileRemovals.clear();
+                deferredProjectileCleanups.clear();
+                projectileAliases.clear();
+                projectileMemberships.close();
             });
         } finally {
             chunkPrerequisiteServices.clear();
@@ -574,6 +606,9 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
             pearlMemberships.membershipCount(), pendingPearlRemovals.size() + deferredPearlCleanups.size(),
             pearlMemberships.settings().enabled(), pearlMemberships.settings().cap(),
             pearlCleanupAdmissions, pearlCleanupExecutions, pearlCleanupRejections,
+            projectileMemberships.membershipCount(), pendingProjectileRemovals.size() + deferredProjectileCleanups.size(),
+            projectileMemberships.settings().enabled(), projectileMemberships.settings().cap(),
+            projectileCleanupAdmissions, projectileCleanupExecutions, projectileCleanupRejections,
             packetAdmissions, packetExecutions, packetStaleReroutes, packetRejections, packetRecursions,
             chunkCompletionAdmissions, chunkCompletionApplications, chunkCompletionReroutes, chunkCompletionRejections, chunkCompletionDuplicates,
             producerThreadChunkMutations);
@@ -872,35 +907,61 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
         if (!acceptsGameplay()) { packetRejections++; return; }
         ServerPlayer player = connection.player;
         if (player == null) { packetRejections++; movementFootprintRejected++; return; }
-        ObjectOwnership current = bindPlayer(player);
-        LiveMovementSnapshot snapshot = LiveMovementSnapshot.capture(player, packet, lastGoodX, lastGoodY, lastGoodZ, awaitingTeleport);
-        if (!snapshot.classified()) {
-            if (MovementBootstrapDisposition.from(snapshot.disposition()) == MovementBootstrapDisposition.DEFER_UNTIL_TELEPORT_OR_BASELINE_CONVERGES) {
-                movementBootstrapDeferred++;
-            } else {
-                packetRejections++; movementFootprintRejected++;
-            }
-            return;
-        }
-        try {
-            LiveMovementAdmission.Ticket ticket = LiveMovementAdmission.admit(directory, current.owner(), snapshot.footprint());
-            if (regionalServiceBound()) {
-                var footprint = regionalServices.prepareMovementTracking(player, snapshot.footprint());
-                // Enclosure may publish a legitimate merge and drain earlier accepted work.
-                // Recheck the original movement baseline before granting this packet a ticket.
-                var after = LiveMovementSnapshot.capture(player, packet, lastGoodX, lastGoodY, lastGoodZ, awaitingTeleport);
-                if (!after.classified() || !after.footprint().equals(snapshot.footprint())) {
+        String objectId = player.getUUID().toString();
+            WorldId actualWorld = worldId(player.level());
+            MovementTransitionFence transition = movementTransitionFences.get(objectId);
+            if (transition != null) {
+                double requestedX = packet.getX(player.getX());
+                double requestedY = packet.getY(player.getY());
+                double requestedZ = packet.getZ(player.getZ());
+                if (!transition.destinationWorld().equals(actualWorld)
+                        || awaitingTeleport
+                        || !transition.near(player.getX(), player.getY(), player.getZ(),
+                        requestedX, requestedY, requestedZ)) {
                     movementBootstrapDeferred++;
                     return;
                 }
-                current = bindPlayer(player);
-                ticket = LiveMovementAdmission.admit(directory, current.owner(), footprint);
             }
-            movementFootprintAccepted++;
-            admitPacket(connection, player, new PendingMove(this, connection, packet, player.level(), current.objectId(),
-                    current.incarnation(), ticket),
-                "player-movement", current, AdmissionPolicy.REJECT);
-        } catch (RuntimeException rejected) { packetRejections++; movementFootprintRejected++; }
+            ObjectOwnership current = bindPlayer(player);
+            // The native level edge publishes the destination observation before the owner-free
+            // relocation cut can commit it. Keep the transition fence closed until the binding itself
+            // is destination-world authoritative; otherwise the first apparently rebased packet could
+            // still be selected through the old owner while vanilla performs destination collision
+            // lookup inside that owner transaction.
+            if (transition != null && !current.owner().world().equals(actualWorld)) {
+                movementBootstrapDeferred++;
+                return;
+            }
+            LiveMovementSnapshot snapshot = LiveMovementSnapshot.capture(player, packet, lastGoodX, lastGoodY, lastGoodZ, awaitingTeleport);
+            if (!snapshot.classified()) {
+                if (MovementBootstrapDisposition.from(snapshot.disposition()) == MovementBootstrapDisposition.DEFER_UNTIL_TELEPORT_OR_BASELINE_CONVERGES) {
+                    movementBootstrapDeferred++;
+                } else {
+                    packetRejections++; movementFootprintRejected++;
+                }
+                return;
+            }
+            try {
+                LiveMovementAdmission.Ticket ticket = LiveMovementAdmission.admit(directory, current.owner(), snapshot.footprint());
+                if (regionalServiceBound()) {
+                    var footprint = regionalServices.prepareMovementTracking(player, snapshot.footprint());
+                    // Enclosure may publish a legitimate merge and drain earlier accepted work.
+                    // Recheck the original movement baseline before granting this packet a ticket.
+                    var after = LiveMovementSnapshot.capture(player, packet, lastGoodX, lastGoodY, lastGoodZ, awaitingTeleport);
+                    if (!after.classified() || !after.footprint().equals(snapshot.footprint())) {
+                        movementBootstrapDeferred++;
+                        return;
+                    }
+                    current = bindPlayer(player);
+                    ticket = LiveMovementAdmission.admit(directory, current.owner(), footprint);
+                }
+                movementFootprintAccepted++;
+                long transitionEpoch = movementTransitionEpochs.getOrDefault(objectId, 0L);
+                boolean admitted = admitPacket(connection, player, new PendingMove(this, connection, packet, player.level(), current.objectId(),
+                        current.incarnation(), transitionEpoch, ticket),
+                    "player-movement", current, AdmissionPolicy.REJECT);
+                if (admitted && transition != null) movementTransitionFences.remove(objectId, transition);
+            } catch (RuntimeException rejected) { packetRejections++; movementFootprintRejected++; }
     }
 
     /** Resolves an immutable derived target reference, without calling ServerLevel.getEntityOrPart. */
@@ -963,9 +1024,9 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
         }
     }
 
-    private void admitPacket(ServerGamePacketListenerImpl connection, ServerPlayer player, PendingPacket packet,
-                             String operationKind, ObjectOwnership prepared, AdmissionPolicy policy) {
-        if (!acceptsGameplay() || player == null) { packetRejections++; return; }
+    private boolean admitPacket(ServerGamePacketListenerImpl connection, ServerPlayer player, PendingPacket packet,
+                                String operationKind, ObjectOwnership prepared, AdmissionPolicy policy) {
+        if (!acceptsGameplay() || player == null) { packetRejections++; return false; }
         ObjectOwnership binding = prepared == null ? bindPlayer(player) : prepared;
         TaskCorrelationId correlation = new TaskCorrelationId(++sequence);
         packets.put(correlation, packet);
@@ -974,15 +1035,25 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
         if (delivery == ObjectOwnerGateway.Delivery.QUEUED || delivery == ObjectOwnerGateway.Delivery.REROUTED) {
             packetAdmissions++;
             if (delivery == ObjectOwnerGateway.Delivery.REROUTED) packetStaleReroutes++;
+            return true;
         } else {
             packets.remove(correlation);
             packetRejections++;
+            return false;
         }
     }
 
     private void acknowledgeRejectedPacket(TaskPayload.OwnedObjectOperation operation) {
         if (OwnershipContext.current().isPresent())
             throw new IllegalStateException("rejected packet acknowledgement retained gameplay authority");
+        if (ProjectileMembershipLedger.DISCARD_OPERATION.equals(operation.operationKind())) {
+            PendingProjectileRemoval pending = pendingProjectileRemovals.remove(operation.correlationId());
+            if (pending == null) throw new IllegalStateException("missing rejected projectile cleanup " + operation.correlationId());
+            projectileMemberships.settleCleanup(pending.membership());
+            projectileAliases.remove(pending.membership().identity(), pending.entity());
+            projectileCleanupRejections++;
+            return;
+        }
         if (PearlMembershipLedger.DISCARD_OPERATION.equals(operation.operationKind())) {
             PendingPearlRemoval pending = pendingPearlRemovals.remove(operation.correlationId());
             if (pending == null) throw new IllegalStateException("missing rejected pearl cleanup " + operation.correlationId());
@@ -998,6 +1069,10 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
 
     @Override
     public void execute(RegionRuntime runtime, TaskPayload.OwnedObjectOperation operation) {
+        if (ProjectileMembershipLedger.DISCARD_OPERATION.equals(operation.operationKind())) {
+            executeProjectileDiscard(runtime, operation);
+            return;
+        }
         if (PearlMembershipLedger.DISCARD_OPERATION.equals(operation.operationKind())) {
             executePearlDiscard(runtime, operation);
             return;
@@ -1007,29 +1082,39 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
         if (packet == null) throw new IllegalStateException("missing admitted packet " + operation.correlationId());
         if (packet instanceof PendingMove move) {
             movementOwnerExecution++;
-            synchronized (move.connection().player) {
-                if (invalidatedMovementPackets.remove(operation.correlationId())) {
-                    movementStaleTicketRejected++;
-                    return;
-                }
+            if (invalidatedMovementPackets.remove(operation.correlationId())) {
+                movementStaleTicketRejected++;
+                return;
+            }
+            try {
+                if (executingPlayer.incarnation() != move.playerIncarnation()) throw new IllegalStateException("stale movement player incarnation");
+                if (movementTransitionEpochs.getOrDefault(move.objectId(), 0L) != move.transitionEpoch())
+                    throw new IllegalStateException("stale movement transition epoch");
+                // A server-side teleport can change the live ServerPlayer level while an older
+                // movement packet is still queued. Replaying that packet through vanilla would
+                // make the old-world collision lookup run against the new world's owner
+                // transaction, which can synchronously wait on a foreign chunk dependency.
+                // Dimension identity is part of the movement admission, so that packet is
+                // safely retired as stale before vanilla is invoked.
+                if (move.playerLevel() != move.connection().player.level()
+                        || !runtime.id().world().equals(worldId(move.connection().player.level())))
+                    throw new IllegalStateException("stale movement player world");
+                move.ticket().requireCurrent(directory, runtime.id());
+            } catch (RuntimeException stale) { movementStaleTicketRejected++; return; }
+            try (LivePacketReplayGate.Scope gate = movementReplay.enter(move.ticket(), directory, runtime.id());
+                 PacketExecutionScope ignored = enterPacketExecution(operation.correlationId(), ReplayKind.MOVE, move.connection(), move.packet())) {
                 try {
-                    if (executingPlayer.incarnation() != move.playerIncarnation()) throw new IllegalStateException("stale movement player incarnation");
-                    // A server-side teleport can change the live ServerPlayer level while an older
-                    // movement packet is still queued. Replaying that packet through vanilla would
-                    // make the old-world collision lookup run against the new world's owner
-                    // transaction, which can synchronously wait on a foreign chunk dependency.
-                    // Dimension identity is part of the movement admission, so that packet is
-                    // safely retired as stale before vanilla is invoked.
-                    if (move.playerLevel() != move.connection().player.level()
-                            || !runtime.id().world().equals(worldId(move.connection().player.level())))
-                        throw new IllegalStateException("stale movement player world");
-                    move.ticket().requireCurrent(directory, runtime.id());
-                } catch (RuntimeException stale) { movementStaleTicketRejected++; return; }
-                try (LivePacketReplayGate.Scope gate = movementReplay.enter(move.ticket(), directory, runtime.id());
-                     PacketExecutionScope ignored = enterPacketExecution(operation.correlationId(), ReplayKind.MOVE, move.connection(), move.packet())) {
                     move.execute();
                     packetExecutions++;
                     movementHandlerCompletion++;
+                } catch (ChunkProtocolException stale) {
+                    // The native movement handler can discover a synchronous chunk dependency
+                    // after admission has already passed, when a dimension edge or a concurrent
+                    // owner cut races the replay. This packet is no longer safe to replay: the
+                    // protocol guard must not escape the owner transaction and trip the server.
+                    movementStaleTicketRejected++;
+                    logger.debug("PHOENIUM_STAGE2 dropped stale movement replay correlation={} reason={}",
+                            operation.correlationId(), stale.getMessage());
                 }
             }
             return;
@@ -1076,6 +1161,31 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
         pearlCleanupExecutions++;
     }
 
+    /** Exactly one native discard, after current-owner and exact-incarnation validation. */
+    private void executeProjectileDiscard(RegionRuntime runtime, TaskPayload.OwnedObjectOperation operation) {
+        ObjectOwnership current = objects.requireCurrentOwner(operation.objectId(), operation.expectedObjectEpoch(), runtime.id());
+        PendingProjectileRemoval pending = pendingProjectileRemovals.get(operation.correlationId());
+        if (pending == null) throw new IllegalStateException("missing admitted projectile cleanup " + operation.correlationId());
+        ProjectileMembershipLedger.Membership membership = pending.membership();
+        Entity entity = pending.entity();
+        if (!projectileMemberships.isCurrent(membership) || !(entity instanceof Projectile)
+                || !(entity instanceof FullEntityFacts.Access access)
+                || !entity.getUUID().toString().equals(membership.objectId())
+                || access.phoenium$entityIncarnation() != membership.incarnation()
+                || entity.isRemoved()) {
+            pendingProjectileRemovals.remove(operation.correlationId(), pending);
+            projectileMemberships.settleCleanup(membership);
+            projectileAliases.remove(membership.identity(), entity);
+            projectileCleanupRejections++;
+            return;
+        }
+        entity.discard();
+        pendingProjectileRemovals.remove(operation.correlationId(), pending);
+        projectileMemberships.settleCleanup(membership);
+        projectileAliases.remove(membership.identity(), entity);
+        projectileCleanupExecutions++;
+    }
+
     @Override
     public void execute(RegionRuntime runtime, TaskPayload.ChunkCompletion completion) {
         ChunkWorkRequest request = chunkRequests.get(completion.correlationId());
@@ -1119,9 +1229,18 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
         }
     }
     private boolean isRunning() { return state == State.RUNNING && scheduler != null && scheduler.lifecycle().acceptsSimulationWork(); }
-    private void recordEntityRelocation(EntityIndexLifecycleAdapter.RelocationFact ignored) { entityRelocations++; }
+    private void recordEntityRelocation(EntityIndexLifecycleAdapter.RelocationFact fact) {
+        entityRelocations++;
+        if (!projectileMemberships.settings().enabled()) return;
+        scheduleProjectileCleanup(projectileMemberships.relocate(fact.objectId(), fact.incarnation(),
+            fact.oldRegion(), fact.newRegion()));
+    }
     private boolean acceptsGameplay() { return !gameplayAdmissionClosed && isRunning(); }
     private static WorldId worldId(ServerLevel level) { return new WorldId(level.dimension().identifier().toString()); }
+    private static String projectileType(Entity entity) {
+        var key = BuiltInRegistries.ENTITY_TYPE.getKey(entity.getType());
+        return key == null ? null : key.toString();
+    }
     private static RegionRuntime readyRuntime(RegionId region) {
         RegionRuntime runtime = new RegionRuntime(region, new OwnerEpoch(0), false);
         runtime.transitionTo(RegionLifecycle.READY);
@@ -1154,6 +1273,21 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
             return;
         }
         observePearlAddress(entity, binding, enforcePearlPolicy);
+        if (projectileMemberships.settings().enabled())
+            observeProjectileAddress(entity, binding, enforcePearlPolicy);
+    }
+
+    private void observeProjectileAddress(Entity entity, ObjectOwnership binding, boolean enforcePolicy) {
+        if (!projectileMemberships.settings().enabled() || !(entity instanceof Projectile)
+                || binding.kind() != OwnedObjectKind.ENTITY
+                || !(entity instanceof FullEntityFacts.Access access)) return;
+        String projectileType = projectileType(entity);
+        if (projectileType == null) return;
+        ProjectileMembershipLedger.Admission admission = projectileMemberships.admit(
+            new ProjectileMembershipLedger.Scope(binding.owner(), projectileType), entity.getUUID().toString(),
+            access.phoenium$entityIncarnation());
+        projectileAliases.put(admission.membership().identity(), entity);
+        if (enforcePolicy) scheduleProjectileCleanup(admission.cleanup());
     }
 
     private void observePearlAddress(Entity entity, ObjectOwnership binding, boolean enforcePearlPolicy) {
@@ -1166,6 +1300,99 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
             new PearlMembershipLedger.Scope(world, playerId), entity.getUUID().toString(), access.phoenium$entityIncarnation());
         pearlAliases.put(admission.membership().identity(), entity);
         if (enforcePearlPolicy) schedulePearlCleanup(admission.cleanup());
+    }
+
+    private void scheduleProjectileCleanup(List<ProjectileMembershipLedger.Membership> memberships) {
+        for (ProjectileMembershipLedger.Membership membership : memberships) {
+            Entity entity = projectileAliases.get(membership.identity());
+            if (entity == null) {
+                deferredProjectileCleanups.remove(membership.identity());
+                projectileMemberships.settleCleanup(membership);
+                projectileCleanupRejections++;
+                continue;
+            }
+            scheduleProjectileCleanup(membership, entity);
+        }
+    }
+
+    /**
+     * Queues identity only; the live alias remains in this bounded integration table. A temporary
+     * absence from the current-owner registry is a retryable relocation state, not a terminal
+     * rejection while the native projectile is still live.
+     */
+    private void scheduleProjectileCleanup(ProjectileMembershipLedger.Membership membership, Entity entity) {
+        if (!projectileMemberships.isCurrent(membership)) {
+            deferredProjectileCleanups.remove(membership.identity());
+            return;
+        }
+        if (!isRunning() || objectGateway == null || entity.isRemoved()) {
+            deferredProjectileCleanups.remove(membership.identity());
+            projectileMemberships.settleCleanup(membership);
+            projectileAliases.remove(membership.identity(), entity);
+            projectileCleanupRejections++;
+            return;
+        }
+        ObjectOwnership current = objects.current(membership.objectId()).orElse(null);
+        if (current == null) {
+            deferredProjectileCleanups.put(membership.identity(), new DeferredProjectileCleanup(entity, membership));
+            return;
+        }
+        if (current.kind() != OwnedObjectKind.ENTITY) {
+            deferredProjectileCleanups.remove(membership.identity());
+            projectileMemberships.settleCleanup(membership);
+            projectileAliases.remove(membership.identity(), entity);
+            projectileCleanupRejections++;
+            return;
+        }
+        deferredProjectileCleanups.remove(membership.identity());
+        TaskCorrelationId correlation = new TaskCorrelationId(++sequence);
+        PendingProjectileRemoval pending = new PendingProjectileRemoval(entity, membership);
+        pendingProjectileRemovals.put(correlation, pending);
+        ObjectOwnerGateway.Delivery delivery;
+        try {
+            delivery = objectGateway.submit(new OwnedObjectEnvelope(current.objectId(), current.objectEpoch(),
+                ProjectileMembershipLedger.DISCARD_OPERATION, "phoenium-projectile-cap", correlation,
+                new TaskSequence(sequence), AdmissionPolicy.REROUTE));
+        } catch (RuntimeException | Error failure) {
+            pendingProjectileRemovals.remove(correlation, pending);
+            projectileMemberships.settleCleanup(membership);
+            projectileAliases.remove(membership.identity(), entity);
+            projectileCleanupRejections++;
+            throw failure;
+        }
+        if (delivery == ObjectOwnerGateway.Delivery.QUEUED || delivery == ObjectOwnerGateway.Delivery.REROUTED) {
+            projectileCleanupAdmissions++;
+        } else if (delivery == ObjectOwnerGateway.Delivery.REJECTED_ABSENT && !entity.isRemoved()
+                && projectileMemberships.isCurrent(membership)) {
+            pendingProjectileRemovals.remove(correlation, pending);
+            deferredProjectileCleanups.put(membership.identity(), new DeferredProjectileCleanup(entity, membership));
+        } else {
+            pendingProjectileRemovals.remove(correlation, pending);
+            projectileMemberships.settleCleanup(membership);
+            projectileAliases.remove(membership.identity(), entity);
+            projectileCleanupRejections++;
+        }
+    }
+
+    /** Retries only already-selected cleanup identities after the owner-free relocation cut. */
+    private void retryDeferredProjectileCleanups() {
+        if (OwnershipContext.current().isPresent() || deferredProjectileCleanups.isEmpty()) return;
+        for (DeferredProjectileCleanup deferred : java.util.List.copyOf(deferredProjectileCleanups.values())) {
+            ProjectileMembershipLedger.ProjectileIdentity identity = deferred.membership().identity();
+            if (deferredProjectileCleanups.get(identity) != deferred) continue;
+            if (!projectileMemberships.isCurrent(deferred.membership())) {
+                deferredProjectileCleanups.remove(identity, deferred);
+                continue;
+            }
+            Entity entity = projectileAliases.get(identity);
+            if (entity == null || entity.isRemoved()) {
+                deferredProjectileCleanups.remove(identity, deferred);
+                projectileMemberships.settleCleanup(deferred.membership());
+                projectileCleanupRejections++;
+                continue;
+            }
+            scheduleProjectileCleanup(deferred.membership(), entity);
+        }
     }
 
     private void schedulePearlCleanup(List<PearlMembershipLedger.Membership> memberships) {
@@ -1288,6 +1515,7 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
         if (!isRunning() || !(entity.level() instanceof ServerLevel level)) return;
         if (reason == Entity.RemovalReason.UNLOADED_WITH_PLAYER) preservePearlMembershipForReconnect(entity);
         else retirePearlMembership(entity);
+        retireProjectileMembership(entity);
         entityIndexLifecycle.removed(entity.getUUID().toString(), worldId(level), entity.getId());
     }
 
@@ -1310,9 +1538,22 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
         pearlAliases.remove(identity, entity);
     }
 
+    private void retireProjectileMembership(Entity entity) {
+        if (!projectileMemberships.settings().enabled()
+                || !(entity instanceof Projectile) || !(entity instanceof FullEntityFacts.Access access)) return;
+        ProjectileMembershipLedger.ProjectileIdentity identity = new ProjectileMembershipLedger.ProjectileIdentity(
+            entity.getUUID().toString(), access.phoenium$entityIncarnation());
+        deferredProjectileCleanups.remove(identity);
+        projectileMemberships.retire(identity.objectId(), identity.incarnation());
+        projectileAliases.remove(identity, entity);
+    }
+
     /** PlayerList placement is the required initial-ownership point before the first movement packet. */
     public void onPlayerPlaced(ServerPlayer player) {
         if (!isRunning()) return;
+        String objectId = player.getUUID().toString();
+        movementTransitionFences.remove(objectId);
+        movementTransitionEpochs.remove(objectId);
         bindPlayer(player);
     }
 
@@ -1329,6 +1570,11 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
                     && move.playerLevel() != level)
                 invalidatedMovementPackets.add(entry.getKey());
         }
+        MovementTransitionFence transition = movementTransitionFences.get(objectId);
+        if (transition != null) {
+            movementTransitionEpochs.merge(objectId, 1L, Long::sum);
+            movementTransitionFences.put(objectId, new MovementTransitionFence(worldId(level)));
+        }
         if (objects.current(objectId).isEmpty()) {
             try { bindPlayer(player); } catch (RuntimeException ignored) { }
             return;
@@ -1342,6 +1588,14 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
     public void onPlayerLevelChanging(ServerPlayer player, ServerLevel destination) {
         if (!isRunning() || destination == null || player.level() == destination) return;
         String objectId = player.getUUID().toString();
+        WorldId destinationWorld = worldId(destination);
+        MovementTransitionFence existing = movementTransitionFences.get(objectId);
+        // ServerPlayer.teleport(TeleportTransition), Entity.setLevel, and the direct
+        // ServerPlayer.teleportTo overload can all observe the same native transition. The first
+        // callback owns the lifecycle edge; nested callbacks must not advance the fence again.
+        if (existing != null && existing.destinationWorld().equals(destinationWorld)) return;
+        movementTransitionEpochs.merge(objectId, 1L, Long::sum);
+        movementTransitionFences.put(objectId, new MovementTransitionFence(destinationWorld));
         for (var entry : packets.entrySet()) {
             if (entry.getValue() instanceof PendingMove move && move.objectId().equals(objectId))
                 invalidatedMovementPackets.add(entry.getKey());
@@ -1378,7 +1632,8 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
     }
     private record PendingMove(PhoeniumLiveRuntime runtime, ServerGamePacketListenerImpl connection, ServerboundMovePlayerPacket packet,
                                ServerLevel playerLevel,
-                               String objectId, long playerIncarnation, LiveMovementAdmission.Ticket ticket) implements PendingPacket {
+                               String objectId, long playerIncarnation, long transitionEpoch,
+                               LiveMovementAdmission.Ticket ticket) implements PendingPacket {
         @Override public void execute() {
             ((ServerGamePacketListenerInvoker) connection).phoenium$invokeMovePlayer(packet);
             runtime.reconcileAfterMove(objectId, connection.player);
@@ -1404,6 +1659,20 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
     }
     private record PendingPearlRemoval(Entity entity, PearlMembershipLedger.Membership membership) { }
     private record DeferredPearlCleanup(Entity entity, PearlMembershipLedger.Membership membership) { }
+    private record PendingProjectileRemoval(Entity entity, ProjectileMembershipLedger.Membership membership) { }
+    private record DeferredProjectileCleanup(Entity entity, ProjectileMembershipLedger.Membership membership) { }
+    private record MovementTransitionFence(WorldId destinationWorld) {
+        private static final double MAX_REBASE_DISTANCE = 8.0D;
+
+        private boolean near(double currentX, double currentY, double currentZ,
+                             double requestedX, double requestedY, double requestedZ) {
+            double dx = requestedX - currentX;
+            double dy = requestedY - currentY;
+            double dz = requestedZ - currentZ;
+            return Double.isFinite(dx) && Double.isFinite(dy) && Double.isFinite(dz)
+                && dx * dx + dy * dy + dz * dz <= MAX_REBASE_DISTANCE * MAX_REBASE_DISTANCE;
+        }
+    }
     private final class PacketExecutionScope implements AutoCloseable {
         private final ReplayIdentity marker;
         private boolean closed;

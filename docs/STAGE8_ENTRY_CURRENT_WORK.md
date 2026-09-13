@@ -5,19 +5,21 @@ Stage 8 acceptance has **not** started.
 
 ## WORK CARD
 
-Active milestone: **PROJECTILE_CAP**.
+Active milestone: **A3**.
 
-PANDA_A2_LIVE is accepted at the real client/server boundary. The next bounded
-work is the separate projectile runtime cap. Preserve the accepted A2 ledger,
-the C2ME settlement2 composition, ScalableLux and the overlapping provider pins
-recorded below. Do not reopen the resolved C2ME gate, start A3, or infer formal
-Stage 8 acceptance from this Stage 7 result.
+PANDA_A2_LIVE and the separate PROJECTILE_CAP are accepted at the real
+client/server boundary on the same pinned C2ME settlement2 + ScalableLux stack.
+The next bounded Stage 7 card is A3 staggering. This update advances the card
+only; it does not claim A3 runtime acceptance or begin formal combined-stack
+Stage 8 acceptance. Preserve the receipts below, do not reopen the resolved
+C2ME gate, and keep the A3 simulation-preservation boundary in force.
 
 Exact short Luna continuation instruction:
 
-> Continue PROJECTILE_CAP from docs/STAGE8_ENTRY_CURRENT_WORK.md. PANDA_A2_LIVE
-> is accepted on the pinned C2ME settlement2 + ScalableLux stack; preserve that
-> evidence and do not reopen C2ME, start A3, or begin formal Stage 8 acceptance.
+> Continue A3 from docs/STAGE8_ENTRY_CURRENT_WORK.md. PANDA_A2_LIVE and
+> PROJECTILE_CAP are accepted on the pinned C2ME settlement2 + ScalableLux
+> stack; preserve those receipts, do not reopen C2ME, and do not begin formal
+> Stage 8 acceptance.
 
 First local command:
 
@@ -31,29 +33,53 @@ PANDA_A2_LIVE passed on 2026-09-13 with the same final production bytes in both
 worker configurations. The run used an actual Loom/Fabric Minecraft client over
 TCP to a separate dedicated server; the server retained the pinned C2ME
 settlement2 and ScalableLux artifacts. The production JAR SHA-256 is
-`99128021D613BCA7393EF56657C560880D5729C015F9A0E8243689B08860FA46`.
+`619485DAAF545D9D99C1D630BD60A392B4447BB2099DD44C262E3EFA890655CD`.
 
-* W1 evidence: `build/panda-a2-live/evidence-w1/PANDA-A2-LIVE.json`.
-* W4 evidence: `build/panda-a2-live/evidence-w4/PANDA-A2-LIVE.json`.
-* Both runs report `acceptancePass=true`, `failure=""`, `cap=2`, clean client
-  termination, clean server stop, and the exact pinned C2ME SHA-256
-  `8AE4F2BB5FB15A28E555816DE89F0E400EA6A55A11213673E60068BC43C13D53` plus
-  ScalableLux SHA-256
+* W1 evidence: `build/panda-a2-live/final-6194-w1/evidence-w1/PANDA-A2-LIVE.json`.
+* W4 evidence: `build/panda-a2-live/final-6194-w4/evidence-w4/PANDA-A2-LIVE.json`.
+* Both receipts report `acceptancePass=true`, an empty `failure`, `cap=2`,
+  clean real-client termination, clean server stop, and the exact pinned C2ME
+  SHA-256 `8AE4F2BB5FB15A28E555816DE89F0E400EA6A55A11213673E60068BC43C13D53`
+  plus ScalableLux SHA-256
   `8D76CF27589DCC8E16C34BA0709A9EE2134CFCD60B90862F8CBD204EA9B6C7C8`.
+* The C2ME-only production checkpoint recorded in the prerequisite section is
+  historical; the final Stage 7 runtime artifact used by these receipts is
+  `build/libs/phoenium-0.2.0-stage2.jar`, 1,457,625 bytes, SHA-256
+  `619485DAAF545D9D99C1D630BD60A392B4447BB2099DD44C262E3EFA890655CD`.
 * The accepted matrix covers ordinary below-cap gameplay, exact boundary,
   oldest-overflow selection, duplicate idempotence, exactly-once overflow
   cleanup, natural removal retirement, disconnect/reconnect preservation,
   `UNLOADED_WITH_PLAYER`, cross-region identity and owner re-resolution,
   cross-dimension independent scope/overflow, and zero stale membership at
-  teardown. The runtime diagnostics also show zero ownership violations and no
-  pending entity relocation or pearl cleanup residue.
-* The final focused regression set passed:
-  `LiveMovementAdmissionTest`, `EntityRelocationBoundaryTest`,
-  `PearlMembershipLedgerTest`, `PearlOwnerAccessTest`,
-  `PearlCleanupRoutingTest`, and `PhoeniumLiveRuntimePhaseProgressionTest`.
+  teardown. The runtime diagnostics show zero ownership violations and no
+  pending entity-relocation or pearl-cleanup residue.
 
-The A2 acceptance is a bounded Stage 7 result; it does not accept the separate
-projectile cap, A3 staggering, or any formal combined-stack Stage 8 matrix.
+## Completed bounded card — PROJECTILE_CAP
+
+PROJECTILE_CAP passed on 2026-09-13 at the same real client/server boundary and
+with the same production, C2ME and ScalableLux bytes as PANDA_A2_LIVE.
+
+* W1 evidence: `build/projectile-cap-live/stack16-w1/evidence-w1/PROJECTILE-CAP-LIVE.json`.
+* W4 evidence: `build/projectile-cap-live/stack16-w4/evidence-w4/PROJECTILE-CAP-LIVE.json`.
+* Both receipts report `acceptancePass=true`, an empty `failure`, `cap=2`,
+  clean client/server termination, `projectileMemberships=0`,
+  `pendingProjectileCleanups=0` at final cleanup, and the exact production SHA
+  `619485DAAF545D9D99C1D630BD60A392B4447BB2099DD44C262E3EFA890655CD`.
+* The workload proves below-cap retention, exact-boundary retention, ordinary
+  client movement, native raw cross-region relocation with owner convergence,
+  duplicate re-observation idempotence, deterministic oldest overflow with one
+  discard, natural removal retirement, independent `(RegionId, projectile type)`
+  scopes, cross-dimension overflow, reconnect, and zero stale membership at
+  teardown. W4 ran with `parallel=ON` and both runs ended with the expected
+  fail-closed stale movement replay dropped during native dimension transition
+  (`packets.move.stale=1`), without a server crash or ownership violation.
+* The focused Java regression set and `CoreAcceptanceTest` pass after the live
+  runs. The live fixture uses only real client item use for projectile creation;
+  its test-only capture command freezes an entity that the client actually
+  spawned and does not synthesize projectiles.
+
+PROJECTILE_CAP is a bounded Stage 7 result. A3 staggering remains unaccepted,
+and no formal combined-stack Stage 8 matrix has started.
 
 ## Accepted C2ME prerequisite
 
@@ -68,8 +94,9 @@ the final matrix uses the actual production JAR directly.
 
 * Phoenium implementation commit: `916904794590433ccac1777c24ffa023b7af4338`.
 * Branch: `stage7/scalablelux-persisted-light-repair`.
-* Production `build/libs/phoenium-0.2.0-stage2.jar`: **1,433,247 bytes**,
-  SHA-256 `CFDF13479E1073E1AB270C1FD447CF1A991A6DFABF3D4F5924D74560F7ADAAC6`.
+* C2ME-only prerequisite production checkpoint
+  `build/libs/phoenium-0.2.0-stage2.jar`: **1,433,247 bytes**, SHA-256
+  `CFDF13479E1073E1AB270C1FD447CF1A991A6DFABF3D4F5924D74560F7ADAAC6`.
 * Required patched C2ME: **settlement2**, SHA-256 `8AE4F2BB5FB15A28E555816DE89F0E400EA6A55A11213673E60068BC43C13D53`.
 * Full Phoenium regression: **953 tests / 108 XML suites / 0 failures / 0 errors /
   0 skipped**. Native full suite: **19 tests / 4 suites**, all pass; all **11**
@@ -88,9 +115,9 @@ distinct settlement2 base version. No remote push was made.
 ## Remaining scope and preserved prerequisites
 
 A1 non-player cross-owner relocation remains implemented and verified through
-the existing owner-free transition boundary. A2's live pearl workload is now
-accepted. The separate projectile runtime cap is the next bounded proof, and A3
-remains unaccepted.
+the owner-free transition boundary. A2's live pearl workload and the separate
+projectile runtime cap are accepted. A3 is now the active bounded card; its
+simulation-preserving native seam remains to be designed and accepted.
 Real Bedrock gameplay, legacy Java/Via gameplay and two-client voice
 microphone/proximity/reconnect coverage remain external-facility gates.
 VMP remains optional and blocked/partial; SLO strict seed parity remains excluded;

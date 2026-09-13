@@ -11,9 +11,12 @@ import dev.phoenium.topology.RoutingKey;
 import net.fabricmc.api.DedicatedServerModInitializer;
 import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback;
 import net.minecraft.commands.Commands;
+import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.network.chat.Component;
 import net.minecraft.world.entity.Entity;
+import net.minecraft.world.entity.projectile.Projectile;
 import net.minecraft.world.entity.projectile.throwableitemprojectile.ThrownEnderpearl;
+import net.minecraft.world.phys.Vec3;
 
 import java.lang.reflect.Field;
 import java.util.Set;
@@ -29,6 +32,150 @@ public final class PandaA2ServerProbe implements DedicatedServerModInitializer {
     public void onInitializeServer() {
         CommandRegistrationCallback.EVENT.register((dispatcher, registryAccess, selection) ->
             dispatcher.register(Commands.literal("phoenium-test")
+                .then(Commands.literal("projectile-reobserve")
+                    .then(Commands.argument("tag", StringArgumentType.word())
+                        .executes(context -> {
+                            String tag = StringArgumentType.getString(context, "tag");
+                            int matches = 0;
+                            for (var level : context.getSource().getServer().getAllLevels()) {
+                                for (Entity entity : level.getAllEntities()) {
+                                    if (entity instanceof Projectile && entity.entityTags().contains(tag)) {
+                                        Phoenium.liveRuntime().onEntityAddressable(entity);
+                                        matches++;
+                                    }
+                                }
+                            }
+                            String response = "projectileReobserve tag=" + tag + " matches=" + matches;
+                            context.getSource().sendSuccess(() -> Component.literal(response), false);
+                            return matches;
+                        })))
+                .then(Commands.literal("projectile-capture")
+                    .then(Commands.argument("tag", StringArgumentType.word())
+                        .then(Commands.argument("entityType", StringArgumentType.word())
+                            .executes(context -> {
+                                String tag = StringArgumentType.getString(context, "tag");
+                                String entityType = StringArgumentType.getString(context, "entityType");
+                                int matches = 0;
+                                int projectileCandidates = 0;
+                                String candidateTypes = "";
+                                capture:
+                                for (var level : context.getSource().getServer().getAllLevels()) {
+                                    for (Entity entity : level.getAllEntities()) {
+                                        if (!(entity instanceof Projectile))
+                                            continue;
+                                        String path = BuiltInRegistries.ENTITY_TYPE.getKey(entity.getType()).getPath();
+                                        if (!entity.entityTags().contains("phoenium_projectile_seen")) {
+                                            projectileCandidates++;
+                                            candidateTypes = candidateTypes + (candidateTypes.isEmpty() ? "" : ",") + path;
+                                        }
+                                        if (entity.entityTags().contains("phoenium_projectile_seen")
+                                                || !path.equals(entityType)) continue;
+                                        // The real client created this entity. This probe only closes
+                                        // the bounded observation window in one server-thread cut.
+                                        entity.addTag(tag);
+                                        entity.addTag("phoenium_projectile_seen");
+                                        entity.setNoGravity(true);
+                                        entity.setDeltaMovement(Vec3.ZERO);
+                                        Phoenium.liveRuntime().onEntityAddressable(entity);
+                                        matches++;
+                                        break capture;
+                                    }
+                                }
+                                String response = "projectileCapture tag=" + tag + " entityType=" + entityType
+                                    + " matches=" + matches + " candidates=" + projectileCandidates
+                                    + " candidateTypes=" + candidateTypes;
+                                context.getSource().sendSuccess(() -> Component.literal(response), false);
+                                return matches;
+                            }))))
+                .then(Commands.literal("projectile-raw-move")
+                    .then(Commands.argument("tag", StringArgumentType.word())
+                        .then(Commands.argument("x", DoubleArgumentType.doubleArg())
+                            .then(Commands.argument("y", DoubleArgumentType.doubleArg())
+                                .then(Commands.argument("z", DoubleArgumentType.doubleArg())
+                                    .executes(context -> {
+                                        String tag = StringArgumentType.getString(context, "tag");
+                                        double x = DoubleArgumentType.getDouble(context, "x");
+                                        double y = DoubleArgumentType.getDouble(context, "y");
+                                        double z = DoubleArgumentType.getDouble(context, "z");
+                                        int matches = 0;
+                                        String route = "";
+                                        for (var level : context.getSource().getServer().getAllLevels()) {
+                                            for (Entity entity : level.getAllEntities()) {
+                                                if (!(entity instanceof Projectile)
+                                                        || !entity.entityTags().contains(tag)) continue;
+                                                entity.setPosRaw(x, y, z);
+                                                WorldId world = new WorldId(level.dimension().identifier().toString());
+                                                route = Phoenium.liveRuntime().routeDiagnostic(world.value(),
+                                                    entity.chunkPosition().x(), entity.chunkPosition().z());
+                                                matches++;
+                                            }
+                                        }
+                                        String response = "projectileRawMove tag=" + tag + " matches=" + matches
+                                            + " route=" + region(route)
+                                            + " pendingEntityRelocations="
+                                            + Phoenium.liveRuntime().diagnostics().pendingEntityRelocations()
+                                            + " entityRelocations="
+                                            + Phoenium.liveRuntime().diagnostics().entityRelocations();
+                                        context.getSource().sendSuccess(() -> Component.literal(response), false);
+                                        return matches;
+                                    }))))))
+                .then(Commands.literal("projectile-status")
+                    .then(Commands.argument("tag", StringArgumentType.word())
+                        .executes(context -> {
+                            String tag = StringArgumentType.getString(context, "tag");
+                            int matches = 0;
+                            String route = "";
+                            String owner = "UNBOUND";
+                            String routingKey = "UNBOUND";
+                            for (var level : context.getSource().getServer().getAllLevels()) {
+                                for (Entity entity : level.getAllEntities()) {
+                                    if (!(entity instanceof Projectile)
+                                            || !entity.entityTags().contains(tag)) continue;
+                                    matches++;
+                                    WorldId world = new WorldId(level.dimension().identifier().toString());
+                                    route = Phoenium.liveRuntime().routeDiagnostic(world.value(),
+                                        entity.chunkPosition().x(), entity.chunkPosition().z());
+                                    ObjectOwnership binding = currentBinding(entity.getUUID().toString());
+                                    if (binding != null) {
+                                        owner = binding.owner().toString();
+                                        routingKey = binding.routingKey().toString();
+                                    }
+                                }
+                            }
+                            String response = "projectileStatus tag=" + tag + " matches=" + matches
+                                + " route=" + region(route) + " owner=" + owner + " routingKey=" + routingKey
+                                + " pendingEntityRelocations="
+                                + Phoenium.liveRuntime().diagnostics().pendingEntityRelocations()
+                                + " entityRelocations=" + Phoenium.liveRuntime().diagnostics().entityRelocations();
+                            context.getSource().sendSuccess(() -> Component.literal(response), false);
+                            return matches;
+                        })))
+                .then(Commands.literal("projectile-converge")
+                    .then(Commands.argument("tag", StringArgumentType.word())
+                        .executes(context -> {
+                            String tag = StringArgumentType.getString(context, "tag");
+                            int matches = 0;
+                            String routeBefore = "";
+                            String routeAfter = "";
+                            for (var level : context.getSource().getServer().getAllLevels()) {
+                                for (Entity entity : level.getAllEntities()) {
+                                    if (!(entity instanceof Projectile)
+                                            || !entity.entityTags().contains(tag)) continue;
+                                    matches++;
+                                    WorldId world = new WorldId(level.dimension().identifier().toString());
+                                    routeBefore = Phoenium.liveRuntime().routeDiagnostic(world.value(),
+                                        entity.chunkPosition().x(), entity.chunkPosition().z());
+                                    Phoenium.liveRuntime().regionalDispatcher().ensureClosure(Set.of(
+                                        new RoutingKey(world, 0, 0), new RoutingKey(world, 20, 0)));
+                                    routeAfter = Phoenium.liveRuntime().routeDiagnostic(world.value(),
+                                        entity.chunkPosition().x(), entity.chunkPosition().z());
+                                }
+                            }
+                            String response = "projectileConverge tag=" + tag + " matches=" + matches
+                                + " routeBefore=" + region(routeBefore) + " routeAfter=" + region(routeAfter);
+                            context.getSource().sendSuccess(() -> Component.literal(response), false);
+                            return matches;
+                        })))
                 .then(Commands.literal("pearl-reobserve")
                     .then(Commands.argument("tag", StringArgumentType.word())
                         .executes(context -> {

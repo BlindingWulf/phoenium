@@ -32,20 +32,38 @@ characterization test still demonstrates the defect in the original C2ME JAR;
 its pass does not accept that original JAR. The production binding requires the
 distinct settlement2 base version. No remote push was made.
 
-The active WORK CARD is **PANDA_A2_LIVE**. Read
-[STAGE8_ENTRY_CURRENT_WORK.md](STAGE8_ENTRY_CURRENT_WORK.md), recover the existing
-A2 implementation and acceptance contract, then execute its bounded live pearl
-workload. Preserve the exact accepted provider composition. No Panda, projectile
-cap, A3, Bedrock, Via, voice or storage-cleanup work was done in this Astra session.
+The active WORK CARD is **A3**. Read
+[STAGE8_ENTRY_CURRENT_WORK.md](STAGE8_ENTRY_CURRENT_WORK.md) for the current
+bounded continuation. PANDA_A2_LIVE and PROJECTILE_CAP are accepted at the real
+client/server boundary on the exact pinned provider composition. Preserve those
+receipts and the A3 simulation-preservation boundary; formal combined-stack
+Stage 8 acceptance has not started.
 
 Exact continuation instruction:
 
-> Continue PANDA_A2_LIVE from docs/STAGE8_ENTRY_CURRENT_WORK.md, preserving the
-> accepted C2ME settlement2 pins and all prior scoped provider decisions.
+> Continue A3 from docs/STAGE8_ENTRY_CURRENT_WORK.md. PANDA_A2_LIVE and
+> PROJECTILE_CAP are accepted on the pinned C2ME settlement2 + ScalableLux stack;
+> preserve those receipts, do not reopen C2ME, and do not begin formal Stage 8
+> acceptance.
 
 ```powershell
 Get-Content docs/STAGE8_ENTRY_CURRENT_WORK.md
 ```
+
+## Current bounded Stage 7 receipts
+
+The final runtime artifact is `build/libs/phoenium-0.2.0-stage2.jar`,
+1,457,625 bytes, SHA-256
+`619485DAAF545D9D99C1D630BD60A392B4447BB2099DD44C262E3EFA890655CD`.
+PANDA_A2_LIVE passed at W1/W4 in
+`build/panda-a2-live/final-6194-w1/evidence-w1/` and
+`build/panda-a2-live/final-6194-w4/evidence-w4/`; PROJECTILE_CAP passed at W1/W4
+in `build/projectile-cap-live/stack16-w1/evidence-w1/` and
+`build/projectile-cap-live/stack16-w4/evidence-w4/`. All four receipts pin C2ME
+settlement2 (`8AE4F2BB5FB15A28E555816DE89F0E400EA6A55A11213673E60068BC43C13D53`)
+and ScalableLux (`8D76CF27589DCC8E16C34BA0709A9EE2134CFCD60B90862F8CBD204EA9B6C7C8`)
+and report clean client/server termination. The next bounded card is A3;
+formal combined-stack Stage 8 acceptance remains unstarted.
 
 ## Historical handoff archive — superseded instructions
 

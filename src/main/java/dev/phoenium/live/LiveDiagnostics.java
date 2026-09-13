@@ -11,6 +11,8 @@ public record LiveDiagnostics(
     int ownedEntities, int ownedPlayers, int pendingEntityRelocations, long entityRelocations,
     int pearlMemberships, int pendingPearlCleanups, boolean pearlCapEnabled, int pearlCap,
     long pearlCleanupAdmissions, long pearlCleanupExecutions, long pearlCleanupRejections,
+    int projectileMemberships, int pendingProjectileCleanups, boolean projectileCapEnabled, int projectileCap,
+    long projectileCleanupAdmissions, long projectileCleanupExecutions, long projectileCleanupRejections,
     long packetAdmissions, long packetExecutions,
     long packetStaleReroutes, long packetRejections, long packetRecursions,
     long chunkCompletionAdmissions, long chunkCompletionApplications, long chunkCompletionReroutes,
@@ -26,6 +28,11 @@ public record LiveDiagnostics(
             + " pearlMemberships=" + pearlMemberships + " pendingPearlCleanups=" + pendingPearlCleanups
             + " pearlCap=" + (pearlCapEnabled ? pearlCap : "OFF") + " pearlCleanupAdmissions=" + pearlCleanupAdmissions
             + " pearlCleanupExecutions=" + pearlCleanupExecutions + " pearlCleanupRejections=" + pearlCleanupRejections
+            + " projectileMemberships=" + projectileMemberships + " pendingProjectileCleanups=" + pendingProjectileCleanups
+            + " projectileCap=" + (projectileCapEnabled ? projectileCap : "OFF")
+            + " projectileCleanupAdmissions=" + projectileCleanupAdmissions
+            + " projectileCleanupExecutions=" + projectileCleanupExecutions
+            + " projectileCleanupRejections=" + projectileCleanupRejections
             + " packetAdmissions=" + packetAdmissions + " packetExecutions=" + packetExecutions + " packetStaleReroutes=" + packetStaleReroutes
             + " packetRejections=" + packetRejections + " packetRecursions=" + packetRecursions
             + " chunkAdmissions=" + chunkCompletionAdmissions + " chunkApplications=" + chunkCompletionApplications

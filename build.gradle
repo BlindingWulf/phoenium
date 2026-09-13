@@ -389,6 +389,40 @@ loom {
                     .orElse(layout.buildDirectory.dir('panda-a2-live/evidence-w' + providers.gradleProperty('pandaWorkers').orElse('1').get())
                     .map { it.asFile.toPath().resolve('PANDA-A2-LIVE.json').toFile().absolutePath }).get()
         }
+
+        projectileCapLive {
+            client()
+            name 'Phoenium separate projectile-cap live acceptance'
+            source sourceSets.clientGameTest
+            runDir 'run/projectile-cap-live'
+            vmArg '-Dfabric.client.gametest'
+            vmArg '-Dfabric.client.gametest.modid=phoenium-client-tests'
+            vmArg '-Dphoenium.test.mode=projectile-cap'
+            programArg '--username'
+            programArg 'PhoeniumTest0'
+            property 'phoenium.test.username', 'PhoeniumTest0'
+            property 'phoenium.test.minecraftVersion', minecraft_version
+            property 'phoenium.test.javaVersion', '25'
+            property 'phoenium.test.fabricLoaderVersion', loader_version
+            property 'phoenium.test.fabricApiVersion', fabric_version
+            property 'phoenium.test.loomVersion', loom_version
+            property 'phoenium.test.gradleVersion', '9.5.1'
+            property 'phoenium.test.gradleTask', 'runProjectileCapLive'
+            property 'phoenium.test.serverAddress', '127.0.0.1:25565'
+            property 'phoenium.test.rconPort', '25575'
+            property 'phoenium.test.rconPassword', 'phoenium-panda-projectile'
+            property 'phoenium.panda.workers', providers.gradleProperty('pandaWorkers').orElse('1').get()
+            property 'phoenium.panda.cap', providers.gradleProperty('pandaCap').orElse('2').get()
+            property 'phoenium.panda.serverTemplate', providers.gradleProperty('pandaServerTemplate')
+                    .orElse(file('run/stage8/entry-20260913/astra-c2me-provider-settlement/production-final-coinstall-w1/server').absolutePath).get()
+            property 'phoenium.panda.productionJar',
+                    layout.buildDirectory.file('libs/phoenium-0.2.0-stage2.jar').get().asFile.absolutePath
+            property 'phoenium.panda.harness',
+                    layout.buildDirectory.file('test-harness/panda-a2-live-probe.jar').get().asFile.absolutePath
+            property 'phoenium.projectile.evidence', providers.gradleProperty('projectileEvidence')
+                    .orElse(layout.buildDirectory.dir('projectile-cap-live/evidence-w' + providers.gradleProperty('pandaWorkers').orElse('1').get())
+                    .map { it.asFile.toPath().resolve('PROJECTILE-CAP-LIVE.json').toFile().absolutePath }).get()
+        }
     }
 }
 
@@ -410,6 +444,10 @@ tasks.named('runStage3ChunkReadinessTrace') {
 }
 
 tasks.named('runPandaA2Live') {
+    dependsOn tasks.named('jar'), tasks.named('pandaA2Harness')
+}
+
+tasks.named('runProjectileCapLive') {
     dependsOn tasks.named('jar'), tasks.named('pandaA2Harness')
 }
 
