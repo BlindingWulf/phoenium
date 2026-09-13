@@ -47,11 +47,11 @@ Checkout: `C:\Users\Admin\Downloads\Project PHOENIUM\Phoenium`.
 
 Branch: `stage7/scalablelux-persisted-light-repair`.
 
-HEAD: `3355f3e7761d9ab18b29a188f2602f67131b4c3a`.
+Final checkpoint HEAD: `169003a` (`docs: record stage8 entry handoff`).
 
-HEAD title: `stage8-entry: bind c2me read and panda pearl lifecycle`.
+Source/test revision: `3355f3e7761d9ab18b29a188f2602f67131b4c3a` (`stage8-entry: bind c2me read and panda pearl lifecycle`).
 
-Working-tree disclosure: the source/test continuation is committed; this current-work record and `docs/STAGE8_HANDOFF.md` are the remaining documentation checkpoint before the handoff is complete.
+Working-tree disclosure: the source/test and documentation checkpoints are committed; the checkout is clean and the handoff is complete.
 
 No reset, clean, stash, branch switch, push, release, or deletion was performed.
 

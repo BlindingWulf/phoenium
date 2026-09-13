@@ -2,7 +2,7 @@
 
 ## Current entry handoff — 2026-09-12
 
-The authoritative current state is [STAGE8_ENTRY_CURRENT_WORK.md](STAGE8_ENTRY_CURRENT_WORK.md), with the operational handoff in [STAGE8_HANDOFF.md](STAGE8_HANDOFF.md). At revision `3355f3e7761d9ab18b29a188f2602f67131b4c3a` on branch `stage7/scalablelux-persisted-light-repair`, Stage 7 is **INCOMPLETE**: C2ME provider-wide lifetime/co-install W1/W4 proof, live Panda A2/projectile/A3 gates, and external client facilities remain open. Formal combined Stage 8 acceptance has not started.
+The authoritative current state is [STAGE8_ENTRY_CURRENT_WORK.md](STAGE8_ENTRY_CURRENT_WORK.md), with the operational handoff in [STAGE8_HANDOFF.md](STAGE8_HANDOFF.md). At documentation checkpoint `169003a` (source/test revision `3355f3e7761d9ab18b29a188f2602f67131b4c3a`) on branch `stage7/scalablelux-persisted-light-repair`, Stage 7 is **INCOMPLETE**: C2ME provider-wide lifetime/co-install W1/W4 proof, live Panda A2/projectile/A3 gates, and external client facilities remain open. Formal combined Stage 8 acceptance has not started.
 
 The production artifact is `build/libs/phoenium-0.2.0-stage2.jar`, SHA-256 `8A1C0C4852150C8D36E9EDB8DDEFC9F9B6E9A3E82AE71123D798416DD39A21FC`; production C2ME `breaks` declarations remain intact. The source/test continuation is locally committed; the current-work and handoff records are the final documentation checkpoint. No remote push was performed.
 

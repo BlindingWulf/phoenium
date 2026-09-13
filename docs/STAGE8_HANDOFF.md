@@ -8,18 +8,18 @@ This is an engineering handoff, not a Stage 8 acceptance result. Formal combined
 
 - Repository: `C:\Users\Admin\Downloads\Project PHOENIUM\Phoenium`
 - Branch: `stage7/scalablelux-persisted-light-repair`
-- Revision: `3355f3e7761d9ab18b29a188f2602f67131b4c3a`
-- Revision title: `stage8-entry: bind c2me read and panda pearl lifecycle`
+- Revision: `169003a` (`docs: record stage8 entry handoff`)
+- Source/test revision: `3355f3e7761d9ab18b29a188f2602f67131b4c3a` (`stage8-entry: bind c2me read and panda pearl lifecycle`)
 - Production JAR: `build/libs/phoenium-0.2.0-stage2.jar`
 - Production JAR SHA-256: `8A1C0C4852150C8D36E9EDB8DDEFC9F9B6E9A3E82AE71123D798416DD39A21FC`
-- Source/test changes are committed locally; no remote push was performed.
+- Source/test changes are committed locally and this documentation checkpoint is committed; no remote push was performed.
 - Generated candidate worlds, logs, reports and JARs remain under ignored `run/` and `build/` paths.
 
 The recovery copy made before continuation is retained at `run/stage8/entry-20260911/recovery-before-continuation-20260912/`.
 
 ## Dirty-state disclosure
 
-The source checkout is clean except for the intentional documentation edits to `docs/STAGE8_ENTRY_CURRENT_WORK.md` and this handoff file, which are the final handoff checkpoint. Review them before committing the documentation checkpoint.
+The source checkout and documentation checkpoint are clean at revision `169003a`; the final documentation commit records the source/test revision separately above.
 
 No reset, clean, stash, branch switch, delete, release, or push was performed. Other Phoenium worktrees were inspected and left untouched.
 
