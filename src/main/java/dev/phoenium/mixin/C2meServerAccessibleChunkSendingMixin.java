@@ -27,6 +27,6 @@ abstract class C2meServerAccessibleChunkSendingMixin {
     private Object phoenium$sendReady(@Coerce Object receiver, @Coerce Object context, @Coerce Object cancellable,
                                       Operation<Object> original) {
         Object providerGraph = original.call(receiver, context, cancellable);
-        return Phoenium.liveRuntime().chunkBinding().c2meSendReadyGraph(context, providerGraph);
+        return Phoenium.liveRuntime().chunkBinding().c2meSendReadyGraph(context, cancellable, providerGraph);
     }
 }

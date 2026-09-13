@@ -3,6 +3,10 @@ package dev.phoenium.mixin;
 import com.llamalad7.mixinextras.injector.wrapoperation.Operation;
 import com.llamalad7.mixinextras.injector.wrapoperation.WrapOperation;
 import dev.phoenium.Phoenium;
+import dev.phoenium.chunk.C2meDiskReadRx;
+import org.spongepowered.asm.mixin.injection.Inject;
+import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
+import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.entity.ai.village.poi.PoiManager;
 import net.minecraft.world.level.ChunkPos;
@@ -18,6 +22,12 @@ import org.spongepowered.asm.mixin.injection.Coerce;
 @Pseudo
 @Mixin(targets = "com.ishland.c2me.rewrites.chunksystem.common.statuses.ReadFromDiskAsync", remap = false)
 abstract class C2meReadFromDiskAsyncMixin {
+    @Inject(method = "upgradeToThis(Lcom/ishland/c2me/rewrites/chunksystem/common/ChunkLoadingContext;Lcom/ishland/flowsched/scheduler/Cancellable;)Lio/reactivex/rxjava3/core/Completable;",
+            at = @At("HEAD"), require = 1)
+    private void phoenium$bindAction(@Coerce Object context, @Coerce Object token, CallbackInfoReturnable<Object> callback) {
+        Phoenium.liveRuntime().chunkBinding().c2meReadAction(context, token);
+    }
+
     private static final String READ = "Lnet/minecraft/world/level/chunk/storage/SerializableChunkData;read("
             + "Lnet/minecraft/server/level/ServerLevel;"
             + "Lnet/minecraft/world/entity/ai/village/poi/PoiManager;"
@@ -61,4 +71,22 @@ abstract class C2meReadFromDiskAsyncMixin {
         Object completable = original.call(instance, context, source);
         return Phoenium.liveRuntime().chunkBinding().c2meAsyncOuterLifecycle(context, completable);
     }
+    @WrapOperation(method = {"upgradeToThis", "lambda$upgradeToThis$0"},
+            at = @At(value = "INVOKE", target = "Lio/reactivex/rxjava3/core/Single;retryWhen(Lio/reactivex/rxjava3/functions/Function;)Lio/reactivex/rxjava3/core/Single;"), require = 2)
+    @Coerce
+    private Object phoenium$guardRetry(@Coerce Object source, @Coerce Object function, Operation<Object> original,
+                                      @Coerce Object context) {
+        return original.call(source, C2meDiskReadRx.guardRetry(function,
+                Phoenium.liveRuntime().chunkBinding().c2meReadOperation(context)));
+    }
+
+    @WrapOperation(method = "upgradeToThis",
+            at = @At(value = "INVOKE", target = "Lio/reactivex/rxjava3/core/Single;onErrorResumeNext(Lio/reactivex/rxjava3/functions/Function;)Lio/reactivex/rxjava3/core/Single;"), require = 1)
+    @Coerce
+    private Object phoenium$guardFallback(@Coerce Object source, @Coerce Object function, Operation<Object> original,
+                                         @Coerce Object context) {
+        return original.call(source, C2meDiskReadRx.guardRecovery(function,
+                Phoenium.liveRuntime().chunkBinding().c2meReadOperation(context)));
+    }
+
 }

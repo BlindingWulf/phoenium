@@ -18,6 +18,7 @@ public final class PrivateC2meReadInvocation implements AutoCloseable {
     private static final ThreadLocal<PrivateC2meReadInvocation> CURRENT = new ThreadLocal<>();
     private static final AtomicInteger RETAINED = new AtomicInteger();
 
+    private C2meDiskReadOperation operation;
     private final Thread creator;
     private final C2meReadAccess.Observation observation;
     private final ChunkPrerequisiteServices services;
@@ -55,6 +56,11 @@ public final class PrivateC2meReadInvocation implements AutoCloseable {
                 .map(LightInputService.OccurrenceSnapshot::id).toList();
         CURRENT.set(this);
         RETAINED.incrementAndGet();
+    }
+
+    PrivateC2meReadInvocation operation(C2meDiskReadOperation operation) {
+        this.operation = Objects.requireNonNull(operation);
+        return this;
     }
 
     /** Null means this thread is on the ordinary synchronous path.  A mismatched active private
@@ -129,6 +135,7 @@ public final class PrivateC2meReadInvocation implements AutoCloseable {
     }
 
     private void requireCurrent() {
+        if (operation != null) operation.check();
         if (!active || Thread.currentThread() != creator)
             throw new ChunkProtocolException("expired or transferred private C2ME read capability");
         if (!services.lifecycles().observeSameHolder(lifecycle, observation.centerHolder())

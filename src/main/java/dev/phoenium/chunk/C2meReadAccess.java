@@ -23,6 +23,15 @@ final class C2meReadAccess {
 
     private C2meReadAccess() { }
 
+    /** The disk lifetime binding requires native requester settlement, not just token cancellation. */
+    static void requireSettlingProvider() {
+        String version = net.fabricmc.loader.api.FabricLoader.getInstance().getModContainer("c2me-base")
+                .orElseThrow(() -> new IllegalStateException("C2ME base provider is absent"))
+                .getMetadata().getVersion().getFriendlyString();
+        if (!version.equals("0.4.2-alpha.0.43-phoenium-settlement2+26.2"))
+            throw new IllegalStateException("C2ME disk lifetime requires the pinned native settlement provider, found " + version);
+    }
+
     record Observation(Object context, ChunkMap map, Object backingHolder, Object statusSlot,
                        GenerationChunkHolder centerHolder, ChunkPos position, ContextAccess access) {
         Observation {
@@ -73,6 +82,13 @@ final class C2meReadAccess {
             }
         }
     };
+
+    static Observation capture(Object context) {
+        try {
+            Object holder = context.getClass().getMethod("holder").invoke(context);
+            return capture(context, (ChunkPos) holder.getClass().getMethod("getKey").invoke(holder));
+        } catch (ReflectiveOperationException failure) { throw drift(failure); }
+    }
 
     static Observation capture(Object context, ChunkPos position) {
         Objects.requireNonNull(context, "context"); Objects.requireNonNull(position, "position");

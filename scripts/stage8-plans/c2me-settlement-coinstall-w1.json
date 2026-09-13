@@ -1,0 +1,877 @@
+{
+  "description": "Locked C2ME/ScalableLux plus accepted Chunky, default Lithium, ServerCore preservation profile and Clumps: 81 native chunks saved/reloaded and persisted lamp",
+  "first": [
+    {
+      "command": "chunky world minecraft:overworld",
+      "expect": "World changed"
+    },
+    {
+      "command": "chunky center 160 0",
+      "expect": "Center changed"
+    },
+    {
+      "command": "chunky shape square",
+      "expect": "Shape changed"
+    },
+    {
+      "command": "chunky radius 64",
+      "expect": "Radius changed"
+    },
+    {
+      "command": "chunky start",
+      "expect": "Task finished",
+      "timeout": 180
+    },
+    {
+      "command": "chunky progress",
+      "expect": "No tasks running"
+    },
+    {
+      "command": "tick freeze",
+      "expect": "The game is frozen"
+    },
+    {
+      "command": "forceload add 0 0 175 15",
+      "expect": "Marked",
+      "settleSeconds": 3
+    },
+    {
+      "command": "execute if loaded 80 65 8 run say SETTLEMENT_FIRST_READY",
+      "expect": "SETTLEMENT_FIRST_READY",
+      "pollReadiness": true
+    },
+    {
+      "command": "fill 71 64 7 89 64 9 minecraft:stone",
+      "expect": "Successfully filled"
+    },
+    {
+      "command": "fill 71 65 7 89 66 9 minecraft:air",
+      "expect": "Successfully filled|No blocks were filled",
+      "regex": true
+    },
+    {
+      "command": "setblock 88 65 8 minecraft:redstone_lamp",
+      "expect": "Changed the block"
+    },
+    {
+      "command": "fill 73 65 8 87 65 8 minecraft:redstone_wire",
+      "expect": "Successfully filled"
+    },
+    {
+      "command": "setblock 72 65 8 minecraft:redstone_block",
+      "expect": "Changed the block"
+    },
+    {
+      "command": "tick step 20",
+      "expect": "Stepping",
+      "settleSeconds": 2
+    },
+    {
+      "command": "execute if block 88 65 8 minecraft:redstone_lamp[lit=true] run say STAGE7_C2ME_EXACT_W1_LAMP_ON",
+      "expect": "STAGE7_C2ME_EXACT_W1_LAMP_ON"
+    },
+    {
+      "command": "time query gametime",
+      "expect": "The game time is"
+    }
+  ],
+  "restart": [
+    {
+      "command": "tick freeze",
+      "expect": "The game is frozen"
+    },
+    {
+      "command": "execute if loaded 88 65 8 run say SETTLEMENT_RESTART_READY",
+      "expect": "SETTLEMENT_RESTART_READY",
+      "pollReadiness": true
+    },
+    {
+      "command": "execute if block 88 65 8 minecraft:redstone_lamp[lit=true] run say STAGE7_C2ME_EXACT_W1_LAMP_PERSISTED",
+      "expect": "STAGE7_C2ME_EXACT_W1_LAMP_PERSISTED"
+    },
+    {
+      "command": "setblock 72 65 8 minecraft:air",
+      "expect": "Changed the block"
+    },
+    {
+      "command": "tick step 20",
+      "expect": "Stepping",
+      "settleSeconds": 2
+    },
+    {
+      "command": "execute if block 88 65 8 minecraft:redstone_lamp[lit=false] run say STAGE7_C2ME_EXACT_W1_LAMP_OFF",
+      "expect": "STAGE7_C2ME_EXACT_W1_LAMP_OFF"
+    },
+    {
+      "command": "forceload add 96 -64 224 64",
+      "expect": "Marked"
+    },
+    {
+      "command": "execute if loaded 96 65 -64 run say CHUNK_RELOADED",
+      "expect": "CHUNK_RELOADED",
+      "pollReadiness": true
+    },
+    {
+      "command": "execute if loaded 96 65 -48 run say CHUNK_RELOADED",
+      "expect": "CHUNK_RELOADED",
+      "pollReadiness": true
+    },
+    {
+      "command": "execute if loaded 96 65 -32 run say CHUNK_RELOADED",
+      "expect": "CHUNK_RELOADED",
+      "pollReadiness": true
+    },
+    {
+      "command": "execute if loaded 96 65 -16 run say CHUNK_RELOADED",
+      "expect": "CHUNK_RELOADED",
+      "pollReadiness": true
+    },
+    {
+      "command": "execute if loaded 96 65 0 run say CHUNK_RELOADED",
+      "expect": "CHUNK_RELOADED",
+      "pollReadiness": true
+    },
+    {
+      "command": "execute if loaded 96 65 16 run say CHUNK_RELOADED",
+      "expect": "CHUNK_RELOADED",
+      "pollReadiness": true
+    },
+    {
+      "command": "execute if loaded 96 65 32 run say CHUNK_RELOADED",
+      "expect": "CHUNK_RELOADED",
+      "pollReadiness": true
+    },
+    {
+      "command": "execute if loaded 96 65 48 run say CHUNK_RELOADED",
+      "expect": "CHUNK_RELOADED",
+      "pollReadiness": true
+    },
+    {
+      "command": "execute if loaded 96 65 64 run say CHUNK_RELOADED",
+      "expect": "CHUNK_RELOADED",
+      "pollReadiness": true
+    },
+    {
+      "command": "execute if loaded 112 65 -64 run say CHUNK_RELOADED",
+      "expect": "CHUNK_RELOADED",
+      "pollReadiness": true
+    },
+    {
+      "command": "execute if loaded 112 65 -48 run say CHUNK_RELOADED",
+      "expect": "CHUNK_RELOADED",
+      "pollReadiness": true
+    },
+    {
+      "command": "execute if loaded 112 65 -32 run say CHUNK_RELOADED",
+      "expect": "CHUNK_RELOADED",
+      "pollReadiness": true
+    },
+    {
+      "command": "execute if loaded 112 65 -16 run say CHUNK_RELOADED",
+      "expect": "CHUNK_RELOADED",
+      "pollReadiness": true
+    },
+    {
+      "command": "execute if loaded 112 65 0 run say CHUNK_RELOADED",
+      "expect": "CHUNK_RELOADED",
+      "pollReadiness": true
+    },
+    {
+      "command": "execute if loaded 112 65 16 run say CHUNK_RELOADED",
+      "expect": "CHUNK_RELOADED",
+      "pollReadiness": true
+    },
+    {
+      "command": "execute if loaded 112 65 32 run say CHUNK_RELOADED",
+      "expect": "CHUNK_RELOADED",
+      "pollReadiness": true
+    },
+    {
+      "command": "execute if loaded 112 65 48 run say CHUNK_RELOADED",
+      "expect": "CHUNK_RELOADED",
+      "pollReadiness": true
+    },
+    {
+      "command": "execute if loaded 112 65 64 run say CHUNK_RELOADED",
+      "expect": "CHUNK_RELOADED",
+      "pollReadiness": true
+    },
+    {
+      "command": "execute if loaded 128 65 -64 run say CHUNK_RELOADED",
+      "expect": "CHUNK_RELOADED",
+      "pollReadiness": true
+    },
+    {
+      "command": "execute if loaded 128 65 -48 run say CHUNK_RELOADED",
+      "expect": "CHUNK_RELOADED",
+      "pollReadiness": true
+    },
+    {
+      "command": "execute if loaded 128 65 -32 run say CHUNK_RELOADED",
+      "expect": "CHUNK_RELOADED",
+      "pollReadiness": true
+    },
+    {
+      "command": "execute if loaded 128 65 -16 run say CHUNK_RELOADED",
+      "expect": "CHUNK_RELOADED",
+      "pollReadiness": true
+    },
+    {
+      "command": "execute if loaded 128 65 0 run say CHUNK_RELOADED",
+      "expect": "CHUNK_RELOADED",
+      "pollReadiness": true
+    },
+    {
+      "command": "execute if loaded 128 65 16 run say CHUNK_RELOADED",
+      "expect": "CHUNK_RELOADED",
+      "pollReadiness": true
+    },
+    {
+      "command": "execute if loaded 128 65 32 run say CHUNK_RELOADED",
+      "expect": "CHUNK_RELOADED",
+      "pollReadiness": true
+    },
+    {
+      "command": "execute if loaded 128 65 48 run say CHUNK_RELOADED",
+      "expect": "CHUNK_RELOADED",
+      "pollReadiness": true
+    },
+    {
+      "command": "execute if loaded 128 65 64 run say CHUNK_RELOADED",
+      "expect": "CHUNK_RELOADED",
+      "pollReadiness": true
+    },
+    {
+      "command": "execute if loaded 144 65 -64 run say CHUNK_RELOADED",
+      "expect": "CHUNK_RELOADED",
+      "pollReadiness": true
+    },
+    {
+      "command": "execute if loaded 144 65 -48 run say CHUNK_RELOADED",
+      "expect": "CHUNK_RELOADED",
+      "pollReadiness": true
+    },
+    {
+      "command": "execute if loaded 144 65 -32 run say CHUNK_RELOADED",
+      "expect": "CHUNK_RELOADED",
+      "pollReadiness": true
+    },
+    {
+      "command": "execute if loaded 144 65 -16 run say CHUNK_RELOADED",
+      "expect": "CHUNK_RELOADED",
+      "pollReadiness": true
+    },
+    {
+      "command": "execute if loaded 144 65 0 run say CHUNK_RELOADED",
+      "expect": "CHUNK_RELOADED",
+      "pollReadiness": true
+    },
+    {
+      "command": "execute if loaded 144 65 16 run say CHUNK_RELOADED",
+      "expect": "CHUNK_RELOADED",
+      "pollReadiness": true
+    },
+    {
+      "command": "execute if loaded 144 65 32 run say CHUNK_RELOADED",
+      "expect": "CHUNK_RELOADED",
+      "pollReadiness": true
+    },
+    {
+      "command": "execute if loaded 144 65 48 run say CHUNK_RELOADED",
+      "expect": "CHUNK_RELOADED",
+      "pollReadiness": true
+    },
+    {
+      "command": "execute if loaded 144 65 64 run say CHUNK_RELOADED",
+      "expect": "CHUNK_RELOADED",
+      "pollReadiness": true
+    },
+    {
+      "command": "execute if loaded 160 65 -64 run say CHUNK_RELOADED",
+      "expect": "CHUNK_RELOADED",
+      "pollReadiness": true
+    },
+    {
+      "command": "execute if loaded 160 65 -48 run say CHUNK_RELOADED",
+      "expect": "CHUNK_RELOADED",
+      "pollReadiness": true
+    },
+    {
+      "command": "execute if loaded 160 65 -32 run say CHUNK_RELOADED",
+      "expect": "CHUNK_RELOADED",
+      "pollReadiness": true
+    },
+    {
+      "command": "execute if loaded 160 65 -16 run say CHUNK_RELOADED",
+      "expect": "CHUNK_RELOADED",
+      "pollReadiness": true
+    },
+    {
+      "command": "execute if loaded 160 65 0 run say CHUNK_RELOADED",
+      "expect": "CHUNK_RELOADED",
+      "pollReadiness": true
+    },
+    {
+      "command": "execute if loaded 160 65 16 run say CHUNK_RELOADED",
+      "expect": "CHUNK_RELOADED",
+      "pollReadiness": true
+    },
+    {
+      "command": "execute if loaded 160 65 32 run say CHUNK_RELOADED",
+      "expect": "CHUNK_RELOADED",
+      "pollReadiness": true
+    },
+    {
+      "command": "execute if loaded 160 65 48 run say CHUNK_RELOADED",
+      "expect": "CHUNK_RELOADED",
+      "pollReadiness": true
+    },
+    {
+      "command": "execute if loaded 160 65 64 run say CHUNK_RELOADED",
+      "expect": "CHUNK_RELOADED",
+      "pollReadiness": true
+    },
+    {
+      "command": "execute if loaded 176 65 -64 run say CHUNK_RELOADED",
+      "expect": "CHUNK_RELOADED",
+      "pollReadiness": true
+    },
+    {
+      "command": "execute if loaded 176 65 -48 run say CHUNK_RELOADED",
+      "expect": "CHUNK_RELOADED",
+      "pollReadiness": true
+    },
+    {
+      "command": "execute if loaded 176 65 -32 run say CHUNK_RELOADED",
+      "expect": "CHUNK_RELOADED",
+      "pollReadiness": true
+    },
+    {
+      "command": "execute if loaded 176 65 -16 run say CHUNK_RELOADED",
+      "expect": "CHUNK_RELOADED",
+      "pollReadiness": true
+    },
+    {
+      "command": "execute if loaded 176 65 0 run say CHUNK_RELOADED",
+      "expect": "CHUNK_RELOADED",
+      "pollReadiness": true
+    },
+    {
+      "command": "execute if loaded 176 65 16 run say CHUNK_RELOADED",
+      "expect": "CHUNK_RELOADED",
+      "pollReadiness": true
+    },
+    {
+      "command": "execute if loaded 176 65 32 run say CHUNK_RELOADED",
+      "expect": "CHUNK_RELOADED",
+      "pollReadiness": true
+    },
+    {
+      "command": "execute if loaded 176 65 48 run say CHUNK_RELOADED",
+      "expect": "CHUNK_RELOADED",
+      "pollReadiness": true
+    },
+    {
+      "command": "execute if loaded 176 65 64 run say CHUNK_RELOADED",
+      "expect": "CHUNK_RELOADED",
+      "pollReadiness": true
+    },
+    {
+      "command": "execute if loaded 192 65 -64 run say CHUNK_RELOADED",
+      "expect": "CHUNK_RELOADED",
+      "pollReadiness": true
+    },
+    {
+      "command": "execute if loaded 192 65 -48 run say CHUNK_RELOADED",
+      "expect": "CHUNK_RELOADED",
+      "pollReadiness": true
+    },
+    {
+      "command": "execute if loaded 192 65 -32 run say CHUNK_RELOADED",
+      "expect": "CHUNK_RELOADED",
+      "pollReadiness": true
+    },
+    {
+      "command": "execute if loaded 192 65 -16 run say CHUNK_RELOADED",
+      "expect": "CHUNK_RELOADED",
+      "pollReadiness": true
+    },
+    {
+      "command": "execute if loaded 192 65 0 run say CHUNK_RELOADED",
+      "expect": "CHUNK_RELOADED",
+      "pollReadiness": true
+    },
+    {
+      "command": "execute if loaded 192 65 16 run say CHUNK_RELOADED",
+      "expect": "CHUNK_RELOADED",
+      "pollReadiness": true
+    },
+    {
+      "command": "execute if loaded 192 65 32 run say CHUNK_RELOADED",
+      "expect": "CHUNK_RELOADED",
+      "pollReadiness": true
+    },
+    {
+      "command": "execute if loaded 192 65 48 run say CHUNK_RELOADED",
+      "expect": "CHUNK_RELOADED",
+      "pollReadiness": true
+    },
+    {
+      "command": "execute if loaded 192 65 64 run say CHUNK_RELOADED",
+      "expect": "CHUNK_RELOADED",
+      "pollReadiness": true
+    },
+    {
+      "command": "execute if loaded 208 65 -64 run say CHUNK_RELOADED",
+      "expect": "CHUNK_RELOADED",
+      "pollReadiness": true
+    },
+    {
+      "command": "execute if loaded 208 65 -48 run say CHUNK_RELOADED",
+      "expect": "CHUNK_RELOADED",
+      "pollReadiness": true
+    },
+    {
+      "command": "execute if loaded 208 65 -32 run say CHUNK_RELOADED",
+      "expect": "CHUNK_RELOADED",
+      "pollReadiness": true
+    },
+    {
+      "command": "execute if loaded 208 65 -16 run say CHUNK_RELOADED",
+      "expect": "CHUNK_RELOADED",
+      "pollReadiness": true
+    },
+    {
+      "command": "execute if loaded 208 65 0 run say CHUNK_RELOADED",
+      "expect": "CHUNK_RELOADED",
+      "pollReadiness": true
+    },
+    {
+      "command": "execute if loaded 208 65 16 run say CHUNK_RELOADED",
+      "expect": "CHUNK_RELOADED",
+      "pollReadiness": true
+    },
+    {
+      "command": "execute if loaded 208 65 32 run say CHUNK_RELOADED",
+      "expect": "CHUNK_RELOADED",
+      "pollReadiness": true
+    },
+    {
+      "command": "execute if loaded 208 65 48 run say CHUNK_RELOADED",
+      "expect": "CHUNK_RELOADED",
+      "pollReadiness": true
+    },
+    {
+      "command": "execute if loaded 208 65 64 run say CHUNK_RELOADED",
+      "expect": "CHUNK_RELOADED",
+      "pollReadiness": true
+    },
+    {
+      "command": "execute if loaded 224 65 -64 run say CHUNK_RELOADED",
+      "expect": "CHUNK_RELOADED",
+      "pollReadiness": true
+    },
+    {
+      "command": "execute if loaded 224 65 -48 run say CHUNK_RELOADED",
+      "expect": "CHUNK_RELOADED",
+      "pollReadiness": true
+    },
+    {
+      "command": "execute if loaded 224 65 -32 run say CHUNK_RELOADED",
+      "expect": "CHUNK_RELOADED",
+      "pollReadiness": true
+    },
+    {
+      "command": "execute if loaded 224 65 -16 run say CHUNK_RELOADED",
+      "expect": "CHUNK_RELOADED",
+      "pollReadiness": true
+    },
+    {
+      "command": "execute if loaded 224 65 0 run say CHUNK_RELOADED",
+      "expect": "CHUNK_RELOADED",
+      "pollReadiness": true
+    },
+    {
+      "command": "execute if loaded 224 65 16 run say CHUNK_RELOADED",
+      "expect": "CHUNK_RELOADED",
+      "pollReadiness": true
+    },
+    {
+      "command": "execute if loaded 224 65 32 run say CHUNK_RELOADED",
+      "expect": "CHUNK_RELOADED",
+      "pollReadiness": true
+    },
+    {
+      "command": "execute if loaded 224 65 48 run say CHUNK_RELOADED",
+      "expect": "CHUNK_RELOADED",
+      "pollReadiness": true
+    },
+    {
+      "command": "execute if loaded 224 65 64 run say CHUNK_RELOADED",
+      "expect": "CHUNK_RELOADED",
+      "pollReadiness": true
+    }
+  ],
+  "positions": [
+    {
+      "x": 88,
+      "y": 65,
+      "z": 8
+    }
+  ],
+  "properties": {
+    "level-type": "minecraft:normal"
+  },
+  "jvm": [
+    "-Dphoenium.test.chunkBindingTrace=true",
+    "-Dphoenium.c2me.nativeSettlementWitness=true"
+  ],
+  "pinnedMods": [
+    {
+      "path": "build\\stage6-audit-20260909\\research\\artifacts\\chunky\\Chunky-Fabric-1.5.3.jar",
+      "sha256": "ECDFC55A0F67F3EC6F40850687615C941AE226BD88F4E06188A7B268FD3DA942"
+    },
+    {
+      "path": "build\\stage6-audit-20260909\\research\\artifacts\\lithium\\lithium-fabric-0.25.3+mc26.2.jar",
+      "sha256": "FDDE92E238E8075F89AD7F701F2A3D5854AF88BA9A67657184A4407B104AC563"
+    },
+    {
+      "path": "build\\stage6-audit-20260909\\research\\artifacts\\servercore\\servercore-fabric-1.5.19+26.2.jar",
+      "sha256": "4F7C9FB3B35B364D8F6500D04F0D5481656F617A83BC69742B47F39ADFF59666"
+    },
+    {
+      "path": "build\\stage6-audit-20260909\\research\\artifacts\\clumps\\Clumps-fabric-26.2-26.2.1.jar",
+      "sha256": "DC9544190ABFB65A3C9DDC5DAD1523C9DFC5A732344F528D908B950894398E8C"
+    }
+  ],
+  "configs": {
+    "config/servercore/config.yml": "dynamic:\n  enabled: false\nactivation-range:\n  enabled: false\nbreeding-cap:\n  enabled: false\nfeatures:\n  prevent-enderpearl-chunkloading: false\n  chunk-tick-distance-affects-random-ticks: false\n  prevent-moving-into-unloaded-chunks: false\n  lobotomize-villagers:\n    enabled: false\n",
+    "config/servercore/optimizations.yml": "reduce-sync-loads: false\ncache-ticking-chunks: false\noptimize-command-blocks: false\nfast-biome-lookups: false\ncancel-duplicate-fluid-ticks: false\n"
+  },
+  "requiredFullChunks": [
+    {
+      "x": 6,
+      "z": -4
+    },
+    {
+      "x": 6,
+      "z": -3
+    },
+    {
+      "x": 6,
+      "z": -2
+    },
+    {
+      "x": 6,
+      "z": -1
+    },
+    {
+      "x": 6,
+      "z": 0
+    },
+    {
+      "x": 6,
+      "z": 1
+    },
+    {
+      "x": 6,
+      "z": 2
+    },
+    {
+      "x": 6,
+      "z": 3
+    },
+    {
+      "x": 6,
+      "z": 4
+    },
+    {
+      "x": 7,
+      "z": -4
+    },
+    {
+      "x": 7,
+      "z": -3
+    },
+    {
+      "x": 7,
+      "z": -2
+    },
+    {
+      "x": 7,
+      "z": -1
+    },
+    {
+      "x": 7,
+      "z": 0
+    },
+    {
+      "x": 7,
+      "z": 1
+    },
+    {
+      "x": 7,
+      "z": 2
+    },
+    {
+      "x": 7,
+      "z": 3
+    },
+    {
+      "x": 7,
+      "z": 4
+    },
+    {
+      "x": 8,
+      "z": -4
+    },
+    {
+      "x": 8,
+      "z": -3
+    },
+    {
+      "x": 8,
+      "z": -2
+    },
+    {
+      "x": 8,
+      "z": -1
+    },
+    {
+      "x": 8,
+      "z": 0
+    },
+    {
+      "x": 8,
+      "z": 1
+    },
+    {
+      "x": 8,
+      "z": 2
+    },
+    {
+      "x": 8,
+      "z": 3
+    },
+    {
+      "x": 8,
+      "z": 4
+    },
+    {
+      "x": 9,
+      "z": -4
+    },
+    {
+      "x": 9,
+      "z": -3
+    },
+    {
+      "x": 9,
+      "z": -2
+    },
+    {
+      "x": 9,
+      "z": -1
+    },
+    {
+      "x": 9,
+      "z": 0
+    },
+    {
+      "x": 9,
+      "z": 1
+    },
+    {
+      "x": 9,
+      "z": 2
+    },
+    {
+      "x": 9,
+      "z": 3
+    },
+    {
+      "x": 9,
+      "z": 4
+    },
+    {
+      "x": 10,
+      "z": -4
+    },
+    {
+      "x": 10,
+      "z": -3
+    },
+    {
+      "x": 10,
+      "z": -2
+    },
+    {
+      "x": 10,
+      "z": -1
+    },
+    {
+      "x": 10,
+      "z": 0
+    },
+    {
+      "x": 10,
+      "z": 1
+    },
+    {
+      "x": 10,
+      "z": 2
+    },
+    {
+      "x": 10,
+      "z": 3
+    },
+    {
+      "x": 10,
+      "z": 4
+    },
+    {
+      "x": 11,
+      "z": -4
+    },
+    {
+      "x": 11,
+      "z": -3
+    },
+    {
+      "x": 11,
+      "z": -2
+    },
+    {
+      "x": 11,
+      "z": -1
+    },
+    {
+      "x": 11,
+      "z": 0
+    },
+    {
+      "x": 11,
+      "z": 1
+    },
+    {
+      "x": 11,
+      "z": 2
+    },
+    {
+      "x": 11,
+      "z": 3
+    },
+    {
+      "x": 11,
+      "z": 4
+    },
+    {
+      "x": 12,
+      "z": -4
+    },
+    {
+      "x": 12,
+      "z": -3
+    },
+    {
+      "x": 12,
+      "z": -2
+    },
+    {
+      "x": 12,
+      "z": -1
+    },
+    {
+      "x": 12,
+      "z": 0
+    },
+    {
+      "x": 12,
+      "z": 1
+    },
+    {
+      "x": 12,
+      "z": 2
+    },
+    {
+      "x": 12,
+      "z": 3
+    },
+    {
+      "x": 12,
+      "z": 4
+    },
+    {
+      "x": 13,
+      "z": -4
+    },
+    {
+      "x": 13,
+      "z": -3
+    },
+    {
+      "x": 13,
+      "z": -2
+    },
+    {
+      "x": 13,
+      "z": -1
+    },
+    {
+      "x": 13,
+      "z": 0
+    },
+    {
+      "x": 13,
+      "z": 1
+    },
+    {
+      "x": 13,
+      "z": 2
+    },
+    {
+      "x": 13,
+      "z": 3
+    },
+    {
+      "x": 13,
+      "z": 4
+    },
+    {
+      "x": 14,
+      "z": -4
+    },
+    {
+      "x": 14,
+      "z": -3
+    },
+    {
+      "x": 14,
+      "z": -2
+    },
+    {
+      "x": 14,
+      "z": -1
+    },
+    {
+      "x": 14,
+      "z": 0
+    },
+    {
+      "x": 14,
+      "z": 1
+    },
+    {
+      "x": 14,
+      "z": 2
+    },
+    {
+      "x": 14,
+      "z": 3
+    },
+    {
+      "x": 14,
+      "z": 4
+    }
+  ]
+}

@@ -1,0 +1,56 @@
+{
+  "description": "Stage 7 C2ME exact locked C2ME + ScalableLux/Starlight persisted lifecycle W1 candidate probe.",
+  "first": [
+    {
+      "command": "forceload add 0 0 175 15",
+      "expect": "Marked",
+      "settleSeconds": 3
+    },
+    {
+      "command": "setblock 80 65 8 minecraft:emerald_block",
+      "expect": "Changed the block",
+      "settleSeconds": 1
+    },
+    {
+      "command": "execute if block 80 65 8 minecraft:emerald_block run say STAGE7_C2ME_EXACT_W1_FIRST_STATE",
+      "expect": "STAGE7_C2ME_EXACT_W1_FIRST_STATE",
+      "settleSeconds": 2
+    },
+    {
+      "command": "time query gametime",
+      "expect": "The game time is",
+      "settleSeconds": 2
+    }
+  ],
+  "restart": [
+    {
+      "command": "time query gametime",
+      "expect": "The game time is",
+      "settleSeconds": 4
+    },
+    {
+      "command": "execute if block 80 65 8 minecraft:emerald_block run say STAGE7_C2ME_EXACT_W1_RESTART_PERSISTED",
+      "expect": "STAGE7_C2ME_EXACT_W1_RESTART_PERSISTED",
+      "settleSeconds": 2
+    },
+    {
+      "command": "execute if loaded 80 65 8 run say STAGE7_C2ME_EXACT_W1_RESTART_LOADED",
+      "expect": "STAGE7_C2ME_EXACT_W1_RESTART_LOADED"
+    }
+  ],
+  "positions": [
+    {
+      "x": 80,
+      "y": 65,
+      "z": 8
+    }
+  ],
+  "properties": {
+    "level-type": "minecraft:normal"
+  },
+  "jvm": [
+    "-Dmixin.debug.export=true",
+    "-Dmixin.dumpTargetOnFailure=true",
+    "-Dphoenium.c2me.observations=C:\\Users\\Admin\\Downloads\\Project PHOENIUM\\Phoenium\\run\\stage8\\entry-20260913\\c2me-exact-lifetime-w1-observations.json"
+  ]
+}

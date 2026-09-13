@@ -95,6 +95,13 @@ public final class ChunkBindingRuntime {
     private final IdentityHashMap<net.minecraft.world.level.chunk.ProtoChunk, C2meAsyncReadGraph> c2meReadResults =
             new IdentityHashMap<>();
     private final Set<C2meAsyncReadGraph> c2meReadGraphs = java.util.Collections.newSetFromMap(new IdentityHashMap<>());
+    private record DiskAction(C2meReadAccess.Observation observation, C2meDiskReadOperation operation) { }
+    private final IdentityHashMap<Object, DiskAction> c2meDiskActions = new IdentityHashMap<>();
+    private final Set<C2meSendReadyInputs> c2meSendInputs = java.util.Collections.newSetFromMap(new IdentityHashMap<>());
+    private long c2meSendPrepared, c2meSendInputsClosed;
+    private final java.util.concurrent.atomic.LongAdder[] c2meDiskTerminals = java.util.stream.IntStream
+            .range(0, C2meDiskReadOperation.Terminal.values().length)
+            .mapToObj(i -> new java.util.concurrent.atomic.LongAdder()).toArray(java.util.concurrent.atomic.LongAdder[]::new);
     private final Map<WorldId, WorldBinding> worlds = new ConcurrentHashMap<>();
     private final ConcurrentLinkedDeque<Delivery> deliveries = new ConcurrentLinkedDeque<>();
     private volatile boolean open = true;
@@ -265,7 +272,7 @@ public final class ChunkBindingRuntime {
             Supplier<net.minecraft.world.level.chunk.ProtoChunk> original) {
         Objects.requireNonNull(context); Objects.requireNonNull(data); Objects.requireNonNull(level);
         Objects.requireNonNull(position); Objects.requireNonNull(original);
-        if (!open) throw new C2meProviderControlException(ChunkStageAdmission.Result.SHUTDOWN);
+        c2meReadCheckpoint(context);
         if (!position.equals(data.chunkPos()))
             throw breach(new ChunkProtocolException("C2ME async DISK parsed chunk position changed"));
         if (!ScalableLuxLightBridge.ownsPersistedReload(level.getLightEngine()))
@@ -331,9 +338,10 @@ public final class ChunkBindingRuntime {
         }
 
         try (PrivateC2meReadInvocation ignored = new PrivateC2meReadInvocation(observation, services,
-                lifecycle, work, position, data, batch, level)) {
+                lifecycle, work, position, data, batch, level).operation(c2meReadOperation(context))) {
             net.minecraft.world.level.chunk.ProtoChunk result = Objects.requireNonNull(original.get(),
                     "C2ME async SerializableChunkData.read returned null");
+            c2meReadCheckpoint(context);
             graph.readReturned(result);
             return result;
         } catch (RuntimeException | Error failure) {
@@ -353,7 +361,7 @@ public final class ChunkBindingRuntime {
         Objects.requireNonNull(context); Objects.requireNonNull(data); Objects.requireNonNull(level);
         Objects.requireNonNull(position); Objects.requireNonNull(original);
         retirePriorC2meAsyncContext(context);
-        if (!open) throw new C2meProviderControlException(ChunkStageAdmission.Result.SHUTDOWN);
+        c2meReadCheckpoint(context);
         if (!position.equals(data.chunkPos()))
             throw breach(new ChunkProtocolException("C2ME DISK parsed chunk position changed"));
 
@@ -418,7 +426,12 @@ public final class ChunkBindingRuntime {
                     claim.require(stage);
                     try (SynchronousChunkInvocation ignored = new SynchronousChunkInvocation(claim, services,
                             position, parsed, batch, level.dimensionType().hasSkyLight())) {
-                        return original.get();
+                        c2meReadCommit(context);
+                        try { return original.get(); }
+                        catch (Throwable failure) {
+                            c2meReadOperation(context).nonReplayableFailure(failure);
+                            throw failure;
+                        }
                     }
                 });
         pending.requireReloadLight(services.light(), batch);
@@ -479,30 +492,80 @@ public final class ChunkBindingRuntime {
                 pair -> c2meAsyncFinalPair(context, providerMapper, pair));
     }
 
-    /** The returned Completable encloses C2ME retry/fallback, so this callback represents an
-     * actual provider cancellation rather than an intermediate retry subscription ending. */
-    public Object c2meAsyncOuterLifecycle(Object context, Object completable) {
-        Objects.requireNonNull(context); Objects.requireNonNull(completable);
-        return C2meReadAccess.onOuterDispose(completable, () -> c2meAsyncDisposed(context));
+    /** Captured once per native action, before constructing its retry graph. */
+    public void c2meReadAction(Object context, Object token) {
+        C2meReadAccess.requireSettlingProvider();
+        var action = new DiskAction(C2meReadAccess.capture(context), new C2meDiskReadOperation(token));
+        c2meGate.lock();
+        try {
+            if (c2meDiskActions.putIfAbsent(context, action) != null)
+                throw new ChunkProtocolException("C2ME context reused across provider actions");
+        } finally { c2meGate.unlock(); }
     }
 
-    void c2meAsyncDisposed(Object context) {
-        final C2meAsyncReadGraph graph;
+    private int c2meDiskActionCount() {
         c2meGate.lock();
-        try { graph = c2meReadContexts.get(context); }
+        try { return c2meDiskActions.size(); }
         finally { c2meGate.unlock(); }
-        if (graph != null) graph.control(ChunkStageAdmission.Result.CANCELLED);
+    }
+
+    public C2meDiskReadOperation c2meReadOperation(Object context) {
+        c2meGate.lock();
+        try {
+            DiskAction action = c2meDiskActions.get(context);
+            if (action == null) throw new ChunkProtocolException("missing or retired C2ME disk action");
+            return action.operation();
+        } finally { c2meGate.unlock(); }
+    }
+
+    public void c2meReadCheckpoint(Object context) {
+        final DiskAction action;
+        c2meGate.lock();
+        try { action = c2meDiskActions.get(context); }
+        finally { c2meGate.unlock(); }
+        if (action == null) throw new ChunkProtocolException("late completion of retired C2ME disk action");
+        if (!open) action.operation().retire(C2meDiskReadOperation.Terminal.SHUTDOWN);
+        action.operation().check();
+        if (!action.observation().stillCurrent())
+            action.operation().retire(C2meDiskReadOperation.Terminal.SUPERSEDED);
+        action.operation().check();
+    }
+
+    public void c2meReadCommit(Object context) {
+        c2meReadCheckpoint(context);
+        c2meReadOperation(context).beginCommit();
+    }
+
+    /** Never dispose a cached provider chain: its terminal must release the native busy reference. */
+    public Object c2meAsyncOuterLifecycle(Object context, Object completable) {
+        final C2meDiskReadOperation operation = c2meReadOperation(context);
+        return C2meDiskReadRx.onTerminal(completable, failure -> {
+            try {
+                retirePriorC2meAsyncContext(context);
+                var terminal = operation.settle(failure);
+                c2meDiskTerminals[terminal.ordinal()].increment();
+                if (Boolean.getBoolean("phoenium.test.chunkBindingTrace") && terminal != C2meDiskReadOperation.Terminal.APPLIED)
+                    logger.info("PHOENIUM_C2ME_DISK_TERMINAL context={} token={} outcome={} providerError={}",
+                            System.identityHashCode(context), operation.tokenIdentity(), terminal,
+                            failure == null ? "NONE" : failure.getClass().getName());
+            } finally {
+                c2meGate.lock();
+                try { c2meDiskActions.remove(context); }
+                finally { c2meGate.unlock(); }
+            }
+        });
     }
 
     private java.util.concurrent.CompletionStage<net.minecraft.world.level.chunk.ProtoChunk> c2meAsyncFinalPair(
             Object context, Object providerMapper, Object pair) {
+        c2meReadCheckpoint(context);
         C2meReadAccess.ProviderPair carrier = C2meReadAccess.inspectProviderPair(pair);
         final C2meAsyncReadGraph graph;
         c2meGate.lock();
         try { graph = c2meReadResults.get(carrier.chunk()); }
         finally { c2meGate.unlock(); }
         if (graph == null)
-            return c2meAsyncUnboundFinalPair(carrier, providerMapper);
+            return c2meAsyncUnboundFinalPair(context, carrier, providerMapper);
         if (graph.observation.context() != context || graph.result != carrier.chunk())
             return CompletableFuture.failedFuture(new ChunkProtocolException("C2ME async final pair changed exact lineage"));
         return graph.routeFinal(carrier, providerMapper);
@@ -517,9 +580,10 @@ public final class ChunkBindingRuntime {
      * lost, not permission to run provider mutation without an admission.
      */
     private java.util.concurrent.CompletionStage<net.minecraft.world.level.chunk.ProtoChunk> c2meAsyncUnboundFinalPair(
-            C2meReadAccess.ProviderPair carrier, Object providerMapper) {
+            Object context, C2meReadAccess.ProviderPair carrier, Object providerMapper) {
         try {
             C2meReadAccess.requireEmptyProviderQueue(carrier);
+            c2meReadCommit(context);
             if (OwnershipContext.current().isPresent())
                 throw new ChunkProtocolException("C2ME empty final pair resumed under regional ownership");
             Object mapped = C2meReadAccess.invokeProviderMapper(providerMapper, carrier.pair());
@@ -566,9 +630,62 @@ public final class ChunkBindingRuntime {
     }
 
     /** Rebinds the exact notickvd fromRunnable node while retaining its exact subscribeOn scheduler instance. */
-    public Object c2meSendReadyGraph(Object context, Object providerGraph) {
+    public Object c2meSendReadyGraph(Object context, Object token, Object providerGraph) {
         Objects.requireNonNull(context, "context"); Objects.requireNonNull(providerGraph, "providerGraph");
-        return C2meFullAccess.rebindSendReadyGraph(providerGraph, original -> c2meSendReadyRunnable(context, original));
+        C2meFullAccess.Observation observation = C2meFullAccess.capture(context, C2meFullAccess.Kind.SEND);
+        return C2meFullAccess.rebindSendReadyGraph(providerGraph, (original, scheduler) ->
+                C2meSendReadyRx.defer(providerGraph, scheduler, () -> prepareC2meSend(observation, token, original)));
+    }
+
+    private C2meSendReadyRx.Prepared prepareC2meSend(C2meFullAccess.Observation observation, Object token, Runnable original) {
+        if (!open) throw C2meSendReadyInputs.control(token, new C2meProviderControlException(ChunkStageAdmission.Result.SHUTDOWN));
+        if (!observation.stillCurrent()) throw C2meSendReadyInputs.control(token, new C2meProviderControlException(ChunkStageAdmission.Result.SUPERSEDED));
+        if (!net.fabricmc.loader.api.FabricLoader.getInstance().isModLoaded("lithium"))
+            return new C2meSendReadyRx.Prepared(CompletableFuture.completedFuture(null), () -> {
+                try { runC2meSendReady(observation, () -> { C2meSendReadyInputs.commitToken(token); original.run(); }); }
+                catch (C2meProviderControlException control) { throw C2meSendReadyInputs.control(token, control); }
+            }, () -> { });
+        var inputWorld = authority.requireChunkWorld(((ChunkMapLoadAccess) (Object) observation.map()).phoenium$level()).world();
+        C2meSendReadyInputs inputs = new C2meSendReadyInputs(observation, token, original);
+        boolean registered;
+        c2meGate.lock();
+        try {
+            registered = open;
+            if (registered) { c2meSendInputs.add(inputs); c2meSendPrepared++; }
+        } finally { c2meGate.unlock(); }
+        if (!registered) { inputs.shutdown(); inputs.check(); }
+        var keys = inputs.footprint().stream().map(pos -> new RoutingKey(inputWorld, pos.x(), pos.z()))
+                .collect(java.util.stream.Collectors.toUnmodifiableSet());
+        if (Boolean.getBoolean("phoenium.test.chunkBindingTrace")) logger.info(
+                "PHOENIUM_C2ME_SEND_PREFLIGHT context={} footprint={} pins={} awaited={}",
+                System.identityHashCode(observation.context()), keys.size(), inputs.pinCount(), inputs.awaited());
+        return new C2meSendReadyRx.Prepared(inputs.ready(), () -> {
+            if (!open) inputs.retire("C2ME SEND_READY shutdown");
+            if (!observation.stillCurrent()) inputs.retire("C2ME SEND_READY superseded");
+            authority.regionalDispatcher().ensureClosure(keys);
+            try {
+                runC2meSendReady(observation, () -> {
+                    authority.regionalDispatcher().requireCurrentClosure(keys);
+                    inputs.commit();
+                    original.run();
+                });
+            } catch (C2meProviderControlException control) { throw C2meSendReadyInputs.control(token, control); }
+        }, () -> {
+            try { inputs.close(); }
+            finally {
+                c2meGate.lock();
+                try { if (c2meSendInputs.remove(inputs)) c2meSendInputsClosed++; }
+                finally { c2meGate.unlock(); }
+            }
+        });
+    }
+
+    private String c2meSendInputDiagnostics() {
+        c2meGate.lock();
+        try { return " c2meSendPrepared=" + c2meSendPrepared + " c2meSendInputsClosed=" + c2meSendInputsClosed
+                + " c2meSendInputsRetained=" + c2meSendInputs.size()
+                + " c2meSendPins=" + c2meSendInputs.stream().mapToInt(C2meSendReadyInputs::pinCount).sum(); }
+        finally { c2meGate.unlock(); }
     }
 
     private void runC2meFull(C2meFullAccess.Observation observation, Runnable original) {
@@ -752,7 +869,14 @@ public final class ChunkBindingRuntime {
     public void shutdown() {
         if (!open) return;
         open = false;
+        final List<DiskAction> diskActions;
+        final List<C2meSendReadyInputs> sendInputs;
+        c2meGate.lock();
+        try { diskActions = List.copyOf(c2meDiskActions.values()); sendInputs = List.copyOf(c2meSendInputs); }
+        finally { c2meGate.unlock(); }
+        for (DiskAction action : diskActions) action.operation().retire(C2meDiskReadOperation.Terminal.SHUTDOWN);
         var failures = new FullInputNotifications.Failures();
+        for (C2meSendReadyInputs inputs : sendInputs) failures.run(inputs::shutdown);
         for (var world : java.util.List.copyOf(worlds.values())) failures.run(world.pump::shutdown);
         List<ChunkLoadGraph> graphs = graphs();
         for (var graph : graphs) failures.run(graph::shutdown);
@@ -793,10 +917,16 @@ public final class ChunkBindingRuntime {
                 + " c2meApplications=" + c2meApplications + " c2meControls=" + c2meControls
                 + " c2meProducerFailures=" + c2meProducerFailures + " c2meFullRegistrations=" + c2meFullRegistrations
                 + " c2meFullApplications=" + c2meFullApplications + " c2meFullPublications=" + c2meFullPublications
-                + " c2meSendApplications=" + c2meSendApplications + " c2meReadRegistrations=" + c2meReadRegistrations
+                + " c2meSendApplications=" + c2meSendApplications + c2meSendInputDiagnostics() + " c2meReadRegistrations=" + c2meReadRegistrations
                 + " c2meReadApplications=" + c2meReadApplications + " c2meReadProviderFailures=" + c2meReadProviderFailures
                 + " c2meRetained=" + c2meRetainedGraphs()
                 + " synchronousInvocations=" + SynchronousChunkInvocation.retainedEntries()
+                + " c2meDiskActions=" + c2meDiskActionCount()
+                + " c2meDiskApplied=" + c2meDiskTerminals[0].sum()
+                + " c2meDiskCancelled=" + c2meDiskTerminals[1].sum()
+                + " c2meDiskSuperseded=" + c2meDiskTerminals[2].sum()
+                + " c2meDiskShutdown=" + c2meDiskTerminals[3].sum()
+                + " c2meDiskFailed=" + c2meDiskTerminals[4].sum()
                 + " privateC2meReads=" + PrivateC2meReadInvocation.retainedEntries()
                 + " lightBatches=" + service.lightBatches() + " lightOccurrences=" + service.lightOccurrences()
                 + " lightReceipts=" + service.lightReceipts() + " poiEntries=" + service.poiEntries()
@@ -928,6 +1058,7 @@ public final class ChunkBindingRuntime {
             if (deferredTasks == 0) return finishProviderContinuation(carrier, providerMapper, null, false);
 
             AtomicReference<Throwable> controlFailure = new AtomicReference<>();
+            AtomicReference<Throwable> providerFailure = new AtomicReference<>();
             AtomicBoolean drainAttempted = new AtomicBoolean();
             CompletableFuture<net.minecraft.world.level.chunk.ProtoChunk> continued = new CompletableFuture<>();
             final RegionalServiceDispatcher.Handle handle;
@@ -940,11 +1071,20 @@ public final class ChunkBindingRuntime {
                         return;
                     }
                     requireLightReceipt();
+                    c2meReadCommit(observation.context());
                     drainAttempted.set(true);
                     // The locked provider's exact drainQueue is the authoritative body.  It owns
                     // queue order, continue-after-failure semantics, aggregation and queue clear.
                     // Crucially, the provider's Rx final mapper is NOT invoked under this lease.
-                    C2meReadAccess.invokeProviderDrain(carrier);
+                    try { C2meReadAccess.invokeProviderDrain(carrier); }
+                    catch (Throwable failure) {
+                        c2meReadOperation(observation.context()).nonReplayableFailure(failure);
+                        // A native chunk I/O failure belongs to this provider request. Keep the
+                        // regional service healthy so unrelated reads can retire normally, and
+                        // deliver the original error through Rx only after this lease releases.
+                        if (failure instanceof ChunkProtocolException) throw failure;
+                        providerFailure.set(failure);
+                    }
                 });
             } catch (Throwable failure) {
                 finish(false, failure);
@@ -954,6 +1094,7 @@ public final class ChunkBindingRuntime {
             handle.completion().whenComplete((ignored, ownerFailure) -> {
                 Throwable failure = controlFailure.get();
                 Throwable owner = unwrapCompletion(ownerFailure);
+                if (owner == null) owner = providerFailure.get();
                 if (failure == null && owner == null) {
                     ChunkStageAdmission.Result control = controlReason();
                     if (control != null) failure = new C2meProviderControlException(control);
@@ -981,7 +1122,7 @@ public final class ChunkBindingRuntime {
                 if (failure == null) failure = owner;
                 Throwable terminalFailure = finish(false, failure);
                 if (terminalFailure != null) failure = terminalFailure;
-                if (!(failure instanceof C2meProviderControlException)) c2meReadProviderFailures++;
+                if (!(failure instanceof C2meProviderControlException) && !(failure instanceof C2meDiskReadOperation.Control)) c2meReadProviderFailures++;
                 continued.completeExceptionally(failure);
             });
             return continued;
@@ -1018,15 +1159,16 @@ public final class ChunkBindingRuntime {
             if (postOwnerControl != null) {
                 Throwable control = new C2meProviderControlException(postOwnerControl);
                 if (failure == null) failure = control;
-                else if (!(failure instanceof C2meProviderControlException)) failure.addSuppressed(control);
+                else if (!(failure instanceof C2meProviderControlException) && !(failure instanceof C2meDiskReadOperation.Control)) failure.addSuppressed(control);
             }
 
             Object mapped = null;
             Throwable mapperFailure = null;
-            if (!(failure instanceof C2meProviderControlException)) {
+            if (!(failure instanceof C2meProviderControlException) && !(failure instanceof C2meDiskReadOperation.Control)) {
                 try {
                     if (OwnershipContext.current().isPresent())
                         throw new ChunkProtocolException("C2ME provider continuation resumed under regional ownership");
+                    c2meReadCommit(observation.context());
                     mapped = C2meReadAccess.invokeProviderMapper(providerMapper, carrier.pair());
                     if (OwnershipContext.current().isPresent())
                         throw new ChunkProtocolException("C2ME provider continuation retained regional ownership");
@@ -1053,11 +1195,22 @@ public final class ChunkBindingRuntime {
                 c2meReadApplications++;
                 return CompletableFuture.completedFuture(result);
             }
-            if (!(failure instanceof C2meProviderControlException)) c2meReadProviderFailures++;
+            if (!(failure instanceof C2meProviderControlException) && !(failure instanceof C2meDiskReadOperation.Control)) c2meReadProviderFailures++;
             return CompletableFuture.failedFuture(failure);
         }
 
         private ChunkStageAdmission.Result controlReason() {
+            try {
+                if (c2meReadOperation(observation.context()).terminal() != C2meDiskReadOperation.Terminal.FAILED)
+                    c2meReadCheckpoint(observation.context());
+            }
+            catch (C2meDiskReadOperation.Control control) {
+                return switch (control.terminal()) {
+                    case CANCELLED -> ChunkStageAdmission.Result.CANCELLED;
+                    case SHUTDOWN -> ChunkStageAdmission.Result.SHUTDOWN;
+                    default -> ChunkStageAdmission.Result.SUPERSEDED;
+                };
+            }
             ChunkStageAdmission.Result requested = requestedControl.get();
             if (requested != null) return requested;
             if (!open) return ChunkStageAdmission.Result.SHUTDOWN;

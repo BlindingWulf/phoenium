@@ -3,5 +3,5 @@
   "package": "dev.phoenium.c2meprobe.mixin",
   "plugin": "dev.phoenium.c2meprobe.C2meProbePlugin",
   "compatibilityLevel": "JAVA_25",
-  "mixins": ["CacheProbeMixin", "MapProbeMixin", "HolderProbeMixin", "StepProbeMixin", "DelegateProbeMixin", "AccessibleProbeMixin", "SendingProbeMixin", "ReadProbeMixin", "AsyncReadProbeMixin", "DrainProbeMixin"]
+  "mixins": ["CacheProbeMixin", "MapProbeMixin", "HolderProbeMixin", "StepProbeMixin", "DelegateProbeMixin", "AccessibleProbeMixin", "SendingProbeMixin", "ReadProbeMixin", "AsyncReadProbeMixin", "DrainProbeMixin", "SerializableReadProbeMixin", "ReadLifecycleProbeMixin", "NativeHolderLifetimeProbeMixin"]
 }

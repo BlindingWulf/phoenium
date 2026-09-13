@@ -97,18 +97,23 @@ def lifecycle(server, output, phase, command, actions, expected, flush_before_st
         process.stdin.write(value + "\n")
         process.stdin.flush()
 
+    externally_stopped = False
     try:
         report["startup"] = wait_for("Done (", 120)
         report["startupSeconds"] = time.monotonic() - start
         for action in actions:
             # A unique normal-server marker fences stale console output. The actual
             # requested receipt must follow the command; a marker is not its success.
-            marker = "STAGE6_FENCE_" + phase + "_" + str(len(report["commands"]))
-            send("say " + marker)
-            wait_for(marker)
+            if not ("await" in action and action.get("after")):
+                marker = "STAGE6_FENCE_" + phase + "_" + str(len(report["commands"]))
+                send("say " + marker)
+                wait_for(marker)
             item = dict(action=action, atSeconds=time.monotonic()-start)
             report["commands"].append(item)
-            if "await" in action:
+            if "sendOnly" in action:
+                send(action["sendOnly"])
+                item["sent"] = True
+            elif "await" in action:
                 # Observe a real asynchronous receipt even when intervening gameplay
                 # commands already consumed it from the console queue.
                 prior = next((i for i, line in enumerate(history) if action["after"] in line), None)
@@ -132,6 +137,23 @@ def lifecycle(server, output, phase, command, actions, expected, flush_before_st
                 item.update(exitCode=result.returncode, evidence=str(path))
                 if result.returncode:
                     raise RuntimeError("Diagnostic command failed: " + str(action))
+            elif action.get("expectExit"):
+                send(action["command"])
+                deadline = time.monotonic() + action.get("timeout", 90)
+                while process.poll() is None and time.monotonic() < deadline:
+                    complete.wait(0.05)
+                if process.poll() is None:
+                    raise TimeoutError("Expected external server stop did not occur: " + str(action))
+                if process.returncode != action.get("exitCode", 0):
+                    raise RuntimeError("Unexpected external stop exit code: " + str(process.returncode))
+                reader.join(timeout=2)
+                observed = list(history)
+                receipt = action.get("exitReceipt")
+                if receipt and not any(receipt in line for line in observed):
+                    raise RuntimeError("Missing external-stop receipt: " + receipt)
+                item.update(observed=observed, exitCode=process.returncode, externalStop=True)
+                externally_stopped = True
+                break
             else:
                 send(action["command"])
                 readiness = action.get("pollReadiness", False)
@@ -142,13 +164,16 @@ def lifecycle(server, output, phase, command, actions, expected, flush_before_st
                 item["elapsedSeconds"] = time.monotonic()-start-item["atSeconds"]
             if action.get("settleSeconds"):
                 complete.wait(min(action["settleSeconds"], 30))
-        if flush_before_stop:
+        if externally_stopped:
+            report["externalStopObserved"] = True
+        elif flush_before_stop:
             send("save-all flush")
             report["save"] = wait_for("Saved the game")
             report["threadDump"] = capture_thread_dump(server, process, "stage6-" + phase)
         else:
             report["stopWithOutstandingRequested"] = True
-        send("stop")
+        if not externally_stopped:
+            send("stop")
         process.wait(timeout=90)
         if process.returncode != 0:
             raise RuntimeError(f"Nonzero shutdown {process.returncode}")

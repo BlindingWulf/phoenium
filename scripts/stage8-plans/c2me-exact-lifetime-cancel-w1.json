@@ -1,0 +1,46 @@
+{
+  "description": "Stage 7 C2ME exact locked provider cancellation after native Chunky admission, W1.",
+  "properties": {
+    "level-type": "minecraft:normal"
+  },
+  "first": [
+    {
+      "command": "chunky world minecraft:overworld",
+      "expect": "World changed"
+    },
+    {
+      "command": "chunky center 160 0",
+      "expect": "Center changed"
+    },
+    {
+      "command": "chunky shape square",
+      "expect": "Shape changed"
+    },
+    {
+      "command": "chunky radius 64",
+      "expect": "Radius changed"
+    },
+    {
+      "command": "chunky start",
+      "expect": "Task started"
+    },
+    {
+      "command": "chunky cancel",
+      "expect": "If you are sure"
+    },
+    {
+      "command": "chunky confirm",
+      "expect": "Cancelling all tasks"
+    },
+    {
+      "command": "chunky progress",
+      "expect": "No tasks running"
+    }
+  ],
+  "positions": [],
+  "jvm": [
+    "-Dphoenium.test.chunkBindingTrace=true",
+    "-Dphoenium.stage7.observations=C:\\Users\\Admin\\Downloads\\Project PHOENIUM\\Phoenium\\run\\stage8\\entry-20260913\\c2me-exact-lifetime-cancel-w1\\stage7-observations.json",
+    "-Dphoenium.c2me.observations=C:\\Users\\Admin\\Downloads\\Project PHOENIUM\\Phoenium\\run\\stage8\\entry-20260913\\c2me-exact-lifetime-cancel-w1\\c2me-observations.json"
+  ]
+}

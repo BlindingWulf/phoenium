@@ -80,6 +80,29 @@ final class FullFinishingServicesTest {
         }
         FullFinishingServices.stopped(server);
     }
+
+    @Test void serverTaskIsRequeuedUntilConcurrentProviderReservationReleases() throws Exception {
+        MinecraftServer server = stub(MinecraftServer.class, List.of());
+        var service = FullFinishingServices.forServer(server);
+        var reserved = new CountDownLatch(1); var release = new CountDownLatch(1);
+        var failure = new AtomicReference<Throwable>();
+        Thread producer = Thread.ofPlatform().start(() -> {
+            try (var reservation = service.tryReserve(stage(), new Object(), List.of(), 1)) {
+                assertNotNull(reservation); reserved.countDown(); release.await();
+            } catch (Throwable problem) { failure.set(problem); reserved.countDown(); }
+        });
+        AtomicInteger queued = new AtomicInteger(), effects = new AtomicInteger();
+        try {
+            assertTrue(reserved.await(5, TimeUnit.SECONDS)); assertNull(failure.get());
+            FullFinishingServices.runServerTask(server, queued::incrementAndGet, effects::incrementAndGet);
+            assertEquals(1, queued.get()); assertEquals(0, effects.get());
+        } finally { release.countDown(); producer.join(5000); }
+        assertFalse(producer.isAlive()); assertNull(failure.get());
+        FullFinishingServices.runServerTask(server, queued::incrementAndGet, effects::incrementAndGet);
+        assertEquals(1, effects.get()); assertEquals(1, queued.get());
+        assertEquals(0L, service.measurements().get("reservations"));
+        FullFinishingServices.stopped(server);
+    }
     @Test void providerSaveEntryCreatesOneSerialTurnOnlyWhenNoTurnIsAlreadyAdmitted() throws Exception {
         MinecraftServer server = stub(MinecraftServer.class, List.of());
         var service = FullFinishingServices.forServer(server);

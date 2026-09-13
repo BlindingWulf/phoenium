@@ -1,0 +1,50 @@
+{
+  "description": "Stage 7 C2ME exact locked provider direct halt while admitted SerializableChunkData.read is held, W4.",
+  "properties": {
+    "level-type": "minecraft:normal"
+  },
+  "first": [
+    {
+      "command": "tick freeze",
+      "expect": "The game is frozen"
+    },
+    {
+      "command": "forceload add 0 0 175 15",
+      "expect": "Marked",
+      "settleSeconds": 1
+    },
+    {
+      "command": "save-all flush",
+      "expect": "Saved the game"
+    },
+    {
+      "command": "forceload remove 0 0 175 15",
+      "expect": "Unmarked"
+    },
+    {
+      "command": "save-all flush",
+      "expect": "Saved the game"
+    }
+  ],
+  "restart": [
+    {
+      "command": "c2meprobe arm",
+      "expect": "C2ME_TEST_ARMED"
+    },
+    {
+      "command": "forceload add 0 0 175 15",
+      "expectExit": true,
+      "exitReceipt": "C2ME_TEST_HALT_REQUEST",
+      "timeout": 30
+    }
+  ],
+  "positions": [],
+  "stopWithOutstanding": true,
+  "jvm": [
+    "-Dphoenium.test.chunkBindingTrace=true",
+    "-Dphoenium.c2me.delayKey=SerializableChunkData.read.return",
+    "-Dphoenium.c2me.delayMs=15000",
+    "-Dphoenium.c2me.haltAfterMs=2000",
+    "-Dphoenium.c2me.observations=C:\\Users\\Admin\\Downloads\\Project PHOENIUM\\Phoenium\\run\\stage8\\entry-20260913\\c2me-exact-lifetime-stop-restart7-w4\\c2me-observations.json"
+  ]
+}

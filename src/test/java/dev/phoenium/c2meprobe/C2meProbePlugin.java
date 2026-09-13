@@ -16,12 +16,14 @@ public final class C2meProbePlugin implements IMixinConfigPlugin {
     public void postApply(String target, ClassNode node, String mixin, IMixinInfo info) {
         for (MethodNode method : node.methods) {
             String name = method.name;
+            boolean serializableChunkRead = node.name.equals(
+                    "net/minecraft/world/level/chunk/storage/SerializableChunkData") && name.equals("read");
             if (!(name.startsWith("phoenium$prepareChunkTick") || name.startsWith("phoenium$finishChunk")
                     || name.equals("runDistanceManagerUpdates") || name.equals("promoteChunkMap")
                     || name.equals("applyStep") || name.equals("apply") || name.equals("upgradeToThis")
                     || name.equals("downgradeFromThis") || name.equals("save") || name.equals("saveAllChunks")
                     || name.equals("lambda$invokeAsyncLoad$0") || name.equals("lambda$invokeAsyncLoad$2")
-                    || name.equals("drainQueue")
+                    || name.equals("drainQueue") || serializableChunkRead
                     || name.contains("$c2me-notickvd$lambda$upgradeToThis$1$"))) continue;
             if ((method.access & (Opcodes.ACC_ABSTRACT | Opcodes.ACC_NATIVE)) != 0) continue;
             String key = node.name + "." + name + method.desc;

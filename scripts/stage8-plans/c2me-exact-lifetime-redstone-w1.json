@@ -1,0 +1,93 @@
+{
+  "description": "Stage 7 C2ME exact locked C2ME + ScalableLux/Starlight persisted-light W1 candidate probe.",
+  "first": [
+    {
+      "command": "tick freeze",
+      "expect": "The game is frozen"
+    },
+    {
+      "command": "forceload add 0 0 175 15",
+      "expect": "Marked",
+      "settleSeconds": 3
+    },
+    {
+      "command": "execute if loaded 80 65 8 run say STAGE7_C2ME_EXACT_W1_FIXTURE_LOADED",
+      "expect": "STAGE7_C2ME_EXACT_W1_FIXTURE_LOADED"
+    },
+    {
+      "command": "fill 71 64 7 89 64 9 minecraft:stone",
+      "expect": "Successfully filled"
+    },
+    {
+      "command": "fill 71 65 7 89 66 9 minecraft:air",
+      "expect": "Successfully filled|No blocks were filled",
+      "regex": true
+    },
+    {
+      "command": "setblock 88 65 8 minecraft:redstone_lamp",
+      "expect": "Changed the block"
+    },
+    {
+      "command": "fill 73 65 8 87 65 8 minecraft:redstone_wire",
+      "expect": "Successfully filled"
+    },
+    {
+      "command": "setblock 72 65 8 minecraft:redstone_block",
+      "expect": "Changed the block"
+    },
+    {
+      "command": "tick step 20",
+      "expect": "Stepping",
+      "settleSeconds": 2
+    },
+    {
+      "command": "execute if block 88 65 8 minecraft:redstone_lamp[lit=true] run say STAGE7_C2ME_EXACT_W1_LAMP_ON",
+      "expect": "STAGE7_C2ME_EXACT_W1_LAMP_ON"
+    },
+    {
+      "command": "time query gametime",
+      "expect": "The game time is"
+    }
+  ],
+  "restart": [
+    {
+      "command": "tick freeze",
+      "expect": "The game is frozen"
+    },
+    {
+      "command": "execute if loaded 88 65 8 run say STAGE7_C2ME_EXACT_W1_RELOADED",
+      "expect": "STAGE7_C2ME_EXACT_W1_RELOADED"
+    },
+    {
+      "command": "execute if block 88 65 8 minecraft:redstone_lamp[lit=true] run say STAGE7_C2ME_EXACT_W1_LAMP_PERSISTED",
+      "expect": "STAGE7_C2ME_EXACT_W1_LAMP_PERSISTED"
+    },
+    {
+      "command": "setblock 72 65 8 minecraft:air",
+      "expect": "Changed the block"
+    },
+    {
+      "command": "tick step 20",
+      "expect": "Stepping",
+      "settleSeconds": 2
+    },
+    {
+      "command": "execute if block 88 65 8 minecraft:redstone_lamp[lit=false] run say STAGE7_C2ME_EXACT_W1_LAMP_OFF",
+      "expect": "STAGE7_C2ME_EXACT_W1_LAMP_OFF"
+    }
+  ],
+  "positions": [
+    {
+      "x": 88,
+      "y": 65,
+      "z": 8
+    }
+  ],
+  "properties": {
+    "level-type": "minecraft:normal"
+  },
+  "jvm": [
+    "-Dphoenium.test.chunkBindingTrace=true",
+    "-Dphoenium.c2me.observations=C:\\Users\\Admin\\Downloads\\Project PHOENIUM\\Phoenium\\run\\stage8\\entry-20260913\\c2me-exact-lifetime-redstone-w1-observations.json"
+  ]
+}

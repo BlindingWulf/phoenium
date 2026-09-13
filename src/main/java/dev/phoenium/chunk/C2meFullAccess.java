@@ -212,7 +212,7 @@ final class C2meFullAccess {
      * Pins the notickvd SEND_READY Rx graph to fromRunnable(...).subscribeOn(exactScheduler) without
      * linking optional RxJava classes into Phoenium. The original provider Runnable is the only node rebound.
      */
-    static Object rebindSendReadyGraph(Object providerGraph, Function<Runnable, Runnable> binder) {
+    static Object rebindSendReadyGraph(Object providerGraph, java.util.function.BiFunction<Runnable, Object, Object> binder) {
         Objects.requireNonNull(providerGraph, "providerGraph"); Objects.requireNonNull(binder, "binder");
         Class<?> outer = providerGraph.getClass();
         if (!outer.getName().equals("io.reactivex.rxjava3.internal.operators.completable.CompletableSubscribeOn"))
@@ -236,11 +236,7 @@ final class C2meFullAccess {
             Object providerRunnable = runnableField.get(source);
             if (!(providerRunnable instanceof Runnable runnable))
                 throw new IllegalStateException("SEND_READY source has no Runnable");
-            Runnable rebound = Objects.requireNonNull(binder.apply(runnable), "rebound SEND_READY Runnable");
-
-            var sourceCtor = sourceType.getDeclaredConstructor(Runnable.class);
-            sourceCtor.setAccessible(true);
-            Object reboundSource = sourceCtor.newInstance(rebound);
+            Object reboundSource = Objects.requireNonNull(binder.apply(runnable, scheduler), "rebound SEND_READY source");
 
             var constructors = outer.getDeclaredConstructors();
             if (constructors.length != 1 || constructors[0].getParameterCount() != 2

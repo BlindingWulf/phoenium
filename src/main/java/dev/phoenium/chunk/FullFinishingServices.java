@@ -221,7 +221,21 @@ public final class FullFinishingServices {
         }
         // Pinned terminal executor acknowledgements can run inline on their producer.
         if (server.isStopped() && !server.isSameThread()) { original.run(); return; }
-        try (var turn = forServer(server).serial(Phase.SERVER_TASK)) { original.run(); }
+        try (var turn = forServer(server).tryServerTaskTurn()) {
+            if (turn == null) enqueue.run();
+            else original.run();
+        }
+    }
+
+    /** C2ME can reserve FULL on a producer while the server polls its original task queue. */
+    private Scope tryServerTaskTurn() {
+        metadata.lock();
+        try {
+            Scope current = CURRENT.get();
+            if ((current == null || current.service != this) && (active != null || reserved != null))
+                return null;
+            return serial(Phase.SERVER_TASK);
+        } finally { metadata.unlock(); }
     }
     /** Storage does not retain even the conservative ordinary serial service turn. */
     public static <T> T ownerFreeIo(java.util.function.Supplier<T> body) {

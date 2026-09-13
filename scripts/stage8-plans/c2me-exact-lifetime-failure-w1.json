@@ -1,0 +1,23 @@
+{
+  "description": "Stage 7 exact locked C2ME provider-failure and retry/fallback settlement, W1.",
+  "properties": { "level-type": "minecraft:normal" },
+  "first": [
+    { "command": "tick freeze", "expect": "The game is frozen" },
+    { "command": "forceload add 0 0 175 15", "expect": "Marked", "settleSeconds": 1 },
+    { "command": "save-all flush", "expect": "Saved the game" },
+    { "command": "forceload remove 0 0 175 15", "expect": "Unmarked" },
+    { "command": "save-all flush", "expect": "Saved the game" }
+  ],
+  "restart": [
+    { "command": "c2meprobe arm", "expect": "C2ME_TEST_ARMED" },
+    { "sendOnly": "forceload add 0 0 175 15" },
+    { "after": "C2ME_TEST_ARMED", "await": "C2ME_TEST_INJECTED_FAILURE", "timeout": 30 },
+    { "command": "time query gametime", "expect": "The time is", "timeout": 60 }
+  ],
+  "positions": [],
+  "jvm": [
+    "-Dphoenium.test.chunkBindingTrace=true",
+    "-Dphoenium.c2me.failKey=drainQueue.enter",
+    "-Dphoenium.c2me.observations=C:\\Users\\Admin\\Downloads\\Project PHOENIUM\\Phoenium\\run\\stage8\\entry-20260913\\c2me-exact-lifetime-failure-w1\\c2me-observations.json"
+  ]
+}

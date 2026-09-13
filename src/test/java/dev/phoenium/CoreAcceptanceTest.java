@@ -287,7 +287,7 @@ class CoreAcceptanceTest {
                 "PoiLoadBookkeeping.java", "FullBlockEntityTagInputs.java", "FullCommandStorageInputs.java",
                 "RegionalScheduledTickService.java", "RegionalBlockEventService.java", "RegionalWorldServices.java",
                 "RegionalSaveCoordinator.java", "RegionalTrackingService.java", "RegionDirectory.java",
-                "FullServerShutdown.java", "GameplayMeasurements.java");
+                "FullServerShutdown.java", "GameplayMeasurements.java", "C2meDiskReadOperation.java", "C2meSendReadyInputs.java");
         String otherCore = Files.walk(Path.of("src/main/java/dev/phoenium"))
             .filter(path -> path.toString().endsWith(".java"))
             .filter(path -> !boundedMetadata.contains(path.getFileName().toString()))
@@ -304,6 +304,10 @@ class CoreAcceptanceTest {
         // still aggregate and independent subscriptions still clean up.
         // SaveTopologyCutTest and FullServerShutdownFailureOrderTest additionally assert
         // that publication/release and stop callbacks do not hold their metadata monitors.
+        // C2meDiskReadOperationTest verifies its per-action commit/cancel CAS and proves
+        // external native cancellation callbacks execute outside that metadata monitor.
+        // C2meSendReadyInputsTest executes the packaged native ticket/future lifecycle;
+        // its holder monitor encloses only eligibility and callback-free demand metadata.
         assertTrue(allCore.contains("ReentrantLock metadataGate"));
     }
     @Test void regressionShutdownDoesNotExecutePendingWorkFromCallerThread() {
