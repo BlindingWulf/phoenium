@@ -1,0 +1,182 @@
+diff --git a/FlowSched b/FlowSched
+index fae21268..f5634c0a 160000
+--- a/FlowSched
++++ b/FlowSched
+@@ -1 +1 @@
+-Subproject commit fae2126839607b68d4059e3933a492886fe8b8f5
++Subproject commit f5634c0a64b952da9e2961fa724da136b51585cf
+diff --git a/PHOENIUM-SETTLEMENT-PATCH.md b/PHOENIUM-SETTLEMENT-PATCH.md
+new file mode 100644
+index 00000000..86e15447
+--- /dev/null
++++ b/PHOENIUM-SETTLEMENT-PATCH.md
+@@ -0,0 +1,70 @@
++# Locked 26.2 failed-upgrade settlement patch
++
++Original C2ME revision: `e5f9ed26349b2f9504f73cac48aa09a490d137a3`
++(`0.4.2+alpha.0-43-ge5f9ed26`). Original FlowSched:
++`fae2126839607b68d4059e3933a492886fe8b8f5`.
++FlowSched fix: `f5634c0a64b952da9e2961fa724da136b51585cf`.
++
++The native MARK_BROKEN upgrade branch previously released action/busy state but
++left DISK and dependent status requesters pending. Removing demand eventually
++substituted generic Not loaded. The fix validates the exact action, target and
++status slot, retains the original failure on this holder, publishes prefailed
++replacement slots under the holder monitor, and signals captured requesters and
++dependency tickets after releasing that monitor. Later demand on this broken
++holder fails immediately. Actual holder removal permits a fresh generation.
++Successful lower statuses, native demand accounting and normal unload remain.
++
++Three FlowSched classes change: ItemHolder, ItemTicket and
++StatusAdvancingScheduler. Eleven separate contract tests exercise failure,
++local/later/cross-holder dependents, replacement, unload, race orderings, multiple
++requesters and callback reentry/lock safety. The original Phoenium characterization
++is retained unchanged against the original binary. The eleven tests also pass
++with the exact settlement2 nested base ahead of source classes on the test
++classpath. Phoenium's packaged-native availability test supplies only a future
++to the original or patched native getter and checks pending, failed, cancelled
++and successful results.
++
++Settled failures exposed one native nullable-peek assumption: the rewrites
++module's NewChunkHolderVanillaInterface.getWorldChunk (runtime getTickingChunk)
++called getNow on an exceptional explicit requester future. Its nullable lookup
++now returns only a successfully available chunk; the explicit future retains
++the original error. This prevents failure reporting from crashing ordinary
++ticking and shutdown. It does not convert failed requests into successes.
++
++## Artifact
++
++* Original SHA-256: `B013229383F51789C57684CBCFC12981C8D791206F3B594866DFEB74AED3770B`
++* Output: `build/patched/c2me-0.4.2-alpha.0.43+26.2-phoenium-settlement2.jar`
++* Version: `0.4.2-alpha.0.43-phoenium-settlement2+26.2`
++* Size: 3,834,439 bytes
++* SHA-256: `8AE4F2BB5FB15A28E555816DE89F0E400EA6A55A11213673E60068BC43C13D53`
++* Nested base SHA-256: `DBEA700B7675C4A6CA7E8F48D0D6554CDDA5B9C36F01B6588FDEBE5302E5732D`
++* Nested rewrites SHA-256: `065C2A842FFB5DE66CC35E9F627AD6D79A84B0918BC7CEF8DE1C1D297A004625`
++
++The adjacent machine manifest records original nested identities, touched entry
++payloads, compiled class hashes and Java identity. Every other ZIP entry payload
++is byte-identical to the locked original. Original and settlement1 artifacts are
++preserved. No newer provider release is substituted.
++
++Build with Java Temurin 25.0.4.1+1-LTS from this source root:
++
++```powershell
++.\gradlew.bat :c2me-rewrites-chunk-system:remapJar --no-daemon
++python build-settlement.py ../Phoenium/build/stage6-audit-20260909/research/artifacts/c2me/c2me-fabric-mc26.2-0.4.2-alpha.0.43.jar build/patched/c2me-0.4.2-alpha.0.43+26.2-phoenium-settlement2.jar --rewrites c2me-rewrites-chunk-system/build/libs/c2me-fabric-rewrites-chunk-system-mc26.2-0.4.2-alpha.0.43-dirty.jar
++```
++
++The output builder refuses to overwrite an artifact. The remapped input filename
++is the exact input used before this local root commit; future rebuilds must pass
++the filename Gradle actually emits and verify its native class diff. ZIP
++container timestamps can differ on regeneration; acceptance pins the artifact
++above, not an assumed reproducible hash from an arbitrary later checkout.
++
++This is a reasonable small upstream proposal: holder-local failed requester and
++dependency settlement belongs in FlowSched; the nullable native lookup belongs
++in C2ME. Project metadata/version packaging is local integration. No push or
++upstream submission has been made. The provider submodule commit is local and
++must travel with this checkout or an exported patch.
++
++Phoenium's independent lifetime/co-install acceptance is recorded in its
++`docs/STAGE7_C2ME_LIFETIME_DECISION.md`; this native manifest alone does not clear
++that gate or authorize removal of Phoenium's production exclusions.
+diff --git a/build-settlement.py b/build-settlement.py
+new file mode 100644
+index 00000000..7464c099
+--- /dev/null
++++ b/build-settlement.py
+@@ -0,0 +1,83 @@
++"""Rebuild the patched FlowSched classes and one remapped native holder in locked C2ME."""
++import argparse
++import hashlib
++import io
++import json
++from pathlib import Path
++import subprocess
++import zipfile
++
++ROOT = Path(__file__).resolve().parent
++ORIGINAL = "B013229383F51789C57684CBCFC12981C8D791206F3B594866DFEB74AED3770B"
++CLASSES = {f"com/ishland/flowsched/scheduler/{name}.class" for name in
++           ("ItemHolder", "ItemTicket", "StatusAdvancingScheduler")}
++NATIVE_HOLDER = "com/ishland/c2me/rewrites/chunksystem/common/NewChunkHolderVanillaInterface.class"
++PATCH_VERSION = "0.4.2-alpha.0.43-phoenium-settlement2+26.2"
++
++def sha(data):
++    return hashlib.sha256(data).hexdigest().upper()
++
++def rewrite(data, replacements, version=False):
++    result = io.BytesIO()
++    with zipfile.ZipFile(io.BytesIO(data)) as source, zipfile.ZipFile(result, "w") as target:
++        for entry in source.infolist():
++            payload = replacements.get(entry.filename, source.read(entry))
++            if version and entry.filename == "fabric.mod.json":
++                meta = json.loads(payload)
++                assert meta["version"] == "0.4.2-alpha.0.43+26.2"
++                meta["version"] = PATCH_VERSION
++                payload = json.dumps(meta, indent=2).encode() + b"\n"
++            target.writestr(entry, payload)
++    return result.getvalue()
++
++def main():
++    parser = argparse.ArgumentParser(description=__doc__)
++    parser.add_argument("original", type=Path)
++    parser.add_argument("output", type=Path)
++    parser.add_argument("--rewrites", type=Path, required=True, help="Source-built remapJar for the rewrites module")
++    args = parser.parse_args()
++    original = args.original.read_bytes()
++    assert sha(original) == ORIGINAL, "Wrong locked provider"
++    assert args.original.resolve() != args.output.resolve()
++    assert not args.output.exists(), "Never overwrite an existing pinned artifact"
++    subprocess.run([str(ROOT / "FlowSched/gradlew.bat"), "-p", str(ROOT / "FlowSched"),
++                    "classes", "--rerun-tasks", "--no-daemon"], check=True, cwd=ROOT)
++    replacements = {name: (ROOT / "FlowSched/build/classes/java/main" / name).read_bytes() for name in CLASSES}
++    with zipfile.ZipFile(io.BytesIO(original)) as outer:
++        base_name, = [n for n in outer.namelist() if n.startswith("META-INF/jars/") and "base-" in n]
++        old_base = outer.read(base_name)
++        new_base = rewrite(old_base, replacements, version=True)
++        rewrites_name, = [n for n in outer.namelist() if n.startswith("META-INF/jars/") and "rewrites-chunk-system-" in n]
++        old_rewrites = outer.read(rewrites_name)
++        with zipfile.ZipFile(args.rewrites) as built:
++            native_holder = built.read(NATIVE_HOLDER)
++        new_rewrites = rewrite(old_rewrites, {NATIVE_HOLDER: native_holder}, version=True)
++        patched = rewrite(original, {base_name: new_base, rewrites_name: new_rewrites}, version=True)
++        with zipfile.ZipFile(io.BytesIO(patched)) as check:
++            assert set(check.namelist()) == set(outer.namelist())
++            changed = [n for n in outer.namelist() if check.read(n) != outer.read(n)]
++            assert set(changed) == {base_name, rewrites_name, "fabric.mod.json"}
++        with zipfile.ZipFile(io.BytesIO(old_base)) as before, zipfile.ZipFile(io.BytesIO(new_base)) as after:
++            changed_base = [n for n in before.namelist() if before.read(n) != after.read(n)]
++            assert set(changed_base) == CLASSES | {"fabric.mod.json"}
++        with zipfile.ZipFile(io.BytesIO(old_rewrites)) as before, zipfile.ZipFile(io.BytesIO(new_rewrites)) as after:
++            changed_rewrites = [n for n in before.namelist() if before.read(n) != after.read(n)]
++            assert set(changed_rewrites) == {NATIVE_HOLDER, "fabric.mod.json"}
++    args.output.parent.mkdir(parents=True, exist_ok=True)
++    args.output.write_bytes(patched)
++    manifest = dict(originalSha256=ORIGINAL, patchedSha256=sha(patched), size=len(patched),
++        c2meRevision=subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=ROOT, text=True).strip(),
++        flowSchedRevision=subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=ROOT / "FlowSched", text=True).strip(),
++        java=subprocess.run(["java", "-version"], capture_output=True, text=True).stderr,
++        changedOuterEntries=changed, changedBaseEntries=changed_base,
++        baseEntry=base_name, originalBaseSha256=sha(old_base), patchedBaseSha256=sha(new_base),
++        rewritesEntry=rewrites_name, originalRewritesSha256=sha(old_rewrites), patchedRewritesSha256=sha(new_rewrites),
++        changedRewritesEntries=changed_rewrites, nativeHolderSha256=sha(native_holder), version=PATCH_VERSION,
++        compiledClasses={n: sha(b) for n, b in replacements.items()},
++        build="python build-settlement.py ORIGINAL OUTPUT; delegates FlowSched classes --rerun-tasks --no-daemon",
++        method="Source compilation plus narrowly verified nested-archive reconstruction; all other entry payloads unchanged")
++    args.output.with_suffix(".manifest.json").write_text(json.dumps(manifest, indent=2))
++    print(json.dumps(manifest, indent=2))
++
++if __name__ == "__main__":
++    main()
+diff --git a/c2me-rewrites-chunk-system/src/main/java/com/ishland/c2me/rewrites/chunksystem/common/NewChunkHolderVanillaInterface.java b/c2me-rewrites-chunk-system/src/main/java/com/ishland/c2me/rewrites/chunksystem/common/NewChunkHolderVanillaInterface.java
+index bca35f02..6ed64661 100644
+--- a/c2me-rewrites-chunk-system/src/main/java/com/ishland/c2me/rewrites/chunksystem/common/NewChunkHolderVanillaInterface.java
++++ b/c2me-rewrites-chunk-system/src/main/java/com/ishland/c2me/rewrites/chunksystem/common/NewChunkHolderVanillaInterface.java
+@@ -284 +284,4 @@ public class NewChunkHolderVanillaInterface extends ChunkHolder implements IFast
+-        return this.getTickingFuture().getNow(UNLOADED_WORLD_CHUNK).orElse(null); // TODO
++        // This is an availability peek, not a requester: a failed status is not ticking.
++        // Keep the original exceptional result in the future-returning APIs.
++        var future = this.getTickingFuture();
++        return future.state() == java.util.concurrent.Future.State.SUCCESS ? future.resultNow().orElse(null) : null;

@@ -1,10 +1,82 @@
 # Stage 8 handoff — entry prerequisites only
 
-Updated: 2026-09-12.
+Updated: 2026-09-13. Formal combined-stack Stage 8 acceptance has not started.
+
+## Current handoff to Luna
+
+**C2ME_UPSTREAM_SETTLEMENT RESOLVED — C2ME_LIFETIME ACCEPTED — RETURN TO LUNA**
+
+Final acceptance: 2026-09-13. The native settlement patch and explicitly approved
+Phoenium DISK lifecycle and SEND_READY dependency repairs passed the complete
+literal W1/W4 matrix, including the full selected overlapping Stage 7 stack.
+All 12 actual-production first/restart pairs pass, with all 24 server processes
+exited. Production C2ME exclusions were removed only after candidate acceptance;
+the final matrix uses the actual production JAR directly.
+
+* Phoenium implementation commit: `916904794590433ccac1777c24ffa023b7af4338`.
+* Branch: `stage7/scalablelux-persisted-light-repair`.
+* Production `build/libs/phoenium-0.2.0-stage2.jar`: **1,433,247 bytes**,
+  SHA-256 `CFDF13479E1073E1AB270C1FD447CF1A991A6DFABF3D4F5924D74560F7ADAAC6`.
+* Required patched C2ME: **settlement2**, SHA-256 `8AE4F2BB5FB15A28E555816DE89F0E400EA6A55A11213673E60068BC43C13D53`.
+* Full Phoenium regression: **953 tests / 108 XML suites / 0 failures / 0 errors /
+  0 skipped**. Native full suite: **19 tests / 4 suites**, all pass; all **11**
+  settlement contract tests also pass against the packaged patched provider.
+
+The [final settlement report](STAGE7_C2ME_SETTLEMENT_REPORT.md) records the exact
+composition, per-run positive and terminal counts, regression/build commands,
+source provenance, process audit and hypothesis history. The
+[provider patch manifest](STAGE7_C2ME_PROVIDER_PATCH_MANIFEST.md) pins native
+commits, build inputs and output bytes. This supersedes the original blocked
+disposition and old continuation instructions preserved below. The unchanged
+characterization test still demonstrates the defect in the original C2ME JAR;
+its pass does not accept that original JAR. The production binding requires the
+distinct settlement2 base version. No remote push was made.
+
+The active WORK CARD is **PANDA_A2_LIVE**. Read
+[STAGE8_ENTRY_CURRENT_WORK.md](STAGE8_ENTRY_CURRENT_WORK.md), recover the existing
+A2 implementation and acceptance contract, then execute its bounded live pearl
+workload. Preserve the exact accepted provider composition. No Panda, projectile
+cap, A3, Bedrock, Via, voice or storage-cleanup work was done in this Astra session.
+
+Exact continuation instruction:
+
+> Continue PANDA_A2_LIVE from docs/STAGE8_ENTRY_CURRENT_WORK.md, preserving the
+> accepted C2ME settlement2 pins and all prior scoped provider decisions.
+
+```powershell
+Get-Content docs/STAGE8_ENTRY_CURRENT_WORK.md
+```
+
+## Historical handoff archive — superseded instructions
+
+The prior handoff is retained below as evidence. Its blocked status, old artifact
+hashes and commands apply only to those earlier checkpoints.
+
+# Stage 8 handoff — entry prerequisites only
+
+Updated: 2026-09-13.
 
 This is an engineering handoff, not a Stage 8 acceptance result. Formal combined-stack acceptance has not started.
 
-## Checkout and artifact
+## Current C2ME continuation — Astra disposition, 2026-09-13
+
+**C2ME_LIFETIME BLOCKED — EXACT ARCHITECTURE BLOCKER.** Read [STAGE7_C2ME_LIFETIME_DECISION.md](STAGE7_C2ME_LIFETIME_DECISION.md) and the current work card before continuing. The native MARK_BROKEN upgrade path releases action/busy state but leaves requested DISK/dependent futures pending, including later requests; native unload finally substitutes a generic error. This is reproduced by a deterministic native-provider test and consistent with watchdog exit 1 in exact W1/W4 installed failure trials. A provider-owned failed-action/status-future settlement contract is required. Phoenium's existing custody/dispatcher primitives cannot safely own those shared requesters.
+
+The withdrawn v3 candidate did prove a bounded action-token cancellation handshake at W1/W4, with one matching CANCELLED and 119 APPLIED, clean exits and zero final retained/safety counters. It did not pass the complete lifetime gate. The existing generation-only c2meControls counter was not a disk cancellation measure. All experimental production files were archived before restoration; both C2ME breaks remain in the actual production JAR. No Panda or broader Stage 7/8 work was started.
+
+Current HEAD: `31fea7d45b6f161fa3897d894cb016d89e1dcd79`; branch: `stage7/scalablelux-persisted-light-repair`. The checkout remains dirty with Luna's preserved observer/runner/plans, updated C2ME documentation, the test-only successful-cancel identity receipt and new `C2meNativeFailureSettlementTest`. No Stage 7 completion commit or push was made. Older clean-checkpoint claims below are historical only.
+
+Final production build reproduces **1,403,887 bytes**, SHA-256 `8A1C0C4852150C8D36E9EDB8DDEFC9F9B6E9A3E82AE71123D798416DD39A21FC`; source diff under src/main is empty, breaks are intact, and no observer/experimental classes are packaged. Full regression: **930 tests / 104 XML suites / 0 failures / 0 errors / 0 skipped**, exit 0; build exit 0; diff check passes. No project server remains running.
+
+Evidence: `run/stage8/entry-20260913/astra-c2me-lifecycle/`; all provider/candidate hashes, source manifests and W1/W4 results are indexed by the decision. C2ME is SHA-256 `B013229383F51789C57684CBCFC12981C8D791206F3B594866DFEB74AED3770B`; ScalableLux is `8D76CF27589DCC8E16C34BA0709A9EE2134CFCD60B90862F8CBD204EA9B6C7C8` and supplies Starlight. The changed-byte persistence W4 trial remains unresolved on a missing marker; full native replacement/unload, stop and co-install acceptance was not completed after proving the blocker.
+
+Luna's first command from the repository is `.\gradlew.bat test --rerun-tasks --no-daemon --tests "dev.phoenium.chunk.C2meNativeFailureSettlementTest"`. It reproduces the unsupported behavior, not a gate pass. Keep C2ME_LIFETIME blocked pending the native failure-settlement contract; then repeat the complete lifetime matrix before any breaks removal. Do not switch the card to PANDA_A2_LIVE.
+
+## Historical Luna continuation note — 2026-09-13
+
+The exact locked C2ME + ScalableLux provider composition was exercised at literal W1 and W4 using disposable no-break Phoenium bytes. The redstone save/normal-stop/existing-world-restart fixtures reached the real ScalableLux-backed `ReadFromDiskAsync` path and settled with zero retained state. Fresh held-read cancellation witnesses then cancelled 49 real C2ME action tokens at each worker profile, but Phoenium observed `c2meControls=0` because the installed C2ME action-token cancellation does not dispose the Rx `Completable` that the current bridge observes. Provider-failure witnesses propagated one bounded drain failure and retired residue, but ended with `scheduler=FAILED` and an intentional shutdown exception. The exact evidence and ASTRA-HARD escalation packet are recorded in `docs/STAGE7_C2ME_ESCALATION.md`; production `breaks` remain unchanged and no final Stage 7 commit was made.
+
+## Historical checkout and artifact
 
 - Repository: `C:\Users\Admin\Downloads\Project PHOENIUM\Phoenium`
 - Branch: `stage7/scalablelux-persisted-light-repair`
@@ -17,7 +89,7 @@ This is an engineering handoff, not a Stage 8 acceptance result. Formal combined
 
 The recovery copy made before continuation is retained at `run/stage8/entry-20260911/recovery-before-continuation-20260912/`.
 
-## Dirty-state disclosure
+## Historical dirty-state disclosure
 
 The source checkout and documentation checkpoint are clean at revision `169003a`; the final documentation commit records the source/test revision separately above.
 

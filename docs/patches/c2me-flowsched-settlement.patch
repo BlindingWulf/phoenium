@@ -1,0 +1,336 @@
+diff --git a/src/main/java/com/ishland/flowsched/scheduler/ItemHolder.java b/src/main/java/com/ishland/flowsched/scheduler/ItemHolder.java
+index d246f14..acfb58e 100644
+--- a/src/main/java/com/ishland/flowsched/scheduler/ItemHolder.java
++++ b/src/main/java/com/ishland/flowsched/scheduler/ItemHolder.java
+@@ -62,0 +63,2 @@ public class ItemHolder<K, V, Ctx, UserData> {
++    // Protected by this monitor; retained until this holder is retired, never a global poison.
++    private Throwable failedUpgrade;
+@@ -106 +108 @@ public class ItemHolder<K, V, Ctx, UserData> {
+-            this.futures[i] = this.futures[i] == UNLOADED_FUTURE ? new CompletableFuture<>() : this.futures[i];
++            this.futures[i] = this.futures[i] == UNLOADED_FUTURE ? newRequestedFuture() : this.futures[i];
+@@ -109,0 +112,35 @@ public class ItemHolder<K, V, Ctx, UserData> {
++    private CompletableFuture<Void> newRequestedFuture() {
++        return this.failedUpgrade == null ? new CompletableFuture<>() : CompletableFuture.failedFuture(this.failedUpgrade);
++    }
++
++    synchronized Throwable getFailureForStatus(ItemStatus<K, V, Ctx> requested) {
++        return requested.ordinal() > this.status.ordinal() ? this.failedUpgrade : null;
++    }
++
++    /** Called by the exact busy action's error continuation, never under an outer holder monitor. */
++    void failUpgrade(Cancellable action, ItemStatus<K, V, Ctx> target,
++                     CompletableFuture<Void> slot, Throwable failure) {
++        Assertions.assertTrue(!Thread.holdsLock(this), "Failure signalling under holder monitor");
++        Objects.requireNonNull(failure);
++        var requesters = new ArrayList<CompletableFuture<Void>>();
++        var affectedTickets = new ArrayList<ItemTicket>();
++        synchronized (this) {
++            assertOpen();
++            if (this.failedUpgrade != null) return;
++            Assertions.assertTrue(this.runningAction != null && this.runningAction.left() == action
++                    && this.runningAction.right() == target && this.futures[target.ordinal()] == slot,
++                    "Stale failed upgrade");
++            this.failedUpgrade = failure;
++            this.setFlag(FLAG_BROKEN);
++            for (int i = this.status.ordinal() + 1; i < this.futures.length; i++) {
++                if (this.futures[i] == UNLOADED_FUTURE) continue;
++                requesters.add(this.futures[i]);
++                // Publish the terminal state before post-monitor callbacks or concurrent demand changes.
++                this.futures[i] = CompletableFuture.failedFuture(failure);
++                affectedTickets.addAll(Arrays.asList(this.tickets.getTicketsForStatusArrayCopy(target.getAllStatuses()[i])));
++            }
++        }
++        for (CompletableFuture<Void> requester : requesters) requester.completeExceptionally(failure);
++        for (ItemTicket ticket : affectedTickets) ticket.failCallback(failure);
++    }
++
+@@ -139,0 +177 @@ public class ItemHolder<K, V, Ctx, UserData> {
++        Throwable failure;
+@@ -149,0 +188 @@ public class ItemHolder<K, V, Ctx, UserData> {
++            failure = getFailureForStatus(targetStatus);
+@@ -152 +191,3 @@ public class ItemHolder<K, V, Ctx, UserData> {
+-        if (needConsumption) {
++        if (failure != null) {
++            ticket.failCallback(failure);
++        } else if (needConsumption) {
+@@ -171,0 +213 @@ public class ItemHolder<K, V, Ctx, UserData> {
++        Throwable failure;
+@@ -186,0 +229 @@ public class ItemHolder<K, V, Ctx, UserData> {
++            failure = getFailureForStatus(targetStatus);
+@@ -189 +232,3 @@ public class ItemHolder<K, V, Ctx, UserData> {
+-        if (needConsumption) {
++        if (failure != null) {
++            ticket.failCallback(failure);
++        } else if (needConsumption) {
+@@ -324 +369 @@ public class ItemHolder<K, V, Ctx, UserData> {
+-                        this.futures[i] = this.futures[i].isDone() ? new CompletableFuture<>() : this.futures[i];
++                        this.futures[i] = this.futures[i].isDone() ? newRequestedFuture() : this.futures[i];
+@@ -327,0 +373 @@ public class ItemHolder<K, V, Ctx, UserData> {
++                if (this.failedUpgrade != null) throw new IllegalStateException("Cannot upgrade a failed holder", this.failedUpgrade);
+@@ -511 +557,3 @@ public class ItemHolder<K, V, Ctx, UserData> {
+-                ticket.consumeCallback();
++                Throwable failure = scheduler.getHolder(key).getFailureForStatus(status);
++                if (failure != null) ticket.failCallback(failure);
++                else ticket.consumeCallback();
+diff --git a/src/main/java/com/ishland/flowsched/scheduler/ItemTicket.java b/src/main/java/com/ishland/flowsched/scheduler/ItemTicket.java
+index eea2be4..8cb2b90 100644
+--- a/src/main/java/com/ishland/flowsched/scheduler/ItemTicket.java
++++ b/src/main/java/com/ishland/flowsched/scheduler/ItemTicket.java
+@@ -7,0 +8 @@ import java.util.concurrent.atomic.AtomicReferenceFieldUpdater;
++import java.util.function.Consumer;
+@@ -18,0 +20 @@ public class ItemTicket {
++    private final Consumer<Throwable> failureCallback;
+@@ -25,0 +28,4 @@ public class ItemTicket {
++        this(type, source, callback, consumptions, null);
++    }
++
++    public ItemTicket(TicketType type, Object source, Runnable callback, int consumptions, Consumer<Throwable> failureCallback) {
+@@ -28,0 +35 @@ public class ItemTicket {
++        this.failureCallback = failureCallback;
+@@ -56,0 +64,8 @@ public class ItemTicket {
++    /** A failed prerequisite must never consume the success callback. */
++    public void failCallback(Throwable failure) {
++        Runnable callback = CALLBACK_UPDATER.getAndSet(this, null);
++        if (callback != null && this.failureCallback != null) {
++            this.failureCallback.accept(failure);
++        }
++    }
++
+diff --git a/src/main/java/com/ishland/flowsched/scheduler/StatusAdvancingScheduler.java b/src/main/java/com/ishland/flowsched/scheduler/StatusAdvancingScheduler.java
+index b0d4bac..18c66be 100644
+--- a/src/main/java/com/ishland/flowsched/scheduler/StatusAdvancingScheduler.java
++++ b/src/main/java/com/ishland/flowsched/scheduler/StatusAdvancingScheduler.java
+@@ -259,0 +260 @@ public abstract class StatusAdvancingScheduler<K, V, Ctx, UserData> {
++        final var requestedSlot = holder.getFutureForStatus0(nextStatus);
+@@ -303 +304 @@ public abstract class StatusAdvancingScheduler<K, V, Ctx, UserData> {
+-                                holder.setFlag(ItemHolder.FLAG_BROKEN);
++                                holder.failUpgrade(cancellation, nextStatus, requestedSlot, throwable);
+@@ -514 +515,7 @@ public abstract class StatusAdvancingScheduler<K, V, Ctx, UserData> {
+-                ItemTicket ticket = new ItemTicket(ItemTicket.TicketType.DEPENDENCY, holder.getKey(), callback, dependencies.length);
++                ItemTicket ticket = new ItemTicket(ItemTicket.TicketType.DEPENDENCY, holder.getKey(), callback, dependencies.length,
++                        failure -> holder.getCriticalSectionExecutor().execute(() -> {
++                            if (finished.compareAndSet(false, true)) {
++                                cancellable.complete();
++                                emitter.onError(failure);
++                            }
++                        }));
+diff --git a/src/test/java/com/ishland/flowsched/scheduler/FailedUpgradeSettlementTest.java b/src/test/java/com/ishland/flowsched/scheduler/FailedUpgradeSettlementTest.java
+new file mode 100644
+index 0000000..6f8bf8c
+--- /dev/null
++++ b/src/test/java/com/ishland/flowsched/scheduler/FailedUpgradeSettlementTest.java
+@@ -0,0 +1,214 @@
++package com.ishland.flowsched.scheduler;
++
++import io.reactivex.rxjava3.core.Completable;
++import io.reactivex.rxjava3.subjects.CompletableSubject;
++import org.junit.jupiter.api.Test;
++
++import java.util.ArrayDeque;
++import java.util.ArrayList;
++import java.util.List;
++import java.util.concurrent.CancellationException;
++import java.util.concurrent.CompletableFuture;
++import java.util.concurrent.Executor;
++import java.util.concurrent.atomic.AtomicInteger;
++
++import static org.junit.jupiter.api.Assertions.*;
++
++class FailedUpgradeSettlementTest {
++    record Context(ItemHolder<String, Void, Context, Void> holder, Fixture fixture) {}
++
++    enum Status implements ItemStatus<String, Void, Context> {
++        UNLOADED, DISK, FULL;
++        public ItemStatus<String, Void, Context>[] getAllStatuses() { return values(); }
++        public Completable upgradeToThis(Context ctx, Cancellable token) {
++            if (this == ctx.fixture.heldStatus && ctx.holder.getKey().equals("broken")) {
++                ctx.fixture.token = token;
++                return ctx.fixture.operation;
++            }
++            return Completable.complete();
++        }
++        public Completable postUpgradeToThis(Context ctx) { return Completable.complete(); }
++        public Completable preDowngradeFromThis(Context ctx, Cancellable token) { return Completable.complete(); }
++        public Completable downgradeFromThis(Context ctx, Cancellable token) { return Completable.complete(); }
++        public KeyStatusPair<String, Void, Context>[] getDependencies(ItemHolder<String, Void, Context, ?> holder) {
++            if (this == FULL && holder.getKey().equals("dependent"))
++                return new KeyStatusPair[] {new KeyStatusPair<>("broken", DISK)};
++            return EMPTY_DEPENDENCIES;
++        }
++    }
++
++    static class Fixture extends StatusAdvancingScheduler<String, Void, Context, Void> {
++        final ArrayDeque<Runnable> queue = new ArrayDeque<>();
++        CompletableSubject operation = CompletableSubject.create();
++        Cancellable token;
++        Status heldStatus = Status.DISK;
++        final Throwable failure = new IllegalStateException("exact DISK failure");
++        Throwable observed;
++        protected Executor getBackgroundExecutor() { return queue::addLast; }
++        protected ItemStatus<String, Void, Context> getUnloadedStatus() { return Status.UNLOADED; }
++        protected Context makeContext(ItemHolder<String, Void, Context, Void> holder,
++                ItemStatus<String, Void, Context> status, KeyStatusPair<String, Void, Context>[] deps, boolean upgrade) {
++            return new Context(holder, this);
++        }
++        protected ExceptionHandlingAction handleTransactionException(ItemHolder<String, Void, Context, Void> holder,
++                ItemStatus<String, Void, Context> status, boolean upgrade, Throwable error) {
++            observed = error;
++            return ExceptionHandlingAction.MARK_BROKEN;
++        }
++        ItemHolder<String, Void, Context, Void> request(String key, String source, Status status) {
++            return addTicket(key, source, status, () -> { throw new AssertionError("unexpected success"); });
++        }
++        void drain() {
++            int n = 0;
++            while (!queue.isEmpty()) {
++                assertTrue(n++ < 1000, "scheduler did not quiesce");
++                queue.removeFirst().run();
++            }
++        }
++        void remove(String key, String source, Status status) {
++            removeTicket(key, ItemTicket.TicketType.EXTERNAL, source, status);
++        }
++        void failDisk() { operation.onError(failure); drain(); }
++    }
++
++    static void failedWith(CompletableFuture<?> future, Throwable failure) {
++        assertTrue(future.isCompletedExceptionally(), "requester is still pending");
++        assertSame(failure, future.handle((v, t) -> t).join());
++    }
++
++    @Test void diskAndFullSettleOriginalCauseOutsideHolderMonitor() {
++        Fixture f = new Fixture();
++        var h = f.request("broken", "first", Status.FULL);
++        var disk = h.getFutureForStatus0(Status.DISK);
++        var full = h.getFutureForStatus0(Status.FULL);
++        AtomicInteger callbacks = new AtomicInteger();
++        List<Boolean> locks = new ArrayList<>();
++        disk.whenComplete((v, t) -> { locks.add(Thread.holdsLock(h)); callbacks.incrementAndGet(); });
++        full.whenComplete((v, t) -> { locks.add(Thread.holdsLock(h)); callbacks.incrementAndGet(); });
++        f.drain(); f.failDisk();
++        failedWith(disk, f.failure); failedWith(full, f.failure);
++        assertSame(f.failure, f.observed);
++        assertFalse(h.isBusy()); assertNull(h.changingStatusTo()); assertTrue(h.getOpFuture().isDone());
++        assertEquals(2, callbacks.get()); assertEquals(List.of(false, false), locks);
++        assertEquals(Status.UNLOADED, h.getStatus());
++    }
++
++    @Test void laterDemandAndUnloadKeepCauseAndReplacementCanSucceed() {
++        Fixture f = new Fixture();
++        var old = f.request("broken", "first", Status.DISK);
++        var disk = old.getFutureForStatus0(Status.DISK);
++        f.drain(); f.failDisk();
++        assertSame(old, f.request("broken", "second", Status.FULL)); f.drain();
++        var full = old.getFutureForStatus0(Status.FULL);
++        failedWith(full, f.failure);
++        f.remove("broken", "first", Status.DISK); f.remove("broken", "second", Status.FULL); f.drain();
++        assertEquals(0, f.itemCount()); assertFalse(old.isOpen());
++        failedWith(disk, f.failure); failedWith(full, f.failure); assertFalse(old.holdsDependency());
++        f.operation = CompletableSubject.create();
++        AtomicInteger success = new AtomicInteger();
++        var replacement = f.addTicket("broken", Status.FULL, success::incrementAndGet);
++        assertNotSame(old, replacement); f.drain(); f.operation.onComplete(); f.drain();
++        assertEquals(1, success.get()); assertFalse(replacement.getFutureForStatus0(Status.FULL).isCompletedExceptionally());
++        assertTrue(replacement.getFutureForStatus0(Status.FULL).isDone());
++        f.removeTicket("broken", Status.FULL); f.drain(); assertEquals(0, f.itemCount());
++    }
++
++    @Test void crossHolderDependencyFailureSettlesAndReleasesTickets() {
++        Fixture f = new Fixture();
++        var h = f.request("dependent", "first", Status.FULL);
++        var full = h.getFutureForStatus0(Status.FULL);
++        f.drain(); f.failDisk();
++        failedWith(full, f.failure); assertFalse(h.isBusy()); assertNull(h.changingStatusTo());
++        f.remove("dependent", "first", Status.FULL); f.drain();
++        assertEquals(0, f.itemCount()); assertFalse(h.holdsDependency());
++    }
++
++    @Test void failureCannotBeOverwrittenByLateSourceSuccessOrNativeStatusPublication() {
++        Fixture f = new Fixture();
++        var h = f.request("broken", "first", Status.FULL);
++        var disk = h.getFutureForStatus0(Status.DISK);
++        f.drain(); f.failDisk(); f.operation.onComplete(); f.drain();
++        assertThrows(IllegalStateException.class, () -> h.setStatus(Status.DISK, false));
++        failedWith(disk, f.failure); assertEquals(Status.UNLOADED, h.getStatus());
++    }
++
++    @Test void requesterCancellationWinsBeforeFailureAndFailureWinsBeforeCancellation() {
++        for (boolean cancellationFirst : new boolean[] {true, false}) {
++            Fixture f = new Fixture(); var h = f.request("broken", "first", Status.FULL);
++            var disk = h.getFutureForStatus0(Status.DISK); AtomicInteger count = new AtomicInteger();
++            disk.whenComplete((v, t) -> count.incrementAndGet()); f.drain();
++            if (cancellationFirst) assertTrue(disk.cancel(false));
++            f.failDisk();
++            if (cancellationFirst) assertTrue(disk.isCancelled());
++            else { assertFalse(disk.cancel(false)); failedWith(disk, f.failure); }
++            assertEquals(1, count.get()); failedWith(h.getFutureForStatus0(Status.FULL), f.failure);
++        }
++    }
++
++    @Test void nativeCancellationAcknowledgementDoesNotPoisonHolder() {
++        Fixture f = new Fixture(); var h = f.request("broken", "first", Status.FULL);
++        var old = h.getFutureForStatus0(Status.DISK); f.drain();
++        assertTrue(f.token.cancel()); f.remove("broken", "first", Status.FULL);
++        f.operation.onError(new CancellationException("native cancellation acknowledgement")); f.drain();
++        assertNull(f.observed); assertEquals(0, h.getFlags() & ItemHolder.FLAG_BROKEN);
++        assertEquals(0, f.itemCount()); failedWith(old, ItemHolder.UNLOADED_EXCEPTION);
++    }
++
++    @Test void multipleRequestersEachObserveOneFailure() {
++        Fixture f = new Fixture(); List<CompletableFuture<Void>> requests = new ArrayList<>();
++        for (int i = 0; i < 10; i++) requests.add(f.request("broken", "r" + i, Status.FULL).getFutureForStatus(Status.FULL));
++        AtomicInteger terminals = new AtomicInteger();
++        requests.forEach(r -> r.whenComplete((v, t) -> terminals.incrementAndGet()));
++        f.drain(); f.failDisk();
++        for (var r : requests) {
++            assertTrue(r.isCompletedExceptionally());
++            assertSame(f.failure, assertThrows(java.util.concurrent.CompletionException.class, r::join).getCause());
++        }
++        assertEquals(10, terminals.get());
++        for (int i = 0; i < 10; i++) f.remove("broken", "r" + i, Status.FULL);
++        f.drain(); assertEquals(0, f.itemCount()); assertEquals(10, terminals.get());
++    }
++
++    @Test void failedHigherStatusPreservesSuccessfulPrerequisiteAndRecreatedDemandFails() {
++        Fixture f = new Fixture(); f.heldStatus = Status.FULL;
++        var h = f.addTicket("broken", "disk", Status.DISK, null);
++        f.request("broken", "full", Status.FULL);
++        var disk = h.getFutureForStatus0(Status.DISK); var full = h.getFutureForStatus0(Status.FULL);
++        f.drain(); f.failDisk();
++        assertTrue(disk.isDone()); assertFalse(disk.isCompletedExceptionally()); failedWith(full, f.failure);
++        f.remove("broken", "full", Status.FULL); f.drain();
++        f.request("broken", "new-full", Status.FULL); f.drain();
++        failedWith(h.getFutureForStatus0(Status.FULL), f.failure);
++        assertSame(disk, h.getFutureForStatus0(Status.DISK));
++        f.remove("broken", "new-full", Status.FULL); f.remove("broken", "disk", Status.DISK); f.drain();
++        assertEquals(0, f.itemCount()); failedWith(full, f.failure);
++    }
++
++    @Test void callbackCanChangeDemandWithoutObservingAnUnsettledReplacementSlot() {
++        Fixture f = new Fixture(); var h = f.request("broken", "first", Status.FULL);
++        var disk = h.getFutureForStatus0(Status.DISK); List<Boolean> observations = new ArrayList<>();
++        disk.whenComplete((v, t) -> {
++            observations.add(!Thread.holdsLock(h));
++            observations.add(h.getFutureForStatus0(Status.FULL).isCompletedExceptionally());
++            f.request("broken", "second", Status.FULL);
++            observations.add(h.getFutureForStatus0(Status.FULL).isCompletedExceptionally());
++            f.remove("broken", "first", Status.FULL); f.remove("broken", "second", Status.FULL);
++        });
++        f.drain(); f.failDisk();
++        assertEquals(List.of(true, true, true), observations); assertEquals(0, f.itemCount()); failedWith(disk, f.failure);
++    }
++
++    @Test void cancelledTokenDoesNotTurnARealProviderFailureIntoCancellation() {
++        Fixture f = new Fixture(); var h = f.request("broken", "first", Status.FULL);
++        var disk = h.getFutureForStatus0(Status.DISK); f.drain(); assertTrue(f.token.cancel()); f.failDisk();
++        failedWith(disk, f.failure); failedWith(h.getFutureForStatus0(Status.FULL), f.failure);
++    }
++
++    @Test void staleActionCannotPoisonCurrentGeneration() {
++        Fixture f = new Fixture(); var h = f.request("broken", "first", Status.FULL);
++        var disk = h.getFutureForStatus0(Status.DISK); f.drain();
++        assertThrows(AssertionError.class, () -> h.failUpgrade(new Cancellable(), Status.DISK, disk, f.failure));
++        assertEquals(0, h.getFlags() & ItemHolder.FLAG_BROKEN); assertFalse(disk.isDone());
++        f.operation.onComplete(); f.drain(); assertTrue(disk.isDone()); assertFalse(disk.isCompletedExceptionally());
++    }
++}

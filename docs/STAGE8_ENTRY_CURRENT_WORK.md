@@ -1,19 +1,118 @@
 # Stage 8 entry current work
 
-Updated: 2026-09-12
+Updated: 2026-09-13. This is a Stage 7 prerequisite handoff. Formal combined-stack
+Stage 8 acceptance has **not** started.
 
-Status: **Stage 8 prerequisite engineering in progress. Formal combined-stack Stage 8 acceptance has NOT started.**
+## WORK CARD
+
+Active milestone: **PANDA_A2_LIVE**.
+
+Next bounded work: recover the existing A2 pearl ownership/runtime ledger and
+run its real live overflow, removal and reconnect acceptance workload. Read the
+Stage 7 contract and existing A2 evidence before editing. Preserve the accepted
+C2ME settlement2, ScalableLux and overlapping provider pins recorded below.
+Do not infer separate projectile-cap, A3, Bedrock/Via/voice or Stage 8 acceptance
+from this C2ME result. No Panda work was performed in the Astra session.
+
+Exact short Luna continuation instruction:
+
+> Continue PANDA_A2_LIVE from docs/STAGE8_ENTRY_CURRENT_WORK.md. Preserve the
+> accepted C2ME settlement2 composition and evidence; do not reopen the resolved
+> C2ME gate or start A3 or formal Stage 8 acceptance.
+
+First local command:
+
+```powershell
+Get-Content docs/STAGE8_ENTRY_CURRENT_WORK.md
+```
+
+## Accepted C2ME prerequisite
+
+**C2ME_UPSTREAM_SETTLEMENT RESOLVED — C2ME_LIFETIME ACCEPTED — RETURN TO LUNA**
+
+Final acceptance: 2026-09-13. The native settlement patch and explicitly approved
+Phoenium DISK lifecycle and SEND_READY dependency repairs passed the complete
+literal W1/W4 matrix, including the full selected overlapping Stage 7 stack.
+All 12 actual-production first/restart pairs pass, with all 24 server processes
+exited. Production C2ME exclusions were removed only after candidate acceptance;
+the final matrix uses the actual production JAR directly.
+
+* Phoenium implementation commit: `916904794590433ccac1777c24ffa023b7af4338`.
+* Branch: `stage7/scalablelux-persisted-light-repair`.
+* Production `build/libs/phoenium-0.2.0-stage2.jar`: **1,433,247 bytes**,
+  SHA-256 `CFDF13479E1073E1AB270C1FD447CF1A991A6DFABF3D4F5924D74560F7ADAAC6`.
+* Required patched C2ME: **settlement2**, SHA-256 `8AE4F2BB5FB15A28E555816DE89F0E400EA6A55A11213673E60068BC43C13D53`.
+* Full Phoenium regression: **953 tests / 108 XML suites / 0 failures / 0 errors /
+  0 skipped**. Native full suite: **19 tests / 4 suites**, all pass; all **11**
+  settlement contract tests also pass against the packaged patched provider.
+
+The [final settlement report](STAGE7_C2ME_SETTLEMENT_REPORT.md) records the exact
+composition, per-run positive and terminal counts, regression/build commands,
+source provenance, process audit and hypothesis history. The
+[provider patch manifest](STAGE7_C2ME_PROVIDER_PATCH_MANIFEST.md) pins native
+commits, build inputs and output bytes. This supersedes the original blocked
+disposition and old continuation instructions preserved below. The unchanged
+characterization test still demonstrates the defect in the original C2ME JAR;
+its pass does not accept that original JAR. The production binding requires the
+distinct settlement2 base version. No remote push was made.
+
+## Remaining scope and preserved prerequisites
+
+A1 non-player cross-owner relocation remains implemented and verified through
+the existing owner-free transition boundary. A2's live pearl workload remains
+the next proof. The separate projectile runtime cap and A3 remain unaccepted.
+Real Bedrock gameplay, legacy Java/Via gameplay and two-client voice
+microphone/proximity/reconnect coverage remain external-facility gates.
+VMP remains optional and blocked/partial; SLO strict seed parity remains excluded;
+FastNoise attribution remains bounded by its documented nondeterministic control.
+ServerCore acceptance remains its preservation profile. Prior scoped Chunky,
+ScalableLux, Lithium, Clumps and Geyser/Floodgate results remain preserved.
+
+## Historical work-card archive — not current instructions
+
+The entire prior entry record follows unchanged to retain its diagnostic and
+prerequisite history. Its active-card labels, old HEAD/hash, BLOCKED disposition,
+retained breaks and continuation commands describe earlier checkpoints only.
+The WORK CARD and accepted disposition above are authoritative.
+
+# Stage 8 entry current work
+
+Updated: 2026-09-13
+
+Status: **C2ME_LIFETIME BLOCKED — EXACT ARCHITECTURE BLOCKER. Formal combined-stack Stage 8 acceptance has NOT started.**
 
 Baseline branch: `stage7/scalablelux-persisted-light-repair`.
 
 ## WORK CARD
 
-Active milestone: Panda A2 per-player/per-dimension ender-pearl membership ledger
-Exact gate: finish the derived association, reconnect/incarnation lifecycle, and current-owner cleanup path without adding an ownership authority
-First missing proof: no real pearl overflow/client workload was available; deterministic ledger, owner seam, final-byte boot, and restart fallback evidence are fresh
-Files allowed: `src/main/java/dev/phoenium/live/`, `PhoeniumLiveRuntime`, `EntityLifecycleMixin`, focused tests, and this current-work/handoff record
-Success criteria: version-pinned 26.2 owner/persistence seam; idempotent scope ledger; exact retirement/rebind; one owner-routed discard; default inert; full suite and final-byte smoke
-Stop/escalation: commit/handoff now; do not enable A3, remove C2ME `breaks`, start combined Stage 8, or claim live pearl acceptance without a real client workload
+Active milestone: C2ME_LIFETIME
+Exact gate: exact locked C2ME + ScalableLux/Starlight composition passes ReadFromDisk lifetime, cancellation, unload/replacement, failure, stop settlement, save/restart, co-install, and literal W1/W4 proofs
+First missing proof: native terminal-failure settlement of requested DISK/dependent status futures. The locked C2ME MARK_BROKEN path releases action/busy state but leaves those futures pending; later requests remain pending and unload substitutes a generic failure. Native characterization and exact W1/W4 failure trials reproduce this blocker. Full unload/replacement, stop and co-install acceptance remain unproved.
+Files allowed: C2ME/ScalableLux disposable server evidence, existing C2ME adapters/observers, focused tests, and this current-work/handoff record; production `breaks` stays intact until acceptance
+Success criteria: exact provider hashes/configs; positive ReadFromDisk and persisted-light execution; cancellation before/after admission; unload/replacement; bounded failure and stop settlement; zero safety violations/residue; final production bytes verified before gate removal
+Stop/escalation: classify ownership/lease/cancellation/unload/stop authority as ASTRA-HARD; preserve an escalation packet if unresolved; do not remove C2ME `breaks`, enable A3, start combined Stage 8, or claim reduced-stack acceptance
+
+## Astra final disposition — 2026-09-13
+
+The authoritative decision is [STAGE7_C2ME_LIFETIME_DECISION.md](STAGE7_C2ME_LIFETIME_DECISION.md); the escalation remains **BLOCKED**. This disposition supersedes the provisional design and earlier continuation instructions below. The operation identity is the exact native action token/context/backing holder/DISK slot plus Phoenium lineage. Token cancellation is a request; acknowledgement requires the cancelled token and a CancellationException through the provider's error channel. Rx disposal is not authority. The existing `c2meControls` counter covers generation graphs, not disk-operation cancellation.
+
+Candidate v3 proved the bounded cancellation witness at W1 and W4: one matching successful token cancellation and one CANCELLED terminal, 119 APPLIED, 120/119 read registration/application counts, exit 0 and zero final retained/safety counters. But both exact failure trials propagated one FAILED operation and ended through the watchdog (exit 1). The independent `C2meNativeFailureSettlementTest` proves that native MARK_BROKEN settles busy/action state while DISK/FULL requesters remain pending, including a later request; removing all tickets substitutes UNLOADED_EXCEPTION. Thus logging the original failure and retiring Phoenium custody cannot establish provider-wide failure/stop settlement.
+
+The smallest required change belongs to the provider's transaction/future authority: atomically record the exact failed action/status generation, fail its affected requester slots with the original cause outside holder locks, define subsequent requests on the broken holder, and preserve native dependency/ticket/unload semantics. Phoenium cannot safely implement that contract using its own work/custody/dispatcher primitives alone. See the decision for exact bytecode and executable evidence.
+
+All experimental production changes were withdrawn after archiving exact v3 source, manifest and candidate bytes in `run/stage8/entry-20260913/astra-c2me-lifecycle/`. `git diff -- src/main` is empty. Luna's initial dirty observer/runner/plans are preserved; the successful-cancel identity receipt remains test-only. The native failure characterization test is retained. HEAD remains `31fea7d45b6f161fa3897d894cb016d89e1dcd79` on the original branch; no completion commit or push was made.
+
+Final full regression passed: **930 tests, 104 XML suites, 0 failures, 0 errors, 0 skipped; exit 0**. The final production build passed and reproduced **1,403,887 bytes**, SHA-256 `8A1C0C4852150C8D36E9EDB8DDEFC9F9B6E9A3E82AE71123D798416DD39A21FC`. Both production C2ME breaks remain, with no observer or experimental classes in the JAR. No project server remains running.
+
+The modified-byte persistence W4 trial missed its required reload marker and is not a pass. Full replacement/unload, stop and co-install matrices were not completed after the native blocker was established. Historical receipts remain historical; none clear the gate for the withdrawn candidate. Keep this card at C2ME_LIFETIME BLOCKED, not PANDA_A2_LIVE.
+
+First next command for Luna, from this repository, reproduces the blocker characterization:
+
+```powershell
+.\gradlew.bat test --rerun-tasks --no-daemon --tests "dev.phoenium.chunk.C2meNativeFailureSettlementTest"
+```
+
+Do not rerun unchanged installed witnesses or restore v3 as accepted production. Resume the complete lifetime matrix only after the native failure-settlement contract is addressed.
 
 ## Recovered completed work
 
@@ -29,7 +128,7 @@ VMP remains optional and blocked/partial; SLO strict seed parity remains exclude
 
 ## Entry gates still open after this continuation
 
-1. C2ME ReadFromDisk, async serialization, cancellation/failure/stop, unload/replacement, restart, co-install composition, and W1/W4 evidence remain required before removing `breaks`.
+1. C2ME exact provider W1/W4 persistence is positive on the disposable no-break candidate, but cancellation, unload/replacement, provider-wide co-install, the bounded-failure terminal outcome, and final-production-byte acceptance remain required before removing `breaks`.
 2. A2 is locally engineering-ready but lacks live pearl overflow/removal/reconnect workload acceptance; the separate projectile runtime cap and A3 staggering remain unaccepted.
 3. Real Bedrock gameplay, legacy Java/Via gameplay, and two-client voice microphone/proximity/reconnect coverage remain external-facility gates.
 
@@ -39,7 +138,7 @@ VMP is optional. No Stage 8 combined-stack acceptance has started.
 
 Windows `Microsoft.MinecraftUWP` version `1.26.4501.0`, Java Edition, and the authorized Moto G 2025 (`[device-serial]`, Android 16) were observed. The phone lacks `com.mojang.minecraftpe`; Windows Bedrock is only a candidate facility. Evidence: `run/stage8/entry-20260911/CLIENT_ENVIRONMENT_PREP.md`.
 
-## Current continuation checkpoint — authoritative after the local commit
+## Historical continuation checkpoint (2026-09-12)
 
 Checkpoint date: 2026-09-12.
 
@@ -149,7 +248,7 @@ Focused C2ME tests are green, and the final-byte candidate proves the mixins tra
 
 The installed/provider-wide gate is still blocked: exact ScalableLux provider composition is absent from the installed candidate, and the restart path falls back on the locked private-read contract.
 
-Required missing C2ME evidence remains cancellation before/after admission, unload/replacement, terminal failure/stop settlement, true save/restart state coverage under the locked provider, co-install composition, and actual W1/W4 acceptance before removing `breaks`.
+Required missing C2ME evidence at that checkpoint remained cancellation before/after admission, unload/replacement, terminal failure/stop settlement, true save/restart state coverage under the locked provider, co-install composition, and actual W1/W4 acceptance before removing `breaks`.
 
 The 2026-09-12 W1 smoke is not formal Stage 8 acceptance and does not remove any safety gate.
 
@@ -233,9 +332,29 @@ No storage inventory was run because the mandatory Stage 7 gates are not complet
 
 No cleanup, deletion, archive move, compression, deduplication, cache pruning, or `git clean` was performed.
 
+## Current C2ME_LIFETIME evidence — 2026-09-13
+
+The active WORK CARD remains `C2ME_LIFETIME`. The exact locked runtime inputs are now resolved and recorded:
+
+- C2ME `0.4.2-alpha.0.43+26.2`, SHA-256 `B013229383F51789C57684CBCFC12981C8D791206F3B594866DFEB74AED3770B`.
+- ScalableLux `0.3.0-alpha.0.3+26.2`, SHA-256 `8D76CF27589DCC8E16C34BA0709A9EE2134CFCD60B90862F8CBD204EA9B6C7C8`; its `fabric.mod.json` provides `starlight`, and no separate Starlight JAR was installed.
+- Fabric API `0.159.0+26.2`, SHA-256 `3F3A5D96E6A8F554A72E71FB507D6A979CA16D9190C305CEB1300F1D01E733EE`.
+- Production JAR remains `build/libs/phoenium-0.2.0-stage2.jar`, 1,403,887 bytes, SHA-256 `8A1C0C4852150C8D36E9EDB8DDEFC9F9B6E9A3E82AE71123D798416DD39A21FC`, with both C2ME `breaks` declarations intact.
+- Disposable no-break candidate remains `run/stage8/entry-20260912/candidates/a2-final-current/phoenium-0.2.0-stage2-a2-final.jar`, SHA-256 `4F25BAE543C5D8D79FFAEEE20D50643BB136D79E6A62F1DFE1D995E558367590`; it was never copied into `build/libs`.
+
+The literal W1 and W4 redstone fixtures passed first-phase save and normal stop, then restarted the same existing world and reached the ScalableLux-backed `ReadFromDiskAsync` path. Both runs emitted the fixture load/reload/persist/off markers, exited `0`, reported positive C2ME ReadFromDisk registrations/applications (`119/119` on restart), and ended with zero retained graphs, work, custody, provider failures, health violations, duplicate applications, fallbacks, ownership violations, leases and barriers. Evidence is retained at `run/stage8/entry-20260913/c2me-exact-lifetime-redstone-w1/` and `run/stage8/entry-20260913/c2me-exact-lifetime-redstone-w4/`.
+
+The real action-token cancellation witnesses also ran at literal W1 and W4. They held `SerializableChunkData.read` for 15 seconds on a C2ME worker, issued an external cancellation after 2 seconds, and recorded `C2ME_TEST_CANCEL attempted=49 cancelled=49 failures=0`. Both servers then settled and exited `0` with zero retained state and zero health counters. However, both final Phoenium binding receipts remained `c2meControls=0`; the cancellation did not invoke Phoenium's `CANCELLED` control path. Evidence is retained at `run/stage8/entry-20260913/c2me-exact-lifetime-cancel-cancellable3-w1/` and `run/stage8/entry-20260913/c2me-exact-lifetime-cancel-cancellable3-w4/`.
+
+The bounded provider-failure witnesses reached the exact injected `ChunkIoMainThreadTaskUtils.drainQueue(...).enter` failure at W1 and W4, recorded one `c2meReadProviderFailures`, and retired all Phoenium retained state. Their terminal receipts were not ordinary clean passes: W1 ended with `c2meControls=2` and W4 with `c2meControls=0`, both reported `scheduler=FAILED`, and the intentionally injected failure was logged during shutdown. These are preserved as failure-propagation evidence, not acceptance. Evidence is retained at `run/stage8/entry-20260913/c2me-exact-lifetime-failure-stop-w1/` and `run/stage8/entry-20260913/c2me-exact-lifetime-failure-stop-w4/`.
+
+The cancellation boundary is ASTRA-HARD under the campaign contract because resolving it requires choosing or changing cancellation/replay semantics and stop authority. Runtime inspection shows C2ME passes a `flowsched.scheduler.Cancellable` to `ReadFromDiskAsync.upgradeToThis`, while the current Phoenium bridge observes only Rx `Completable.doOnDispose`; the installed C2ME action token can be cancelled without disposing that Rx subscription. No production cancellation architecture was improvised. The focused escalation packet is `docs/STAGE7_C2ME_ESCALATION.md`.
+
+The disposable observer rebuild and runner syntax checks pass, but the checkout is intentionally dirty with test-only observer/runner changes, focused disposable plans, and this evidence update. No final Stage 7 commit was created because the C2ME gate is not accepted. No formal combined-stack Stage 8 acceptance has started.
+
 ### Next three actions
 
-1. Reopen the C2ME locked-provider lifetime gate with exact ScalableLux composition and exercise ReadFromDisk save/restart/cancel/unload/stop settlement in W1 and W4; keep `breaks` until every predicate has evidence.
+1. Resolve the ASTRA-HARD C2ME cancellation/unload/replacement/stop-authority boundary, then rerun the provider-wide exact W1/W4 acceptance with the production gate still retained until final-byte verification.
 
 2. If the C2ME gate is closed, run the real-client facility preparation and the bounded Stage 8 entry checklist; before that, do not claim Bedrock/Via/voice coverage from startup or protocol-only evidence.
 
@@ -248,3 +367,31 @@ Formal combined-stack Stage 8 acceptance has not started.
 The next owner should reread this current-work record and the Stage 7 contract before editing.
 
 The immediate executable next action is C2ME ReadFromDisk/cancel/unload/replacement lifetime evidence under the exact locked provider, with production `breaks` retained.
+
+## Historical provisional Astra lifecycle decision — 2026-09-13 (before production edits; withdrawn)
+
+The final BLOCKED disposition above supersedes this proposed implementation. It is retained to preserve the required pre-edit architecture decision and hypothesis history.
+
+Recovery evidence: `run/stage8/entry-20260913/astra-c2me-lifecycle/`. HEAD is `31fea7d45b6f161fa3897d894cb016d89e1dcd79`, branch `stage7/scalablelux-persisted-light-repair`; no staged changes or project server. The original tracked patch, all untracked diagnostic inputs, artifact hashes and process inventory are preserved there. No applicable AGENTS.md was found in this checkout or its ancestors.
+
+The locked `StatusAdvancingScheduler.advanceStatus0` creates distinct outer, dependency and action tokens. It creates one context for the action in `lambda$advanceStatus0$1`; all async retries and the synchronous fallback share that context. The operation identity is **that action token + exact context + backing holder + original DISK slot**, not the worker or an Rx wrapper. The slot alone is insufficient: a cancelled action can be retried against the same still-requested status slot.
+
+`Cancellable.cancel()` wins a CAS to CANCELLED and invokes an installed callback, if any. ReadFromDiskAsync ignores the token, never installs a callback, and never completes it. The provider scheduler only handles cancellation when both the action token is cancelled and the operation emits CancellationException. A normal Completable terminal still advances DISK even with a cancelled token. `subscribeOp` discards its Disposable and caches isolate subscriptions further. Rx disposal is therefore neither cancellation authority nor a valid way to settle the busy counter.
+
+Planned minimal adaptation: retain one provider-specific operation record from upgrade construction through the exact outer Completable terminal. Observe the real token at admission, private-read return, owner execution and publication. A successful token cancellation is a request; acknowledge CANCELLED exactly once when the provider computation reaches a safe checkpoint and emits a provider-recognized CancellationException. Never dispose the computation to fake that acknowledgement. Bind token.complete() as the atomic commit arbitration immediately before the first owner-routed POI effect (or final publication when the queue is empty). Cancellation wins before that commit; after commit the token rejects cancellation and the operation must finish or fail. No lock spans a provider call. Private ScalableLux persisted-light state belongs to the unpublished chunk; its vanilla retain/queue calls are no-ops under the exact engine.
+
+Replacement/unload: native ticket changes invoke outer-token cancellation through tickHandleBusy0/tryCancelAction; finished downgrade invalidates status futures and eventual holder removal closes the holder. Revalidate the exact provider holder/slot and Phoenium lifecycle/work before commit. A fresh native action gets a fresh operation even when it reuses a requested slot. A retired operation cannot recreate graph/work entries or take the empty-input branch.
+
+Failures: private pre-commit failures retain the provider's existing bounded retry policy; failures after a live POI effect are non-replayable and must bypass retry/fallback. Cancellation controls must bypass all retry, synchronous fallback, recover-from-errors success and chunk-load-failure reporting. Actual exhausted provider failure propagates unchanged and remains distinct from shutdown controls. The existing c2meControls counter counts generation graphs only; it cannot measure read cancellation. Add separate operation terminal counters.
+
+Stop: reject new operation admission when the runtime closes; request shutdown on uncommitted operations and prevent subsequent owner/publication effects. Preserve producer completion and provider busy-reference settlement instead of disposing the Rx chain. Committing owner work settles after its lease releases. The installed provider's own stop/drain boundary remains authoritative; no new scheduler or blocking owner wait is introduced.
+
+One-shot rule: OPEN -> COMMITTING -> APPLIED/FAILED, or OPEN -> CANCELLED/SUPERSEDED/SHUTDOWN. Control acknowledgement and physical producer settlement are separate; the operation record persists until the latter, so a late private result cannot regain publication authority. Reuse existing holder/status observation, custody/work/light registration, regional POI dispatcher and after-release completion. The only new primitive is the provider-specific operation record and terminal arbiter, with the token's CAS determining commit versus cancellation. This is a design decision pending deterministic and installed proof, not acceptance or permission to remove breaks.
+
+### Astra hypothesis ledger
+
+1. Hypothesis: optional-type ModifyReturnValue coercion supplies the provider return CHECKCAST. Test: candidate-v1 W1 installed startup. Observed: JVM VerifyError at ReadFromDisk.upgradeToThis return; no world workload ran. Consequence: this injector does not supply that cast; use the already-proven WrapOperation finalizeLoading surface for the sync outer terminal, preserving the lifecycle model. Evidence: astra-c2me-lifecycle/cancel-v1-w1/first.log.
+
+2. Hypothesis: throwing the terminal control from the provider recovery Function preserves cancellation. Test: candidate-v2 installed W1 plus actual locked Rx deterministic tests. Observed: SingleResumeNext wraps a callback throw with the upstream error into CompositeException, which is not the scheduler's CancellationException protocol; the installed command stalled and watchdog terminated the server. Both new Rx tests are RED (2/2 failures; rx-red.xml). Architectural consequence: the terminal must be returned as Single.error from each recovery node; token CAS authority alone does not preserve the provider error-channel contract. Revisited the complete cancellation chain before editing again; source retry driver may terminate with an error, but recovery Functions must return an error source. No timeouts/configuration or acceptance predicates changed.
+
+3. Hypothesis: after preserving the exact provider error channel, physical action/busy settlement provides terminal failure/stop settlement. Test: v3 W1/W4 failure witnesses and a deterministic test executing the locked native scheduler with MARK_BROKEN. Observed: both installed failure restarts watchdog exit 1; native busy/action settles but requested DISK/FULL futures remain pending, a second request stays pending, and removing every ticket substitutes generic UNLOADED_EXCEPTION. Consequence: this is a provider requester-future API gap independent of the Phoenium arbiter. Cancellation trials pass their bounded witness, but the complete repair is withdrawn and production exclusions remain. Evidence: astra-c2me-lifecycle/failure-v3-w1/, failure-v3-w4/, native-failure-final.xml and STAGE7_C2ME_LIFETIME_DECISION.md.
