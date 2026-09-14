@@ -2,6 +2,18 @@
 
 Updated: 2026-09-11
 
+## A3 continuation amendment — 2026-09-14
+
+A3 bounded-delay mob decisions and vehicle/passenger preservation are now
+**RUNTIME ACCEPTED** on W1/W4. The user explicitly excludes a hard ceiling on
+arbitrary vehicle-density cost, which would require a separate gameplay-changing
+policy. The approved startup/passenger prerequisites and the observed readiness
+regression are repaired and covered by the final deterministic/native receipts.
+See [STAGE7_A3_ACCEPTANCE_REPORT.md](STAGE7_A3_ACCEPTANCE_REPORT.md) for the exact
+artifact and evidence. The next bounded Stage 7 card is **REAL_CLIENT_GATES**;
+formal Stage 8 and Stage 9 remain **NOT STARTED**. This supersedes older claims
+below that A3 is unwired. The remaining historical architecture record is retained.
+
 ## Subsequent Stage 7 continuation amendment — 2026-09-13
 
 The bounded continuation after this 2026-09-11 architecture closeout accepted

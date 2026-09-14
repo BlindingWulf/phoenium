@@ -41,8 +41,21 @@ public final class LiveTickReadiness {
         public int count() { return inputs.size(); }
     }
     public static Receipt await(ServerLevel level) {
+        requireCoordinator(level);
+        return observeUntilSettled(level);
+    }
+    /** A receipt observes a producer slot; it does not prevent native slot replacement. */
+    public static Receipt refresh(Receipt receipt) {
+        Objects.requireNonNull(receipt, "receipt");
+        requireCoordinator(receipt.level);
+        while (!receipt.current()) receipt = observeUntilSettled(receipt.level);
+        return receipt;
+    }
+    private static void requireCoordinator(ServerLevel level) {
         if (OwnershipContext.current().isPresent() || !level.getServer().isSameThread())
             throw new IllegalStateException("ticking readiness must run on the owner-free server thread");
+    }
+    private static Receipt observeUntilSettled(ServerLevel level) {
         for (;;) {
             List<Input> inputs = capture(level);
             // Existing original ticking futures already include their radius-one FULL range.

@@ -1,17 +1,17 @@
 # Stage 7 Panda-derived native protection policy
 
-Updated: 2026-09-13
+Updated: 2026-09-14
 
 ## Result
 
-The Panda-derived protection item has an executable **DESIGN PASS**. The
-per-region/type projectile cap and per-player/dimension ender-pearl cap now have
-bounded production runtime acceptance at the real Minecraft client/server
-boundary. Mob/vehicle staggering remains design-only and unwired.
+The projectile cap and per-player/dimension ender-pearl cap retain their
+accepted production boundaries. A3 now implements bounded-delay smoothing of
+selected inactive mob decisions, with every native vehicle tick and passenger
+operation preserved. Exact acceptance evidence and the final artifact are in
+[STAGE7_A3_ACCEPTANCE_REPORT.md](STAGE7_A3_ACCEPTANCE_REPORT.md).
 
-Stage 7 now has explicit ownership-safe requirements for the three desired behaviors: per-area projectile caps, per-player ender-pearl caps, and bounded mob/vehicle staggering. The deterministic policy tests live in `src/test/java/dev/phoenium/stage7/NativeProtectionPolicyTest.java` with a test-only model in `NativeProtectionPolicyModel.java`.
-
-No Panda implementation code is copied, no Panda runtime JAR is introduced, and no live Minecraft behavior changes in this checkpoint.
+No Panda implementation code or runtime JAR is introduced. Formal Stage 8 and
+Stage 9 remain **NOT STARTED**; the next bounded Stage 7 card is REAL_CLIENT_GATES.
 
 ## Source behavior retained only as intent
 
@@ -32,7 +32,7 @@ The native policy deliberately does not preserve the source's unsafe mechanics: 
 5. World identity is part of every scope. Nothing in the Overworld consumes a Nether budget or vice versa.
 6. Cleanup uses object identity plus incarnation where lifecycle reuse is possible. Stale cleanup may not erase a later binding.
 7. Deterministic order is admission sequence, then stable object identity. Collection iteration order is never a policy decision.
-8. Stop/world-close cleanup must leave no retained policy work, membership or counters after the corresponding runtime lifetime ends.
+8. Stop/world-close cleanup must leave no retained policy work or membership after the corresponding runtime lifetime ends.
 
 ## Projectile cap
 
@@ -95,17 +95,73 @@ and `build/panda-a2-live/final-6194-w4/evidence-w4/PANDA-A2-LIVE.json`.
 
 ## Mob and vehicle staggering
 
-### Identity and fairness
+### Accepted A3 boundary — 2026-09-14
 
-The density scope is the current `RegionId`. Classes are explicit: monster, peaceful mob and vehicle; players, unknown/unclassified entities and controlled vehicles remain every-tick.
+The user explicitly approved bounded-delay mob smoothing and excluded a hard
+ceiling on arbitrary vehicle-density cost. This intentionally supersedes the
+original density-ceiling wording. The architecture trace is preserved in
+[STAGE7_A3_ARCHITECTURE_DECISION.md](STAGE7_A3_ARCHITECTURE_DECISION.md).
 
-For an enabled category above its configured threshold, the policy computes a positive stride bounded by an explicit maximum. Each entity gets a stable phase from UUID and must receive exactly one service slot in every stride-sized window. This provides a finite starvation bound independent of iteration order or runtime entity ID reuse.
+`MobDecisionMixin` wraps both full selector calls in `Mob.serverAiStep` with an
+owner-mob context. `MobDecisionGoalSelectorMixin` consults the scheduler only at
+the inactive `WrappedGoal.canUse` call inside `GoalSelector.tick`, and only for
+exact `NearestAttackableTargetGoal`, `RandomStrollGoal` and
+`WaterAvoidingRandomStrollGoal` classes. The supported exact vanilla mob dispatches
+are zombie, skeleton, creeper, cow, pig, sheep and chicken. Unknown subclasses,
+other goals, and mobs riding or carrying passengers retain native acquisition.
 
-### Preservation boundary
+Running-goal cleanup, continuation checks and ticks remain native. Brains,
+sensing, movement, navigation/pathfinding, temptation and other cooldowns,
+breeding, growth, effects, damage, despawn and every ordinary entity tick continue.
+No navigation recalculation is deferred by A3. Delaying selected acquisition can
+change its timing and random-number consumption; the preservation claim concerns
+the explicit per-tick boundary, not identical target/wandering histories.
 
-The scheduling rule is testable, but the current `RegionalChunkGameplayService.entityTicks` seam executes the original whole entity tick. Simply omitting that callback would slow more than AI: movement, breeding/age, despawn state, vehicle physics and entity-specific timers can all change. Panda's selective private-field compensation is version-fragile and is not accepted as a correctness proof for Minecraft 26.2.
+### Configuration, regional accounting and deadlines
 
-Therefore Stage 7 does **not** wire whole-entity staggering into production yet. A later implementation must either identify a narrower supported simulation boundary or prove a complete 26.2 compensation contract with farm/AI/vehicle acceptance before enabling it.
+- Default: `phoenium.protection.mobDecisions.enabled=false`; both A3 mixins are
+  omitted entirely by the mixin plugin.
+- Enable explicitly with `-Dphoenium.protection.mobDecisions.enabled=true`.
+- Positive `-Dphoenium.protection.mobDecisions.threshold=64` is the default density
+  threshold. A population at or below it is exempt. Acceptance uses 4 to activate
+  bounded fixtures. Settings are read at runtime construction/startup.
+- Scope: current Phoenium `RegionId` (including dimension), plus hostile/passive
+  category. This is derived accounting, never ownership authority.
+- Four cohorts are balanced by assigning each member to the smallest cohort;
+  removal/relocation rebalances by at most one move. Stable cohort sizes differ
+  by at most one. UUID hashing does not choose the service phase.
+- Both selectors share one gate decision per mob tick. With native full-selector
+  opportunities every two ticks, cohort service recurs within eight ticks and
+  adds at most six ticks from the first deferred eligible call.
+- The first-deferred entity tick survives relocation, rebalance, repeated
+  observations and world-time changes. An overdue call passes immediately. The
+  guarantee applies to native eligible opportunities; A3 does not tick unloaded
+  or inactive mobs or bypass goal flags to manufacture an opportunity.
+- Exact native and registry incarnations prevent stale retirement/relocation from
+  changing replacement membership. Unload/removal retires it; loaded entities
+  reconstruct it after restart. Stop clears every membership and cohort index.
+- Metadata uses bounded per-member state and per-region cohort indexes. There is
+  no new global gameplay lock, global entity scan, retained gameplay callback or
+  owner-to-owner wait. Cumulative scalar diagnostics may remain after stop.
+
+### Vehicles, provider compatibility and limits
+
+Every vehicle tick, movement/rail operation, collision-query result, collision
+pair, push and passenger pickup/lifecycle remains native. A3 introduces no vehicle
+scheduler or cap. Lithium's accepted minecart and navigation hooks remain in
+place; the enabled/disabled loaded instruction comparison and live motion/pickup
+comparisons are recorded in the acceptance report. The approved saved-passenger
+repair publishes only the exact native load batch's input facts before parent
+tracking; it adds no global vehicle scan or second ownership model.
+
+Arbitrary vehicle-density cost is **not hard-bounded by A3**, because doing so
+would require a separate gameplay-changing admission or interaction policy. No
+such policy is introduced. Mob smoothing also does not promise a fixed CPU ceiling
+for unrestricted population. Six ticks is a deferral bound, not a time budget.
+
+The accepted ServerCore activation/skip/breeding/lobotomize configuration remains
+unchanged. Representative navigation, timers, hostile acquisition and breeding
+workloads pass; this does not certify every modded AI subclass or technical farm.
 
 ## Executable adversarial requirements
 
@@ -123,18 +179,20 @@ Therefore Stage 7 does **not** wire whole-entity staggering into production yet.
 
 These specification tests remain useful adversarial coverage; the live
 projectile and pearl acceptance is recorded separately in the receipts above.
-They do not accept mob/vehicle staggering, which remains unwired.
+The legacy UUID-phase model is historical specification coverage only. Production
+A3 uses `MobDecisionSchedulerTest`, native-boundary tests and the W1/W4 runtime
+receipts; no UUID-phase model is wired into gameplay.
 
 ## Stage 7 decision
 
-The design requirement is closed for the two bounded live protections:
+The bounded production decisions are:
 
 - projectile cap: **RUNTIME PASS** for `(RegionId, projectile type)` scope, exact
   relocation/incarnation handling and owner-routed cleanup;
 - per-player pearl cap: **RUNTIME PASS** for `(WorldId, player UUID)` scope,
   reconnect preservation and deterministic exact-once cleanup;
-- mob/vehicle staggering: **DESIGN PASS / RUNTIME UNWIRED**; implementation still
-  waits for a simulation-preserving 26.2 tick boundary or proved compensation
-  contract.
+- A3: **RUNTIME PASS** for selected bounded-delay mob decisions and preserved
+  vehicle/passenger semantics, with the explicitly approved arbitrary-density
+  limitation above.
 
 No Phoenium ownership/lifecycle invariant is weakened to make the protection item appear complete.

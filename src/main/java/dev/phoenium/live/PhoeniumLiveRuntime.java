@@ -78,10 +78,10 @@ import org.slf4j.Logger;
  */
 public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecutor, ObjectOperationExecutor, ChunkBindingRuntime.Authority {
     private final Logger logger;
-    private final Map<WorldId, LiveRegion> regions = new LinkedHashMap<>();
+    private final Map<WorldId, LiveRegion> regions = new ConcurrentHashMap<>();
     /** Per-world prerequisite service lifetime; original chunk producers retain exact work identities. */
-    private final Map<WorldId, ChunkPrerequisiteServices> chunkPrerequisiteServices = new LinkedHashMap<>();
-    private final Map<RegionId, RegionRuntime> runtimes = new LinkedHashMap<>();
+    private final Map<WorldId, ChunkPrerequisiteServices> chunkPrerequisiteServices = new ConcurrentHashMap<>();
+    private final Map<RegionId, RegionRuntime> runtimes = new ConcurrentHashMap<>();
     private final RegionDirectory directory = new RegionDirectory();
     private final ObjectOwnershipRegistry objects = new ObjectOwnershipRegistry(directory);
     private final Map<TaskCorrelationId, PendingPacket> packets = new ConcurrentHashMap<>();
@@ -104,6 +104,7 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
     private final PearlMembershipLedger pearlMemberships = new PearlMembershipLedger();
     /** Derived projectile association only; current object ownership remains in {@link ObjectOwnershipRegistry}. */
     private final ProjectileMembershipLedger projectileMemberships = new ProjectileMembershipLedger();
+    private final MobDecisionScheduler mobDecisions = new MobDecisionScheduler(MobDecisionScheduler.Settings.fromProperties());
     /** Exact live aliases retained only for a selected or deferred owner-routed cleanup body. */
     private final Map<PearlMembershipLedger.PearlIdentity, Entity> pearlAliases = new ConcurrentHashMap<>();
     private final Map<TaskCorrelationId, PendingPearlRemoval> pendingPearlRemovals = new ConcurrentHashMap<>();
@@ -349,7 +350,6 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
                     pending.cacheState = ((LiveTickPhases.CacheAccess) pending.levelState.cache())
                         .phoenium$prepareChunkTick(pending.shouldKeepTicking(), true);
                 pending.readiness = LiveTickReadiness.await(pending.level());
-                if (!pending.readiness.current()) throw new IllegalStateException("live chunk readiness changed before gameplay");
                 // A native entity can cross a chunk-owner boundary between live ticks (for
                 // example, an ender pearl moved by the vanilla lifecycle callback). Reconcile
                 // that bounded observation before the next chunk-gameplay phase reads the entity
@@ -358,6 +358,9 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
                 entityIndexLifecycle.advancePendingRelocations(runtimes);
                 retryDeferredPearlCleanups();
                 if (projectileMemberships.settings().enabled()) retryDeferredProjectileCleanups();
+                // Native providers can replace a settled slot during coordinator work.
+                // Re-observe their original futures without replaying the distance-update prefix.
+                pending.readiness = LiveTickReadiness.refresh(pending.readiness);
                 phases.phoenium$afterChunkTick(pending.levelState, pending.cacheState);
                 pending.step = PendingTick.Step.BLOCK_EVENTS_COORDINATOR;
             }
@@ -580,6 +583,7 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
                 deferredProjectileCleanups.clear();
                 projectileAliases.clear();
                 projectileMemberships.close();
+                mobDecisions.close();
             });
         } finally {
             chunkPrerequisiteServices.clear();
@@ -794,6 +798,11 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
             if (existing.level() != level) throw new IllegalStateException("world instance changed without shutdown " + world.value());
             return chunkAuthority(world);
         }
+        // ServerLevel's constructor return publishes the complete world on the coordinator,
+        // before native ticket activation can start provider reads. Producers may only consume
+        // that publication; they must never compete to build directory generations or services.
+        if (!level.getServer().isSameThread() || OwnershipContext.current().isPresent())
+            throw new IllegalStateException("chunk world requested before coordinator publication " + world.value());
 
         explicitFixture = ExplicitLiveTopologyFixture.enabled();
         TopologyGeneration generation = new TopologyGeneration(directory.snapshot().generation().value() + 1);
@@ -824,12 +833,14 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
             defaults.put(world, new RegionRoute(region, generation, runtime.ownerEpoch()));
         }
         long worldInstanceSequence = lifecycleStarts + 1;
-        if (regions.put(world, new LiveRegion(level, region, key, runtime, worldInstanceSequence)) != null)
-            throw new IllegalStateException("duplicate controlled world " + world.value());
         runtimes.put(region, runtime);
         chunkPrerequisiteServices.put(world,
                 new ChunkPrerequisiteServices(world, "live-" + worldInstanceSequence, worldInstanceSequence));
         directory.publish(generation, routes, defaults);
+        // Release publication is last: a producer observing this marker sees all prior services
+        // and routes. No new global lock, provider wait, or owner-to-owner wait is required.
+        if (regions.putIfAbsent(world, new LiveRegion(level, region, key, runtime, worldInstanceSequence)) != null)
+            throw new IllegalStateException("duplicate controlled world " + world.value());
         return chunkAuthority(world);
     }
 
@@ -1231,6 +1242,7 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
     private boolean isRunning() { return state == State.RUNNING && scheduler != null && scheduler.lifecycle().acceptsSimulationWork(); }
     private void recordEntityRelocation(EntityIndexLifecycleAdapter.RelocationFact fact) {
         entityRelocations++;
+        mobDecisions.relocate(fact.objectId(), fact.incarnation(), fact.newRegion());
         if (!projectileMemberships.settings().enabled()) return;
         scheduleProjectileCleanup(projectileMemberships.relocate(fact.objectId(), fact.incarnation(),
             fact.oldRegion(), fact.newRegion()));
@@ -1273,6 +1285,7 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
             return;
         }
         observePearlAddress(entity, binding, enforcePearlPolicy);
+        observeMobDecision(entity, binding);
         if (projectileMemberships.settings().enabled())
             observeProjectileAddress(entity, binding, enforcePearlPolicy);
     }
@@ -1289,6 +1302,32 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
         projectileAliases.put(admission.membership().identity(), entity);
         if (enforcePolicy) scheduleProjectileCleanup(admission.cleanup());
     }
+
+    private void observeMobDecision(Entity entity, ObjectOwnership binding) {
+        if (!mobDecisions.settings().enabled() || !(entity instanceof net.minecraft.world.entity.Mob)
+                || !(entity instanceof FullEntityFacts.Access access)) return;
+        var category = MobDecisionContext.category(entity.getClass());
+        if (category != null) mobDecisions.observe(entity.getUUID().toString(), access.phoenium$entityIncarnation(),
+            binding.incarnation(), new MobDecisionScheduler.Scope(binding.owner(), category));
+    }
+
+    public boolean allowMobDecision(net.minecraft.world.entity.Mob mob) {
+        if (!mobDecisions.settings().enabled() || !isRunning()) return true;
+        var category = MobDecisionContext.category(mob.getClass());
+        if (category == null || !(mob instanceof FullEntityFacts.Access access)
+                || !(mob.level() instanceof ServerLevel level)) return true;
+        String id = mob.getUUID().toString();
+        ObjectOwnership binding = objects.current(id).orElse(null);
+        if (binding == null) return true; // Normal native admission, never policy metadata, owns safety.
+        var active = OwnershipContext.current().orElseThrow(() -> new IllegalStateException("mob decision without native owner"));
+        objects.requireCurrentOwner(id, binding.objectEpoch(), active.region());
+        var scope = new MobDecisionScheduler.Scope(binding.owner(), category);
+        mobDecisions.observe(id, access.phoenium$entityIncarnation(), binding.incarnation(), scope);
+        return mobDecisions.allow(id, access.phoenium$entityIncarnation(), scope, mob.tickCount,
+            level.getGameTime(), mob.isPassenger() || mob.isVehicle());
+    }
+
+    public MobDecisionScheduler.Snapshot mobDecisionSnapshot() { return mobDecisions.snapshot(); }
 
     private void observePearlAddress(Entity entity, ObjectOwnership binding, boolean enforcePearlPolicy) {
         if (!(entity instanceof ThrownEnderpearl pearl) || binding.kind() != OwnedObjectKind.ENTITY
@@ -1513,6 +1552,8 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
      */
     public void onEntityRemoved(Entity entity, Entity.RemovalReason reason) {
         if (!isRunning() || !(entity.level() instanceof ServerLevel level)) return;
+        if (entity instanceof FullEntityFacts.Access access)
+            mobDecisions.retire(entity.getUUID().toString(), access.phoenium$entityIncarnation());
         if (reason == Entity.RemovalReason.UNLOADED_WITH_PLAYER) preservePearlMembershipForReconnect(entity);
         else retirePearlMembership(entity);
         retireProjectileMembership(entity);

@@ -32,6 +32,9 @@ public final class PhoeniumMixinConfigPlugin implements IMixinConfigPlugin {
     @Override public String getRefMapperConfig() { return null; }
 
     @Override public boolean shouldApplyMixin(String targetClassName, String mixinClassName) {
+        if (mixinClassName.equals("dev.phoenium.mixin.MobDecisionMixin")
+                || mixinClassName.equals("dev.phoenium.mixin.MobDecisionGoalSelectorMixin"))
+            return dev.phoenium.live.MobDecisionScheduler.Settings.fromProperties().enabled();
         if (mixinClassName.equals(BASE_SERVER)) return !lithiumChunkAccess;
         if (mixinClassName.equals(LITHIUM_SERVER)) return lithiumChunkAccess;
         if (mixinClassName.equals(BASE_LEVEL)) return !lithiumChunkAccess;

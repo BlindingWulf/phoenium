@@ -117,14 +117,45 @@ final class LiveTickReadinessTest {
         assertFalse(receipt.current());
     }
 
+    @Test void replacementAfterAwaitRefreshesOriginalProducerBeforeGameplay() throws Exception {
+        var f = new Fixture(); var holder = new NewChunkHolderVanillaInterface(f.actual);
+        set(holder, ChunkHolder.class, "ticketLevel", 32);
+        f.visible.clear(); f.visible.put(ChunkPos.ZERO.pack(), holder);
+        var old = holder.directSlot();
+        old.complete(null);
+        f.delivery = ready -> assertTrue(ready.getAsBoolean());
+        var observed = LiveTickReadiness.await(f.level);
+        assertSame(observed, LiveTickReadiness.refresh(observed));
+        assertEquals(1, f.waits);
+        var next = new CompletableFuture<Void>();
+        holder.replaceSlot(next);
+        assertFalse(observed.current());
+        f.delivery = ready -> {
+            assertTrue(OwnershipContext.current().isEmpty());
+            assertFalse(ready.getAsBoolean());
+            next.complete(null);
+            assertTrue(ready.getAsBoolean());
+        };
+        var refreshed = LiveTickReadiness.refresh(observed);
+        assertNotSame(observed, refreshed);
+        assertTrue(refreshed.current());
+        assertSame(next, holder.directSlot());
+        assertEquals(2, f.waits);
+        assertEquals(2, holder.wrapperCalls());
+        assertFalse(old.isCancelled());
+    }
+
     @Test void ownerCannotWaitAndTerminalOriginalResultsAreNotManufacturedIntoSuccess() throws Exception {
         var f = new Fixture(); var failure = new IllegalStateException("original neighbor generation");
         f.input.completeExceptionally(failure);
         f.delivery = ready -> assertTrue(ready.getAsBoolean());
-        assertTrue(LiveTickReadiness.await(f.level).current()); assertTrue(f.input.isCompletedExceptionally());
+        var receipt = LiveTickReadiness.await(f.level);
+        assertTrue(receipt.current()); assertTrue(f.input.isCompletedExceptionally());
+        assertSame(receipt, LiveTickReadiness.refresh(receipt));
         var owner = new RegionId(new WorldId("tick"), "owner"); var leases = new RegionLeaseManager(owner);
         try (var lease = leases.acquire(); var owned = OwnershipContext.enter(owner, lease.epoch(), OperationCategory.TICK)) {
             assertThrows(IllegalStateException.class, () -> LiveTickReadiness.await(f.level));
+            assertThrows(IllegalStateException.class, () -> LiveTickReadiness.refresh(receipt));
         }
         assertEquals(1, f.waits);
     }

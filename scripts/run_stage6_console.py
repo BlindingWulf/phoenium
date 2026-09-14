@@ -157,8 +157,10 @@ def lifecycle(server, output, phase, command, actions, expected, flush_before_st
             else:
                 send(action["command"])
                 readiness = action.get("pollReadiness", False)
-                if readiness and not re.fullmatch(r"execute if loaded -?\d+ -?\d+ -?\d+ run say [A-Z_]+", action["command"]):
-                    raise RuntimeError("Readiness polling accepts only a read-only loaded-chunk query")
+                if readiness and not re.fullmatch(
+                        r"(?:execute if loaded -?\d+ -?\d+ -?\d+|execute unless entity @e\[tag=[A-Za-z0-9_-]+\]) run say [A-Z_]+",
+                        action["command"]):
+                    raise RuntimeError("Readiness polling accepts only read-only chunk or tagged-entity absence queries")
                 item["observed"] = wait_for(action["expect"], action.get("timeout", 90), action.get("regex", False),
                     action["command"] if readiness else None)
                 item["elapsedSeconds"] = time.monotonic()-start-item["atSeconds"]

@@ -161,6 +161,15 @@ tasks.register('pandaA2Harness', Jar) {
     from('src/pandaA2Harness/resources')
 }
 
+tasks.register('a3Harness', Jar) {
+    description = 'Build the isolated Stage 7 A3 native observation harness.'
+    dependsOn tasks.named('compileTestJava')
+    archiveFileName = 'a3-live-probe.jar'
+    destinationDirectory = layout.buildDirectory.dir('test-harness')
+    from(sourceSets.test.output.classesDirs) { include 'dev/phoenium/a3/**' }
+    from('src/a3Harness/resources')
+}
+
 loom {
     runs {
         clientGameTest {

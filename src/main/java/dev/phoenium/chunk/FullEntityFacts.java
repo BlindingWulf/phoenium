@@ -167,6 +167,68 @@ public final class FullEntityFacts {
         facts.service.changed(FullFinishingServices.Kind.ENTITY_REGISTRY);
     }
 
+    /**
+     * Exact native saved-reader batch at its serial delivery edge. A parent's original tracking
+     * callback can inspect passengers that occur later in that same batch. Publish their input
+     * scalars/routes without adding visible candidates, UUID-directory entries or object owners.
+     * Actual storage/lookup insertion remains authoritative; unused input facts expire at close.
+     */
+    public static LoadedBatch loadedBatch(ServerLevel world, List<Entity> inputs) {
+        FullFinishingServices.requireWorld(world, FullFinishingServices.Kind.ENTITY_REGISTRY);
+        var facts = FullFinishingServices.forServer(world.getServer()).entityFacts;
+        LoadedBatch batch = new LoadedBatch(facts);
+        try {
+            for (Entity entity : inputs) {
+                if (entity.level() != world || !(entity instanceof Access))
+                    throw new ChunkProtocolException("saved entity batch world or native identity changed");
+                facts.candidateMetadata.lock();
+                try { if (facts.routes.containsKey(entity)) continue; }
+                finally { facts.candidateMetadata.unlock(); }
+                batch.staged.add(entity);
+                batch.previousFacts.put(entity, ((Access) entity).phoenium$referenceFact());
+                publish(entity, true);
+                ChunkPos position = entity.chunkPosition();
+                Vec3 precise = entity.position();
+                facts.candidateMetadata.lock();
+                try {
+                    long revision = facts.routingSequence = Math.incrementExact(facts.routingSequence);
+                    facts.routes.put(entity, new Route(position, revision));
+                    facts.precisePositions.put(entity, precise);
+                } finally { facts.candidateMetadata.unlock(); }
+            }
+            for (Entity entity : batch.staged) passengersChanged(entity);
+            return batch;
+        } catch (Throwable failure) {
+            try { batch.close(); } catch (Throwable cleanup) { failure.addSuppressed(cleanup); }
+            throw failure;
+        }
+    }
+
+    public static final class LoadedBatch implements AutoCloseable {
+        private final FullEntityFacts facts;
+        private final List<Entity> staged = new ArrayList<>();
+        private final IdentityHashMap<Entity, Fact> previousFacts = new IdentityHashMap<>();
+        private boolean closed;
+        private LoadedBatch(FullEntityFacts facts) { this.facts = facts; }
+        @Override public void close() {
+            if (closed) return;
+            closed = true;
+            facts.candidateMetadata.lock();
+            try {
+                for (Entity entity : staged) {
+                    Fact fact = ((Access) entity).phoenium$referenceFact();
+                    boolean visible = fact != null && facts.candidates.getOrDefault(fact.world, new LinkedHashMap<>())
+                        .get(fact.runtimeId) == entity;
+                    if (facts.stored.containsKey(entity) || visible) continue;
+                    facts.routes.remove(entity); facts.precisePositions.remove(entity);
+                    facts.removeRelationsLocked(entity);
+                    ((Access) entity).phoenium$referenceFact(previousFacts.get(entity));
+                }
+                staged.clear(); previousFacts.clear();
+            } finally { facts.candidateMetadata.unlock(); }
+        }
+    }
+
     /** Runs after the original removal callback, including tracker removal and UUID retirement. */
     public static void unstored(Entity entity, Object manager) {
         Fact fact = entity instanceof Access access ? access.phoenium$referenceFact() : null;

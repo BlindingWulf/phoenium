@@ -20,6 +20,25 @@ abstract class RegionalEntityStorageMixin<T extends EntityAccess> {
     @Shadow @Final private LevelCallback<T> callbacks;
     @Shadow @Final private EntitySectionStorage<T> sectionStorage;
 
+    @WrapOperation(method = {"processPendingLoads", "addLegacyChunkEntities"},
+        at = @org.spongepowered.asm.mixin.injection.At(value = "INVOKE",
+            target = "Ljava/util/stream/Stream;forEach(Ljava/util/function/Consumer;)V"), require = 2, allow = 2)
+    private void phoenium$loadedInputs(java.util.stream.Stream<T> stream, java.util.function.Consumer<T> consumer,
+            Operation<Void> original) {
+        if (!(callbacks instanceof RegionalEntityStorageWorld source))
+            throw new IllegalStateException("native loaded batch lost its world callback identity");
+        var values = stream.toList();
+        var entities = values.stream().map(value -> {
+            if (!(value instanceof Entity entity)) throw new IllegalStateException("native loaded entity type changed");
+            return entity;
+        }).toList();
+        var level = source.phoenium$entityStorageWorld();
+        try (var turn = FullFinishingServices.forServer(level.getServer()).referenceAccess();
+             var batch = dev.phoenium.chunk.FullEntityFacts.loadedBatch(level, entities)) {
+            original.call(values.stream(), consumer);
+        }
+    }
+
     @WrapOperation(method = "addEntity(Lnet/minecraft/world/level/entity/EntityAccess;Z)Z",
         at = @org.spongepowered.asm.mixin.injection.At(value = "INVOKE",
             target = "Lnet/minecraft/world/level/entity/EntitySection;add(Lnet/minecraft/world/level/entity/EntityAccess;)V"))

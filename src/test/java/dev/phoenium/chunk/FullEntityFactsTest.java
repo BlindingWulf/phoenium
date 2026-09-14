@@ -273,4 +273,105 @@ final class FullEntityFactsTest {
         assertThrows(ChunkProtocolException.class,
             () -> FullEntityFacts.orderedDescendants(vehicle, node -> direct.getOrDefault(node, List.of())));
     }
+
+    private static Entity reader(ServerLevel world, int id, int chunkX) throws Exception {
+        Entity entity=stub(Entity.class,List.of()); initialize(entity,world,UUID.randomUUID(),id,EntityTypes.PIG);
+        set(entity,Entity.class,"chunkPosition",new net.minecraft.world.level.ChunkPos(chunkX,0));
+        set(entity,Entity.class,"position",new net.minecraft.world.phys.Vec3(chunkX*16+1,65,1));
+        return entity;
+    }
+    @Test void parentFirstNativeInsertionCanProjectNestedPassengersFromExactLoadedBatch() throws Exception {
+        try(var f=new FullServiceOperationFixture()) {
+            var world=f.world(); var parent=reader(world,201,0); var child=reader(world,202,1); var grandchild=reader(world,203,2);
+            set(parent,Entity.class,"passengers",ImmutableList.of(child)); set(child,Entity.class,"passengers",ImmutableList.of(grandchild));
+            Object manager=new Object(); var lookup=new EntityLookup<Entity>();
+            try(var turn=f.service.referenceAccess()) {
+                try(var batch=FullEntityFacts.loadedBatch(world,List.of(parent,child,grandchild))) {
+                    assertEquals(0,f.service.entityFacts.cut(world).candidates().size());
+                    assertEquals(0L,f.service.entityFacts.measurements().get("addressable"));
+                    FullEntityFacts.stored(parent,manager); lookup.add(parent);
+                    var source=f.service.entityFacts.trackingCandidate(world,parent);
+                    var passengers=f.service.entityFacts.trackingPassengers(source);
+                    assertEquals(List.of(child,grandchild),passengers.stream().map(FullEntityFacts.Candidate::alias).toList());
+                    assertEquals(List.of(1,2),passengers.stream().map(p->p.position().x()).toList());
+                    assertTrue(f.service.entityFacts.validTrackingPassengers(source,passengers));
+                    assertNull(lookup.getEntity(child.getUUID()),"staged input must not appear in native lookup");
+                    FullEntityFacts.stored(child,manager); lookup.add(child);
+                    FullEntityFacts.stored(grandchild,manager); lookup.add(grandchild);
+                }
+                assertEquals(3,f.service.entityFacts.cut(world).candidates().size());
+                assertEquals(2,f.service.entityFacts.trackingPassengers(f.service.entityFacts.trackingCandidate(world,parent)).size());
+            }
+        }
+    }
+    @Test void failedLoadedBatchKeepsActualInsertionPrefixAndRetiresUnconsumedInputs() throws Exception {
+        try(var f=new FullServiceOperationFixture()) {
+            var world=f.world(); var inserted=reader(world,211,0); var unused=reader(world,212,1);
+            var lookup=new EntityLookup<Entity>(); RuntimeException expected=new RuntimeException("native failure");
+            try(var turn=f.service.referenceAccess()) {
+                assertSame(expected,assertThrows(RuntimeException.class,()->{
+                    try(var batch=FullEntityFacts.loadedBatch(world,List.of(inserted,unused))) {
+                        FullEntityFacts.stored(inserted,new Object()); lookup.add(inserted); throw expected;
+                    }
+                }));
+                assertSame(inserted,lookup.getEntity(inserted.getUUID()));
+                assertNotNull(f.service.entityFacts.trackingCandidate(world,inserted));
+                assertThrows(ChunkProtocolException.class,()->f.service.entityFacts.trackingCandidate(world,unused));
+                assertNull(((FullEntityFacts.Access)unused).phoenium$referenceFact());
+            }
+        }
+    }
+    @Test void foreignLoadedInputRollsBackOnlyItsUnpublishedPrefix() throws Exception {
+        try(var f=new FullServiceOperationFixture()) {
+            var world=f.world(); var other=f.world(); var local=reader(world,221,0); var foreign=reader(other,222,0);
+            try(var turn=f.service.referenceAccess()) {
+                assertThrows(ChunkProtocolException.class,()->FullEntityFacts.loadedBatch(world,List.of(local,foreign)));
+                assertNull(((FullEntityFacts.Access)local).phoenium$referenceFact());
+                assertNull(((FullEntityFacts.Access)foreign).phoenium$referenceFact());
+                assertThrows(ChunkProtocolException.class,()->f.service.entityFacts.trackingCandidate(world,local));
+            }
+        }
+    }
+    @Test void loadedBatchDoesNotReplaceExistingPublishedIdentityOrVisibleOrder() throws Exception {
+        try(var f=new FullServiceOperationFixture()) {
+            var world=f.world(); var existing=reader(world,231,0); var lookup=new EntityLookup<Entity>(); lookup.add(existing);
+            try(var turn=f.service.referenceAccess()) {
+                var before=f.service.entityFacts.trackingCandidate(world,existing);
+                try(var batch=FullEntityFacts.loadedBatch(world,List.of(existing,existing))) {
+                    assertEquals(before,f.service.entityFacts.trackingCandidate(world,existing));
+                }
+                assertEquals(before,f.service.entityFacts.trackingCandidate(world,existing));
+                assertEquals(List.of(existing),f.service.entityFacts.cut(world).candidates().stream().map(FullEntityFacts.Candidate::alias).toList());
+            }
+        }
+    }
+    @Test void unconsumedReloadInputRestoresPreviouslyPublishedReferenceFact() throws Exception {
+        try(var f=new FullServiceOperationFixture()) {
+            var world=f.world(); var entity=reader(world,241,0); var lookup=new EntityLookup<Entity>();
+            lookup.add(entity); lookup.remove(entity);
+            var before=((FullEntityFacts.Access)entity).phoenium$referenceFact();
+            try(var turn=f.service.referenceAccess()) {
+                try(var batch=FullEntityFacts.loadedBatch(world,List.of(entity))) {
+                    assertNotNull(f.service.entityFacts.trackingCandidate(world,entity));
+                }
+                assertSame(before,((FullEntityFacts.Access)entity).phoenium$referenceFact());
+                assertThrows(ChunkProtocolException.class,()->f.service.entityFacts.trackingCandidate(world,entity));
+            }
+        }
+    }
+    @Test void unconsumedSameUuidReaderCannotRetireCurrentNativeDirectoryEntry() throws Exception {
+        try(var f=new FullServiceOperationFixture()) {
+            var world=f.world(); var current=reader(world,251,0); var rejected=reader(world,252,1);
+            rejected.setUUID(current.getUUID()); var lookup=new EntityLookup<Entity>();lookup.add(current);
+            try(var turn=f.service.referenceAccess()) {
+                var before=f.service.entityFacts.trackingCandidate(world,current);
+                try(var batch=FullEntityFacts.loadedBatch(world,List.of(rejected))) {
+                    assertSame(current,lookup.getEntity(current.getUUID()));
+                }
+                assertEquals(before,f.service.entityFacts.trackingCandidate(world,current));
+                assertSame(current,lookup.getEntity(current.getUUID()));
+                assertNull(((FullEntityFacts.Access)rejected).phoenium$referenceFact());
+            }
+        }
+    }
 }

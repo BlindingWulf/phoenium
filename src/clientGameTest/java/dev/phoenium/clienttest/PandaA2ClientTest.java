@@ -58,8 +58,8 @@ public final class PandaA2ClientTest implements FabricClientGameTest {
     private static final int CLIENT_CONNECT_TIMEOUT_TICKS = 1_200;
     private static final Pattern NUMERIC_FIELD = Pattern.compile("\\b([A-Za-z][A-Za-z0-9_.-]*)=(-?\\d+)");
     private static final Pattern MOVE_FIELDS = Pattern.compile("packets=move\\[([^]]*)\\]");
-    private static final String PRODUCTION_SHA256 =
-            "619485DAAF545D9D99C1D630BD60A392B4447BB2099DD44C262E3EFA890655CD";
+    private static final String PRODUCTION_SHA256 = System.getProperty("phoenium.panda.expectedProductionSha256",
+            "619485DAAF545D9D99C1D630BD60A392B4447BB2099DD44C262E3EFA890655CD");
     private static final String C2ME_SHA256 =
         "8AE4F2BB5FB15A28E555816DE89F0E400EA6A55A11213673E60068BC43C13D53";
     private static final String SCALABLE_LUX_SHA256 =

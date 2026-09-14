@@ -1,8 +1,58 @@
 # Stage 8 handoff — entry prerequisites only
 
-Updated: 2026-09-13. Formal combined-stack Stage 8 acceptance has not started.
+Updated: 2026-09-14. This remains a Stage 7 continuation. Formal Stage 8 and
+Stage 9 are **NOT STARTED**.
 
-## Current handoff to Luna
+## WORK CARD
+
+Active milestone: **REAL_CLIENT_GATES**.
+
+**A3 ACCEPTED — RETURN TO LUNA**. The user-approved bounded-delay mob mechanism,
+vehicle/passenger preservation and separately approved startup/passenger repairs
+passed deterministic and native W1/W4 acceptance. Read the authoritative
+[A3 acceptance report](STAGE7_A3_ACCEPTANCE_REPORT.md) for the exact boundary,
+configuration, limitations and evidence; the earlier architecture investigation
+is historical. There is no pending scope question.
+
+Production `build/libs/phoenium-0.2.0-stage2.jar`: **1,477,787 bytes**, SHA-256
+`4857C0400CFE4D3015EC9628EEA0530F5150E8D7CC4B488BF694EB808A2D7E82`. The coherent local commit containing this report is the A3 checkpoint;
+`git log -1 --format=%H` and `build/a3-live/closure-manifest.json` identify its HEAD.
+Full suite: **1,003 tests / 112 suites / zero failures, errors or skips**.
+
+Enabled/disabled W1/W4 native roots: `build/a3-live/final-a3-w1/`,
+`final-a3-w4/`, `final-a3-control-w1/`, `final-a3-control-w4/`. All first/restart
+lifetimes pass, including actual unload/reload and saved mounted passengers.
+The final artifact also passes real-client A2 and projectile W1/W4 regressions
+under `build/a3-live/closure-client-*/`, and directly affected C2ME coinstall
+first/restart W1/W4 regressions. Packaging and vehicle/navigation export audits
+pass. Provider artifacts and accepted ServerCore settings remain unchanged.
+
+A3 defaults off; explicit enable uses
+`-Dphoenium.protection.mobDecisions.enabled=true`, with a positive threshold
+(default 64). Four balanced regional/category cohorts delay only three reviewed
+inactive goal-acquisition classes, by at most six additional eligible entity ticks.
+All ordinary ticks, navigation, timers, vehicles, collisions and passengers remain
+native. Arbitrary vehicle-density cost is explicitly **not hard-bounded by A3**;
+a separate gameplay-changing policy would be required and is not introduced.
+
+Exact Luna continuation:
+
+> Continue REAL_CLIENT_GATES from docs/STAGE8_ENTRY_CURRENT_WORK.md. Preserve the
+> accepted A3, PANDA_A2_LIVE, PROJECTILE_CAP and pinned C2ME settlement2 + ScalableLux
+> receipts. Prepare bounded real Bedrock, legacy Java/Via and two-client voice
+> facility gates as available. Do not claim gameplay/audio acceptance from
+> startup-only evidence. Do not start formal Stage 8 or Stage 9.
+
+First local command:
+
+```powershell
+Get-Content 'C:\Users\Admin\Downloads\Project PHOENIUM\Phoenium\docs\STAGE8_ENTRY_CURRENT_WORK.md'
+```
+
+The following prior receipts preserve their original artifacts and dates; their
+older A3 continuation instructions are superseded by this work card.
+
+## Historical C2ME handoff — 2026-09-13
 
 **C2ME_UPSTREAM_SETTLEMENT RESOLVED — C2ME_LIFETIME ACCEPTED — RETURN TO LUNA**
 
@@ -50,7 +100,7 @@ Exact continuation instruction:
 Get-Content docs/STAGE8_ENTRY_CURRENT_WORK.md
 ```
 
-## Current bounded Stage 7 receipts
+## Historical bounded Stage 7 receipts — 6194 artifact
 
 The final runtime artifact is `build/libs/phoenium-0.2.0-stage2.jar`,
 1,457,625 bytes, SHA-256

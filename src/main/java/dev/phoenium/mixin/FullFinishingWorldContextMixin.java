@@ -16,6 +16,7 @@ abstract class FullFinishingWorldContextMixin {
     private void phoenium$world(CallbackInfo ci) {
         ServerLevel world = (ServerLevel) (Object) this;
         FullFinishingServices.forServer(world.getServer()).registerWorld(world);
+        dev.phoenium.Phoenium.liveRuntime().requireChunkWorld(world);
     }
     @WrapMethod(method = "setEnvironmentAttributes")
     private EnvironmentAttributeSystem phoenium$environment(EnvironmentAttributeSystem value, Operation<EnvironmentAttributeSystem> original) {
