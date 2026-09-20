@@ -14,7 +14,8 @@ import java.util.Set;
  * store. An escaping footprint must fail closed via {@link ClosureEscapeException}: it must never
  * be clamped, replayed, reinterpreted as a relocation, or satisfied by a destination-only check.
  */
-public record FrozenRegionAuthority(RegionId region, TopologyGeneration generation, Set<RoutingKey> domain) {
+public record FrozenRegionAuthority(RegionId region, TopologyGeneration generation, Set<RoutingKey> domain,
+                                    boolean wholeWorld) {
     public FrozenRegionAuthority {
         domain = Set.copyOf(domain);
     }
@@ -24,14 +25,20 @@ public record FrozenRegionAuthority(RegionId region, TopologyGeneration generati
         for (java.util.Map.Entry<RoutingKey, RegionRoute> entry : view.routes().entrySet()) {
             if (entry.getValue().region().equals(region)) domain.add(entry.getKey());
         }
-        return new FrozenRegionAuthority(region, view.generation(), domain);
+        // RegionDirectory treats a default-only world as one deliberate whole-world region.
+        // Preserve that published authority in the frozen admission snapshot. Once any explicit
+        // route exists for the world, resolve() disables the default and this snapshot must too.
+        RegionRoute defaultRoute = view.worldDefaults().get(region.world());
+        boolean wholeWorld = !view.hasExplicitRoutesForWorld(region.world())
+            && defaultRoute != null && defaultRoute.region().equals(region);
+        return new FrozenRegionAuthority(region, view.generation(), domain, wholeWorld);
     }
     /** Checks the complete footprint, not only the resolved destination. */
     public void requireWithin(Collection<RoutingKey> footprint) {
         if (footprint == null) throw new IllegalArgumentException("footprint");
-        if (domain.containsAll(footprint)) return;
+        if (footprint.stream().allMatch(this::contains)) return;
         Set<RoutingKey> missing = new LinkedHashSet<>(footprint);
-        missing.removeAll(domain);
+        missing.removeIf(this::contains);
         throw new ClosureEscapeException("footprint escapes frozen authority of " + region.value()
             + " at generation " + generation.value() + ": " + missing);
     }
@@ -51,6 +58,7 @@ public record FrozenRegionAuthority(RegionId region, TopologyGeneration generati
                 + " leaves the representable routing domain of " + region.value()
                 + " at generation " + generation.value());
         }
+        if (wholeWorld && region.world().equals(world)) return;
         long sideX = x1 - x0 + 1;
         long sideZ = z1 - z0 + 1;
         long area = sideX > Long.MAX_VALUE / sideZ ? Long.MAX_VALUE : sideX * sideZ;
@@ -69,6 +77,9 @@ public record FrozenRegionAuthority(RegionId region, TopologyGeneration generati
                 }
             }
         }
+    }
+    private boolean contains(RoutingKey key) {
+        return domain.contains(key) || (wholeWorld && region.world().equals(key.world()));
     }
     private static boolean representable(long coordinate) { return coordinate >= Integer.MIN_VALUE && coordinate <= Integer.MAX_VALUE; }
     private static String box(long x0, long x1, long z0, long z1) { return "x[" + x0 + ".." + x1 + "] z[" + z0 + ".." + z1 + "]"; }

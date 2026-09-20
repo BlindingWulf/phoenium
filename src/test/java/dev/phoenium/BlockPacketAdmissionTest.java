@@ -24,6 +24,27 @@ import org.junit.jupiter.api.Test;
 /** Deterministic block-packet target/closure admission tests; no native packet replay is faked. */
 class BlockPacketAdmissionTest {
     @Test
+    void defaultOnlySerialWorldAdmitsTheCompleteBlockClosure() {
+        WorldId world = new WorldId("minecraft:overworld");
+        RoutingKey playerKey = new RoutingKey(world, 0, 0);
+        RoutingKey targetKey = new RoutingKey(world, 1, 0);
+        RegionId serial = new RegionId(world, "stage2-live-world");
+        TopologyGeneration generation = new TopologyGeneration(1);
+        RegionRoute route = new RegionRoute(serial, generation, new OwnerEpoch(0));
+        RegionDirectory directory = new RegionDirectory();
+        directory.publish(generation, Map.of(), Map.of(world, route));
+        ObjectOwnershipRegistry objects = new ObjectOwnershipRegistry(directory);
+        ObjectOwnership player = objects.admit("player", OwnedObjectKind.PLAYER, playerKey);
+        Set<RoutingKey> footprint = new TopologyPlanner().requiredClosure(Set.of(playerKey, targetKey), 1);
+
+        LiveBlockPacketAdmission.Ticket ticket = LiveBlockPacketAdmission.admit(directory, player, footprint);
+
+        assertEquals(serial, ticket.owner());
+        assertEquals(footprint, ticket.footprint());
+        ticket.requireCurrent(directory, objects, serial);
+    }
+
+    @Test
     void targetAndImmediateCallbackHaloAdmitOnlyInsideOnePublishedOwner() {
         Fixture f = new Fixture(false);
         LiveBlockPacketAdmission.Ticket ticket = f.admit();

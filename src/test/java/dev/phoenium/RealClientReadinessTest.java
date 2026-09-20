@@ -14,9 +14,12 @@ import dev.phoenium.ownership.ObjectOwnership;
 import dev.phoenium.ownership.ObjectOwnershipRegistry;
 import dev.phoenium.ownership.OwnedObjectKind;
 import dev.phoenium.region.RegionId;
+import dev.phoenium.topology.ClosureEscapeException;
 import dev.phoenium.topology.FrozenRegionAuthority;
 import dev.phoenium.topology.RegionDirectory;
+import dev.phoenium.topology.RegionRoute;
 import dev.phoenium.topology.RoutingKey;
+import java.util.Set;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.*;
@@ -71,6 +74,43 @@ class RealClientReadinessTest {
         assertEquals(plan.a(), directory.resolve(new RoutingKey(world, 1, 0)).orElseThrow().region());
         assertEquals(plan.b(), directory.resolve(new RoutingKey(world, 5, 0)).orElseThrow().region());
         assertTrue(directory.resolve(new RoutingKey(world, 20, 0)).isEmpty());
+    }
+
+    @Test void defaultOnlyWorldFreezesAsWholeWorldAuthority() {
+        WorldId world = new WorldId("minecraft:overworld");
+        RegionId serial = new RegionId(world, "stage2-live-world");
+        TopologyGeneration generation = new TopologyGeneration(1);
+        RegionDirectory directory = new RegionDirectory();
+        directory.publish(generation, Map.of(), Map.of(world,
+            new RegionRoute(serial, generation, new OwnerEpoch(0))));
+
+        FrozenRegionAuthority authority = FrozenRegionAuthority.freeze(directory, serial);
+
+        assertTrue(authority.wholeWorld());
+        assertTrue(authority.domain().isEmpty(), "whole-world authority does not enumerate chunk keys");
+        authority.requireWithin(Set.of(new RoutingKey(world, -1000, 2000)));
+        authority.requireWithinBox(world, -1000, 1000, -2000, 2000);
+        assertThrows(ClosureEscapeException.class,
+            () -> authority.requireWithin(Set.of(new RoutingKey(new WorldId("minecraft:the_nether"), 0, 0))));
+    }
+
+    @Test void explicitRoutesDisableWholeWorldDefaultAuthority() {
+        WorldId world = new WorldId("minecraft:overworld");
+        RegionId serial = new RegionId(world, "stage2-live-world");
+        TopologyGeneration generation = new TopologyGeneration(1);
+        RoutingKey explicit = new RoutingKey(world, 0, 0);
+        RegionRoute route = new RegionRoute(serial, generation, new OwnerEpoch(0));
+        RegionDirectory directory = new RegionDirectory();
+        directory.publish(generation, Map.of(explicit, route), Map.of(world, route));
+
+        FrozenRegionAuthority authority = FrozenRegionAuthority.freeze(directory, serial);
+
+        assertFalse(authority.wholeWorld());
+        authority.requireWithin(Set.of(explicit));
+        assertThrows(ClosureEscapeException.class,
+            () -> authority.requireWithin(Set.of(new RoutingKey(world, 1, 0))));
+        assertThrows(ClosureEscapeException.class,
+            () -> authority.requireWithinBox(world, 0, 1, 0, 0));
     }
 
     @Test void firstPlayerOwnershipExistsBeforeMovementIngressAndCannotUseDefaultFallback() {
