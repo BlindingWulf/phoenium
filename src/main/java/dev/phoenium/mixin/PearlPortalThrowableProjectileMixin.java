@@ -3,20 +3,16 @@ package dev.phoenium.mixin;
 import com.llamalad7.mixinextras.injector.ModifyExpressionValue;
 import dev.phoenium.Phoenium;
 import dev.phoenium.live.PearlPortalNativeAccess;
-import net.minecraft.world.entity.projectile.ProjectileDeflection;
 import net.minecraft.world.entity.projectile.ThrowableProjectile;
 import net.minecraft.world.entity.projectile.throwableitemprojectile.ThrownEnderpearl;
 import net.minecraft.world.phys.HitResult;
 import org.spongepowered.asm.mixin.Mixin;
-import org.spongepowered.asm.mixin.Shadow;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
 @Mixin(ThrowableProjectile.class)
 abstract class PearlPortalThrowableProjectileMixin implements PearlPortalNativeAccess.ThrowableSuffix {
-    @Shadow protected abstract ProjectileDeflection hitTargetOrDeflectSelf(HitResult hitResult);
-
     @ModifyExpressionValue(method = "tick()V", at = @At(value = "INVOKE",
         target = "Lnet/minecraft/world/entity/projectile/ProjectileUtil;getHitResultOnMoveVector(Lnet/minecraft/world/entity/Entity;Ljava/util/function/Predicate;)Lnet/minecraft/world/phys/HitResult;"),
         require = 1, expect = 1)
@@ -36,6 +32,7 @@ abstract class PearlPortalThrowableProjectileMixin implements PearlPortalNativeA
 
     @Override public void phoenium$resumePearlPortalThrowableTickSuffix(HitResult result) {
         ThrowableProjectile self = (ThrowableProjectile) (Object) this;
-        if (result.getType() != HitResult.Type.MISS && self.isAlive()) this.hitTargetOrDeflectSelf(result);
+        if (result.getType() != HitResult.Type.MISS && self.isAlive())
+            ((PearlPortalProjectileAccess) (Object) self).phoenium$invokeHitTargetOrDeflectSelf(result);
     }
 }

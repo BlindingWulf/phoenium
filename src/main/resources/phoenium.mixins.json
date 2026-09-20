@@ -148,6 +148,7 @@
     "PlayerDimensionEntityAccess",
     "PearlPortalProcessorAccess",
     "PearlPortalEntityMixin",
+    "PearlPortalProjectileAccess",
     "PearlPortalProjectileMixin",
     "PearlPortalThrowableProjectileMixin",
     "PearlPortalThrownEnderpearlAccess",
