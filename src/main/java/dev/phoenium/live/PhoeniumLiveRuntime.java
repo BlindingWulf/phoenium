@@ -60,6 +60,7 @@ import net.minecraft.server.level.ChunkResult;
 import net.minecraft.world.level.chunk.ChunkAccess;
 import net.minecraft.world.level.chunk.status.ChunkStatus;
 import net.minecraft.world.entity.Entity;
+import net.minecraft.world.entity.PortalProcessor;
 import net.minecraft.world.entity.projectile.Projectile;
 import net.minecraft.world.entity.projectile.throwableitemprojectile.ThrownEnderpearl;
 import net.minecraft.core.registries.BuiltInRegistries;
@@ -84,6 +85,7 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
     private final Map<RegionId, RegionRuntime> runtimes = new ConcurrentHashMap<>();
     private final RegionDirectory directory = new RegionDirectory();
     private final ObjectOwnershipRegistry objects = new ObjectOwnershipRegistry(directory);
+    private final PearlPortalTransitionManager pearlPortalTransitions;
     private final Map<TaskCorrelationId, PendingPacket> packets = new ConcurrentHashMap<>();
     /** Movement packets admitted before a native player-level change must retire before replay. */
     private final java.util.Set<TaskCorrelationId> invalidatedMovementPackets = ConcurrentHashMap.newKeySet();
@@ -178,6 +180,23 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
     public PhoeniumLiveRuntime(Logger logger) {
         this.logger = Objects.requireNonNull(logger, "logger");
         this.chunkBinding = new ChunkBindingRuntime(this, logger);
+        this.pearlPortalTransitions = new PearlPortalTransitionManager(new PearlPortalTransitionManager.Authority() {
+            @Override public boolean running() { return PhoeniumLiveRuntime.this.isRunning(); }
+            @Override public boolean worldActive(ServerLevel level) {
+                if (!running() || serverInstance == null || level == null || level.getServer() != serverInstance) return false;
+                for (ServerLevel current : serverInstance.getAllLevels()) if (current == level) return true;
+                return false;
+            }
+            @Override public WorldId worldId(ServerLevel level) { return PhoeniumLiveRuntime.worldId(level); }
+            @Override public void execute(RoutingKey key, RegionalServiceKind kind, Runnable body) {
+                if (OwnershipContext.current().isPresent())
+                    throw new IllegalStateException("portal authority stage entered with retained owner authority");
+                regionalDispatcher.executeAndDrain(key, kind, ignored -> body.run());
+            }
+            @Override public void retireExpectedSource(ThrownEnderpearl source, Entity.RemovalReason reason) {
+                retireEntityLifecycle(source, reason);
+            }
+        }, objects);
     }
 
     public void start(MinecraftServer server) {
@@ -191,6 +210,10 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
             Class.forName(ServerGamePacketListenerImpl.class.getName(), true, loader);
             Class.forName("net.minecraft.server.players.PlayerList", true, loader);
             Class.forName(Entity.class.getName(), true, loader);
+            Class.forName(PortalProcessor.class.getName(), true, loader);
+            Class.forName(Projectile.class.getName(), true, loader);
+            Class.forName(net.minecraft.world.entity.projectile.ThrowableProjectile.class.getName(), true, loader);
+            Class.forName(ThrownEnderpearl.class.getName(), true, loader);
             Class.forName(ServerLevel.class.getName(), true, loader);
             Class.forName("net.minecraft.server.level.ChunkMap", true, loader);
             Class.forName("net.minecraft.server.level.GenerationChunkHolder", true, loader);
@@ -356,6 +379,7 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
                 // from its destination chunk. The entity-management cut below remains necessary
                 // for movement first observed during this tick's entity body.
                 entityIndexLifecycle.advancePendingRelocations(runtimes);
+                pearlPortalTransitions.advance();
                 retryDeferredPearlCleanups();
                 if (projectileMemberships.settings().enabled()) retryDeferredProjectileCleanups();
                 // Native providers can replace a settled slot during coordinator work.
@@ -393,6 +417,7 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
                 // here, after every owner callback has returned. Busy source/destination regions
                 // retain their bounded fact for the next tick instead of waiting on one another.
                 entityIndexLifecycle.advancePendingRelocations(runtimes);
+                pearlPortalTransitions.advance();
                 retryDeferredPearlCleanups();
                 if (projectileMemberships.settings().enabled()) retryDeferredProjectileCleanups();
                 queueTickPhase(pending, live, PendingTick.Step.FINAL_OWNER);
@@ -555,6 +580,7 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
             for (var full : java.util.List.copyOf(fullRegistrations.values())) failures.run(full::shutdown);
             failures.run(() -> logger.info("PHOENIUM_FULL STOPPED {}", fullDiagnostics()));
             failures.run(chunkBinding::shutdown);
+            failures.run(pearlPortalTransitions::close);
             failures.run(() -> { if (scheduler != null) { scheduler.quiesce(); scheduler.stop(); } });
             failures.run(() -> {
                 int abandoned = regionalDispatcher == null ? 0 : regionalDispatcher.abandonPending();
@@ -1552,6 +1578,12 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
      */
     public void onEntityRemoved(Entity entity, Entity.RemovalReason reason) {
         if (!isRunning() || !(entity.level() instanceof ServerLevel level)) return;
+        if (pearlPortalTransitions.onRemoval(entity, reason)) return;
+        retireEntityLifecycle(entity, reason);
+    }
+
+    private void retireEntityLifecycle(Entity entity, Entity.RemovalReason reason) {
+        if (!(entity.level() instanceof ServerLevel level)) return;
         if (entity instanceof FullEntityFacts.Access access)
             mobDecisions.retire(entity.getUUID().toString(), access.phoenium$entityIncarnation());
         if (reason == Entity.RemovalReason.UNLOADED_WITH_PLAYER) preservePearlMembershipForReconnect(entity);
@@ -1559,6 +1591,25 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
         retireProjectileMembership(entity);
         entityIndexLifecycle.removed(entity.getUUID().toString(), worldId(level), entity.getId());
     }
+
+    public void beginPearlPortalTick(ThrownEnderpearl pearl, int previousSectionX, int previousSectionZ, Entity retainedOwner) {
+        pearlPortalTransitions.beginTick(pearl, previousSectionX, previousSectionZ, retainedOwner);
+    }
+
+    public void retainPearlPortalHitResult(ThrownEnderpearl pearl, net.minecraft.world.phys.HitResult result) {
+        pearlPortalTransitions.retainHitResult(pearl, result);
+    }
+
+    public boolean suspendPearlPortalDestination(ThrownEnderpearl pearl, PortalProcessor processor) {
+        return pearlPortalTransitions.suspendDestination(pearl, processor);
+    }
+
+    public boolean pearlPortalTickSuspended(ThrownEnderpearl pearl) { return pearlPortalTransitions.suspended(pearl); }
+    public boolean completePearlPortalTick(ThrownEnderpearl pearl) { return pearlPortalTransitions.completeTick(pearl); }
+    public void finishPearlPortalTick(ThrownEnderpearl pearl) { pearlPortalTransitions.finishTick(pearl); }
+    public boolean skipPendingPearlPortalTick(ThrownEnderpearl pearl) { return pearlPortalTransitions.skipPendingTick(pearl); }
+
+    public void onWorldClosing(ServerLevel level) { pearlPortalTransitions.worldClosing(level); }
 
     private void preservePearlMembershipForReconnect(Entity entity) {
         if (!(entity instanceof ThrownEnderpearl) || !(entity instanceof FullEntityFacts.Access access)) return;
