@@ -86,6 +86,7 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
     private final RegionDirectory directory = new RegionDirectory();
     private final ObjectOwnershipRegistry objects = new ObjectOwnershipRegistry(directory);
     private final PearlPortalTransitionManager pearlPortalTransitions;
+    private final PlayerDimensionTransitionManager playerDimensionTransitions;
     private final Map<TaskCorrelationId, PendingPacket> packets = new ConcurrentHashMap<>();
     /** Movement packets admitted before a native player-level change must retire before replay. */
     private final java.util.Set<TaskCorrelationId> invalidatedMovementPackets = ConcurrentHashMap.newKeySet();
@@ -197,6 +198,26 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
                 retireEntityLifecycle(source, reason);
             }
         }, objects);
+        this.playerDimensionTransitions = new PlayerDimensionTransitionManager(
+            new PlayerDimensionTransitionManager.Authority() {
+                @Override public boolean running() { return PhoeniumLiveRuntime.this.isRunning(); }
+                @Override public boolean worldActive(ServerLevel level) {
+                    if (!running() || serverInstance == null || level == null || level.getServer() != serverInstance) return false;
+                    for (ServerLevel current : serverInstance.getAllLevels()) if (current == level) return true;
+                    return false;
+                }
+                @Override public WorldId worldId(ServerLevel level) { return PhoeniumLiveRuntime.worldId(level); }
+                @Override public void execute(RoutingKey key, RegionalServiceKind kind, Runnable body) {
+                    if (OwnershipContext.current().isPresent())
+                        throw new IllegalStateException("player dimension stage entered with retained owner authority");
+                    regionalDispatcher.executeAndDrain(key, kind, ignored -> body.run());
+                }
+                @Override public void retireSourceIndex(ServerPlayer player, WorldId sourceWorld,
+                                                        long registryIncarnation) {
+                    entityIndexLifecycle.retireTransitionSource(player.getUUID().toString(), sourceWorld,
+                        player.getId(), registryIncarnation);
+                }
+            }, directory, objects);
     }
 
     public void start(MinecraftServer server) {
@@ -380,6 +401,7 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
                 // for movement first observed during this tick's entity body.
                 entityIndexLifecycle.advancePendingRelocations(runtimes);
                 pearlPortalTransitions.advance();
+                playerDimensionTransitions.advance();
                 retryDeferredPearlCleanups();
                 if (projectileMemberships.settings().enabled()) retryDeferredProjectileCleanups();
                 // Native providers can replace a settled slot during coordinator work.
@@ -418,6 +440,7 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
                 // retain their bounded fact for the next tick instead of waiting on one another.
                 entityIndexLifecycle.advancePendingRelocations(runtimes);
                 pearlPortalTransitions.advance();
+                playerDimensionTransitions.advance();
                 retryDeferredPearlCleanups();
                 if (projectileMemberships.settings().enabled()) retryDeferredProjectileCleanups();
                 queueTickPhase(pending, live, PendingTick.Step.FINAL_OWNER);
@@ -580,6 +603,7 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
             for (var full : java.util.List.copyOf(fullRegistrations.values())) failures.run(full::shutdown);
             failures.run(() -> logger.info("PHOENIUM_FULL STOPPED {}", fullDiagnostics()));
             failures.run(chunkBinding::shutdown);
+            failures.run(playerDimensionTransitions::close);
             failures.run(pearlPortalTransitions::close);
             failures.run(() -> { if (scheduler != null) { scheduler.quiesce(); scheduler.stop(); } });
             failures.run(() -> {
@@ -1578,6 +1602,7 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
      */
     public void onEntityRemoved(Entity entity, Entity.RemovalReason reason) {
         if (!isRunning() || !(entity.level() instanceof ServerLevel level)) return;
+        if (entity instanceof ServerPlayer player && playerDimensionTransitions.onRemoval(player, reason)) return;
         if (pearlPortalTransitions.onRemoval(entity, reason)) return;
         retireEntityLifecycle(entity, reason);
     }
@@ -1609,7 +1634,33 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
     public void finishPearlPortalTick(ThrownEnderpearl pearl) { pearlPortalTransitions.finishTick(pearl); }
     public boolean skipPendingPearlPortalTick(ThrownEnderpearl pearl) { return pearlPortalTransitions.skipPendingTick(pearl); }
 
-    public void onWorldClosing(ServerLevel level) { pearlPortalTransitions.worldClosing(level); }
+    public boolean beginPlayerDimensionTransition(ServerPlayer player,
+            net.minecraft.world.level.portal.TeleportTransition transition) {
+        return playerDimensionTransitions.begin(player, transition);
+    }
+
+    public boolean suspendPlayerDimensionTransition(ServerPlayer player) {
+        return playerDimensionTransitions.suspendAfterSourceRemoval(player);
+    }
+
+    public boolean finishPlayerDimensionTransitionCall(ServerPlayer player, boolean began) {
+        return playerDimensionTransitions.finishNativeCall(player, began);
+    }
+
+    public boolean playerDimensionTransitionPending(ServerPlayer player) {
+        return playerDimensionTransitions.pending(player);
+    }
+
+    public boolean retainPearlPlayerTeleportSuffix(ThrownEnderpearl pearl, ServerLevel destination,
+                                                    net.minecraft.world.phys.Vec3 teleportPosition,
+                                                    ServerPlayer player) {
+        return playerDimensionTransitions.retainPearlHit(pearl, destination, teleportPosition, player);
+    }
+
+    public void onWorldClosing(ServerLevel level) {
+        playerDimensionTransitions.worldClosing(level);
+        pearlPortalTransitions.worldClosing(level);
+    }
 
     private void preservePearlMembershipForReconnect(Entity entity) {
         if (!(entity instanceof ThrownEnderpearl) || !(entity instanceof FullEntityFacts.Access access)) return;

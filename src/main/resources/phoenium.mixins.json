@@ -145,10 +145,12 @@
     "ChunkRuntimeTracePoiManagerMixin",
     "PlayerListLifecycleMixin",
     "EntityLifecycleMixin",
+    "PlayerDimensionEntityAccess",
     "PearlPortalProcessorAccess",
     "PearlPortalEntityMixin",
     "PearlPortalProjectileMixin",
     "PearlPortalThrowableProjectileMixin",
+    "PearlPortalThrownEnderpearlAccess",
     "PearlPortalThrownEnderpearlMixin",
     "ServerPlayerLifecycleMixin",
     "ServerLevelEntityLifecycleMixin"

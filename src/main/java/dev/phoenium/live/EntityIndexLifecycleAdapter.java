@@ -181,6 +181,19 @@ public final class EntityIndexLifecycleAdapter {
         index.invalidate(world, entityId, current.objectId(), current.incarnation());
         objects.remove(current.objectId());
     }
+    /**
+     * Source-world retirement for a same-object player dimension transition.  The derived lookup
+     * identity is withdrawn immediately, but the ownership incarnation deliberately remains live
+     * for the owner-free transition publication.
+     */
+    public void retireTransitionSource(String objectId, WorldId world, int entityId, long incarnation) {
+        pendingRelocations.remove(objectId);
+        ObjectOwnership current = objects.current(objectId).orElse(null);
+        if (current == null || current.kind() != OwnedObjectKind.PLAYER
+                || current.incarnation() != incarnation || !current.routingKey().world().equals(world))
+            throw new IllegalStateException("player transition source identity became stale");
+        index.invalidate(world, entityId, current.objectId(), current.incarnation());
+    }
     public Integer entityId(String objectId) { return entityIds.get(objectId); }
     public int pendingRelocationCount() { return pendingRelocations.size(); }
     /** No native entities are mutated: these are the ended server's derived identity ledgers. */
