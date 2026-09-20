@@ -8,14 +8,26 @@ public record LivePacketDiagnostics(
     long interactionIngress, long interactionIndexHit, long interactionIndexMiss, long interactionIncarnationRejected,
     long interactionOwnerAdmission, long interactionCrossOwnerRejected, long interactionOwnerExecution,
     long interactionReplay, long interactionVanillaLookup, long interactionHandlerCompletion,
-    long interactionStaleTicketRejected) {
+    long interactionStaleTicketRejected,
+    long playerActionIngress, long playerActionOwnerAdmission, long playerActionOwnerExecution,
+    long playerActionReplay, long playerActionHandlerCompletion, long playerActionStaleTicketRejected,
+    long useItemOnIngress, long useItemOnOwnerAdmission, long useItemOnOwnerExecution,
+    long useItemOnReplay, long useItemOnHandlerCompletion, long useItemOnStaleTicketRejected,
+    long blockPacketClosureRejected, long blockPacketDuplicate) {
     public String toLogLine() {
-        return "move[in=" + movementIngress + ",defer=" + movementBootstrapDeferred + ",accept=" + movementFootprintAccepted + ",reject=" + movementFootprintRejected
+        String move = "move[in=" + movementIngress + ",defer=" + movementBootstrapDeferred + ",accept=" + movementFootprintAccepted + ",reject=" + movementFootprintRejected
             + ",owner=" + movementOwnerExecution + ",replay=" + movementReplay + ",effect=" + movementHandlerCompletion
             + ",reconcile=" + movementRoutingReconciliation + ",sameEpoch=" + movementSameOwnerEpochPreserved
             + ",stale=" + movementStaleTicketRejected + "] interact[in=" + interactionIngress + ",hit=" + interactionIndexHit
             + ",miss=" + interactionIndexMiss + ",incarnationReject=" + interactionIncarnationRejected + ",ownerAdmission=" + interactionOwnerAdmission
             + ",crossReject=" + interactionCrossOwnerRejected + ",ownerExecution=" + interactionOwnerExecution + ",replay=" + interactionReplay
             + ",lookup=" + interactionVanillaLookup + ",effect=" + interactionHandlerCompletion + ",stale=" + interactionStaleTicketRejected + "]";
+        return move + " action[in=" + playerActionIngress + ",admit=" + playerActionOwnerAdmission
+            + ",owner=" + playerActionOwnerExecution + ",replay=" + playerActionReplay
+            + ",effect=" + playerActionHandlerCompletion + ",stale=" + playerActionStaleTicketRejected
+            + "] useItemOn[in=" + useItemOnIngress + ",admit=" + useItemOnOwnerAdmission
+            + ",owner=" + useItemOnOwnerExecution + ",replay=" + useItemOnReplay
+            + ",effect=" + useItemOnHandlerCompletion + ",stale=" + useItemOnStaleTicketRejected
+            + "] block[closureReject=" + blockPacketClosureRejected + ",duplicate=" + blockPacketDuplicate + "]";
     }
 }

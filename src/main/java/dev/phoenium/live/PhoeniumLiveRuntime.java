@@ -36,7 +36,9 @@ import dev.phoenium.task.TaskSequence;
 import dev.phoenium.topology.RegionDirectory;
 import dev.phoenium.topology.RegionRoute;
 import dev.phoenium.topology.RoutingKey;
+import dev.phoenium.topology.TopologyPlanner;
 import dev.phoenium.topology.LiveMovementAdmission;
+import dev.phoenium.topology.LiveBlockPacketAdmission;
 import dev.phoenium.topology.LivePacketReplayGate;
 import dev.phoenium.interaction.InteractionTargetIndex;
 import dev.phoenium.interaction.InteractionTargetRef;
@@ -56,6 +58,8 @@ import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.server.network.ServerGamePacketListenerImpl;
 import net.minecraft.network.protocol.game.ServerboundMovePlayerPacket;
 import net.minecraft.network.protocol.game.ServerboundInteractPacket;
+import net.minecraft.network.protocol.game.ServerboundPlayerActionPacket;
+import net.minecraft.network.protocol.game.ServerboundUseItemOnPacket;
 import net.minecraft.server.level.ChunkResult;
 import net.minecraft.world.level.chunk.ChunkAccess;
 import net.minecraft.world.level.chunk.status.ChunkStatus;
@@ -70,6 +74,7 @@ import net.minecraft.world.ticks.LevelChunkTicks;
 import net.minecraft.world.ticks.LevelTicks;
 import net.minecraft.core.BlockPos;
 import java.util.function.BiConsumer;
+import java.util.Set;
 import org.slf4j.Logger;
 
 /**
@@ -78,6 +83,8 @@ import org.slf4j.Logger;
  * obtains current route and lease authority through the single gameplay worker.
  */
 public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecutor, ObjectOperationExecutor, ChunkBindingRuntime.Authority {
+    private static final String PLAYER_ACTION_OPERATION = "player-block-action";
+    private static final String USE_ITEM_ON_OPERATION = "player-use-item-on";
     private final Logger logger;
     private final Map<WorldId, LiveRegion> regions = new ConcurrentHashMap<>();
     /** Per-world prerequisite service lifetime; original chunk producers retain exact work identities. */
@@ -126,6 +133,7 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
     private final LivePacketReplayGate movementReplay = new LivePacketReplayGate();
     private final ThreadLocal<ReplayIdentity> replayIdentity = new ThreadLocal<>();
     private final java.util.Set<TaskCorrelationId> consumedInteractionReplays = ConcurrentHashMap.newKeySet();
+    private final java.util.Set<TaskCorrelationId> consumedBlockPacketReplays = ConcurrentHashMap.newKeySet();
     private final FailureBarrier barrier = new FailureBarrier();
     private final ChunkBindingRuntime chunkBinding;
     private RegionScheduler scheduler;
@@ -162,6 +170,11 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
     private long movementReplayCount, movementHandlerCompletion, movementRoutingReconciliation, movementSameOwnerEpochPreserved, movementStaleTicketRejected;
     private long interactionIngress, interactionIndexHit, interactionIndexMiss, interactionIncarnationRejected, interactionOwnerAdmission;
     private long interactionCrossOwnerRejected, interactionOwnerExecution, interactionReplay, interactionVanillaLookup, interactionHandlerCompletion, interactionStaleTicketRejected;
+    private long playerActionIngress, playerActionOwnerAdmission, playerActionOwnerExecution, playerActionReplay,
+        playerActionHandlerCompletion, playerActionStaleTicketRejected;
+    private long useItemOnIngress, useItemOnOwnerAdmission, useItemOnOwnerExecution, useItemOnReplay,
+        useItemOnHandlerCompletion, useItemOnStaleTicketRejected;
+    private long blockPacketClosureRejected, blockPacketDuplicate;
     private long entityRelocations;
     private long pearlCleanupAdmissions;
     private long pearlCleanupExecutions;
@@ -673,7 +686,10 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
             movementSameOwnerEpochPreserved, movementStaleTicketRejected, interactionIngress, interactionIndexHit,
             interactionIndexMiss, interactionIncarnationRejected, interactionOwnerAdmission, interactionCrossOwnerRejected,
             interactionOwnerExecution, interactionReplay, interactionVanillaLookup, interactionHandlerCompletion,
-            interactionStaleTicketRejected);
+            interactionStaleTicketRejected, playerActionIngress, playerActionOwnerAdmission, playerActionOwnerExecution,
+            playerActionReplay, playerActionHandlerCompletion, playerActionStaleTicketRejected, useItemOnIngress,
+            useItemOnOwnerAdmission, useItemOnOwnerExecution, useItemOnReplay, useItemOnHandlerCompletion,
+            useItemOnStaleTicketRejected, blockPacketClosureRejected, blockPacketDuplicate);
     }
     public String failureDescription() {
         return barrier.record().map(record -> record.cause().toString()).orElse("");
@@ -960,6 +976,20 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
         if (match) interactionVanillaLookup++;
         return match;
     }
+    public boolean matchesPlayerActionReplay(ServerGamePacketListenerImpl connection, ServerboundPlayerActionPacket packet) {
+        ReplayIdentity active = replayIdentity.get();
+        boolean match = active != null && active.kind == ReplayKind.PLAYER_ACTION
+            && active.connection == connection && active.packet == packet;
+        if (match) playerActionReplay++;
+        return match;
+    }
+    public boolean matchesUseItemOnReplay(ServerGamePacketListenerImpl connection, ServerboundUseItemOnPacket packet) {
+        ReplayIdentity active = replayIdentity.get();
+        boolean match = active != null && active.kind == ReplayKind.USE_ITEM_ON
+            && active.connection == connection && active.packet == packet;
+        if (match) useItemOnReplay++;
+        return match;
+    }
 
     /** Called at the required valid-input seam, before resetPosition, jumping, or player movement. */
     public void admitMovePacket(ServerGamePacketListenerImpl connection, ServerboundMovePlayerPacket packet,
@@ -1045,6 +1075,68 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
             interactionIncarnationRejected++;
             logger.warn("PHOENIUM_STAGE3 interaction admission rejected entityId={} reason={}", packet.entityId(), rejected.toString());
         }
+    }
+
+    /** Admits block breaking/action packets through the player's current regional owner. */
+    public void admitPlayerActionPacket(ServerGamePacketListenerImpl connection, ServerboundPlayerActionPacket packet) {
+        playerActionIngress++;
+        if (!acceptsGameplay()) { packetRejections++; return; }
+        ServerPlayer player = connection.player;
+        if (player == null) { packetRejections++; return; }
+        try {
+            BlockPacketAdmission admission = prepareBlockPacketAdmission(player, packet.getPos());
+            boolean admitted = admitPacket(connection, player,
+                new PendingPlayerAction(connection, packet, player.level(), admission.binding().objectId(),
+                    admission.binding().incarnation(), admission.transitionEpoch(), admission.ticket()),
+                PLAYER_ACTION_OPERATION, admission.binding(), AdmissionPolicy.REJECT);
+            if (admitted) playerActionOwnerAdmission++;
+        } catch (RuntimeException rejected) {
+            packetRejections++;
+            blockPacketClosureRejected++;
+            logger.debug("PHOENIUM_STAGE3 player-action admission rejected pos={} reason={}", packet.getPos(), rejected.toString());
+        }
+    }
+
+    /** Admits block use/placement packets through the player's current regional owner. */
+    public void admitUseItemOnPacket(ServerGamePacketListenerImpl connection, ServerboundUseItemOnPacket packet) {
+        useItemOnIngress++;
+        if (!acceptsGameplay()) { packetRejections++; return; }
+        ServerPlayer player = connection.player;
+        if (player == null) { packetRejections++; return; }
+        try {
+            BlockPacketAdmission admission = prepareBlockPacketAdmission(player, packet.getHitResult().getBlockPos());
+            boolean admitted = admitPacket(connection, player,
+                new PendingUseItemOn(connection, packet, player.level(), admission.binding().objectId(),
+                    admission.binding().incarnation(), admission.transitionEpoch(), admission.ticket()),
+                USE_ITEM_ON_OPERATION, admission.binding(), AdmissionPolicy.REJECT);
+            if (admitted) useItemOnOwnerAdmission++;
+        } catch (RuntimeException rejected) {
+            packetRejections++;
+            blockPacketClosureRejected++;
+            logger.debug("PHOENIUM_STAGE3 use-item-on admission rejected pos={} reason={}",
+                packet.getHitResult().getBlockPos(), rejected.toString());
+        }
+    }
+
+    private BlockPacketAdmission prepareBlockPacketAdmission(ServerPlayer player, BlockPos target) {
+        Objects.requireNonNull(target, "block packet target");
+        String objectId = player.getUUID().toString();
+        if (movementTransitionFences.containsKey(objectId) || playerDimensionTransitionPending(player))
+            throw new IllegalStateException("block packet arrived during player dimension transition");
+        WorldId world = worldId(player.level());
+        RoutingKey playerKey = new RoutingKey(world, player.chunkPosition().x(), player.chunkPosition().z());
+        RoutingKey targetKey = new RoutingKey(world, target.getX() >> 4, target.getZ() >> 4);
+        Set<RoutingKey> footprint = new TopologyPlanner().requiredClosure(Set.of(playerKey, targetKey), 1);
+        // Packet processing precedes tickServer. Use the same owner-free serial boundary as the
+        // existing movement/tracking admission while a closure publication drains prior work.
+        ObjectOwnership binding;
+        try (var turn = dev.phoenium.chunk.FullFinishingServices.forServer(player.level().getServer()).referenceAccess()) {
+            if (regionalServiceBound()) regionalDispatcher.ensureClosure(footprint);
+            binding = bindPlayer(player);
+        }
+        LiveBlockPacketAdmission.Ticket ticket = LiveBlockPacketAdmission.admit(directory, binding, footprint);
+        long transitionEpoch = movementTransitionEpochs.getOrDefault(objectId, 0L);
+        return new BlockPacketAdmission(binding, transitionEpoch, ticket);
     }
 
     /**
@@ -1140,7 +1232,19 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
         }
         ObjectOwnership executingPlayer = objects.requireCurrentOwner(operation.objectId(), operation.expectedObjectEpoch(), runtime.id());
         PendingPacket packet = packets.remove(operation.correlationId());
-        if (packet == null) throw new IllegalStateException("missing admitted packet " + operation.correlationId());
+        if (packet == null) {
+            if (isBlockPacketOperation(operation.operationKind())
+                    && consumedBlockPacketReplays.contains(operation.correlationId())) {
+                blockPacketDuplicate++;
+                return;
+            }
+            throw new IllegalStateException("missing admitted packet " + operation.correlationId());
+        }
+        if (isBlockPacketOperation(operation.operationKind())
+                && !consumedBlockPacketReplays.add(operation.correlationId())) {
+            blockPacketDuplicate++;
+            return;
+        }
         if (packet instanceof PendingMove move) {
             movementOwnerExecution++;
             if (invalidatedMovementPackets.remove(operation.correlationId())) {
@@ -1194,7 +1298,67 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
             }
             return;
         }
+        if (packet instanceof PendingPlayerAction action) {
+            playerActionOwnerExecution++;
+            try {
+                requireCurrentBlockPacket(action, executingPlayer, runtime);
+            } catch (RuntimeException stale) {
+                playerActionStaleTicketRejected++;
+                return;
+            }
+            try (PacketExecutionScope ignored = enterPacketExecution(operation.correlationId(), ReplayKind.PLAYER_ACTION,
+                    action.connection(), action.packet())) {
+                try {
+                    action.execute();
+                    packetExecutions++;
+                    playerActionHandlerCompletion++;
+                } catch (ChunkProtocolException stale) {
+                    playerActionStaleTicketRejected++;
+                    logger.debug("PHOENIUM_STAGE3 dropped stale player-action replay correlation={} reason={}",
+                        operation.correlationId(), stale.getMessage());
+                }
+            }
+            return;
+        }
+        if (packet instanceof PendingUseItemOn useItemOn) {
+            useItemOnOwnerExecution++;
+            try {
+                requireCurrentBlockPacket(useItemOn, executingPlayer, runtime);
+            } catch (RuntimeException stale) {
+                useItemOnStaleTicketRejected++;
+                return;
+            }
+            try (PacketExecutionScope ignored = enterPacketExecution(operation.correlationId(), ReplayKind.USE_ITEM_ON,
+                    useItemOn.connection(), useItemOn.packet())) {
+                try {
+                    useItemOn.execute();
+                    packetExecutions++;
+                    useItemOnHandlerCompletion++;
+                } catch (ChunkProtocolException stale) {
+                    useItemOnStaleTicketRejected++;
+                    logger.debug("PHOENIUM_STAGE3 dropped stale use-item-on replay correlation={} reason={}",
+                        operation.correlationId(), stale.getMessage());
+                }
+            }
+            return;
+        }
         throw new IllegalStateException("unknown admitted packet");
+    }
+
+    private void requireCurrentBlockPacket(PendingBlockPacket packet, ObjectOwnership executingPlayer,
+                                           RegionRuntime runtime) {
+        if (executingPlayer.incarnation() != packet.playerIncarnation())
+            throw new IllegalStateException("stale block packet player incarnation");
+        if (movementTransitionEpochs.getOrDefault(packet.objectId(), 0L) != packet.transitionEpoch())
+            throw new IllegalStateException("stale block packet transition epoch");
+        if (packet.playerLevel() != packet.connection().player.level()
+                || !runtime.id().world().equals(worldId(packet.connection().player.level())))
+            throw new IllegalStateException("stale block packet player world");
+        packet.ticket().requireCurrent(directory, objects, runtime.id());
+    }
+
+    private static boolean isBlockPacketOperation(String operationKind) {
+        return PLAYER_ACTION_OPERATION.equals(operationKind) || USE_ITEM_ON_OPERATION.equals(operationKind);
     }
 
     /** Exactly one native discard, after current-owner and exact-incarnation validation. */
@@ -1770,7 +1934,7 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
         logger.info("PHOENIUM_STAGE2 {} {} packets={}", event, diagnostics().toLogLine(), packetDiagnostics().toLogLine());
     }
 
-    private sealed interface PendingPacket permits PendingMove, PendingInteract {
+    private sealed interface PendingPacket permits PendingMove, PendingInteract, PendingBlockPacket {
         void execute();
     }
     private record PendingMove(PhoeniumLiveRuntime runtime, ServerGamePacketListenerImpl connection, ServerboundMovePlayerPacket packet,
@@ -1800,6 +1964,28 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
                                    LiveInteractionAdmission.Ticket ticket) implements PendingPacket {
         @Override public void execute() { ((ServerGamePacketListenerInvoker) connection).phoenium$invokeInteract(packet); }
     }
+    private sealed interface PendingBlockPacket extends PendingPacket permits PendingPlayerAction, PendingUseItemOn {
+        ServerGamePacketListenerImpl connection();
+        ServerLevel playerLevel();
+        String objectId();
+        long playerIncarnation();
+        long transitionEpoch();
+        LiveBlockPacketAdmission.Ticket ticket();
+    }
+    private record PendingPlayerAction(ServerGamePacketListenerImpl connection, ServerboundPlayerActionPacket packet,
+                                       ServerLevel playerLevel, String objectId, long playerIncarnation,
+                                       long transitionEpoch, LiveBlockPacketAdmission.Ticket ticket)
+            implements PendingBlockPacket {
+        @Override public void execute() { ((ServerGamePacketListenerInvoker) connection).phoenium$invokePlayerAction(packet); }
+    }
+    private record PendingUseItemOn(ServerGamePacketListenerImpl connection, ServerboundUseItemOnPacket packet,
+                                    ServerLevel playerLevel, String objectId, long playerIncarnation,
+                                    long transitionEpoch, LiveBlockPacketAdmission.Ticket ticket)
+            implements PendingBlockPacket {
+        @Override public void execute() { ((ServerGamePacketListenerInvoker) connection).phoenium$invokeUseItemOn(packet); }
+    }
+    private record BlockPacketAdmission(ObjectOwnership binding, long transitionEpoch,
+                                        LiveBlockPacketAdmission.Ticket ticket) { }
     private record PendingPearlRemoval(Entity entity, PearlMembershipLedger.Membership membership) { }
     private record DeferredPearlCleanup(Entity entity, PearlMembershipLedger.Membership membership) { }
     private record PendingProjectileRemoval(Entity entity, ProjectileMembershipLedger.Membership membership) { }
@@ -1826,7 +2012,7 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
             closed = true;
         }
     }
-    private enum ReplayKind { MOVE, INTERACT }
+    private enum ReplayKind { MOVE, INTERACT, PLAYER_ACTION, USE_ITEM_ON }
     private record ReplayIdentity(TaskCorrelationId correlation, ReplayKind kind, ServerGamePacketListenerImpl connection, Object packet) { }
     private record LiveRegion(ServerLevel level, RegionId id, RoutingKey key, RegionRuntime runtime,
                               long worldInstanceSequence) { }
