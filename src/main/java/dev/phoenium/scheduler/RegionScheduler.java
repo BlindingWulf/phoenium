@@ -119,8 +119,9 @@ public final class RegionScheduler {
                                      RegionTaskEnvelope envelope) {
         reservation.requireResumeClaim();
         if (!(envelope.payload() instanceof TaskPayload.RegionalService service)
-                || !service.operationKind().equals(dev.phoenium.service.RegionalServiceKind.CHUNK_GAMEPLAY.name()))
-            throw new IllegalArgumentException("poll return reservation is only for natural spawn");
+                || !(service.operationKind().equals(dev.phoenium.service.RegionalServiceKind.CHUNK_GAMEPLAY.name())
+                    || service.operationKind().equals(dev.phoenium.service.RegionalServiceKind.BLOCK_ENTITY_TICK.name())))
+            throw new IllegalArgumentException("poll return reservation is only for natural spawn or Vault tick");
         if (!acceptsSimulationWork()) return false;
         var route = directory.resolve(envelope.routingKey()).orElse(null);
         if (route == null) return false;

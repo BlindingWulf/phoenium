@@ -54,6 +54,9 @@ public final class RegionalChunkGameplayService implements NaturalSpawnContinuat
     private final IdentityHashMap<TickingBlockEntity, BlockEntityReceipt> blockEntities = new IdentityHashMap<>();
     private long cycles, entityContributions, chunkCallbacks;
     private long naturalSpawnOrdinal;
+    private long vaultTickOrdinal;
+    private final dev.phoenium.chunk.BlockEntityChunkQueryDiagnostic blockEntityQueries =
+            new dev.phoenium.chunk.BlockEntityChunkQueryDiagnostic();
 
     public RegionalChunkGameplayService(WorldId world, ServerLevel level, ServerChunkCache cache,
             RegionDirectory directory, RegionalServiceDispatcher dispatcher, ObjectOwnershipRegistry objects) {
@@ -398,10 +401,28 @@ public final class RegionalChunkGameplayService implements NaturalSpawnContinuat
                     TickingBlockEntity ticker = iterator.next();
                     if (ticker != expected) throw new IllegalStateException("original ticker iterator changed during preflight");
                     BlockEntityReceipt receipt = blockEntities.get(ticker); boolean[] removed = {false};
-                    dispatcher.executeAndDrain(receipt.key, RegionalServiceKind.BLOCK_ENTITY_TICK, ignored -> {
-                        dispatcher.requireCurrentClosure(receipt.key, 1);
-                        removed[0] = tickTicker(ticker, runs, receipt.position, level::shouldTickBlocksAt);
-                    });
+                    var registration = ((dev.phoenium.chunk.FullGenerationSource) map).phoenium$fullRegistration();
+                    try (var vaultTick = new VaultBlockEntityTickContinuation(level, ticker, directory, receipt.key,
+                            vaultTickOrdinal = Math.incrementExact(vaultTickOrdinal),
+                            () -> dispatcher.naturalSpawnOpen() && registration != null && registration.naturalSpawnOpen(),
+                            dispatcher::requireNaturalSpawnOwnerFree)) {
+                        dispatcher.executeAndDrain(receipt.key, RegionalServiceKind.BLOCK_ENTITY_TICK, execution -> {
+                            dispatcher.requireCurrentClosure(receipt.key, 1);
+                            try (var diagnostic = blockEntityQueries.enter(level, ticker.getType(), receipt.position,
+                                    execution, directory.snapshot().generation())) {
+                                removed[0] = tickTicker(ticker, runs, receipt.position, level::shouldTickBlocksAt, vaultTick::original);
+                            }
+                        });
+                        vaultTick.finish(dispatcher, (execution, body) -> {
+                            dispatcher.requireCurrentClosure(receipt.key, 1);
+                            // The retained operation identity remains the original tick ordinal;
+                            // each actual resume has a fresh current BLOCK_ENTITY_TICK claim.
+                            try (var diagnostic = blockEntityQueries.enter(level, ticker.getType(), receipt.position,
+                                    execution, directory.snapshot().generation())) {
+                                body.run();
+                            }
+                        });
+                    }
                     if (removed[0]) { iterator.remove(); blockEntities.remove(ticker); }
                 }
                 offset = end;
@@ -468,6 +489,10 @@ public final class RegionalChunkGameplayService implements NaturalSpawnContinuat
 
     static boolean tickTicker(TickingBlockEntity ticker, boolean runs, BlockPos retainedPosition,
             java.util.function.Predicate<BlockPos> shouldTick) {
+        return tickTicker(ticker, runs, retainedPosition, shouldTick, Runnable::run);
+    }
+    static boolean tickTicker(TickingBlockEntity ticker, boolean runs, BlockPos retainedPosition,
+            java.util.function.Predicate<BlockPos> shouldTick, Consumer<Runnable> tickBody) {
         if (ticker.isRemoved()) return true;
         if (runs) {
             if (LithiumSleepingTickerBridge.isSleepingSentinel(ticker)) return false;
@@ -476,7 +501,7 @@ public final class RegionalChunkGameplayService implements NaturalSpawnContinuat
                 throw new IllegalStateException("block entity ticker returned null position");
             if (!currentPosition.equals(retainedPosition))
                 throw new IllegalStateException("block entity ticker position changed");
-            if (shouldTick.test(retainedPosition)) ticker.tick();
+            if (shouldTick.test(retainedPosition)) tickBody.accept(ticker::tick);
         }
         return false;
     }

@@ -52,6 +52,10 @@ final class FullFinishingQueryTestTransform {
         if (matches != expected) throw new AssertionError("initialized query selectors changed: " + node.name + ": " + matches);
         if (node.name.equals("net/minecraft/server/level/ServerChunkCache"))
             wrap(node, "getChunk", "(IILnet/minecraft/world/level/chunk/status/ChunkStatus;Z)Lnet/minecraft/world/level/chunk/ChunkAccess;", "predicateChunk");
+        if (node.name.equals("net/minecraft/world/level/Level"))
+            wrap(node, "getBlockState", "(Lnet/minecraft/core/BlockPos;)Lnet/minecraft/world/level/block/state/BlockState;", "blockState");
+        if (node.name.equals("net/minecraft/world/level/Level"))
+            wrap(node, "blockEntityChanged", "(Lnet/minecraft/core/BlockPos;)V", "blockEntityChanged");
     }
     private static void wrap(ClassNode node, String name, String descriptor, String hook) {
         var matches = node.methods.stream().filter(method -> method.name.equals(name) && method.desc.equals(descriptor)).toList();

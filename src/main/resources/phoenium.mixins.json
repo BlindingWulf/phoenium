@@ -4,6 +4,12 @@
   "plugin": "dev.phoenium.mixin.PhoeniumMixinConfigPlugin",
   "compatibilityLevel": "JAVA_25",
   "mixins": [
+    "VaultTickContinuationMixin",
+    "VaultOutputNeighborMixin",
+    "VaultSetChangedAccess",
+    "VaultServerDataAccess",
+    "VaultSharedDataAccess",
+    "BlockEntityChunkQueryDiagnosticMixin",
     "MobDecisionMixin",
     "MobDecisionGoalSelectorMixin",
     "LocalBlockEntityCrashMixin",

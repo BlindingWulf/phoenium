@@ -239,6 +239,17 @@ public final class RegionalServiceDispatcher implements RegionalServiceExecutor 
      * inbox round is allowed between its return reservation and its current owner. */
     public void resumeNaturalSpawn(ManagedBlockPollTurnFence.Reservation reservation,
                                    RoutingKey key, RegionalServiceWork body) {
+        resumeReserved(reservation, key, RegionalServiceKind.CHUNK_GAMEPLAY, body);
+    }
+
+    /** The same return fence, scoped to the retained Vault block-entity suffix. */
+    public void resumeVaultTick(ManagedBlockPollTurnFence.Reservation reservation,
+                               RoutingKey key, RegionalServiceWork body) {
+        resumeReserved(reservation, key, RegionalServiceKind.BLOCK_ENTITY_TICK, body);
+    }
+
+    private void resumeReserved(ManagedBlockPollTurnFence.Reservation reservation,
+                               RoutingKey key, RegionalServiceKind kind, RegionalServiceWork body) {
         reservation.requireResumeClaim();
         if (!scheduler.acceptsSimulationWork()) { reservation.retire(ManagedBlockPollTurnFence.State.SHUTDOWN); return; }
         RegionRoute route = directory.resolve(key).orElse(null);
@@ -247,7 +258,6 @@ public final class RegionalServiceDispatcher implements RegionalServiceExecutor 
         }
         long operationId = nextOperation = Math.incrementExact(nextOperation);
         long sequence = nextSequence = Math.incrementExact(nextSequence);
-        var kind = RegionalServiceKind.CHUNK_GAMEPLAY;
         Handle handle = new Handle(serviceId, worldInstance, operationId, kind);
         var retained = new Pending(key, kind, execution -> {
             reservation.beginResuming();
@@ -255,7 +265,7 @@ public final class RegionalServiceDispatcher implements RegionalServiceExecutor 
         }, handle, false, System.nanoTime(), ignored -> true, false);
         pending.put(operationId, retained);
         var payload = new TaskPayload.RegionalService(serviceId, worldInstance, operationId, kind.name());
-        var envelope = new RegionTaskEnvelope("natural-spawn-resume", payload, key, route.generation(),
+        var envelope = new RegionTaskEnvelope(kind == RegionalServiceKind.BLOCK_ENTITY_TICK ? "vault-tick-resume" : "natural-spawn-resume", payload, key, route.generation(),
             route.ownerEpoch(), serviceId, new TaskCorrelationId(sequence), new TaskSequence(sequence), AdmissionPolicy.REJECT);
         try {
             if (!scheduler.resumeNaturalSpawn(reservation, envelope)) {

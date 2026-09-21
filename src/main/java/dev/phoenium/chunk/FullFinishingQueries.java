@@ -167,7 +167,8 @@ public final class FullFinishingQueries {
     public static ChunkAccess predicateChunk(ServerLevel world, int x, int z, ChunkStatus status, boolean create,
                                               Supplier<ChunkAccess> original) {
         Invocation invocation = CURRENT.get();
-        if (invocation == null || invocation.locationRead == null || invocation.query != null) return original.get();
+        if (invocation == null || invocation.locationRead == null || invocation.query != null)
+            return BlockEntityChunkQueryDiagnostic.chunk(world, x, z, status, create, original);
         invocation.requireCurrent();
         if (world != invocation.locationRead.world) throw breach("location predicate getter changed worlds");
         if (status == ChunkStatus.STRUCTURE_REFERENCES || status == ChunkStatus.STRUCTURE_STARTS) {
@@ -244,6 +245,7 @@ public final class FullFinishingQueries {
     /** Original getChunkFutureMainThread has already performed all selector effects. */
     public static void selected(ServerLevel world, int x, int z, ChunkStatus status, boolean create,
                                 CompletableFuture<ChunkResult<ChunkAccess>> selected) {
+        BlockEntityChunkQueryDiagnostic.selected(world, x, z, status, create, selected);
         Invocation invocation = CURRENT.get();
         if (invocation == null || invocation.query == null) return;
         Query query = invocation.query;

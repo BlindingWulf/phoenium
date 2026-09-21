@@ -10,6 +10,7 @@ public final class FullRegistrationTestAgent {
             @Override public byte[] transform(ClassLoader loader, String name, Class<?> redefining,
                                                ProtectionDomain domain, byte[] bytes) {
                 if (NaturalSpawnTestTransform.supports(name)) return NaturalSpawnTestTransform.transform(name, bytes);
+                if (VaultContinuationTestTransform.supports(name)) return VaultContinuationTestTransform.transform(name, bytes);
                 if (!name.equals("net/minecraft/server/level/GenerationChunkHolder")
                         && !name.equals("net/minecraft/world/level/chunk/status/ChunkStatusTasks")
                         && !name.equals("net/minecraft/world/level/chunk/ProtoChunk")

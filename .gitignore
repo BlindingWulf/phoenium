@@ -2,4 +2,6 @@
 build/
 run/
 logs/
+# Local native-bytecode audits and deterministic run receipts; preserve outside release source.
+/.audit/
 .stage2-server*/

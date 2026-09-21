@@ -14,6 +14,14 @@ import net.minecraft.world.phys.shapes.*;
 
 /** Reflection merely reaches private original methods normally callable from their mixin. */
 public final class FullFinishingQueryTestHooks {
+    public static BlockState blockState(Level world, BlockPos position) {
+        VaultContinuationTestHooks.event("read:" + position.toShortString());
+        return BlockEntityChunkQueryDiagnostic.blockState(world, position, () -> (BlockState) invoke(
+                Level.class, world, "phoenium$originalPredicate$getBlockState", new Class<?>[]{BlockPos.class}, position));
+    }
+    public static void blockEntityChanged(Level world, BlockPos position) {
+        VaultContinuationTestHooks.blockEntityChanged(world, position);
+    }
     public static boolean locationPredicate(net.minecraft.advancements.predicates.LocationPredicate predicate,
             ServerLevel world, double x, double y, double z) {
         return FullFinishingQueries.locationPredicate(world, x, y, z, () -> (boolean) invoke(

@@ -17,6 +17,13 @@ final class RegionalBlockEntityTickOrderTest {
         assertEquals(List.of("removed"), ticker.calls);
     }
 
+    @Test void removedOrFrozenTickNeverCapturesVaultContinuation() {
+        assertTrue(RegionalChunkGameplayService.tickTicker(new Trace(true, null), true, POS,
+            ignored -> fail("removed ticker reached eligibility"), ignored -> fail("removed ticker captured continuation")));
+        assertFalse(RegionalChunkGameplayService.tickTicker(new Trace(false, null), false, POS,
+            ignored -> fail("frozen ticker reached eligibility"), ignored -> fail("frozen ticker captured continuation")));
+    }
+
     @Test void frozenTickerObservesOnlyRemovalAndNeverPositionOrEligibility() {
         Trace ticker = new Trace(false, null);
         assertFalse(RegionalChunkGameplayService.tickTicker(ticker, false, POS,
