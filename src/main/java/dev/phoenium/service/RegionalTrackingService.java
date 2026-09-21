@@ -4,6 +4,7 @@ import dev.phoenium.core.WorldId;
 import dev.phoenium.chunk.FullEntityFacts;
 import dev.phoenium.chunk.FullFinishingScoreboard;
 import dev.phoenium.chunk.FullFinishingServices;
+import dev.phoenium.chunk.PlayerRespawnHandoff;
 import dev.phoenium.mixin.RegionalChunkMapAccess;
 import dev.phoenium.mixin.RegionalTrackedEntityAccess;
 import dev.phoenium.ownership.ObjectOwnershipRegistry;
@@ -320,7 +321,8 @@ public final class RegionalTrackingService {
         List<ServerPlayer> levelPlayers = List.copyOf(level.players());
         var connectionPlayers = new ArrayList<>(levelPlayers);
         if (entity instanceof ServerPlayer player && !connectionPlayers.contains(player)) connectionPlayers.add(player);
-        FullFinishingScoreboard.TrackingCut connectionCut = finishing.scoreboard.trackingCut(connectionPlayers);
+        var respawn = respawnTracking(entity, PlayerRespawnHandoff.Action.ADD);
+        FullFinishingScoreboard.TrackingCut connectionCut = finishing.scoreboard.trackingCut(connectionPlayers, respawn);
         Map<ServerPlayer, PlayerReceipt> players = playerReceipts(connectionCut);
         RangeProjection sourceRelation = prepareRange(source);
         int sourceRange = sourceRelation.effectiveRange;
@@ -352,17 +354,33 @@ public final class RegionalTrackingService {
         else dispatcher.ensureClosure(footprint);
         AddPlan plan = new AddPlan(entity, source, sourceKey, sourceRelation, connectionCut, players,
             Set.copyOf(selectedPlayers), Set.copyOf(selectedTrackers));
+        if (respawn != null) respawn.route(source, sourceKey, directory.snapshot().generation().value());
         Runnable body = () -> {
             dispatcher.requireCurrentOwner(sourceKey);
             requireRelation(sourceRelation);
             if (!finishing.entityFacts.validTrackingCandidate(source))
                 throw new IllegalStateException("addEntity source identity changed before original body");
+            if (entity instanceof ServerPlayer player)
+                finishing.scoreboard.requireTrackingSession(connectionCut, players.get(player).session);
             activeAdd.set(plan);
             try { original.run(); }
+            catch (Throwable failure) {
+                if (respawn != null) {
+                    // A native send/pairing callback can fail after entityMap.put, before the
+                    // normal sourceAdded suffix. Retain precisely that prefix for strict removal.
+                    try {
+                        sourceAdded(((RegionalChunkMapAccess) map).phoenium$getTrackedEntities(), entity);
+                        for (Entry entry : index.values()) if (selectedTrackers.contains(entry.tracker)) refreshProjection(entry);
+                    } catch (Throwable retention) { if (retention != failure) failure.addSuppressed(retention); }
+                }
+                throw failure;
+            }
             finally { activeAdd.remove(); }
         };
-        if (OwnershipContext.current().isPresent()) body.run();
-        else dispatcher.executeAndDrain(sourceKey, RegionalServiceKind.TRACKING_PAIR, ignored -> body.run());
+        Runnable admitted = respawn == null ? body : () -> respawn.captureOwnerFailure(body);
+        if (OwnershipContext.current().isPresent()) admitted.run();
+        else dispatcher.executeAndDrain(sourceKey, RegionalServiceKind.TRACKING_PAIR, ignored -> admitted.run());
+        if (respawn != null) respawn.rethrowOwnerFailure();
     }
 
     /** Exact new TrackedEntity.updatePlayers call inside ChunkMap.addEntity. */
@@ -404,7 +422,8 @@ public final class RegionalTrackingService {
         RoutingKey sourceKey = key(source);
         var connectionPlayers = new ArrayList<>(level.players());
         if (entity instanceof ServerPlayer player && !connectionPlayers.contains(player)) connectionPlayers.add(player);
-        FullFinishingScoreboard.TrackingCut cut = finishing.scoreboard.trackingCut(connectionPlayers);
+        var respawn = respawnTracking(entity, PlayerRespawnHandoff.Action.REMOVE);
+        FullFinishingScoreboard.TrackingCut cut = finishing.scoreboard.trackingCut(connectionPlayers, respawn);
         Map<ServerPlayer, PlayerReceipt> players = playerReceipts(cut);
         Map<Object, PlayerReceipt> listeners = new IdentityHashMap<>();
         players.values().forEach(receipt -> listeners.put(receipt.session.listener(), receipt));
@@ -431,15 +450,27 @@ public final class RegionalTrackingService {
         if (OwnershipContext.current().isPresent()) dispatcher.requireCurrentClosure(footprint);
         else dispatcher.ensureClosure(footprint);
         RemovePlan plan = new RemovePlan(entity, sourceRelation, cut, players, Set.copyOf(selectedTrackers));
+        if (respawn != null) respawn.route(source, sourceKey, directory.snapshot().generation().value());
         Runnable body = () -> {
             dispatcher.requireCurrentOwner(sourceKey);
             requireRelation(sourceRelation);
+            if (entity instanceof ServerPlayer player)
+                finishing.scoreboard.requireTrackingSession(cut, players.get(player).session);
             activeRemove.set(plan);
             try { original.run(); }
             finally { activeRemove.remove(); }
         };
-        if (OwnershipContext.current().isPresent()) body.run();
-        else dispatcher.executeAndDrain(sourceKey, RegionalServiceKind.TRACKING_PAIR, ignored -> body.run());
+        Runnable admitted = respawn == null ? body : () -> respawn.captureOwnerFailure(body);
+        if (OwnershipContext.current().isPresent()) admitted.run();
+        else dispatcher.executeAndDrain(sourceKey, RegionalServiceKind.TRACKING_PAIR, ignored -> admitted.run());
+        if (respawn != null) respawn.rethrowOwnerFailure();
+    }
+
+    private PlayerRespawnHandoff.Tracking respawnTracking(Entity entity, PlayerRespawnHandoff.Action action) {
+        if (!(entity instanceof ServerPlayer player)) return null;
+        var handoff = finishing.scoreboard.respawn(player);
+        if (handoff == null) return null;
+        return Objects.requireNonNull(handoff.tracking(player, action), "respawn tracking has no exact action receipt");
     }
 
     public void removePlayer(Object trackerIdentity, ServerPlayer player, Runnable original) {

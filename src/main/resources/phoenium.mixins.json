@@ -4,6 +4,9 @@
   "plugin": "dev.phoenium.mixin.PhoeniumMixinConfigPlugin",
   "compatibilityLevel": "JAVA_25",
   "mixins": [
+    "PlayerRespawnIdentityMixin",
+    "PlayerRespawnListenerMixin",
+    "PlayerRespawnStorageMixin",
     "VaultTickContinuationMixin",
     "VaultOutputNeighborMixin",
     "VaultSetChangedAccess",

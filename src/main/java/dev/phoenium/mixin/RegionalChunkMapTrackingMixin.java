@@ -4,6 +4,8 @@ import com.llamalad7.mixinextras.injector.wrapmethod.WrapMethod;
 import com.llamalad7.mixinextras.injector.wrapoperation.Operation;
 import com.llamalad7.mixinextras.injector.wrapoperation.WrapOperation;
 import dev.phoenium.Phoenium;
+import dev.phoenium.chunk.FullFinishingServices;
+import dev.phoenium.chunk.PlayerRespawnHandoff;
 import java.util.List;
 import net.minecraft.server.level.ChunkMap;
 import net.minecraft.server.level.ServerPlayer;
@@ -19,8 +21,12 @@ abstract class RegionalChunkMapTrackingMixin {
     @WrapMethod(method = "addEntity")
     private void phoenium$regionalTrackingAdd(Entity entity, Operation<Void> original) {
         ChunkMap map = (ChunkMap) (Object) this;
-        if (!Phoenium.liveRuntime().regionalTrackingAdd(map, entity, () -> original.call(entity)))
-            original.call(entity);
+        var handoff = entity instanceof ServerPlayer player
+            ? FullFinishingServices.forServer(player.level().getServer()).scoreboard.respawn(player) : null;
+        try (var tracking = handoff == null ? null : handoff.beginTracking((ServerPlayer) entity, PlayerRespawnHandoff.Action.ADD)) {
+            if (!Phoenium.liveRuntime().regionalTrackingAdd(map, entity, () -> original.call(entity))) original.call(entity);
+            if (tracking != null) tracking.succeeded();
+        }
     }
 
     @WrapOperation(method = "addEntity", at = @At(value = "INVOKE",
@@ -42,8 +48,13 @@ abstract class RegionalChunkMapTrackingMixin {
     @WrapMethod(method = "removeEntity")
     private void phoenium$regionalTrackingRemove(Entity entity, Operation<Void> original) {
         ChunkMap map = (ChunkMap) (Object) this;
-        if (!Phoenium.liveRuntime().regionalTrackingRemove(map, entity, () -> original.call(entity)))
-            original.call(entity);
+        var handoff = entity instanceof ServerPlayer player
+            ? FullFinishingServices.forServer(player.level().getServer()).scoreboard.respawn(player) : null;
+        try (var tracking = handoff == null ? null : handoff.beginTracking((ServerPlayer) entity, PlayerRespawnHandoff.Action.REMOVE)) {
+            if (tracking != null && tracking.alreadyRemoved) return;
+            if (!Phoenium.liveRuntime().regionalTrackingRemove(map, entity, () -> original.call(entity))) original.call(entity);
+            if (tracking != null) tracking.succeeded();
+        }
     }
 
     @WrapOperation(method = "removeEntity", at = @At(value = "INVOKE",

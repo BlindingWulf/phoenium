@@ -97,7 +97,10 @@ public final class FullFinishingServices {
         FullFinishingServices service;
         DIRECTORY.lock();
         try { service = SERVERS.get(world.getServer()); } finally { DIRECTORY.unlock(); }
-        if (service != null) service.entityFacts.closePassengerWorld(world);
+        if (service != null) {
+            service.scoreboard.abortRespawns(world);
+            service.entityFacts.closePassengerWorld(world);
+        }
     }
     static FullEntityFacts existingPassengerFacts(MinecraftServer server) {
         DIRECTORY.lock();
@@ -403,6 +406,8 @@ public final class FullFinishingServices {
         for (var request : pendingEnvironment)
             request.completeExceptionally(new java.util.concurrent.CancellationException("world-generation environment service stopped"));
         // No service/directory/region lock spans a child callback or executor transition.
+        try (var turn = serial(Phase.STOP)) { scoreboard.abortRespawns(null); }
+        catch (Throwable problem) { failure = accumulate(failure, problem); }
         try { FullCommandStorageInputs.stopped(server); } catch (Throwable problem) { failure = accumulate(failure, problem); }
         try { legacyOwners.shutdown(); } catch (Throwable problem) { failure = accumulate(failure, problem); }
         try { entityFacts.close(); } catch (Throwable problem) { failure = accumulate(failure, problem); }

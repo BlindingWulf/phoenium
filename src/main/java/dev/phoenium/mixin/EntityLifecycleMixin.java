@@ -42,8 +42,11 @@ abstract class EntityLifecycleMixin {
         }
     }
 
-    @Inject(method = "setRemoved(Lnet/minecraft/world/entity/Entity$RemovalReason;)V", at = @At("HEAD"), require = 1)
+    @Inject(method = "setRemoved(Lnet/minecraft/world/entity/Entity$RemovalReason;)V", at = @At("HEAD"), require = 1, cancellable = true)
     private void phoenium$removed(Entity.RemovalReason reason, CallbackInfo ci) {
+        if ((Object) this instanceof ServerPlayer player && dev.phoenium.chunk.PlayerRespawnHandoff.retired(player)) {
+            ci.cancel(); return;
+        }
         FullEntityFacts.passengerRemoved((Entity) (Object) this);
         Phoenium.liveRuntime().onEntityRemoved((Entity) (Object) this, reason);
     }

@@ -235,6 +235,20 @@ public final class FullEntityFacts {
     }
 
     /** Runs after the original removal callback, including tracker removal and UUID retirement. */
+    public static void respawnPrefixUnstored(Entity entity, Object manager) {
+        Fact fact = entity instanceof Access access ? access.phoenium$referenceFact() : null;
+        if (fact == null) return;
+        var facts = FullFinishingServices.forServer(fact.server).entityFacts;
+        facts.candidateMetadata.lock();
+        try {
+            Object actual = facts.stored.get(entity);
+            if (actual == null) return; // failure preceded the exact section-storage hook
+            if (actual != manager) throw new ChunkProtocolException("respawn storage prefix belongs to another manager");
+        } finally { facts.candidateMetadata.unlock(); }
+        unstored(entity, manager);
+    }
+
+    /** Runs after the original removal callback, including tracker removal and UUID retirement. */
     public static void unstored(Entity entity, Object manager) {
         Fact fact = entity instanceof Access access ? access.phoenium$referenceFact() : null;
         if (fact == null) return;
