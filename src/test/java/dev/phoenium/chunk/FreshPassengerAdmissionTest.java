@@ -1,6 +1,7 @@
 package dev.phoenium.chunk;
 
 import com.google.common.collect.ImmutableList;
+import com.llamalad7.mixinextras.injector.wrapoperation.Operation;
 import dev.phoenium.core.*;
 import dev.phoenium.ownership.*;
 import dev.phoenium.region.RegionId;
@@ -8,6 +9,7 @@ import dev.phoenium.topology.*;
 import java.lang.reflect.*;
 import java.util.*;
 import java.util.function.Consumer;
+import java.util.function.BooleanSupplier;
 import net.minecraft.SharedConstants;
 import net.minecraft.server.Bootstrap;
 import net.minecraft.server.level.ServerLevel;
@@ -64,6 +66,25 @@ final class FreshPassengerAdmissionTest {
                 throw new AssertionError("unexpected native call " + method);
             });
         level.addFreshEntityWithPassengers(root);
+    }
+    /** Executes the production handler bound to Zombie/Drowned/Husk.finalizeSpawn's direct call. */
+    @SuppressWarnings({"rawtypes", "unchecked"})
+    private static boolean directFinalizationInsertion(ServerLevelAccessor level, Entity root,
+            BooleanSupplier insertion) throws Exception {
+        Class type = Class.forName("dev.phoenium.mixin.NaturalSpawnFinalizationInsertionMixin");
+        Object mixin = stub(type, List.of());
+        Method handler = Arrays.stream(type.getDeclaredMethods())
+            .filter(method -> method.getName().equals("phoenium$directFinalizationInsertion"))
+            .findFirst().orElseThrow();
+        handler.setAccessible(true);
+        Operation<Boolean> original = ignored -> insertion.getAsBoolean();
+        try { return (Boolean) handler.invoke(mixin, level, root, original); }
+        catch (InvocationTargetException invocation) {
+            Throwable failure = invocation.getCause();
+            if (failure instanceof RuntimeException runtime) throw runtime;
+            if (failure instanceof Error error) throw error;
+            throw invocation;
+        }
     }
     @Test void originalNativeLoopIsRootThenDepthFirstWithSynchronousTracking() throws Exception {
         try (var f = new FullServiceOperationFixture()) {
@@ -303,6 +324,207 @@ final class FreshPassengerAdmissionTest {
             }
         }
     }
+    @Test void directFinalizationInsertionKeepsFactsThroughDelayedOuterInsertion() throws Exception {
+        try (var f = new FullServiceOperationFixture()) {
+            var world = f.world(); var vehicle = entity(world, 161); var candidate = entity(world, 162);
+            attach(vehicle, candidate); var pub = new Publisher(); var events = new ArrayList<String>();
+            Object storageToken = new Object();
+            var callbacks = new LevelCallback<Entity>() {
+                public void onCreated(Entity entity) { events.add("stored:" + entity.getId()); FullEntityFacts.stored(entity, storageToken); }
+                public void onTrackingStart(Entity entity) {
+                    events.add("tracking:" + entity.getId()); FullEntityFacts.passengerTrackingStarted(entity);
+                    var source = f.service.entityFacts.trackingCandidate(world, entity);
+                    var passengers = f.service.entityFacts.trackingPassengers(source);
+                    if (entity == vehicle) {
+                        assertEquals(List.of(candidate), passengers.stream().map(FullEntityFacts.Candidate::alias).toList());
+                        assertFalse(f.service.entityFacts.hasStorage(candidate), "outer candidate must not be inserted early");
+                    }
+                    FullEntityFacts.passengerTrackingCompleted(entity); events.add("tracked:" + entity.getId());
+                }
+                public void onDestroyed(Entity entity) { }
+                public void onTickingStart(Entity entity) { events.add("ticking:" + entity.getId()); }
+                public void onTickingEnd(Entity entity) { }
+                public void onTrackingEnd(Entity entity) { }
+                public void onSectionChange(Entity entity) { }
+            };
+            var storage = new EntityPersistentStorage<Entity>() {
+                public java.util.concurrent.CompletableFuture<ChunkEntities<Entity>> loadEntities(ChunkPos pos) {
+                    return java.util.concurrent.CompletableFuture.completedFuture(new ChunkEntities<>(pos, List.of()));
+                }
+                public void storeEntities(ChunkEntities<Entity> entities) { }
+                public void flush(boolean sync) { }
+            };
+            var manager = new PersistentEntitySectionManager<>(Entity.class, callbacks, storage);
+            manager.updateChunkStatus(vehicle.chunkPosition(), Visibility.TICKING);
+            manager.updateChunkStatus(candidate.chunkPosition(), Visibility.TICKING);
+            try (var turn = f.service.referenceAccess(); var scope = FreshPassengerAdmission.naturalSpawnScope(world, pub)) {
+                try (var finalization = scope.finalizing(candidate)) {
+                    assertTrue(directFinalizationInsertion(world, vehicle, () -> manager.addNewEntity(vehicle)));
+                }
+                assertEquals(1, manager.count());
+                assertNotNull(((FullEntityFacts.Access) candidate).phoenium$referenceFact());
+                assertEquals(0L, f.service.entityFacts.measurements().get("directPassengerSettled"));
+                scope.bulkInsertion(candidate, () -> nativeInsert(candidate, entity -> assertTrue(manager.addNewEntity(entity))));
+                assertEquals(2, manager.count());
+            }
+            assertEquals(List.of("stored:161", "tracking:161", "tracked:161", "ticking:161",
+                "stored:162", "tracking:162", "tracked:162", "ticking:162"), events);
+            assertEquals(1L, f.service.entityFacts.measurements().get("directPassengerPrepared"));
+            assertEquals(1L, f.service.entityFacts.measurements().get("directPassengerAccepted"));
+            assertEquals(1L, f.service.entityFacts.measurements().get("directPassengerSettled"));
+            assertEquals(2, pub.objects.liveCount());
+        }
+    }
+    @Test void reentrantScopeReusesTheExactDirectAdmissionWithoutDoubleOwnershipOrTracking() throws Exception {
+        try (var f = new FullServiceOperationFixture()) {
+            var world = f.world(); var vehicle = entity(world, 171); var candidate = entity(world, 172);
+            attach(vehicle, candidate); var pub = new Publisher(); var starts = new ArrayList<Entity>(); Object manager = new Object();
+            try (var turn = f.service.referenceAccess(); var outer = FreshPassengerAdmission.naturalSpawnScope(world, pub)) {
+                try (var finalization = outer.finalizing(candidate)) {
+                    assertTrue(outer.directInsertion(vehicle, () -> {
+                        FullEntityFacts.stored(vehicle, manager); FullEntityFacts.passengerTrackingStarted(vehicle);
+                        starts.add(vehicle); FullEntityFacts.passengerTrackingCompleted(vehicle); return true;
+                    }));
+                }
+                var vehicleOwnership = pub.current(vehicle.getUUID().toString());
+                var candidateOwnership = pub.current(candidate.getUUID().toString());
+                try (var nested = FreshPassengerAdmission.naturalSpawnScope(world, pub)) {
+                    nested.bulkInsertion(candidate, () -> {
+                        FullEntityFacts.stored(candidate, manager); FullEntityFacts.passengerTrackingStarted(candidate);
+                        starts.add(candidate); FullEntityFacts.passengerTrackingCompleted(candidate);
+                    });
+                }
+                assertEquals(vehicleOwnership, pub.current(vehicle.getUUID().toString()));
+                assertEquals(candidateOwnership, pub.current(candidate.getUUID().toString()));
+            }
+            assertEquals(List.of(vehicle, candidate), starts); assertEquals(2, pub.objects.liveCount());
+            assertEquals(1L, f.service.entityFacts.measurements().get("directPassengerPrepared"));
+            assertEquals(2L, f.service.entityFacts.measurements().get("naturalPassengerScopes"));
+        }
+    }
+    @Test void finalizationGraphExtensionCoversLaterHelperBulkWithoutEndingOuterCustody() throws Exception {
+        try (var f = new FullServiceOperationFixture()) {
+            var world = f.world(); var vehicle = entity(world, 181); var candidate = entity(world, 182);
+            var helper = entity(world, 183); attach(vehicle, candidate); var pub = new Publisher(); Object manager = new Object();
+            try (var turn = f.service.referenceAccess(); var scope = FreshPassengerAdmission.naturalSpawnScope(world, pub)) {
+                try (var finalization = scope.finalizing(candidate)) {
+                    assertTrue(scope.directInsertion(vehicle, () -> {
+                        FullEntityFacts.stored(vehicle, manager); FullEntityFacts.passengerTrackingStarted(vehicle);
+                        FullEntityFacts.passengerTrackingCompleted(vehicle); return true;
+                    }));
+                    attach(vehicle, candidate, helper); FullEntityFacts.passengersChanged(vehicle);
+                    scope.bulkInsertion(helper, () -> {
+                        FullEntityFacts.stored(helper, manager); FullEntityFacts.passengerTrackingStarted(helper);
+                        FullEntityFacts.passengerTrackingCompleted(helper);
+                    });
+                    assertNotNull(pub.current(helper.getUUID().toString()));
+                }
+                scope.bulkInsertion(candidate, () -> {
+                    FullEntityFacts.stored(candidate, manager); FullEntityFacts.passengerTrackingStarted(candidate);
+                    FullEntityFacts.passengerTrackingCompleted(candidate);
+                });
+            }
+            assertEquals(3, pub.objects.liveCount());
+        }
+    }
+    @Test void reentrantDirectVehicleReplacementTransfersTheSameCandidatePublication() throws Exception {
+        try (var f = new FullServiceOperationFixture()) {
+            var world = f.world(); var firstVehicle = entity(world, 184); var secondVehicle = entity(world, 185);
+            var candidate = entity(world, 186); attach(firstVehicle, candidate); var pub = new Publisher(); Object manager = new Object();
+            try (var turn = f.service.referenceAccess(); var scope = FreshPassengerAdmission.naturalSpawnScope(world, pub)) {
+                try (var finalization = scope.finalizing(candidate)) {
+                    assertTrue(scope.directInsertion(firstVehicle, () -> {
+                        FullEntityFacts.stored(firstVehicle, manager); FullEntityFacts.passengerTrackingStarted(firstVehicle);
+                        FullEntityFacts.passengerTrackingCompleted(firstVehicle); return true;
+                    }));
+                    ObjectOwnership candidateOwnership = pub.current(candidate.getUUID().toString());
+                    attach(firstVehicle); attach(secondVehicle, candidate); FullEntityFacts.passengersChanged(firstVehicle);
+                    assertTrue(scope.directInsertion(secondVehicle, () -> {
+                        FullEntityFacts.stored(secondVehicle, manager); FullEntityFacts.passengerTrackingStarted(secondVehicle);
+                        FullEntityFacts.passengerTrackingCompleted(secondVehicle); return true;
+                    }));
+                    assertEquals(candidateOwnership, pub.current(candidate.getUUID().toString()));
+                }
+                scope.bulkInsertion(candidate, () -> {
+                    FullEntityFacts.stored(candidate, manager); FullEntityFacts.passengerTrackingStarted(candidate);
+                    FullEntityFacts.passengerTrackingCompleted(candidate);
+                });
+            }
+            assertEquals(3, pub.objects.liveCount());
+            assertEquals(1L, f.service.entityFacts.measurements().get("directPassengerPrepared"));
+            assertEquals(2L, f.service.entityFacts.measurements().get("directPassengerAccepted"));
+        }
+    }
+    @Test void directNonPassengerInsertionIsBitForBitDelegatedWithoutPublication() throws Exception {
+        try (var f = new FullServiceOperationFixture()) {
+            var world = f.world(); var candidate = entity(world, 191); var independent = entity(world, 192);
+            var pub = new Publisher(); var calls = new int[1];
+            try (var turn = f.service.referenceAccess(); var scope = FreshPassengerAdmission.naturalSpawnScope(world, pub);
+                    var finalization = scope.finalizing(candidate)) {
+                assertFalse(scope.directInsertion(independent, () -> { calls[0]++; return false; }));
+            }
+            assertEquals(1, calls[0]); assertEquals(0, pub.objects.liveCount());
+            assertNull(((FullEntityFacts.Access) independent).phoenium$referenceFact());
+        }
+    }
+    @Test void directExceptionPreservesInsertedPrefixAndRetiresUnusedOuterCandidate() throws Exception {
+        try (var f = new FullServiceOperationFixture()) {
+            var world = f.world(); var vehicle = entity(world, 201); var candidate = entity(world, 202);
+            attach(vehicle, candidate); var pub = new Publisher(); Object manager = new Object();
+            var expected = new IllegalStateException("direct native failure after storage");
+            try (var turn = f.service.referenceAccess()) {
+                assertSame(expected, assertThrows(IllegalStateException.class, () -> {
+                    try (var scope = FreshPassengerAdmission.naturalSpawnScope(world, pub);
+                            var finalization = scope.finalizing(candidate)) {
+                        scope.directInsertion(vehicle, () -> { FullEntityFacts.stored(vehicle, manager); throw expected; });
+                    }
+                }));
+            }
+            assertEquals(1, pub.objects.liveCount()); assertNotNull(pub.current(vehicle.getUUID().toString()));
+            assertNull(pub.current(candidate.getUUID().toString()));
+            assertNull(((FullEntityFacts.Access) candidate).phoenium$referenceFact());
+        }
+    }
+    @Test void rejectedDirectVehicleRetainsOuterCandidateUntilItsRealInsertion() throws Exception {
+        try (var f = new FullServiceOperationFixture()) {
+            var world = f.world(); var vehicle = entity(world, 203); var candidate = entity(world, 204);
+            attach(vehicle, candidate); var pub = new Publisher(); Object manager = new Object();
+            try (var turn = f.service.referenceAccess(); var scope = FreshPassengerAdmission.naturalSpawnScope(world, pub)) {
+                try (var finalization = scope.finalizing(candidate)) {
+                    assertFalse(scope.directInsertion(vehicle, () -> false));
+                    assertNotNull(pub.current(vehicle.getUUID().toString()));
+                    assertNotNull(pub.current(candidate.getUUID().toString()));
+                }
+                scope.bulkInsertion(candidate, () -> {
+                    FullEntityFacts.stored(candidate, manager); FullEntityFacts.passengerTrackingStarted(candidate);
+                    FullEntityFacts.passengerTrackingCompleted(candidate);
+                });
+            }
+            assertNull(pub.current(vehicle.getUUID().toString()));
+            assertNotNull(pub.current(candidate.getUUID().toString()));
+            assertEquals(1L, f.service.entityFacts.measurements().get("directPassengerRejected"));
+            assertEquals(1L, f.service.entityFacts.measurements().get("directPassengerUpgraded"));
+        }
+    }
+    @Test void shutdownDuringOuterScopeRetiresFactsAndLateScopeCloseCannotResurrectThem() throws Exception {
+        try (var f = new FullServiceOperationFixture()) {
+            var world = f.world(); var vehicle = entity(world, 205); var candidate = entity(world, 206);
+            attach(vehicle, candidate); var pub = new Publisher();
+            try (var turn = f.service.referenceAccess()) {
+                var scope = FreshPassengerAdmission.naturalSpawnScope(world, pub);
+                try (var finalization = scope.finalizing(candidate)) {
+                    assertFalse(scope.directInsertion(vehicle, () -> false));
+                }
+                f.service.entityFacts.close();
+                assertEquals(0, pub.objects.liveCount());
+                FullEntityFacts.passengerTrackingStarted(candidate);
+                scope.close(); scope.close();
+                assertNull(FreshPassengerAdmission.currentNaturalSpawnScope(world));
+                assertEquals(0, pub.objects.liveCount());
+                assertNull(((FullEntityFacts.Access) candidate).phoenium$referenceFact());
+            }
+        }
+    }
     @Test void cyclicOrDuplicatedGraphIsRejectedBeforeAnyPublication() throws Exception {
         try (var f = new FullServiceOperationFixture()) {
             var world = f.world(); var root = entity(world, 121); var child = entity(world, 122); attach(root, child, child);
@@ -350,7 +572,8 @@ final class FreshPassengerAdmissionTest {
                 assertThrows(ChunkProtocolException.class, admission::validate);
                 assertEquals(1, messages.size()); String message = messages.getFirst();
                 for (String field : List.of("root=", "passenger=", "type=", "depth=1", "pendingAdmission=true",
-                        "IDENTITY_PUBLISHED_NOT_TRACKED", "nativeIncarnation=", "objectEpoch=", "topologyGeneration=",
+                        "entryPath=BULK_INSERTION", "admissionIdentity=", "outerGeneration=0", "nestedDepth=0",
+                        "scopeExit=ACTIVE", "IDENTITY_PUBLISHED_NOT_TRACKED", "nativeIncarnation=", "objectEpoch=", "topologyGeneration=",
                         "world=", "owner=", "reason=ownership incarnation, epoch, or topology changed"))
                     assertTrue(message.contains(field), field + " missing: " + message);
             }

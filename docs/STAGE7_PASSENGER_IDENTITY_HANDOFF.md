@@ -1,8 +1,10 @@
 # Stage 7 natural-spawn passenger identity handoff
 
-Status: **PASSENGER TRACKING IDENTITY HANDOFF READY — RETURN TO LUNA** after the
-clean candidate build and packaging audit recorded in the adjacent run manifest.
-This is deterministic repair readiness, not a real-client acceptance result.
+Historical status at `f7e3661`: **PASSENGER TRACKING IDENTITY HANDOFF READY — RETURN TO LUNA**.
+The subsequent retained live run disproved complete coverage: `Drowned.finalizeSpawn` directly
+inserted/tracked its Chicken vehicle before this document's bulk wrapper. The bounded descendant
+repair is recorded in `STAGE7_NATURAL_SPAWN_DIRECT_INSERTION_PASSENGER_ADMISSION.md`. The remainder
+of this file is the preserved `f7e3661` design/build record, not the current acceptance claim.
 
 Parent: `8b094b7df947f5de273d6ff5de7abdb6178356de`.
 Parent candidate SHA-256:

@@ -44,9 +44,11 @@ public final class FullEntityFacts {
     private final IdentityHashMap<Entity, FreshPassengerAdmission> pendingPassengerIdentities = new IdentityHashMap<>();
     private final Set<ServerLevel> closedPassengerWorlds = Collections.newSetFromMap(new IdentityHashMap<>());
     private final java.util.concurrent.atomic.AtomicBoolean passengerFailureReported = new java.util.concurrent.atomic.AtomicBoolean();
+    private final java.util.concurrent.atomic.AtomicBoolean directPassengerSuccessReported = new java.util.concurrent.atomic.AtomicBoolean();
     private final java.util.concurrent.locks.ReentrantLock candidateMetadata = new java.util.concurrent.locks.ReentrantLock();
     private long routingSequence;
-    private long published, insertions, removals;
+    private long published, insertions, removals, naturalPassengerScopes, directPassengerPrepared,
+        directPassengerAccepted, directPassengerRejected, directPassengerSettled, directPassengerUpgraded;
     FullEntityFacts(FullFinishingServices service) { this.service = service; }
     public static long nextIncarnation() { return INCARNATIONS.incrementAndGet(); }
     public static void constructed(Entity entity) {
@@ -625,8 +627,24 @@ public final class FullEntityFacts {
     public static Holder<EntityType<?>> type(Entity entity, Supplier<Holder<EntityType<?>>> original) {
         return foreign(entity) ? require(entity).type.builtInRegistryHolder() : original.get();
     }
-    public Map<String, Long> measurements() { return Map.of("factsPublished", published, "insertions", insertions, "removals", removals,
-            "addressable", directories.values().stream().mapToLong(Map::size).sum()); }
+    public Map<String, Long> measurements() { return Map.of(
+            "factsPublished", published, "insertions", insertions, "removals", removals,
+            "addressable", directories.values().stream().mapToLong(Map::size).sum(),
+            "naturalPassengerScopes", naturalPassengerScopes, "directPassengerPrepared", directPassengerPrepared,
+            "directPassengerAccepted", directPassengerAccepted, "directPassengerRejected", directPassengerRejected,
+            "directPassengerSettled", directPassengerSettled, "directPassengerUpgraded", directPassengerUpgraded); }
+    void naturalScopeEntered() { naturalPassengerScopes++; }
+    void directAdmissionPrepared() { directPassengerPrepared++; }
+    void directInsertionReturned(boolean accepted) {
+        if (accepted) directPassengerAccepted++; else directPassengerRejected++;
+    }
+    void directAdmissionSettled(FreshPassengerAdmission admission, boolean upgraded) {
+        directPassengerSettled++;
+        if (upgraded) directPassengerUpgraded++;
+        if (upgraded && directPassengerSuccessReported.compareAndSet(false, true))
+            org.slf4j.LoggerFactory.getLogger("Phoenium").info(
+                "PHOENIUM_PASSENGER_IDENTITY_DIRECT_PATH {} result=UPGRADED_AND_SETTLED", admission.successDescription());
+    }
     boolean hasRoute(Entity entity) {
         candidateMetadata.lock();
         try { return routes.containsKey(entity); } finally { candidateMetadata.unlock(); }

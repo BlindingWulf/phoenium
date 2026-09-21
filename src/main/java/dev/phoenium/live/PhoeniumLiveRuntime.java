@@ -1761,9 +1761,16 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
     /** Downstream of native spawn decisions: exact identity custody only, no tracker or policy admission. */
     public dev.phoenium.chunk.FreshPassengerAdmission naturalSpawnPassengerIdentity(ServerLevel level, Entity root) {
         requireRegionalServiceLifetime();
+        return dev.phoenium.chunk.FreshPassengerAdmission.begin(level, root, freshPassengerPublisher(level));
+    }
+    /** Complete native natural-spawn attempt lifetime; nested attempts in the same world share custody. */
+    public dev.phoenium.chunk.FreshPassengerAdmission.NaturalSpawnScope naturalSpawnPassengerScope(ServerLevel level) {
+        requireRegionalServiceLifetime();
+        return dev.phoenium.chunk.FreshPassengerAdmission.naturalSpawnScope(level, freshPassengerPublisher(level));
+    }
+    private dev.phoenium.chunk.FreshPassengerAdmission.Publisher freshPassengerPublisher(ServerLevel level) {
         WorldId world = worldId(level);
-        return dev.phoenium.chunk.FreshPassengerAdmission.begin(level, root,
-            new dev.phoenium.chunk.FreshPassengerAdmission.Publisher() {
+        return new dev.phoenium.chunk.FreshPassengerAdmission.Publisher() {
                 @Override public void requireOwners(java.util.Set<net.minecraft.world.level.ChunkPos> positions) {
                     if (!isRunning() || regionalDispatcher == null)
                         throw new IllegalStateException("fresh passenger admission outside live owner lifetime");
@@ -1778,7 +1785,7 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
                 }
                 @Override public ObjectOwnership current(String uuid) { return objects.current(uuid).orElse(null); }
                 @Override public void retire(ObjectOwnership identity) { objects.retirePublication(identity); }
-            });
+            };
     }
     /** Metadata-only first-failure context; never discovers a native entity through its UUID. */
     public String passengerOwnershipDiagnostic(String uuid) {

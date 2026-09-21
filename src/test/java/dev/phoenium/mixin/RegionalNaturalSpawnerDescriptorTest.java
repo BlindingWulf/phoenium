@@ -1,6 +1,7 @@
 package dev.phoenium.mixin;
 
 import com.llamalad7.mixinextras.injector.wrapoperation.WrapOperation;
+import com.llamalad7.mixinextras.injector.wrapmethod.WrapMethod;
 import java.io.InputStream;
 import java.lang.reflect.Method;
 import java.util.Arrays;
@@ -36,11 +37,23 @@ final class RegionalNaturalSpawnerDescriptorTest {
         assertEquals(1, invocationCount(nativeMethod, NEAREST_OWNER, NEAREST_NAME, NEAREST_DESC));
         assertEquals(1, invocationCount(nativeMethod, DISTANCE_OWNER, DISTANCE_NAME, DISTANCE_DESC));
         assertEquals(1, invocationCount(nativeMethod, NEAREST_OWNER, "addFreshEntityWithPassengers", "(Lnet/minecraft/world/entity/Entity;)V"));
+        assertEquals(1, invocationCount(nativeMethod, "net/minecraft/world/entity/Mob", "finalizeSpawn",
+            "(Lnet/minecraft/world/level/ServerLevelAccessor;Lnet/minecraft/world/DifficultyInstance;"
+                + "Lnet/minecraft/world/entity/EntitySpawnReason;Lnet/minecraft/world/entity/SpawnGroupData;)"
+                + "Lnet/minecraft/world/entity/SpawnGroupData;"));
 
         Class<?> mixin = Class.forName("dev.phoenium.mixin.RegionalNaturalSpawnerMixin");
         assertSelector(mixin, "phoenium$nearestPlayer", NEAREST_OWNER, NEAREST_NAME, NEAREST_DESC);
         assertSelector(mixin, "phoenium$nearestDistance", DISTANCE_OWNER, DISTANCE_NAME, DISTANCE_DESC);
         assertSelector(mixin, "phoenium$passengerIdentity", NEAREST_OWNER, "addFreshEntityWithPassengers", "(Lnet/minecraft/world/entity/Entity;)V");
+        assertSelector(mixin, "phoenium$passengerFinalization", "net/minecraft/world/entity/Mob", "finalizeSpawn",
+            "(Lnet/minecraft/world/level/ServerLevelAccessor;Lnet/minecraft/world/DifficultyInstance;"
+                + "Lnet/minecraft/world/entity/EntitySpawnReason;Lnet/minecraft/world/entity/SpawnGroupData;)"
+                + "Lnet/minecraft/world/entity/SpawnGroupData;");
+        Method lifetime = Arrays.stream(mixin.getDeclaredMethods())
+            .filter(method -> method.getName().equals("phoenium$passengerIdentityLifetime")).findFirst().orElseThrow();
+        WrapMethod wrapped = lifetime.getAnnotation(WrapMethod.class); assertNotNull(wrapped);
+        assertArrayEquals(new String[] {METHOD}, wrapped.method());
     }
 
     private static long invocationCount(MethodNode method, String owner, String name, String descriptor) {

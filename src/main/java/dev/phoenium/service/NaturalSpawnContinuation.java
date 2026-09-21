@@ -1,5 +1,7 @@
 package dev.phoenium.service;
 
+import dev.phoenium.Phoenium;
+import dev.phoenium.chunk.FullFinishingServices;
 import dev.phoenium.chunk.FullGenerationSource;
 import dev.phoenium.chunk.FullRegistrationRuntime;
 import dev.phoenium.chunk.NaturalSpawnStructureQuery;
@@ -178,9 +180,17 @@ public final class NaturalSpawnContinuation {
                     if (mob == null) { pc = Pc.CATEGORY; continue; }
                     mob.snapTo(xx, start.getY(), zz, level.getRandom().nextFloat() * 360.0F, 0.0F);
                     if (!NaturalSpawnContinuationAccess.phoenium$validMob(level, mob, distance)) continue;
-                    groupData = mob.finalizeSpawn(level, level.getCurrentDifficultyAt(mob.blockPosition()), EntitySpawnReason.NATURAL, groupData);
-                    clusterSize++; groupSize++;
-                    level.addFreshEntityWithPassengers(mob); state.phoenium$afterSpawn(mob, chunk);
+                    try (var passengerScope = Phoenium.liveRuntime().naturalSpawnPassengerScope(level)) {
+                        try (var finalization = passengerScope.finalizing(mob)) {
+                            groupData = mob.finalizeSpawn(level, level.getCurrentDifficultyAt(mob.blockPosition()),
+                                EntitySpawnReason.NATURAL, groupData);
+                        }
+                        clusterSize++; groupSize++;
+                        try (var turn = FullFinishingServices.forServer(level.getServer()).referenceAccess()) {
+                            passengerScope.bulkInsertion(mob, () -> level.addFreshEntityWithPassengers(mob));
+                        }
+                    }
+                    state.phoenium$afterSpawn(mob, chunk);
                     if (clusterSize >= mob.getMaxSpawnClusterSize()) { pc = Pc.CATEGORY; continue; }
                     if (mob.isMaxGroupSizeReached(groupSize)) pc = Pc.NEXT_GROUP;
                 }
