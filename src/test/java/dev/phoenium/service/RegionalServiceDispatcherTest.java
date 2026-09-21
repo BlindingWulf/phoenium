@@ -81,6 +81,29 @@ final class RegionalServiceDispatcherTest {
     }
 
     @Test
+    void initialTrackingPairingCapturesAfterQueuedMovementSettles() {
+        Fixture f = new Fixture(); var dispatcher = f.dispatcher();
+        var published = new java.util.concurrent.atomic.AtomicReference<>(f.aKey);
+        var paired = new java.util.concurrent.atomic.AtomicInteger();
+        dispatcher.submit(f.aKey, RegionalServiceKind.TRACKING_UPDATE,
+            execution -> published.set(f.bKey));
+
+        // addEntity must take its player receipt after this owner-free selection boundary.
+        dispatcher.drainBeforeSelection();
+        RoutingKey captured = published.get();
+        assertEquals(f.bKey, captured);
+        dispatcher.executeAndDrain(captured, RegionalServiceKind.TRACKING_PAIR, execution -> {
+            assertEquals(f.bId, execution.runtime().id());
+            assertEquals(captured, published.get());
+            paired.incrementAndGet();
+        });
+
+        assertEquals(1, paired.get());
+        assertEquals(0, dispatcher.pendingCount());
+        assertFalse(f.barrier.tripped());
+    }
+
+    @Test
     void unresolvedClosureStillFailsWithoutRunningTheCallbackOrPublishingRoutes() {
         Fixture f = new Fixture();
         var dispatcher = f.dispatcher();

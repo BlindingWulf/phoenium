@@ -20,6 +20,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.function.BooleanSupplier;
 import net.minecraft.core.SectionPos;
 import net.minecraft.server.level.ChunkMap;
 import net.minecraft.server.level.ServerLevel;
@@ -33,6 +35,7 @@ import net.minecraft.world.entity.Entity;
  * executing each reached update under the tracked entity's current owner.
  */
 public final class RegionalTrackingService {
+    private static final org.slf4j.Logger LOGGER = org.slf4j.LoggerFactory.getLogger(RegionalTrackingService.class);
     private final WorldId world;
     private final ServerLevel level;
     private final FullFinishingServices finishing;
@@ -43,6 +46,8 @@ public final class RegionalTrackingService {
     private final ThreadLocal<AddPlan> activeAdd = new ThreadLocal<>();
     private final ThreadLocal<RemovePlan> activeRemove = new ThreadLocal<>();
     private final ThreadLocal<MovePlan> activeMove = new ThreadLocal<>();
+    private final AtomicBoolean routeHandoffLogged = new AtomicBoolean();
+    private final AtomicBoolean staleRouteFailureLogged = new AtomicBoolean();
     private boolean cycling;
     private long cycles, updates, migrations, sourceReconciliations;
 
@@ -209,12 +214,13 @@ public final class RegionalTrackingService {
         synchronized (this) { cycling = true; cycles++; }
         try {
             RegionalChunkMapAccess mapAccess = (RegionalChunkMapAccess) map;
+            Set<ServerPlayer> deferredPlayers = java.util.Collections.newSetFromMap(new IdentityHashMap<>());
             for (ServerPlayer player : activePlayers) {
                 PlayerReceipt receipt = requirePlayer(players, player);
                 RoutingKey key = receipt.key;
                 dispatcher.executeAndDrain(key, RegionalServiceKind.TRACKING_UPDATE, ignored -> {
-                    requirePlayer(receipt, connectionCut);
-                    mapAccess.phoenium$invokeUpdateChunkTracking(player);
+                    if (currentTickPlayer(receipt, connectionCut, deferredPlayers))
+                        mapAccess.phoenium$invokeUpdateChunkTracking(player);
                 });
             }
 
@@ -225,14 +231,18 @@ public final class RegionalTrackingService {
                     .filter(Objects::nonNull)
                     .filter(player -> preview.seen.contains(player.session.player()) || candidate(preview, player.key)).toList();
                 dispatcher.executeAndDrain(preview.key, RegionalServiceKind.TRACKING_UPDATE, ignored -> {
+                    // A movement packet can run while executeAndDrain reaches this owner turn.
+                    // Retire the old player preview; the next tick will recapture its route.
+                    if (entry.entity instanceof ServerPlayer
+                            && !finishing.entityFacts.validTrackingCandidate(preview.candidate)) return;
                     requireEntityOwner(preview.candidate, preview.key);
                     requireEntry(entry, preview.candidate);
                     requireRelation(preview.relation);
                     RegionalTrackedEntityAccess tracker = access(entry.tracker);
                     if (preview.sectionChanged) {
                         for (PlayerReceipt player : candidates) {
-                            requirePlayer(player, connectionCut);
-                            tracker.phoenium$invokeUpdatePlayer(player.session.player());
+                            if (currentTickPlayer(player, connectionCut, deferredPlayers))
+                                tracker.phoenium$invokeUpdatePlayer(player.session.player());
                         }
                         refreshProjection(entry);
                         if (entry.entity instanceof ServerPlayer player) moved.add(player);
@@ -250,12 +260,14 @@ public final class RegionalTrackingService {
                     .filter(Objects::nonNull)
                     .filter(player -> preview.seen.contains(player.session.player()) || candidate(preview, player.key)).toList();
                 dispatcher.executeAndDrain(preview.key, RegionalServiceKind.TRACKING_PAIR, ignored -> {
+                    if (entry.entity instanceof ServerPlayer
+                            && !finishing.entityFacts.validTrackingCandidate(preview.candidate)) return;
                     requireEntityOwner(preview.candidate, preview.key);
                     requireEntry(entry, preview.candidate);
                     requireRelation(preview.relation);
                     for (PlayerReceipt player : candidates) {
-                        requirePlayer(player, connectionCut);
-                        access(entry.tracker).phoenium$invokeUpdatePlayer(player.session.player());
+                        if (currentTickPlayer(player, connectionCut, deferredPlayers))
+                            access(entry.tracker).phoenium$invokeUpdatePlayer(player.session.player());
                     }
                     refreshProjection(entry);
                 });
@@ -300,6 +312,9 @@ public final class RegionalTrackingService {
     public void addEntity(ChunkMap map, Entity entity, Runnable original) {
         Objects.requireNonNull(original, "original");
         if (activeAdd.get() != null) throw new IllegalStateException("nested ChunkMap.addEntity escaped its prepared tracking footprint");
+        // An older accepted movement envelope must settle before the initial recipient cut.
+        // Otherwise the add's first owner drain can invalidate that cut before updatePlayers.
+        if (OwnershipContext.current().isEmpty()) dispatcher.drainBeforeSelection();
         FullEntityFacts.Candidate source = finishing.entityFacts.trackingCandidate(level, entity);
         RoutingKey sourceKey = key(source);
         List<ServerPlayer> levelPlayers = List.copyOf(level.players());
@@ -603,9 +618,48 @@ public final class RegionalTrackingService {
     }
     private void requirePlayer(PlayerReceipt receipt, FullFinishingScoreboard.TrackingCut cut) {
         requireEntityOwner(receipt.candidate, receipt.key);
-        if (!finishing.entityFacts.validTrackingCandidate(receipt.candidate))
+        if (!finishing.entityFacts.validTrackingCandidate(receipt.candidate)) {
+            logRouteHandoff(receipt, staleRouteFailureLogged, "REJECTED");
             throw new IllegalStateException("tracking player route became stale");
+        }
         finishing.scoreboard.requireTrackingSession(cut, receipt.session);
+    }
+    private boolean currentTickPlayer(PlayerReceipt receipt, FullFinishingScoreboard.TrackingCut cut,
+                                      Set<ServerPlayer> deferred) {
+        // A route revision is an exact publication receipt, including same-chunk movement.
+        // The old route never grants access after it changes. Do not reacquire a different
+        // owner inside this callback; the next bounded tracking cycle admits a fresh receipt.
+        if (!currentTickReceipt(receipt.session.player(), deferred,
+                () -> finishing.entityFacts.validTrackingCandidate(receipt.candidate))) {
+            logRouteHandoff(receipt, routeHandoffLogged, "DEFERRED");
+            return false;
+        }
+        requireEntityOwner(receipt.candidate, receipt.key);
+        if (!currentTickReceipt(receipt.session.player(), deferred,
+                () -> finishing.entityFacts.validTrackingCandidate(receipt.candidate))) {
+            logRouteHandoff(receipt, routeHandoffLogged, "DEFERRED");
+            return false;
+        }
+        finishing.scoreboard.requireTrackingSession(cut, receipt.session);
+        return true;
+    }
+    private void logRouteHandoff(PlayerReceipt receipt, AtomicBoolean once, String action) {
+        if (!Boolean.getBoolean("phoenium.test.diagnostics") || !once.compareAndSet(false, true)) return;
+        FullEntityFacts.Candidate current;
+        try { current = finishing.entityFacts.trackingCandidate(level, receipt.session.player()); }
+        catch (dev.phoenium.chunk.ChunkProtocolException departed) { current = null; }
+        LOGGER.info("PHOENIUM_TRACKING_ROUTE_HANDOFF player={} from={} fromRevision={} to={} toRevision={} "
+                + "sameFact={} topologyGeneration={} action={}", receipt.candidate.fact().uuid(), receipt.key,
+            receipt.candidate.routingRevision(), current == null ? "NONE" : key(current),
+            current == null ? "NONE" : current.routingRevision(),
+            current != null && current.fact() == receipt.candidate.fact(), directory.snapshot().generation().value(),
+            current == null ? "RETIRED" : action);
+    }
+    static <P> boolean currentTickReceipt(P player, Set<P> deferred, BooleanSupplier valid) {
+        if (deferred.contains(player)) return false;
+        if (valid.getAsBoolean()) return true;
+        deferred.add(player);
+        return false;
     }
     private Map<ServerPlayer, PlayerReceipt> playerReceipts(FullFinishingScoreboard.TrackingCut cut) {
         Map<ServerPlayer, PlayerReceipt> result = new IdentityHashMap<>();
