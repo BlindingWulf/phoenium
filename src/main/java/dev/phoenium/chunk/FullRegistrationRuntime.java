@@ -71,6 +71,35 @@ public final class FullRegistrationRuntime {
         }, executor);
     }
     ServerLevel level() { return level; }
+    public boolean naturalSpawnOpen() { return open && !authority.barrier().tripped(); }
+
+    /** The optional provider's existing apply wrapper joins the same structure-writer
+     * exclusion as vanilla. Its original future, producer, and settlement remain intact. */
+    public static CompletableFuture<ChunkAccess> protectC2meStructures(WorldGenContext context,
+            ChunkStep step, StaticCache2D<GenerationChunkHolder> cache, ChunkAccess input,
+            Supplier<CompletableFuture<ChunkAccess>> original) {
+        var runtime = ((FullGenerationSource) context.level().getChunkSource().chunkMap).phoenium$fullRegistration();
+        if (runtime == null) return original.get();
+        var holder = cache.get(input.getPos().x(), input.getPos().z());
+        var writer = runtime.structureMutations.beginWriter(holder, step, cache);
+        if (writer == null) return original.get();
+        final CompletableFuture<ChunkAccess> result;
+        try { writer.awaitReady(); result = Objects.requireNonNull(original.get()); }
+        catch (RuntimeException | Error failure) {
+            try { writer.close(); } catch (Throwable cleanup) { if (cleanup != failure) failure.addSuppressed(cleanup); }
+            throw failure;
+        }
+        result.whenComplete((value, failure) -> {
+            try { writer.close(); }
+            catch (Throwable cleanup) {
+                Throwable cause = failure == null ? cleanup : failure;
+                if (cause != cleanup) cause.addSuppressed(cleanup);
+                runtime.authority.barrier().trip(cause, runtime.authority.directory().snapshot().generation(),
+                    new dev.phoenium.core.OwnerEpoch(0), null);
+            }
+        });
+        return result;
+    }
     net.minecraft.server.MinecraftServer server() { return server; }
     void requireObservationThread() {
         if (Thread.currentThread() != observationThread) throw new ChunkProtocolException("FULL input directory observation outside its serial publication thread");

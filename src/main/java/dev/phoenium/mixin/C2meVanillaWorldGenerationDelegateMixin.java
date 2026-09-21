@@ -32,7 +32,8 @@ abstract class C2meVanillaWorldGenerationDelegateMixin {
             ChunkAccess chunk, Operation<CompletableFuture<ChunkAccess>> original,
             @Coerce Object context) {
         return Phoenium.liveRuntime().chunkBinding().c2meGeneration((Object) this, context, step, chunk,
-                () -> original.call(step, generationContext, cache, chunk));
+                () -> dev.phoenium.chunk.FullRegistrationRuntime.protectC2meStructures(generationContext, step, cache, chunk,
+                    () -> original.call(step, generationContext, cache, chunk)));
     }
 
     @WrapOperation(
@@ -44,6 +45,7 @@ abstract class C2meVanillaWorldGenerationDelegateMixin {
             ChunkAccess chunk, Operation<CompletableFuture<ChunkAccess>> original,
             @Coerce Object context) {
         return Phoenium.liveRuntime().chunkBinding().c2meGeneration((Object) this, context, step, chunk,
-                () -> original.call(step, generationContext, cache, chunk));
+                () -> dev.phoenium.chunk.FullRegistrationRuntime.protectC2meStructures(generationContext, step, cache, chunk,
+                    () -> original.call(step, generationContext, cache, chunk)));
     }
 }

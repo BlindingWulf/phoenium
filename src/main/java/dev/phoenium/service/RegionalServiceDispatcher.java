@@ -227,6 +227,49 @@ public final class RegionalServiceDispatcher implements RegionalServiceExecutor 
         drain(submit(key, kind, body));
     }
 
+    public void requireNaturalSpawnOwnerFree() {
+        if (OwnershipContext.current().isPresent() || scheduler.batchActive()
+                || runtimes.values().stream().anyMatch(runtime -> runtime.leases().hasClaimOrSelection()))
+            throw new IllegalStateException("natural-spawn wait retained a regional claim");
+    }
+
+    public boolean naturalSpawnOpen() { return scheduler.acceptsSimulationWork(); }
+
+    /** Direct delivery of the one suffix whose native wait has returned. No ordinary
+     * inbox round is allowed between its return reservation and its current owner. */
+    public void resumeNaturalSpawn(ManagedBlockPollTurnFence.Reservation reservation,
+                                   RoutingKey key, RegionalServiceWork body) {
+        reservation.requireResumeClaim();
+        if (!scheduler.acceptsSimulationWork()) { reservation.retire(ManagedBlockPollTurnFence.State.SHUTDOWN); return; }
+        RegionRoute route = directory.resolve(key).orElse(null);
+        if (route == null || directory.pendingChange(key).filter(change -> !change.completed()).isPresent()) {
+            reservation.retire(ManagedBlockPollTurnFence.State.STALE); return;
+        }
+        long operationId = nextOperation = Math.incrementExact(nextOperation);
+        long sequence = nextSequence = Math.incrementExact(nextSequence);
+        var kind = RegionalServiceKind.CHUNK_GAMEPLAY;
+        Handle handle = new Handle(serviceId, worldInstance, operationId, kind);
+        var retained = new Pending(key, kind, execution -> {
+            reservation.beginResuming();
+            if (reservation.state() == ManagedBlockPollTurnFence.State.RESUMING) body.run(execution);
+        }, handle, false, System.nanoTime(), ignored -> true, false);
+        pending.put(operationId, retained);
+        var payload = new TaskPayload.RegionalService(serviceId, worldInstance, operationId, kind.name());
+        var envelope = new RegionTaskEnvelope("natural-spawn-resume", payload, key, route.generation(),
+            route.ownerEpoch(), serviceId, new TaskCorrelationId(sequence), new TaskSequence(sequence), AdmissionPolicy.REJECT);
+        try {
+            if (!scheduler.resumeNaturalSpawn(reservation, envelope)) {
+                reservation.retire(scheduler.acceptsSimulationWork() ? ManagedBlockPollTurnFence.State.STALE
+                    : ManagedBlockPollTurnFence.State.SHUTDOWN);
+                return;
+            }
+            if (handle.failure != null) rethrow(handle.failure);
+            var failed = scheduler.failureBarrier().record().orElse(null);
+            if (failed != null) rethrow(failed.cause());
+            if (!handle.completed()) reservation.retire(ManagedBlockPollTurnFence.State.STALE);
+        } finally { pending.remove(operationId); }
+    }
+
     public dev.phoenium.scheduler.GameplayWorkerConfig workerConfig() { return scheduler.workerConfig(); }
     public dev.phoenium.scheduler.GameplayMeasurements measurements() { return scheduler.measurements(); }
     void requireHealthyLocalContinuation() {

@@ -13,4 +13,7 @@ public interface RegionalServerChunkCacheAccess {
     @Accessor("level") ServerLevel phoenium$getLevel();
     @Invoker("tickChunks") void phoenium$invokeTickChunks();
     @Invoker("getFullChunk") void phoenium$invokeGetFullChunk(long chunkKey, Consumer<LevelChunk> output);
+    /** Select the native future without getChunkFuture's implicit managedBlock. */
+    @Invoker("getChunkFutureMainThread") java.util.concurrent.CompletableFuture<net.minecraft.server.level.ChunkResult<net.minecraft.world.level.chunk.ChunkAccess>>
+        phoenium$naturalSpawnFuture(int x, int z, net.minecraft.world.level.chunk.status.ChunkStatus status, boolean create);
 }

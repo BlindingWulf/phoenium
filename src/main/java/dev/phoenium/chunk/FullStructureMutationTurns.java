@@ -70,6 +70,17 @@ final class FullStructureMutationTurns {
     Read tryRead(ChunkCustodyModel.StageId operation, Collection<GenerationChunkHolder> holders) {
         if (operation.kind() != ChunkStageKind.FULL_FINISH || OwnershipContext.current().isPresent())
             throw new ChunkProtocolException("structure input exclusion must be reserved for FULL before regional admission");
+        return tryReadExact(operation, holders);
+    }
+
+    Read tryReadNaturalSpawn(NaturalSpawnStructureQuery operation, Collection<GenerationChunkHolder> holders) {
+        if (Thread.currentThread() != observationThread || OwnershipContext.current().isPresent())
+            throw new ChunkProtocolException("natural-spawn structure read requires its owner-free observation thread");
+        if (!operation.current()) return null;
+        return tryReadExact(operation, holders);
+    }
+
+    private Read tryReadExact(Object operation, Collection<GenerationChunkHolder> holders) {
         var distinct = distinct(holders);
         metadataGate.lock(); try {
             if (stopped) return null;
@@ -86,10 +97,10 @@ final class FullStructureMutationTurns {
     }
 
     final class Read implements AutoCloseable {
-        private final ChunkCustodyModel.StageId operation;
+        private final Object operation;
         private List<Entry> targets;
-        private Read(ChunkCustodyModel.StageId operation, List<Entry> targets) { this.operation = operation; this.targets = targets; }
-        void require(ChunkCustodyModel.StageId exact, GenerationChunkHolder holder) {
+        private Read(Object operation, List<Entry> targets) { this.operation = operation; this.targets = targets; }
+        void require(Object exact, GenerationChunkHolder holder) {
             metadataGate.lock(); try {
                 if (!operation.equals(exact) || targets == null || targets.stream().noneMatch(entry -> entry.holder == holder))
                     throw new ChunkProtocolException("structure input lacks its exact active exclusion turn");

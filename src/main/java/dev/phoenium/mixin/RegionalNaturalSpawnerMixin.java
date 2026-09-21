@@ -2,6 +2,7 @@ package dev.phoenium.mixin;
 
 import com.llamalad7.mixinextras.injector.wrapoperation.Operation;
 import com.llamalad7.mixinextras.injector.wrapoperation.WrapOperation;
+import com.llamalad7.mixinextras.injector.wrapmethod.WrapMethod;
 import dev.phoenium.Phoenium;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.entity.player.Player;
@@ -13,6 +14,13 @@ import org.spongepowered.asm.mixin.injection.At;
  * owner-published level-player projection captured for this original chunk callback. */
 @Mixin(NaturalSpawner.class)
 abstract class RegionalNaturalSpawnerMixin {
+    @WrapMethod(method = "spawnForChunk")
+    private static void phoenium$retainQueries(ServerLevel level, net.minecraft.world.level.chunk.LevelChunk chunk,
+            NaturalSpawner.SpawnState state, java.util.List<net.minecraft.world.entity.MobCategory> categories,
+            Operation<Void> original) {
+        if (!dev.phoenium.service.NaturalSpawnContinuation.capture(level, chunk, state, categories))
+            original.call(level, chunk, state, categories);
+    }
     private static final String SPAWN_POSITION = "spawnCategoryForPosition(Lnet/minecraft/world/entity/MobCategory;"
         + "Lnet/minecraft/server/level/ServerLevel;Lnet/minecraft/world/level/chunk/ChunkAccess;"
         + "Lnet/minecraft/core/BlockPos;Lnet/minecraft/world/level/NaturalSpawner$SpawnPredicate;"

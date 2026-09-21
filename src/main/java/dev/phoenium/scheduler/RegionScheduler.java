@@ -113,6 +113,24 @@ public final class RegionScheduler {
             if (runOne(runtime)) return;
         }
     }
+    /** One already-reserved native suffix, before another ordinary arbitration. This
+     * uses the same selection, lease, delivery validation and failure barrier as runOne. */
+    public boolean resumeNaturalSpawn(dev.phoenium.service.ManagedBlockPollTurnFence.Reservation reservation,
+                                     RegionTaskEnvelope envelope) {
+        reservation.requireResumeClaim();
+        if (!(envelope.payload() instanceof TaskPayload.RegionalService service)
+                || !service.operationKind().equals(dev.phoenium.service.RegionalServiceKind.CHUNK_GAMEPLAY.name()))
+            throw new IllegalArgumentException("poll return reservation is only for natural spawn");
+        if (!acceptsSimulationWork()) return false;
+        var route = directory.resolve(envelope.routingKey()).orElse(null);
+        if (route == null) return false;
+        var runtime = runtimes.get(route.region());
+        if (runtime == null || runtime.transitioning() || runtime.lifecycle() != RegionLifecycle.READY) return false;
+        var selection = runtime.leases().trySelect().orElse(null);
+        if (selection == null) return false;
+        new Selected(runtime, envelope, selection, true).run();
+        return true;
+    }
     public boolean runOne(RegionRuntime runtime) {
         var head = runtime.peek().orElse(null);
         if (head != null && head.payload() instanceof TaskPayload.RegionalService service
@@ -210,13 +228,18 @@ public final class RegionScheduler {
         private final RegionRuntime runtime;
         private final RegionTaskEnvelope envelope;
         private final dev.phoenium.ownership.RegionLeaseManager.Selection selection;
+        private final boolean nativeReturn;
         private final long selectedAt = System.nanoTime();
         private volatile boolean started;
         private RegionLease preparedLease;
         private long preparedClaimStart;
         private boolean localEligible;
         private Selected(RegionRuntime runtime, RegionTaskEnvelope envelope, dev.phoenium.ownership.RegionLeaseManager.Selection selection) {
-            this.runtime = runtime; this.envelope = envelope; this.selection = selection;
+            this(runtime, envelope, selection, false);
+        }
+        private Selected(RegionRuntime runtime, RegionTaskEnvelope envelope,
+                         dev.phoenium.ownership.RegionLeaseManager.Selection selection, boolean nativeReturn) {
+            this.runtime = runtime; this.envelope = envelope; this.selection = selection; this.nativeReturn = nativeReturn;
         }
         private boolean prepareLocal() throws Exception {
             deliveryAttempts.incrementAndGet();
@@ -234,14 +257,14 @@ public final class RegionScheduler {
             started = true;
             GameplayMeasurements.Claim measured = null;
             try (selection) {
-                if (!acceptsSimulationWork()) { runtime.requeueFirst(envelope); return; }
+                if (!acceptsSimulationWork()) { if (!nativeReturn) runtime.requeueFirst(envelope); return; }
                 if (preparedLease == null) deliveryAttempts.incrementAndGet();
                 // Current claim fences topology publication through validation AND body.
                 boolean valid = preparedLease != null || (envelope.payload() instanceof TaskPayload.OwnedObjectOperation
                     ? objectDeliveryValidator != null && objectDeliveryValidator.revalidateForExecution(runtime, envelope)
                     : locationValidator != null && locationValidator.revalidateLocationForExecution(runtime, envelope));
                 if (!valid) return;
-                if (!acceptsSimulationWork()) { runtime.requeueFirst(envelope); return; }
+                if (!acceptsSimulationWork()) { if (!nativeReturn) runtime.requeueFirst(envelope); return; }
                 long claimStart = preparedLease == null ? System.nanoTime() : preparedClaimStart;
                 RegionLease executing = preparedLease == null ? selection.promote() : preparedLease;
                 preparedLease = null;

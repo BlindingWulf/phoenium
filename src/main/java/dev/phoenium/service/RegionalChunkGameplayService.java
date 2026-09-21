@@ -36,7 +36,7 @@ import net.minecraft.world.phys.Vec3;
 
 /** Owner-free coordinator for ServerChunkCache's exact selected gameplay cohorts. Temporary spawn
  * state follows original order; each chunk callback executes synchronously under its current owner. */
-public final class RegionalChunkGameplayService {
+public final class RegionalChunkGameplayService implements NaturalSpawnContinuation.PlayerQueries {
     @FunctionalInterface public interface SpawnFactory {
         NaturalSpawner.SpawnState create(int count, Iterable<Entity> entities,
             NaturalSpawner.ChunkGetter chunks, LocalMobCapCalculator caps);
@@ -53,6 +53,7 @@ public final class RegionalChunkGameplayService {
     private Cycle cycle;
     private final IdentityHashMap<TickingBlockEntity, BlockEntityReceipt> blockEntities = new IdentityHashMap<>();
     private long cycles, entityContributions, chunkCallbacks;
+    private long naturalSpawnOrdinal;
 
     public RegionalChunkGameplayService(WorldId world, ServerLevel level, ServerChunkCache cache,
             RegionDirectory directory, RegionalServiceDispatcher dispatcher, ObjectOwnershipRegistry objects) {
@@ -236,15 +237,32 @@ public final class RegionalChunkGameplayService {
             if (Math.abs((long) player.key.x() - source.x()) <= visibleRecipientRadius
                     && Math.abs((long) player.key.z() - source.z()) <= visibleRecipientRadius) footprint.add(player.key);
         dispatcher.ensureClosure(Set.copyOf(footprint));
-        dispatcher.executeAndDrain(source, RegionalServiceKind.CHUNK_GAMEPLAY, ignored -> {
-            dispatcher.requireCurrentOwner(source); cycle.callbackKey = source;
+        Cycle capturedCycle = cycle;
+        Consumer<Runnable> owned = body -> {
+            dispatcher.requireCurrentOwner(source); capturedCycle.callbackKey = source;
             try {
-                cycle.levelPlayers = refreshPlayerProjections(cycle.levelPlayers);
-                original.run();
-            }
-            finally { cycle.callbackKey = null; cycle.nearestPlayer = null; }
-        });
+                capturedCycle.levelPlayers = refreshPlayerProjections(capturedCycle.levelPlayers);
+                body.run();
+            } finally { capturedCycle.callbackKey = null; capturedCycle.nearestPlayer = null; }
+        };
+        try (var spawn = new NaturalSpawnContinuation.Capture(this, dispatcher, level, chunk, source,
+                naturalSpawnOrdinal = Math.incrementExact(naturalSpawnOrdinal),
+                () -> cycle == capturedCycle && naturalSpawnClosureCurrent(source, footprint))) {
+            dispatcher.executeAndDrain(source, RegionalServiceKind.CHUNK_GAMEPLAY, ignored -> owned.accept(() -> spawn.original(original)));
+            spawn.finish(body -> { dispatcher.requireCurrentClosure(Set.copyOf(footprint)); owned.accept(body); });
+        }
         chunkCallbacks = Math.incrementExact(chunkCallbacks);
+    }
+
+    private boolean naturalSpawnClosureCurrent(RoutingKey source, Set<RoutingKey> footprint) {
+        var owner = directory.resolve(source).orElse(null);
+        if (owner == null) return false;
+        for (var key : footprint) {
+            var route = directory.resolve(key).orElse(null);
+            if (route == null || !route.region().equals(owner.region()) || !route.generation().equals(owner.generation())
+                    || directory.pendingChange(key).filter(change -> !change.completed()).isPresent()) return false;
+        }
+        return true;
     }
 
     /** Pinned NaturalSpawner calls the boolean getNearestPlayer overload and immediately asks the

@@ -287,13 +287,17 @@ class CoreAcceptanceTest {
                 "PoiLoadBookkeeping.java", "FullBlockEntityTagInputs.java", "FullCommandStorageInputs.java",
                 "RegionalScheduledTickService.java", "RegionalBlockEventService.java", "RegionalWorldServices.java",
                 "RegionalSaveCoordinator.java", "RegionalTrackingService.java", "RegionDirectory.java",
-                "FullServerShutdown.java", "GameplayMeasurements.java", "C2meDiskReadOperation.java", "C2meSendReadyInputs.java");
+                "FullServerShutdown.java", "GameplayMeasurements.java", "C2meDiskReadOperation.java", "C2meSendReadyInputs.java",
+                "ManagedBlockPollTurnFence.java");
         String otherCore = Files.walk(Path.of("src/main/java/dev/phoenium"))
             .filter(path -> path.toString().endsWith(".java"))
             .filter(path -> !boundedMetadata.contains(path.getFileName().toString()))
             .map(path -> { try { return Files.readString(path); } catch (Exception e) { throw new RuntimeException(e); } })
             .collect(java.util.stream.Collectors.joining("\n"));
         assertFalse(otherCore.contains("synchronized ("));
+        // ManagedBlockPollTurnFenceTest proves that native polls, preparation, validity,
+        // shutdown/owner checks and the resumed body execute outside its per-reservation
+        // metadata monitor. Completion threads only publish readiness/failure metadata.
         String blockMetadata = Files.readString(Path.of("src/main/java/dev/phoenium/chunk/FullBlockEntityTagInputs.java"));
         String storageMetadata = Files.readString(Path.of("src/main/java/dev/phoenium/chunk/FullCommandStorageInputs.java"));
         assertTrue(blockMetadata.contains("synchronized (this)"));
