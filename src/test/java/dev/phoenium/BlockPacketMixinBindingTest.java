@@ -60,6 +60,22 @@ final class BlockPacketMixinBindingTest {
             "one retained packet must invoke the native handler exactly once");
     }
 
+    @Test
+    void blockPacketRoutesEnterTheOwnerGatewayAndReplayExactlyOnce() throws Exception {
+        ClassNode runtime = classNode("dev/phoenium/live/PhoeniumLiveRuntime.class");
+        assertEquals(1, countInvoke(method(runtime, "admitPlayerActionPacket"), "admitPacket"),
+            "same-chunk PlayerAction admission must reach the owner gateway exactly once");
+        assertEquals(1, countInvoke(method(runtime, "admitUseItemOnPacket"), "admitPacket"),
+            "same-chunk UseItemOn admission must reach the owner gateway exactly once");
+
+        ClassNode action = classNode("dev/phoenium/live/PhoeniumLiveRuntime$PendingPlayerAction.class");
+        assertEquals(1, countInvoke(method(action, "execute"), "phoenium$invokePlayerAction"),
+            "one retained PlayerAction packet must invoke the native handler exactly once");
+        ClassNode useItemOn = classNode("dev/phoenium/live/PhoeniumLiveRuntime$PendingUseItemOn.class");
+        assertEquals(1, countInvoke(method(useItemOn, "execute"), "phoenium$invokeUseItemOn"),
+            "one retained UseItemOn packet must invoke the native handler exactly once");
+    }
+
     private static int countInvoke(ClassNode owner, String methodName, String invokedName,
                                    String invokedOwner, String descriptorSuffix) {
         MethodNode method = owner.methods.stream().filter(candidate -> candidate.name.equals(methodName)).findFirst().orElseThrow();

@@ -1213,7 +1213,7 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
         WorldId world = worldId(player.level());
         RoutingKey playerKey = new RoutingKey(world, player.chunkPosition().x(), player.chunkPosition().z());
         RoutingKey targetKey = new RoutingKey(world, target.getX() >> 4, target.getZ() >> 4);
-        Set<RoutingKey> footprint = new TopologyPlanner().requiredClosure(Set.of(playerKey, targetKey), 1);
+        Set<RoutingKey> footprint = blockPacketFootprint(playerKey, targetKey);
         // Packet processing precedes tickServer. Use the same owner-free serial boundary as the
         // existing movement/tracking admission while a closure publication drains prior work.
         ObjectOwnership binding;
@@ -1507,24 +1507,32 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
 
     private void reportPlayerActionFailure(String stage, ServerPlayer player, BlockPacketAdmission admission,
                                            ServerboundPlayerActionPacket packet, RuntimeException failure) {
-        Set<RoutingKey> footprint = admission == null ? requestedBlockFootprint(player, packet.getPos())
+        Set<RoutingKey> footprint = admission == null
+            ? packetDiagnosticValue(failure, () -> requestedBlockFootprint(player, packet.getPos()), Set.of())
             : admission.ticket().footprint();
-        ObjectOwnership binding = admission == null ? currentPlayerBinding(player) : admission.binding();
+        ObjectOwnership binding = admission == null
+            ? packetDiagnosticValue(failure, () -> currentPlayerBinding(player), null) : admission.binding();
+        String facts = packetDiagnosticValue(failure,
+            () -> "action=" + packet.getAction() + " target=" + packet.getPos(), "UNAVAILABLE");
         reportFirstPacketFailure(firstPlayerActionFailure, "ServerboundPlayerActionPacket", stage, player,
             binding, footprint, admission == null ? null : admission.ticket().generation(), failure,
-            "action=" + packet.getAction() + " target=" + packet.getPos());
+            facts);
     }
 
     private void reportUseItemOnFailure(String stage, ServerPlayer player, BlockPacketAdmission admission,
                                         ServerboundUseItemOnPacket packet, RuntimeException failure) {
-        BlockPos clicked = packet.getHitResult().getBlockPos();
-        Set<RoutingKey> footprint = admission == null ? requestedBlockFootprint(player, clicked)
+        BlockPos clicked = packetDiagnosticValue(failure, () -> packet.getHitResult().getBlockPos(), null);
+        Set<RoutingKey> footprint = admission == null
+            ? packetDiagnosticValue(failure, () -> requestedBlockFootprint(player, clicked), Set.of())
             : admission.ticket().footprint();
-        ObjectOwnership binding = admission == null ? currentPlayerBinding(player) : admission.binding();
+        ObjectOwnership binding = admission == null
+            ? packetDiagnosticValue(failure, () -> currentPlayerBinding(player), null) : admission.binding();
+        String facts = packetDiagnosticValue(failure, () -> "hand=" + packet.getHand() + " clicked=" + clicked
+            + " face=" + packet.getHitResult().getDirection()
+            + " adjacent=" + clicked.relative(packet.getHitResult().getDirection()), "UNAVAILABLE");
         reportFirstPacketFailure(firstUseItemOnFailure, "ServerboundUseItemOnPacket", stage, player,
             binding, footprint, admission == null ? null : admission.ticket().generation(), failure,
-            "hand=" + packet.getHand() + " clicked=" + clicked + " face=" + packet.getHitResult().getDirection()
-                + " adjacent=" + clicked.relative(packet.getHitResult().getDirection()));
+            facts);
     }
 
     private void reportUseItemFailure(String stage, ServerPlayer player, ObjectOwnership binding,
@@ -1544,36 +1552,47 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
             String stage, ServerPlayer player, ObjectOwnership binding, Set<RoutingKey> footprint,
             TopologyGeneration frozenGeneration, RuntimeException failure, String packetFacts) {
         if (!first.compareAndSet(false, true)) return;
-        String world = player == null ? "UNAVAILABLE" : worldId(player.level()).value();
-        String position = player == null ? "UNAVAILABLE" : player.position().toString();
-        String owner = binding == null ? "UNAVAILABLE" : binding.owner().value();
-        String incarnation = binding == null ? "UNAVAILABLE" : Long.toString(binding.incarnation());
-        String objectEpoch = binding == null ? "UNAVAILABLE" : Long.toString(binding.objectEpoch().value());
-        String movementEpoch = player == null ? "UNAVAILABLE"
-            : Long.toString(movementTransitionEpochs.getOrDefault(player.getUUID().toString(), 0L));
-        String generation = frozenGeneration == null ? "UNAVAILABLE" : Long.toString(frozenGeneration.value());
-        Set<RoutingKey> missing = Set.of();
-        if (binding != null) {
-            FrozenRegionAuthority authority = FrozenRegionAuthority.freeze(directory, binding.owner());
-            if (frozenGeneration == null) generation = Long.toString(authority.generation().value());
-            if (failure instanceof ClosureEscapeException && footprint != null) {
-                java.util.LinkedHashSet<RoutingKey> escaped = new java.util.LinkedHashSet<>(footprint);
-                if (authority.wholeWorld()) escaped.removeIf(key -> key.world().equals(authority.region().world()));
-                else escaped.removeAll(authority.domain());
-                missing = Set.copyOf(escaped);
+        try {
+            String world = player == null ? "UNAVAILABLE" : worldId(player.level()).value();
+            String position = player == null ? "UNAVAILABLE" : player.position().toString();
+            String owner = binding == null ? "UNAVAILABLE" : binding.owner().value();
+            String incarnation = binding == null ? "UNAVAILABLE" : Long.toString(binding.incarnation());
+            String objectEpoch = binding == null ? "UNAVAILABLE" : Long.toString(binding.objectEpoch().value());
+            String movementEpoch = player == null ? "UNAVAILABLE"
+                : Long.toString(movementTransitionEpochs.getOrDefault(player.getUUID().toString(), 0L));
+            String generation = frozenGeneration == null ? "UNAVAILABLE" : Long.toString(frozenGeneration.value());
+            Set<RoutingKey> missing = Set.of();
+            if (binding != null) {
+                FrozenRegionAuthority authority = FrozenRegionAuthority.freeze(directory, binding.owner());
+                if (frozenGeneration == null) generation = Long.toString(authority.generation().value());
+                if (failure instanceof ClosureEscapeException && footprint != null) {
+                    java.util.LinkedHashSet<RoutingKey> escaped = new java.util.LinkedHashSet<>(footprint);
+                    if (authority.wholeWorld()) escaped.removeIf(key -> key.world().equals(authority.region().world()));
+                    else escaped.removeAll(authority.domain());
+                    missing = Set.copyOf(escaped);
+                }
+            }
+            String ownerContext = OwnershipContext.current().map(active -> active.region().value()
+                + "/lease=" + active.lease().value() + "/category=" + active.category()).orElse("NONE");
+            String serviceTurn = player == null ? "UNAVAILABLE"
+                : dev.phoenium.chunk.FullFinishingServices.currentTurn(player.level().getServer());
+            logger.warn("PHOENIUM_STAGE7 first-packet-rejection packet={} stage={} exceptionClass={} message={} world={} "
+                    + "authoritativePosition={} owner={} incarnation={} objectEpoch={} movementEpoch={} requestedFootprint={} "
+                    + "frozenGeneration={} missingKeys={} ownerContext={} serviceTurn={} facts=[{}]",
+                packetClass, stage, failure.getClass().getName(), failure.getMessage(), world, position, owner,
+                incarnation, objectEpoch, movementEpoch, footprint == null ? "NOT_APPLICABLE" : footprint,
+                generation, failure instanceof ClosureEscapeException ? missing : "NOT_APPLICABLE",
+                ownerContext, serviceTurn, packetFacts);
+        } catch (RuntimeException diagnosticFailure) {
+            suppressPacketDiagnosticFailure(failure, diagnosticFailure);
+            try {
+                logger.warn("PHOENIUM_STAGE7 first-packet-rejection packet={} stage={} exceptionClass={} message={} "
+                        + "diagnosticFailure={}", packetClass, stage, failure.getClass().getName(),
+                    failure.getMessage(), diagnosticFailure.toString());
+            } catch (RuntimeException loggingFailure) {
+                suppressPacketDiagnosticFailure(failure, loggingFailure);
             }
         }
-        String ownerContext = OwnershipContext.current().map(active -> active.region().value()
-            + "/lease=" + active.lease().value() + "/category=" + active.category()).orElse("NONE");
-        String serviceTurn = player == null ? "UNAVAILABLE"
-            : dev.phoenium.chunk.FullFinishingServices.currentTurn(player.level().getServer());
-        logger.warn("PHOENIUM_STAGE7 first-packet-rejection packet={} stage={} exceptionClass={} message={} world={} "
-                + "authoritativePosition={} owner={} incarnation={} objectEpoch={} movementEpoch={} requestedFootprint={} "
-                + "frozenGeneration={} missingKeys={} ownerContext={} serviceTurn={} facts=[{}]",
-            packetClass, stage, failure.getClass().getName(), failure.getMessage(), world, position, owner,
-            incarnation, objectEpoch, movementEpoch, footprint == null ? "NOT_APPLICABLE" : footprint,
-            generation, failure instanceof ClosureEscapeException ? missing : "NOT_APPLICABLE",
-            ownerContext, serviceTurn, packetFacts);
     }
 
     private Set<RoutingKey> requestedBlockFootprint(ServerPlayer player, BlockPos target) {
@@ -1581,7 +1600,34 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
         WorldId world = worldId(player.level());
         RoutingKey playerKey = new RoutingKey(world, player.chunkPosition().x(), player.chunkPosition().z());
         RoutingKey targetKey = new RoutingKey(world, target.getX() >> 4, target.getZ() >> 4);
-        return new TopologyPlanner().requiredClosure(Set.of(playerKey, targetKey), 1);
+        return blockPacketFootprint(playerKey, targetKey);
+    }
+
+    static Set<RoutingKey> blockPacketSeeds(RoutingKey playerKey, RoutingKey targetKey) {
+        java.util.LinkedHashSet<RoutingKey> seeds = new java.util.LinkedHashSet<>(2);
+        seeds.add(Objects.requireNonNull(playerKey, "playerKey"));
+        seeds.add(Objects.requireNonNull(targetKey, "targetKey"));
+        return java.util.Collections.unmodifiableSet(seeds);
+    }
+
+    static Set<RoutingKey> blockPacketFootprint(RoutingKey playerKey, RoutingKey targetKey) {
+        return new TopologyPlanner().requiredClosure(blockPacketSeeds(playerKey, targetKey), 1);
+    }
+
+    static <T> T packetDiagnosticValue(RuntimeException primaryFailure,
+                                       java.util.function.Supplier<T> diagnostic,
+                                       T fallback) {
+        try {
+            return diagnostic.get();
+        } catch (RuntimeException diagnosticFailure) {
+            suppressPacketDiagnosticFailure(primaryFailure, diagnosticFailure);
+            return fallback;
+        }
+    }
+
+    private static void suppressPacketDiagnosticFailure(RuntimeException primaryFailure,
+                                                        RuntimeException diagnosticFailure) {
+        if (diagnosticFailure != primaryFailure) primaryFailure.addSuppressed(diagnosticFailure);
     }
 
     private ObjectOwnership currentPlayerBinding(ServerPlayer player) {
