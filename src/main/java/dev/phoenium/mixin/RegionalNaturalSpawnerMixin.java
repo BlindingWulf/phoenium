@@ -27,6 +27,19 @@ abstract class RegionalNaturalSpawnerMixin {
         + "Lnet/minecraft/world/level/NaturalSpawner$AfterSpawnCallback;)V";
 
     @WrapOperation(method = SPAWN_POSITION, at = @At(value = "INVOKE",
+        target = "Lnet/minecraft/server/level/ServerLevel;addFreshEntityWithPassengers(Lnet/minecraft/world/entity/Entity;)V"),
+        require = 1, expect = 1)
+    private static void phoenium$passengerIdentity(ServerLevel level, net.minecraft.world.entity.Entity root,
+            Operation<Void> original) {
+        if (root.getPassengers().isEmpty()) { original.call(level, root); return; }
+        try (var turn = dev.phoenium.chunk.FullFinishingServices.forServer(level.getServer()).referenceAccess();
+             var graph = Phoenium.liveRuntime().naturalSpawnPassengerIdentity(level, root)) {
+            original.call(level, root);
+            graph.validate();
+        }
+    }
+
+    @WrapOperation(method = SPAWN_POSITION, at = @At(value = "INVOKE",
         target = "Lnet/minecraft/server/level/ServerLevel;getNearestPlayer(DDDDZ)Lnet/minecraft/world/entity/player/Player;"),
         require = 1, expect = 1)
     private static Player phoenium$nearestPlayer(ServerLevel level, double x, double y, double z,

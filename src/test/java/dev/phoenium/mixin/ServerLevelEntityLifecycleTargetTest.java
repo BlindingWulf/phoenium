@@ -25,6 +25,38 @@ final class ServerLevelEntityLifecycleTargetTest {
     private static final String ENTITY = "Lnet/minecraft/world/entity/Entity;";
     private static final String ACCESS = "Lnet/minecraft/world/level/entity/EntityAccess;";
 
+    @Test void freshGraphUsesInheritedRootFirstRecursiveStreamAndSynchronousManagerInsertion() throws Exception {
+        ClassNode level = original(ServerLevel.class);
+        assertTrue(level.methods.stream().noneMatch(m -> m.name.equals("addFreshEntityWithPassengers")));
+        ClassNode accessor = original(net.minecraft.world.level.ServerLevelAccessor.class);
+        MethodNode loop = method(accessor, "addFreshEntityWithPassengers", "(" + ENTITY + ")V");
+        List<MethodInsnNode> calls = calls(loop);
+        assertEquals(List.of("getSelfAndPassengers", "forEach"), calls.stream().map(c -> c.name).toList());
+        assertTrue(Arrays.stream(loop.instructions.toArray()).filter(org.objectweb.asm.tree.InvokeDynamicInsnNode.class::isInstance)
+            .map(org.objectweb.asm.tree.InvokeDynamicInsnNode.class::cast).flatMap(i -> Arrays.stream(i.bsmArgs))
+            .anyMatch(arg -> arg instanceof org.objectweb.asm.Handle h && h.getName().equals("addFreshEntity")));
+        ClassNode entity = original(Entity.class);
+        assertEquals(List.of("of", "getIndirectPassengersStream", "concat"),
+            calls(method(entity, "getSelfAndPassengers", "()Ljava/util/stream/Stream;")).stream().map(c -> c.name).toList());
+        MethodNode descendants = method(entity, "getIndirectPassengersStream", "()Ljava/util/stream/Stream;");
+        assertEquals(List.of("stream", "flatMap"), calls(descendants).stream().map(c -> c.name).toList());
+        assertTrue(Arrays.stream(descendants.instructions.toArray()).filter(org.objectweb.asm.tree.InvokeDynamicInsnNode.class::isInstance)
+            .map(org.objectweb.asm.tree.InvokeDynamicInsnNode.class::cast).flatMap(i -> Arrays.stream(i.bsmArgs))
+            .anyMatch(arg -> arg instanceof org.objectweb.asm.Handle h && h.getName().equals("getSelfAndPassengers")));
+        assertEquals(List.of("addEntity"), calls(method(level, "addFreshEntity", "(" + ENTITY + ")Z")).stream().map(c -> c.name).toList());
+        assertTrue(calls(method(level, "addEntity", "(" + ENTITY + ")Z")).stream().anyMatch(c -> c.name.equals("addNewEntity")));
+        ClassNode manager = original(PersistentEntitySectionManager.class);
+        List<MethodInsnNode> insert = calls(method(manager, "addEntity", "(" + ACCESS + "Z)Z"));
+        int storage = index(insert, "net/minecraft/world/level/entity/EntitySection", "add", "(" + ACCESS + ")V");
+        int created = index(insert, "net/minecraft/world/level/entity/LevelCallback", "onCreated", "(Ljava/lang/Object;)V");
+        int tracking = index(insert, manager.name, "startTracking", "(" + ACCESS + ")V");
+        int ticking = index(insert, manager.name, "startTicking", "(" + ACCESS + ")V");
+        assertTrue(storage >= 0 && storage < created && created < tracking && tracking < ticking);
+    }
+    private static List<MethodInsnNode> calls(MethodNode method) {
+        return Arrays.stream(method.instructions.toArray()).filter(MethodInsnNode.class::isInstance).map(MethodInsnNode.class::cast).toList();
+    }
+
     @Test
     void persistentManagerPublishesVisibleIdentityBeforeTheCommonTrackingCallback() throws Exception {
         ClassNode manager = original(PersistentEntitySectionManager.class);

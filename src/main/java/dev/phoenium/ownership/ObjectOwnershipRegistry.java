@@ -125,6 +125,19 @@ public final class ObjectOwnershipRegistry {
         } finally { metadataGate.unlock(); }
     }
 
+    /** Retire this exact incarnation even after route/epoch invalidation; never retire a UUID replacement. */
+    public boolean retirePublication(ObjectOwnership expected) {
+        metadataGate.lock();
+        try {
+            ObjectOwnership current = entries.get(expected.objectId());
+            if (current == null || current.state() == ObjectOwnership.State.REMOVED
+                    || current.incarnation() != expected.incarnation()) return false;
+            entries.put(current.objectId(), with(current, current.routingKey(), current.owner(), current.topologyGeneration(),
+                current.regionOwnerEpoch(), current.objectEpoch().next(), ObjectOwnership.State.REMOVED));
+            return true;
+        } finally { metadataGate.unlock(); }
+    }
+
     /** Re-resolves current directory state; a stale derived record is never usable as authority. */
     public Optional<ObjectOwnership> current(String objectId) {
         metadataGate.lock();

@@ -1758,6 +1758,34 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
         onEntityAddressable(entity, true);
     }
 
+    /** Downstream of native spawn decisions: exact identity custody only, no tracker or policy admission. */
+    public dev.phoenium.chunk.FreshPassengerAdmission naturalSpawnPassengerIdentity(ServerLevel level, Entity root) {
+        requireRegionalServiceLifetime();
+        WorldId world = worldId(level);
+        return dev.phoenium.chunk.FreshPassengerAdmission.begin(level, root,
+            new dev.phoenium.chunk.FreshPassengerAdmission.Publisher() {
+                @Override public void requireOwners(java.util.Set<net.minecraft.world.level.ChunkPos> positions) {
+                    if (!isRunning() || regionalDispatcher == null)
+                        throw new IllegalStateException("fresh passenger admission outside live owner lifetime");
+                    var keys = positions.stream().map(pos -> new RoutingKey(world, pos.x(), pos.z()))
+                        .collect(java.util.stream.Collectors.toSet());
+                    regionalDispatcher.requireCurrentClosure(keys);
+                }
+                @Override public ObjectOwnership publish(Entity entity) {
+                    RoutingKey key = new RoutingKey(world, entity.chunkPosition().x(), entity.chunkPosition().z());
+                    regionalDispatcher.requireCurrentOwner(key);
+                    return objects.admit(entity.getUUID().toString(), OwnedObjectKind.ENTITY, key);
+                }
+                @Override public ObjectOwnership current(String uuid) { return objects.current(uuid).orElse(null); }
+                @Override public void retire(ObjectOwnership identity) { objects.retirePublication(identity); }
+            });
+    }
+    /** Metadata-only first-failure context; never discovers a native entity through its UUID. */
+    public String passengerOwnershipDiagnostic(String uuid) {
+        try { return objects.current(uuid).map(Object::toString).orElse("ABSENT"); }
+        catch (RuntimeException unavailable) { return "UNAVAILABLE: " + unavailable.getMessage(); }
+    }
+
     /**
      * Bootstrap uses the same exact addressability edge but defers overflow delivery until every
      * loaded pearl has been collected and deterministically reconstructed.
@@ -2100,6 +2128,7 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
     }
 
     public void onWorldClosing(ServerLevel level) {
+        dev.phoenium.chunk.FullFinishingServices.passengerWorldClosing(level);
         playerDimensionTransitions.worldClosing(level);
         pearlPortalTransitions.worldClosing(level);
     }

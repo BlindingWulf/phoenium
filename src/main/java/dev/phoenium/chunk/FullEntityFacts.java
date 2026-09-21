@@ -41,6 +41,9 @@ public final class FullEntityFacts {
     private final IdentityHashMap<Entity, List<Entity>> passengerRelations = new IdentityHashMap<>();
     private final IdentityHashMap<Entity, Entity> passengerVehicles = new IdentityHashMap<>();
     private final IdentityHashMap<Entity, Long> relationRevisions = new IdentityHashMap<>();
+    private final IdentityHashMap<Entity, FreshPassengerAdmission> pendingPassengerIdentities = new IdentityHashMap<>();
+    private final Set<ServerLevel> closedPassengerWorlds = Collections.newSetFromMap(new IdentityHashMap<>());
+    private final java.util.concurrent.atomic.AtomicBoolean passengerFailureReported = new java.util.concurrent.atomic.AtomicBoolean();
     private final java.util.concurrent.locks.ReentrantLock candidateMetadata = new java.util.concurrent.locks.ReentrantLock();
     private long routingSequence;
     private long published, insertions, removals;
@@ -438,6 +441,8 @@ public final class FullEntityFacts {
         FullFinishingServices.requireWorld(vehicle.fact.world, FullFinishingServices.Kind.ENTITY_REGISTRY);
         candidateMetadata.lock();
         try {
+            FreshPassengerAdmission admission = pendingPassengerIdentities.get(vehicle.alias);
+            if (admission != null) admission.validate();
             if (!(vehicle.alias instanceof Access access) || access.phoenium$referenceFact() != vehicle.fact
                     || !Objects.equals(routes.get(vehicle.alias), new Route(vehicle.position, vehicle.routingRevision)))
                 throw new ChunkProtocolException("tracking vehicle relation source became stale");
@@ -445,11 +450,17 @@ public final class FullEntityFacts {
                 alias -> passengerRelations.getOrDefault(alias, List.of()));
             var result = new ArrayList<Candidate>(aliases.size());
             for (Entity alias : aliases) {
+                var passengerAdmission = pendingPassengerIdentities.get(alias);
+                if (passengerAdmission != null && passengerAdmission != admission)
+                    throw passengerFailure(vehicle.alias, alias, passengerDepth(vehicle.alias, alias),
+                        "passenger belongs to an unrelated pending graph", passengerAdmission);
                 Fact fact = alias instanceof Access passenger ? passenger.phoenium$referenceFact() : null;
                 Route route = routes.get(alias);
                 if (fact == null || fact.alias != alias || fact.world != vehicle.fact.world || route == null
                         || fact.incarnation != ((Access) alias).phoenium$entityIncarnation())
-                    throw new ChunkProtocolException("tracking passenger lacks current owner-published identity and route");
+                    throw passengerFailure(vehicle.alias, alias, passengerDepth(vehicle.alias, alias),
+                        fact == null ? "missing reference fact" : route == null ? "missing route"
+                            : "foreign world or stale exact native incarnation", admission);
                 result.add(new Candidate(alias, fact, route.position, route.revision));
             }
             return List.copyOf(result);
@@ -461,6 +472,8 @@ public final class FullEntityFacts {
         FullFinishingServices.requireWorld(vehicle.fact.world, FullFinishingServices.Kind.ENTITY_REGISTRY);
         candidateMetadata.lock();
         try {
+            FreshPassengerAdmission admission = pendingPassengerIdentities.get(vehicle.alias);
+            if (admission != null) admission.validate();
             if (!(vehicle.alias instanceof Access access) || access.phoenium$referenceFact() != vehicle.fact
                     || !Objects.equals(routes.get(vehicle.alias), new Route(vehicle.position, vehicle.routingRevision))) return false;
             List<Entity> current = orderedDescendants(vehicle.alias,
@@ -469,6 +482,8 @@ public final class FullEntityFacts {
             for (int i = 0; i < current.size(); i++) {
                 Candidate expected = retained.get(i); Entity alias = current.get(i);
                 if (alias != expected.alias) return false;
+                var passengerAdmission = pendingPassengerIdentities.get(alias);
+                if (passengerAdmission != null && passengerAdmission != admission) return false;
                 if (!(alias instanceof Access passenger) || passenger.phoenium$referenceFact() != expected.fact
                         || passenger.phoenium$entityIncarnation() != expected.fact.incarnation
                         || !Objects.equals(routes.get(alias), new Route(expected.position, expected.routingRevision))) return false;
@@ -612,10 +627,89 @@ public final class FullEntityFacts {
     }
     public Map<String, Long> measurements() { return Map.of("factsPublished", published, "insertions", insertions, "removals", removals,
             "addressable", directories.values().stream().mapToLong(Map::size).sum()); }
+    boolean hasRoute(Entity entity) {
+        candidateMetadata.lock();
+        try { return routes.containsKey(entity); } finally { candidateMetadata.unlock(); }
+    }
+    void requireFreshWorld(ServerLevel world) {
+        candidateMetadata.lock();
+        try {
+            if (closedPassengerWorlds.contains(world)) throw new ChunkProtocolException("fresh passenger world already closed");
+        } finally { candidateMetadata.unlock(); }
+    }
+    void closePassengerWorld(ServerLevel world) {
+        candidateMetadata.lock();
+        try {
+            closedPassengerWorlds.add(world);
+            for (var admission : new HashSet<>(pendingPassengerIdentities.values()))
+                if (admission.world() == world) admission.shutdown();
+        } finally { candidateMetadata.unlock(); }
+    }
+    boolean hasStorage(Entity entity) {
+        candidateMetadata.lock();
+        try { return stored.containsKey(entity); } finally { candidateMetadata.unlock(); }
+    }
+    void admitPassengerIdentity(Entity entity, FreshPassengerAdmission admission) {
+        candidateMetadata.lock();
+        try {
+            if (pendingPassengerIdentities.putIfAbsent(entity, admission) != null)
+                throw new ChunkProtocolException("fresh passenger identity already admitted");
+        } finally { candidateMetadata.unlock(); }
+    }
+    void releasePassengerIdentity(Entity entity, FreshPassengerAdmission admission) {
+        candidateMetadata.lock();
+        try { pendingPassengerIdentities.remove(entity, admission); } finally { candidateMetadata.unlock(); }
+    }
+    public static void passengerTrackingStarted(Entity entity) { passengerLifecycle(entity, 0); }
+    public static void passengerTrackingCompleted(Entity entity) { passengerLifecycle(entity, 1); }
+    public static void passengerRemoved(Entity entity) { passengerLifecycle(entity, 2); }
+    private static void passengerLifecycle(Entity entity, int edge) {
+        Fact fact = entity instanceof Access access ? access.phoenium$referenceFact() : null;
+        if (fact == null) return;
+        var facts = FullFinishingServices.existingPassengerFacts(fact.server);
+        if (facts == null) return;
+        facts.candidateMetadata.lock();
+        try {
+            var admission = facts.pendingPassengerIdentities.get(entity);
+            if (admission == null) return;
+            if (edge == 0) admission.trackingStarted(entity);
+            else if (edge == 1) admission.trackingCompleted(entity);
+            else admission.removed(entity);
+        } finally { facts.candidateMetadata.unlock(); }
+    }
+    private int passengerDepth(Entity root, Entity passenger) {
+        int depth = 0; Set<Entity> seen = Collections.newSetFromMap(new IdentityHashMap<>());
+        for (Entity node = passenger; node != null && node != root && seen.add(node); node = passengerVehicles.get(node)) depth++;
+        return depth;
+    }
+    ChunkProtocolException passengerFailure(Entity root, Entity passenger, int depth, String reason,
+            FreshPassengerAdmission admission) {
+        if (passengerFailureReported.compareAndSet(false, true))
+            org.slf4j.LoggerFactory.getLogger("Phoenium").error(
+                "PHOENIUM_PASSENGER_IDENTITY_FIRST_FAILURE root={} passenger={} depth={} pendingAdmission={} rootPublication={} passengerPublication={} reason={}",
+                diagnosticIdentity(root), diagnosticIdentity(passenger), depth, admission != null,
+                admission == null ? "NO_PENDING_ADMISSION" : admission.describe(root),
+                admission == null ? "NO_PENDING_ADMISSION" : admission.describe(passenger), reason);
+        return new ChunkProtocolException("tracking passenger lacks current owner-published identity and route: " + reason);
+    }
+    private static String diagnosticIdentity(Entity entity) {
+        Fact fact = entity instanceof Access access ? access.phoenium$referenceFact() : null;
+        return entity.getClass().getName() + "@" + Integer.toHexString(System.identityHashCode(entity))
+            + ":type=" + entity.getType()
+            + (fact == null ? ":fact=ABSENT" + (entity instanceof Access access
+                ? ",nativeIncarnation=" + access.phoenium$entityIncarnation() + ",id=" + access.phoenium$rawEntityId() : "")
+                : ":type=" + fact.type + ",uuid=" + fact.uuid + ",id=" + fact.runtimeId
+                + ",nativeIncarnation=" + fact.incarnation + ",world=" + fact.world.dimension().identifier()
+                + ",currentOwnership=" + dev.phoenium.Phoenium.liveRuntime().passengerOwnershipDiagnostic(fact.uuid.toString()));
+    }
     void close() {
         directories.clear();
         candidateMetadata.lock();
-        try { candidates.clear(); candidateRevisions.clear(); routes.clear(); stored.clear(); precisePositions.clear(); passengerRelations.clear();
+        try {
+            for (var admission : new HashSet<>(pendingPassengerIdentities.values())) admission.shutdown();
+            pendingPassengerIdentities.clear();
+            closedPassengerWorlds.clear();
+            candidates.clear(); candidateRevisions.clear(); routes.clear(); stored.clear(); precisePositions.clear(); passengerRelations.clear();
             passengerVehicles.clear(); relationRevisions.clear(); }
         finally { candidateMetadata.unlock(); }
     }

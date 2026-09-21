@@ -37,6 +37,12 @@ abstract class ServerLevelEntityLifecycleMixin implements dev.phoenium.service.R
     @Inject(method = "onTrackingStart(Lnet/minecraft/world/entity/Entity;)V", at = @At("HEAD"),
         require = 1, expect = 1)
     private void phoenium$trackingStarted(Entity entity, CallbackInfo ci) {
+        dev.phoenium.chunk.FullEntityFacts.passengerTrackingStarted(entity);
         Phoenium.liveRuntime().onEntityAddressable(entity);
+    }
+
+    @Inject(method = "onTrackingStart(Lnet/minecraft/world/entity/Entity;)V", at = @At("RETURN"), require = 1, expect = 1)
+    private void phoenium$passengerTrackingCompleted(Entity entity, CallbackInfo ci) {
+        dev.phoenium.chunk.FullEntityFacts.passengerTrackingCompleted(entity);
     }
 }

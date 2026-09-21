@@ -77,6 +77,20 @@ public final class FullFinishingServices {
         }
         service.shutdown();
     }
+    /** Do not recreate an already stopped service from a late native world-close callback. */
+    public static void passengerWorldClosing(ServerLevel world) {
+        FullFinishingServices service;
+        DIRECTORY.lock();
+        try { service = SERVERS.get(world.getServer()); } finally { DIRECTORY.unlock(); }
+        if (service != null) service.entityFacts.closePassengerWorld(world);
+    }
+    static FullEntityFacts existingPassengerFacts(MinecraftServer server) {
+        DIRECTORY.lock();
+        try {
+            var service = SERVERS.get(server);
+            return service == null ? null : service.entityFacts;
+        } finally { DIRECTORY.unlock(); }
+    }
     public MinecraftServer server() { return server; }
     public Access scoreboardAccess() {
         Scope current = CURRENT.get();

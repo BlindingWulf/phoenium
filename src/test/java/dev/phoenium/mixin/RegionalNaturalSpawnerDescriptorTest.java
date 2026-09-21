@@ -35,10 +35,12 @@ final class RegionalNaturalSpawnerDescriptorTest {
             .findFirst().orElseThrow();
         assertEquals(1, invocationCount(nativeMethod, NEAREST_OWNER, NEAREST_NAME, NEAREST_DESC));
         assertEquals(1, invocationCount(nativeMethod, DISTANCE_OWNER, DISTANCE_NAME, DISTANCE_DESC));
+        assertEquals(1, invocationCount(nativeMethod, NEAREST_OWNER, "addFreshEntityWithPassengers", "(Lnet/minecraft/world/entity/Entity;)V"));
 
         Class<?> mixin = Class.forName("dev.phoenium.mixin.RegionalNaturalSpawnerMixin");
         assertSelector(mixin, "phoenium$nearestPlayer", NEAREST_OWNER, NEAREST_NAME, NEAREST_DESC);
         assertSelector(mixin, "phoenium$nearestDistance", DISTANCE_OWNER, DISTANCE_NAME, DISTANCE_DESC);
+        assertSelector(mixin, "phoenium$passengerIdentity", NEAREST_OWNER, "addFreshEntityWithPassengers", "(Lnet/minecraft/world/entity/Entity;)V");
     }
 
     private static long invocationCount(MethodNode method, String owner, String name, String descriptor) {
