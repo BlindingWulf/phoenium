@@ -12,6 +12,19 @@ import org.spongepowered.asm.mixin.injection.Coerce;
 @Pseudo
 @Mixin(targets = "com.ishland.c2me.rewrites.chunksystem.common.statuses.ServerAccessible", remap = false)
 abstract class C2meServerAccessibleMixin {
+    /** Observe C2ME's real removal, including chunks with no active consumer.
+     * The returned provider holder is the only retirement identity; no provider mutation is added. */
+    @WrapOperation(method = "lambda$downgradeFromThis$0",
+            at = @At(value = "INVOKE", target = "Lit/unimi/dsi/fastutil/longs/Long2ObjectLinkedOpenHashMap;remove(J)Ljava/lang/Object;", remap = false),
+            require = 1, expect = 1)
+    private Object phoenium$residentRemoved(it.unimi.dsi.fastutil.longs.Long2ObjectLinkedOpenHashMap<?> holders,
+                                           long key, Operation<Object> original) {
+        Object removed = original.call(holders, key);
+        if (removed instanceof net.minecraft.server.level.GenerationChunkHolder holder)
+            dev.phoenium.chunk.ChunkHolderLifetime.residentSourceRetired(holder);
+        return removed;
+    }
+
     private static final String UPGRADE = "upgradeToThis("
             + "Lcom/ishland/c2me/rewrites/chunksystem/common/ChunkLoadingContext;"
             + "Lcom/ishland/flowsched/scheduler/Cancellable;)Lio/reactivex/rxjava3/core/Completable;";

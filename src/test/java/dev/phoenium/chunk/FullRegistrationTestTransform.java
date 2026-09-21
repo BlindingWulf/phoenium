@@ -7,6 +7,7 @@ import org.objectweb.asm.tree.*;
 public final class FullRegistrationTestTransform {
     public static byte[] transform(String name, byte[] bytes) {
         ClassNode node = new ClassNode(); new ClassReader(bytes).accept(node, ClassReader.EXPAND_FRAMES);
+        ResidentTickerTestTransform.install(node);
         VaultContinuationTestTransform.install(node);
         FullFinishingQueryTestTransform.install(node);
         FullFinishingServicesTestTransform.install(node);

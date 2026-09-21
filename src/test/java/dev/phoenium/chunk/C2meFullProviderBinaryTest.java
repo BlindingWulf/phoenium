@@ -26,6 +26,12 @@ final class C2meFullProviderBinaryTest {
     private static final String FROM_RUNNABLE_DESC = "(Ljava/lang/Runnable;)Lio/reactivex/rxjava3/core/Completable;";
     private static final String SUBSCRIBE_ON_DESC = "(Lio/reactivex/rxjava3/core/Scheduler;)Lio/reactivex/rxjava3/core/Completable;";
 
+    @Test void providerResidentRemovalHasOneExactHolderReturningSeam() throws Exception {
+        var node = read(REWRITES, ROOT + "statuses/ServerAccessible.class");
+        var removal = node.methods.stream().filter(m -> m.name.equals("lambda$downgradeFromThis$0")).findFirst().orElseThrow();
+        assertEquals(1, invocationCount(removal, "it/unimi/dsi/fastutil/longs/Long2ObjectLinkedOpenHashMap", "remove", "(J)Ljava/lang/Object;"));
+    }
+
     @Test void serverAccessibleHasExactFullAndDelayedRunnableSeams() throws Exception {
         ClassNode node = read(REWRITES, ROOT + "statuses/ServerAccessible.class");
         String upgrade = "(" + CTX + CANCEL + ")" + COMPLETABLE;

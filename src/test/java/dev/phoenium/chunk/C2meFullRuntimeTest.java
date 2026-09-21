@@ -74,6 +74,8 @@ final class C2meFullRuntimeTest {
                 new Answer(level, ignored -> fixture.world.level),
                 new Answer(poiAccess, ignored -> poi),
                 new Answer(current, ignored -> published)), ChunkMapLoadAccess.class, C2mePublicationView.class);
+        set(map, ChunkMap.class, "phoenium$inputChanges", new FullInputNotifications());
+        set(fixture.world.cache, net.minecraft.server.level.ServerChunkCache.class, "chunkMap", map);
 
         runtime = new ChunkBindingRuntime(new ChunkBindingRuntime.Authority() {
             @Override public ChunkBindingRuntime.WorldAuthority requireChunkWorld(ServerLevel level) {
@@ -106,6 +108,8 @@ final class C2meFullRuntimeTest {
         Runnable wrapped = runtime.c2meFullRunnable(context, () -> {
             assertTrue(OwnershipContext.current().isPresent());
             assertTrue(FullFinishingServices.finishing());
+            assertSame(holder, FullFinishingServices.registeringHolder(fixture.world.level, ChunkPos.ZERO.pack()),
+                "conversion registration sees exact holder before currentChunkHolders publication");
             calls.incrementAndGet();
             backing.setItem(new ChunkState(full, proto, ChunkStatus.FULL, false));
             published.put(ChunkPos.ZERO.pack(), holder);
@@ -116,6 +120,12 @@ final class C2meFullRuntimeTest {
 
         assertEquals(1, calls.get());
         assertEquals(0, runtime.c2meRetainedGraphs());
+        var lifetime = ((FullHolderEvidence) (Object) holder).phoenium$lifetime();
+        var resident = fixture.services.residentPublication(lifetime);
+        assertNotNull(resident, "resident receipt survives operation acknowledgement");
+        assertNull(resident.chunk(), "provider status slot has not settled yet");
+        backing.slot(NewChunkStatus.SERVER_ACCESSIBLE).complete(null);
+        assertSame(full, resident.chunk());
         assertNull(barrier.get());
         assertTrue(OwnershipContext.current().isEmpty());
         assertFalse(FullFinishingServices.finishing());

@@ -15,6 +15,26 @@ public final class ChunkPrerequisiteServices {
     private final LoadApplyPrerequisites prerequisites;
     private FullPublishedInputs published;
     private final java.util.Map<ChunkCustodyModel.LifecycleId, ChunkHolderLifetime> residentHolders = new java.util.HashMap<>();
+    private final java.util.Map<ChunkCustodyModel.LifecycleId, C2meResidentPublication> residentPublications = new java.util.HashMap<>();
+    C2meResidentPublication residentPublication(ChunkHolderLifetime lifetime) {
+        custody.gate().lock(); try { return residentPublications.get(lifetime.lifecycle()); }
+        finally { custody.gate().unlock(); }
+    }
+    void residentPublication(ChunkCustodyModel.LifecycleId lifecycle, C2meResidentPublication publication) {
+        custody.gate().lock(); try {
+            var old = residentPublications.put(lifecycle, publication);
+            if (old != null && old != publication) old.retire();
+        } finally { custody.gate().unlock(); }
+    }
+    void retireResidentPublication(ChunkHolderLifetime lifetime) {
+        custody.gate().lock(); try {
+            if (residentHolders.get(lifetime.lifecycle()) == lifetime) retirePublication(lifetime.lifecycle());
+        } finally { custody.gate().unlock(); }
+    }
+    private void retirePublication(ChunkCustodyModel.LifecycleId lifecycle) {
+        var publication = residentPublications.remove(lifecycle);
+        if (publication != null) publication.retire();
+    }
     public void trackHolder(ChunkCustodyModel.LifecycleId lifecycle, net.minecraft.server.level.GenerationChunkHolder holder) {
         custody.gate().lock(); try {
             var lifetime = residentHolders.computeIfAbsent(lifecycle, ignored -> new ChunkHolderLifetime(this, lifecycle, holder));
@@ -25,6 +45,7 @@ public final class ChunkPrerequisiteServices {
     void retireResidentHolder(ChunkHolderLifetime lifetime) {
         custody.gate().lock(); try {
             if (residentHolders.get(lifetime.lifecycle()) != lifetime) return;
+            retirePublication(lifetime.lifecycle());
             if (custody.lifecycleState(lifetime.lifecycle()).orElse(null) != ChunkCustodyModel.LifecycleState.RETIRED)
                 lifecycles.retireHolder(lifetime.lifecycle(), lifetime.holder());
         } finally { custody.gate().unlock(); }
@@ -107,6 +128,7 @@ public final class ChunkPrerequisiteServices {
         custody.gate().lock(); try {
             if (!custody.canReleaseRetiredLifecycle(lifecycle)) throw new ChunkProtocolException("world-service cleanup before terminal acknowledgment");
             retire(lifecycle); works.releaseRetired(lifecycle); lifecycles.releaseRetired(lifecycle); custody.releaseRetiredLifecycle(lifecycle);
+            retirePublication(lifecycle);
             var lifetime = residentHolders.remove(lifecycle);
             if (lifetime != null && ((FullHolderEvidence) lifetime.holder()).phoenium$lifetime() == lifetime)
                 ((FullHolderEvidence) lifetime.holder()).phoenium$lifetime(null);

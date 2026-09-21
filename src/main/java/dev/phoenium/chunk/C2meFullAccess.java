@@ -95,6 +95,24 @@ final class C2meFullAccess {
                 throw new ChunkProtocolException("C2ME currentChunkHolders publication does not match provider userData");
         }
 
+        java.util.Map<String, Boolean> residentChecks(FullState expected) {
+            var checks = new java.util.LinkedHashMap<String, Boolean>();
+            try {
+                Parts now = access.read(context, kind);
+                checks.put("providerBackingHolderMatch", now.system == system && now.backingHolder == backingHolder
+                    && now.userDataHolder == userDataHolder && now.map == map && now.position.equals(position));
+                checks.put("providerStatusSlotMatch", now.providerStatus == providerStatus && now.statusSlot == statusSlot);
+                var value = STATE_ACCESS.get(now.itemState.getClass()).read(now.itemState);
+                checks.put("providerFullStateCurrent", expected != null && now.itemState == expected.exactState()
+                    && value.chunk == expected.chunk() && value.reachedStatus == ChunkStatus.FULL);
+            } catch (ChunkProtocolException stale) {
+                checks.put("providerBackingHolderMatch", false);
+                checks.put("providerStatusSlotMatch", false);
+                checks.put("providerFullStateCurrent", false);
+            }
+            return checks;
+        }
+
         boolean delayFullEvents() { return access.delayFullEvents(); }
 
         boolean sameExactLineage(Observation other) {

@@ -26,7 +26,9 @@ public final class BlockEntityExternalReadPreparation implements AutoCloseable {
     private ChunkHolder holder;
     private ChunkHolderLifetime lifetime;
     private CompletableFuture<ChunkResult<ChunkAccess>> selected;
-    private CompletableFuture<ChunkResult<ChunkAccess>> slot;
+    private ResidentChunkSourceBinding binding;
+    private C2meResidentPublication provider;
+    private CompletableFuture<ChunkResult<ChunkAccess>> vanillaSlot;
     private boolean closed, stale;
 
     public BlockEntityExternalReadPreparation(ServerLevel level, BlockPos position,
@@ -35,6 +37,13 @@ public final class BlockEntityExternalReadPreparation implements AutoCloseable {
         identity = new Identity(level, position.immutable(), ChunkPos.pack(position), topology, tick, query);
         this.valid = Objects.requireNonNull(valid); this.ownerFree = Objects.requireNonNull(ownerFree);
         holder = visible(level, identity.chunkKey); lifetime = lifetime(holder);
+        provider = lifetime == null ? null : lifetime.services().residentPublication(lifetime);
+        observeVanillaSlot();
+    }
+    private void observeVanillaSlot() {
+        if (provider == null && holder != null && vanillaSlot == null
+                && ((FullGenerationSource) identity.world.getChunkSource().chunkMap).phoenium$fullRegistration() != null)
+            vanillaSlot = ((FullHolderEvidence) holder).phoenium$futures().get(ChunkStatus.FULL.getIndex());
     }
     public Identity identity() { return identity; }
     public CompletableFuture<Void> dependency() { return ready; }
@@ -51,18 +60,17 @@ public final class BlockEntityExternalReadPreparation implements AutoCloseable {
     /** Observation only: never selects or waits on a native future under the owner. */
     public static boolean ready(ServerLevel level, BlockPos position) {
         if (level.isOutsideBuildHeight(position)) return true; // native getBlockState returns VOID_AIR here
-        var holder = visible(level, ChunkPos.pack(position));
-        if (holder == null) return false;
-        var slot = ((FullHolderEvidence) holder).phoenium$futures().get(ChunkStatus.FULL.getIndex());
-        return slot != null && slot.isDone() && !slot.isCompletedExceptionally()
-            && slot.getNow(null) != null && slot.getNow(null).orElse(null) != null;
+        return ResidentChunkSourceBinding.capture(level, ChunkPos.pack(position)) != null;
     }
     public boolean current() {
         if (closed || stale || !valid.getAsBoolean()) return false;
         var now = visible(identity.world, identity.chunkKey);
         if (holder == null) return true; // bind the first published holder at the next owner-free observation
         return now == holder && (lifetime == null || current(holder, lifetime))
-            && (slot == null || ((FullHolderEvidence) holder).phoenium$futures().get(ChunkStatus.FULL.getIndex()) == slot);
+            && (provider == null || lifetime.services().residentPublication(lifetime) == provider && provider.pendingCurrent())
+            && (vanillaSlot == null || provider == null
+                && ((FullHolderEvidence) holder).phoenium$futures().get(ChunkStatus.FULL.getIndex()) == vanillaSlot)
+            && (binding == null || binding.current());
     }
     public void prepare() {
         ownerFree.run();
@@ -71,7 +79,13 @@ public final class BlockEntityExternalReadPreparation implements AutoCloseable {
         try {
             var now = visible(identity.world, identity.chunkKey);
             if (holder != null && (now != holder || lifetime != null && !current(holder, lifetime))) { stale = true; return; }
+            if (!current()) { stale = true; return; }
             if (selected == null) {
+                binding = ResidentChunkSourceBinding.capture(identity.world, identity.chunkKey);
+                if (binding != null) {
+                    holder = binding.holder(); lifetime = binding.lifetime();
+                    ready.complete(null); return;
+                }
                 var pos = ChunkPos.unpack(identity.chunkKey);
                 selected = ((RegionalServerChunkCacheAccess) identity.world.getChunkSource())
                     .phoenium$naturalSpawnFuture(pos.x(), pos.z(), ChunkStatus.FULL, true);
@@ -82,15 +96,18 @@ public final class BlockEntityExternalReadPreparation implements AutoCloseable {
             if (now != holder) { stale = true; return; }
             if (lifetime == null) lifetime = lifetime(holder);
             if (lifetime == null) return; // publication may attach the lifecycle on a later native poll
-            var nowSlot = ((FullHolderEvidence) holder).phoenium$futures().get(ChunkStatus.FULL.getIndex());
-            if (slot == null) slot = nowSlot;
+            var nowProvider = lifetime.services().residentPublication(lifetime);
+            if (provider == null) provider = nowProvider;
+            observeVanillaSlot();
             if (!current()) { stale = true; return; }
             if (!selected.isDone()) return;
             var result = selected.join().orElse(null);
             if (result == null) throw new ChunkProtocolException("Vault FULL dependency unloaded: " + identity);
-            if (slot == null || !slot.isDone()) return;
-            var published = slot.join().orElse(null);
-            if (result != published || !result.getPos().equals(ChunkPos.unpack(identity.chunkKey)))
+            if (result instanceof ImposterProtoChunk imposter) result = imposter.getWrapped();
+            if (binding == null) binding = ResidentChunkSourceBinding.capture(identity.world, identity.chunkKey);
+            if (binding == null) return;
+            if (!binding.current()) { stale = true; return; }
+            if (result != binding.chunk())
                 throw new ChunkProtocolException("Vault FULL receipt changed its native result: " + identity);
             ready.complete(null);
         } catch (CompletionException failure) {
@@ -101,6 +118,6 @@ public final class BlockEntityExternalReadPreparation implements AutoCloseable {
     @Override public void close() {
         // Do not cancel the shared native future or turn stale retirement into a
         // failed fence callback. The reservation observes current()==false and retires.
-        closed = true; selected = null; slot = null; holder = null; lifetime = null;
+        closed = true; selected = null; vanillaSlot = null; binding = null; provider = null; holder = null; lifetime = null;
     }
 }

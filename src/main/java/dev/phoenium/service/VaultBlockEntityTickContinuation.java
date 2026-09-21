@@ -37,7 +37,7 @@ public final class VaultBlockEntityTickContinuation implements AutoCloseable {
     private LevelChunk chunk;
     private ChunkHolder holder;
     private ChunkHolderLifetime lifetime;
-    private java.util.concurrent.CompletableFuture<ChunkResult<net.minecraft.world.level.chunk.ChunkAccess>> sourceSlot;
+    private ResidentChunkSourceBinding resident;
     private BlockPos position;
     private BlockState oldState, newState;
     private VaultServerData serverData;
@@ -48,6 +48,11 @@ public final class VaultBlockEntityTickContinuation implements AutoCloseable {
     private Phase phase = Phase.RUNNING_PREFIX;
     private Throwable failure;
     private boolean entered, interceptOutput, closed;
+    private java.util.function.Consumer<java.util.function.Supplier<String>> bindingFailure = ignored -> {};
+
+    public void bindingFailure(java.util.function.Consumer<java.util.function.Supplier<String>> reporter) {
+        bindingFailure = Objects.requireNonNull(reporter);
+    }
 
     public VaultBlockEntityTickContinuation(ServerLevel level, TickingBlockEntity ticker, RegionDirectory directory,
             RoutingKey source, long generation, BooleanSupplier open, Runnable ownerFree) {
@@ -72,9 +77,12 @@ public final class VaultBlockEntityTickContinuation implements AutoCloseable {
         vault = entity; chunk = access.phoenium$localChunk(); position = entity.getBlockPos().immutable();
         topology = directory.snapshot().generation(); holder = BlockEntityExternalReadPreparation.visible(level, chunk.getPos().pack());
         lifetime = BlockEntityExternalReadPreparation.lifetime(holder);
-        sourceSlot = holder == null ? null : ((FullHolderEvidence) holder).phoenium$futures()
-            .get(net.minecraft.world.level.chunk.status.ChunkStatus.FULL.getIndex());
-        if (!currentOwned()) throw new IllegalStateException("Vault tick lacks exact current incarnation");
+        if (resident == null) resident = ResidentChunkSourceBinding.capture(level, chunk.getPos().pack());
+        if (!currentOwned()) {
+            try { bindingFailure.accept(this::bindingObservation); }
+            catch (RuntimeException | Error ignored) { /* Preserve the original failure. */ }
+            throw new IllegalStateException("Vault tick lacks exact current incarnation");
+        }
         ACTIVE.set(this);
         try { original.run(); if (phase == Phase.RUNNING_PREFIX) phase = Phase.SETTLED; }
         catch (RuntimeException | Error cause) { fail(cause); throw cause; }
@@ -125,25 +133,71 @@ public final class VaultBlockEntityTickContinuation implements AutoCloseable {
             && topology.equals(directory.snapshot().generation())
             && directory.pendingChange(source).filter(change -> !change.completed()).isEmpty()
             && directory.resolve(source).isPresent()
-            && BlockEntityExternalReadPreparation.visible(level, chunk.getPos().pack()) == holder
-            && BlockEntityExternalReadPreparation.current(holder, lifetime)
-            && sourceSlot != null && sourceSlot == ((FullHolderEvidence) holder).phoenium$futures()
-                .get(net.minecraft.world.level.chunk.status.ChunkStatus.FULL.getIndex())
-            && sourcePublishedChunk() == chunk
+            && resident != null && resident.chunk() == chunk && resident.current()
             && ticker instanceof LocalNativeTickerAccess access && access.phoenium$localBlockEntity() == vault
             && access.phoenium$localChunk() == chunk && vault.getLevel() == level && !vault.isRemoved();
     }
-    private net.minecraft.world.level.chunk.ChunkAccess sourcePublishedChunk() {
-        if (!sourceSlot.isDone() || sourceSlot.isCompletedExceptionally()) return null;
-        var result = sourceSlot.getNow(null);
-        var actual = result == null ? null : result.orElse(null);
-        return actual instanceof net.minecraft.world.level.chunk.ImposterProtoChunk imposter ? imposter.getWrapped() : actual;
+    public VaultBlockEntityTickContinuation sourceBinding(ResidentChunkSourceBinding binding) {
+        if (entered) throw new IllegalStateException("source binding after tick entry");
+        resident = Objects.requireNonNull(binding);
+        return this;
     }
     private boolean currentOwned() {
         requireOwner();
         if (!directory.resolve(source).orElseThrow().region().equals(OwnershipContext.current().orElseThrow().region()))
             throw new IllegalStateException("Vault continuation claimed a foreign owner");
         return current() && chunk.getBlockEntities().get(position) == vault;
+    }
+
+    /** Failure-only observation: no publication, future selection, waiting, or fallback. */
+    private String bindingObservation() {
+        var checks = new java.util.LinkedHashMap<String, Boolean>();
+        var visible = BlockEntityExternalReadPreparation.visible(level, chunk.getPos().pack());
+        var attached = BlockEntityExternalReadPreparation.lifetime(holder);
+        var slot = holder == null ? null : ((FullHolderEvidence) holder).phoenium$futures()
+            .get(net.minecraft.world.level.chunk.status.ChunkStatus.FULL.getIndex());
+        var published = resident == null ? null : resident.chunk();
+        var access = ticker instanceof LocalNativeTickerAccess a ? a : null;
+        var installed = chunk.getBlockEntities().get(position);
+        var route = directory.resolve(source);
+        checks.put("notClosed", !closed);
+        checks.put("notTerminal", !terminal());
+        checks.put("serviceOpen", open.getAsBoolean());
+        checks.put("vaultPresent", vault != null);
+        checks.put("topologyCurrent", topology.equals(directory.snapshot().generation()));
+        checks.put("noPendingTopology", directory.pendingChange(source).filter(c -> !c.completed()).isEmpty());
+        checks.put("routePresent", route.isPresent());
+        checks.put("visibleHolderSame", visible == holder);
+        checks.put("holderPresent", holder != null);
+        checks.put("lifetimePresent", lifetime != null);
+        checks.put("lifetimeHolderSame", lifetime != null && lifetime.holder() == holder);
+        checks.put("lifetimeAttachmentSame", lifetime != null && attached == lifetime);
+        checks.put("lifecycleCurrent", lifetime != null && lifetime.services().lifecycles().isCurrent(lifetime.lifecycle()));
+        checks.put("holderCurrent", BlockEntityExternalReadPreparation.current(holder, lifetime));
+        checks.put("residentBindingPresent", resident != null);
+        checks.put("providerRuntimeOpen", resident != null && resident.providerRuntimeOpen());
+        checks.put("providerFullStateCurrent", resident != null && resident.providerCurrent());
+        checks.put("levelChunkMatch", published == chunk);
+        checks.put("fullSlotPresent", slot != null);
+        checks.put("tickerAccess", access != null);
+        checks.put("tickerVaultSame", access != null && access.phoenium$localBlockEntity() == vault);
+        checks.put("tickerChunkSame", access != null && access.phoenium$localChunk() == chunk);
+        checks.put("vaultWorldSame", vault.getLevel() == level);
+        checks.put("vaultNotRemoved", !vault.isRemoved());
+        checks.put("ownerSame", route.isPresent() && route.get().region().equals(OwnershipContext.current().orElseThrow().region()));
+        checks.put("installedVaultSame", installed == vault);
+        return "type=" + ticker.getType() + " position=" + position + " vault=" + identity(vault)
+            + " ticker=" + identity(ticker) + " sourceChunk=" + chunk.getPos() + " chunk=" + identity(chunk)
+            + " incarnationLookup=" + identity(installed) + " holder=" + identity(holder)
+            + " visibleHolder=" + identity(visible) + " lifetime=" + lifetime + " attachedLifetime=" + attached
+            + " " + (resident == null ? "provider=UNBOUND" : resident.observation()) + " currentFullSlot=" + identity(slot)
+            + " publishedChunk=" + identity(published) + " service=BLOCK_ENTITY_TICK route=" + source
+            + " resolvedRoute=" + route + " topology=" + topology + " currentTopology=" + directory.snapshot().generation()
+            + " owner=" + OwnershipContext.current() + " checks=" + checks + " reason="
+            + checks.entrySet().stream().filter(e -> !e.getValue()).map(java.util.Map.Entry::getKey).toList();
+    }
+    private static String identity(Object value) {
+        return value == null ? "ABSENT" : value.getClass().getName() + "@" + System.identityHashCode(value);
     }
     public void prepare() {
         ownerFree.run();
@@ -223,7 +277,7 @@ public final class VaultBlockEntityTickContinuation implements AutoCloseable {
     @Override public void close() {
         retire(Phase.CANCELLED); closed = true;
         if (query != null) query.close(); query = null;
-        vault = null; chunk = null; holder = null; lifetime = null; sourceSlot = null;
+        vault = null; chunk = null; holder = null; lifetime = null; resident = null;
         serverData = null; sharedData = null; neighbors = null; oldState = null; newState = null;
     }
 }

@@ -34,6 +34,39 @@ class VaultContinuationNativeTest {
     @BeforeAll static void bootstrap() { BlockEntityChunkQueryDiagnosticTest.bootstrap(); }
     @AfterEach void clearTrace() { VaultContinuationTestHooks.TRACE.remove(); }
 
+    @ParameterizedTest @ValueSource(strings = {"service", "slot", "both"})
+    void firstTickDiagnosticDistinguishesMissingRuntimeFromMissingPublication(String missing) throws Exception {
+        try (var f = new Fixture(); var tick = f.capture()) {
+            if (!missing.equals("slot")) f.open = false;
+            if (!missing.equals("service"))
+                ((FullHolderEvidence) f.holder(POS)).phoenium$futures().set(ChunkStatus.FULL.getIndex(), null);
+            List<String> observations = new ArrayList<>();
+            tick.bindingFailure(observation -> observations.add(observation.get()));
+            var failure = assertThrows(IllegalStateException.class,
+                () -> f.owned(() -> tick.original(() -> fail("invalid binding entered native tick"))));
+            assertEquals("Vault tick lacks exact current incarnation", failure.getMessage());
+            assertEquals(1, observations.size());
+            String observed = observations.getFirst();
+            assertTrue(observed.contains("serviceOpen=" + missing.equals("slot")), observed);
+            assertTrue(observed.contains("fullSlotPresent=" + missing.equals("service")), observed);
+            for (String check : List.of("holderCurrent", "tickerVaultSame", "tickerChunkSame", "installedVaultSame", "topologyCurrent"))
+                assertTrue(observed.contains(check + "=true"), observed);
+            assertNull(tick.query());
+            assertEquals(missing.equals("service"), f.fullSlot(POS) != null, "diagnostic must not supply a slot");
+        }
+    }
+
+    @Test void firstTickDiagnosticFailureCannotReplaceOriginalFailure() throws Exception {
+        try (var f = new Fixture(); var tick = f.capture()) {
+            f.open = false;
+            tick.bindingFailure(observation -> { throw new AssertionError("diagnostic sink failed"); });
+            var failure = assertThrows(IllegalStateException.class,
+                () -> f.owned(() -> tick.original(() -> fail("invalid binding entered native tick"))));
+            assertEquals("Vault tick lacks exact current incarnation", failure.getMessage());
+            assertEquals(0, failure.getSuppressed().length);
+        }
+    }
+
     @Test void twoExactSuspensionsMatchNativeOrderWithoutRepeatingPrefix() throws Exception {
         List<String> nativeTrace;
         try (var f = new Fixture()) {
@@ -246,6 +279,9 @@ class VaultContinuationNativeTest {
         Fixture() throws Exception {
             var dimension = new DimensionType(false, true, false, false, 1, -64, 384, 384, HolderSet.direct(), 0, null, null, null, null, HolderSet.direct(), Optional.empty());
             world = stub(ServerLevel.class, List.of(
+                new Answer(ServerLevel.class.getMethod("getWorldBorder"), args -> new net.minecraft.world.level.border.WorldBorder()),
+                new Answer(ServerLevel.class.getMethod("areEntitiesLoaded", long.class), args -> true),
+                new Answer(ServerLevel.class.getMethod("updatePOIOnBlockStateChange", BlockPos.class, BlockState.class, BlockState.class), args -> null),
                 new Answer(ServerLevel.class.getMethod("dimensionType"), args -> dimension),
                 new Answer(ServerLevel.class.getMethod("getChunkSource"), args -> base.world.cache),
                 new Answer(ServerLevel.class.getMethod("getServer"), args -> base.world.level.getServer()),

@@ -34,6 +34,7 @@ final class FullRegistrationFixture implements GeneratingChunkMap, FullGeneratio
     final RegionalSaveCoordinator saveCoordinator;
     final WorldGenContext context;
     ChunkMap fixtureMap;
+    final C2mePublicationView.PublishedHolders providerHolders = new C2mePublicationView.PublishedHolders();
     final Set<ChunkGenerationTask> tasks = new LinkedHashSet<>();
     ChunkPos delayedPosition;
     ChunkStatus delayedStatus;
@@ -77,7 +78,9 @@ final class FullRegistrationFixture implements GeneratingChunkMap, FullGeneratio
         set(world.cache, ServerChunkCache.class, "lastChunk", new ChunkAccess[4]);
         var map = stub(ChunkMap.class, List.of(
                 new Answer(ChunkMap.class.getMethod("scheduleGenerationTask", ChunkStatus.class, ChunkPos.class), args -> scheduleGenerationTask((ChunkStatus) args[0], (ChunkPos) args[1])),
-                new Answer(ChunkMap.class.getMethod("runGenerationTasks"), args -> { runGenerationTasks(); return null; })));
+                new Answer(ChunkMap.class.getMethod("runGenerationTasks"), args -> { runGenerationTasks(); return null; }),
+                new Answer(FullGenerationSource.class.getMethod("phoenium$fullRegistration"), args -> runtime),
+                new Answer(C2mePublicationView.class.getMethod("getCurrentChunkHolders"), args -> providerHolders)), FullGenerationSource.class, C2mePublicationView.class);
         set(world.cache, ServerChunkCache.class, "chunkMap", map);
         set(map, ChunkMap.class, "phoenium$inputChanges", new FullInputNotifications());
         // This controlled endpoint bypasses ChunkMap's constructor. Installed production

@@ -866,6 +866,8 @@ public final class ChunkBindingRuntime {
         return count;
     }
 
+    private boolean residentRuntimeOpen() { return open; }
+
     public void shutdown() {
         if (!open) return;
         open = false;
@@ -1404,12 +1406,15 @@ public final class ChunkBindingRuntime {
         private final AtomicBoolean initialStarted = new AtomicBoolean();
         private final AtomicBoolean delayedStarted = new AtomicBoolean();
         private final AtomicBoolean terminal = new AtomicBoolean();
+        private final C2meResidentPublication resident;
         private volatile C2meFullAccess.FullState fullState;
         private volatile boolean delayed;
 
         C2meFullGraph(WorldBinding world, C2meFullAccess.Observation observation,
                       ChunkCustodyModel.LifecycleId lifecycle, ChunkCustodyModel.WorkId work) {
             this.world = world; this.observation = observation; this.lifecycle = lifecycle; this.work = work;
+            resident = new C2meResidentPublication(observation, ChunkBindingRuntime.this::residentRuntimeOpen);
+            world.authority.services().residentPublication(lifecycle, resident);
         }
 
         boolean sameExactLineage(C2meFullAccess.Observation other) { return observation.sameExactLineage(other); }
@@ -1480,6 +1485,7 @@ public final class ChunkBindingRuntime {
             });
             pending.requireClaimFence(claim -> fullClaimFence(claim, stage, fullState));
             executeProviderNow(world, pending, fullState);
+            resident.published(fullState);
             c2meFullPublications++;
         }
 
@@ -1499,6 +1505,7 @@ public final class ChunkBindingRuntime {
         void finish(boolean cancelled) {
             if (!terminal.compareAndSet(false, true)) return;
             unbindC2meFull(this);
+            if (!resident.published()) resident.retire();
             ChunkPrerequisiteServices services = world.authority.services();
             services.works().retireWork(work, cancelled);
             services.works().releaseRetiredWork(work);

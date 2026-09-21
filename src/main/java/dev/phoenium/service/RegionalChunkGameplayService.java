@@ -55,6 +55,7 @@ public final class RegionalChunkGameplayService implements NaturalSpawnContinuat
     private long cycles, entityContributions, chunkCallbacks;
     private long naturalSpawnOrdinal;
     private long vaultTickOrdinal;
+    private final java.util.concurrent.atomic.AtomicBoolean vaultBindingFailureReported = new java.util.concurrent.atomic.AtomicBoolean();
     private final dev.phoenium.chunk.BlockEntityChunkQueryDiagnostic blockEntityQueries =
             new dev.phoenium.chunk.BlockEntityChunkQueryDiagnostic();
 
@@ -346,11 +347,11 @@ public final class RegionalChunkGameplayService implements NaturalSpawnContinuat
         ChunkPos chunk = ChunkPos.containing(position);
         RoutingKey key = new RoutingKey(world, chunk.x(), chunk.z());
         if (OwnershipContext.current().isPresent()) {
-            dispatcher.requireCurrentOwner(key); blockEntities.put(ticker, new BlockEntityReceipt(position, key));
+            dispatcher.requireCurrentOwner(key); blockEntities.put(ticker, new BlockEntityReceipt(position, key, new ResidentBlockEntityTickerBinding(level, ticker, directory, key)));
         } else dispatcher.executeAndDrain(key, RegionalServiceKind.BLOCK_ENTITY_TICK, ignored -> {
             dispatcher.requireCurrentOwner(key);
             if (!ticker.getPos().equals(position)) throw new IllegalStateException("new block entity ticker position changed");
-            blockEntities.put(ticker, new BlockEntityReceipt(position, key));
+            blockEntities.put(ticker, new BlockEntityReceipt(position, key, new ResidentBlockEntityTickerBinding(level, ticker, directory, key)));
         });
     }
 
@@ -371,10 +372,17 @@ public final class RegionalChunkGameplayService implements NaturalSpawnContinuat
             List<TickingBlockEntity> window = new ArrayList<>(capacity);
             LinkedHashSet<RoutingKey> sources = new LinkedHashSet<>();
             while (iterator.hasNext() && window.size() < capacity) {
-                TickingBlockEntity ticker = iterator.next(); window.add(ticker);
+                TickingBlockEntity ticker = iterator.next();
                 BlockEntityReceipt receipt = blockEntities.get(ticker);
                 if (receipt == null) throw new IllegalStateException("unpublished block entity ticker in original list");
-                sources.add(receipt.key);
+                if (!receipt.binding.ready()) {
+                    if (!window.isEmpty()) { iterator.previous(); break; }
+                    if (receipt.binding.state() == ResidentBlockEntityTickerBinding.State.RETIRED) {
+                        iterator.remove(); blockEntities.remove(ticker);
+                    }
+                    continue;
+                }
+                window.add(ticker); sources.add(receipt.key);
             }
             sources.forEach(source -> dispatcher.ensureClosure(source, 1));
             var selections = runs ? selectLocalWindow(window) : new IdentityHashMap<TickingBlockEntity, LocalBlockEntityTick.Selection>();
@@ -401,15 +409,28 @@ public final class RegionalChunkGameplayService implements NaturalSpawnContinuat
                     TickingBlockEntity ticker = iterator.next();
                     if (ticker != expected) throw new IllegalStateException("original ticker iterator changed during preflight");
                     BlockEntityReceipt receipt = blockEntities.get(ticker); boolean[] removed = {false};
-                    var registration = ((dev.phoenium.chunk.FullGenerationSource) map).phoenium$fullRegistration();
+                    if (!receipt.binding.activate()) {
+                        if (receipt.binding.state() == ResidentBlockEntityTickerBinding.State.RETIRED) {
+                            iterator.remove(); blockEntities.remove(ticker);
+                        }
+                        continue;
+                    }
                     try (var vaultTick = new VaultBlockEntityTickContinuation(level, ticker, directory, receipt.key,
                             vaultTickOrdinal = Math.incrementExact(vaultTickOrdinal),
-                            () -> dispatcher.naturalSpawnOpen() && registration != null && registration.naturalSpawnOpen(),
-                            dispatcher::requireNaturalSpawnOwnerFree)) {
+                            () -> dispatcher.naturalSpawnOpen() && receipt.binding.source() != null
+                                && receipt.binding.source().providerRuntimeOpen(),
+                            dispatcher::requireNaturalSpawnOwnerFree).sourceBinding(receipt.binding.source())) {
+                        vaultTick.bindingFailure(observation -> {
+                            if (vaultBindingFailureReported.compareAndSet(false, true))
+                                org.slf4j.LoggerFactory.getLogger("Phoenium").error(
+                                    "PHOENIUM_VAULT_FIRST_TICK_BINDING_FAILURE dispatcherOpen={} {}",
+                                    dispatcher.naturalSpawnOpen(), observation.get());
+                        });
                         dispatcher.executeAndDrain(receipt.key, RegionalServiceKind.BLOCK_ENTITY_TICK, execution -> {
                             dispatcher.requireCurrentClosure(receipt.key, 1);
                             try (var diagnostic = blockEntityQueries.enter(level, ticker.getType(), receipt.position,
                                     execution, directory.snapshot().generation())) {
+                                if (!receipt.binding.ready()) { removed[0] = true; return; }
                                 removed[0] = tickTicker(ticker, runs, receipt.position, level::shouldTickBlocksAt, vaultTick::original);
                             }
                         });
@@ -423,7 +444,7 @@ public final class RegionalChunkGameplayService implements NaturalSpawnContinuat
                             }
                         });
                     }
-                    if (removed[0]) { iterator.remove(); blockEntities.remove(ticker); }
+                    if (removed[0]) { receipt.binding.close(); iterator.remove(); blockEntities.remove(ticker); }
                 }
                 offset = end;
             }
@@ -440,6 +461,7 @@ public final class RegionalChunkGameplayService implements NaturalSpawnContinuat
             blockEntities.get(group.getFirst()).key, RegionalServiceKind.BLOCK_ENTITY_TICK, ignored -> {
                 for (TickingBlockEntity ticker : group) {
                     dispatcher.requireCurrentClosure(blockEntities.get(ticker).key, 1);
+                    if (!blockEntities.get(ticker).binding.ready()) continue;
                     LocalBlockEntityTick.Selection selection = LocalBlockEntityTick.select(ticker);
                     if (selection != null) result.put(ticker, selection);
                 }
@@ -461,6 +483,7 @@ public final class RegionalChunkGameplayService implements NaturalSpawnContinuat
                 for (TickingBlockEntity ticker : group) {
                     BlockEntityReceipt receipt = blockEntities.get(ticker);
                     dispatcher.requireCurrentClosure(receipt.key, 1);
+                    if (!receipt.binding.activate()) return false;
                     var selection = LocalBlockEntityTick.select(ticker);
                     if (selection == null) return false;
                     prepared.add(new LocalTicker(receipt, selection));
@@ -470,6 +493,7 @@ public final class RegionalChunkGameplayService implements NaturalSpawnContinuat
                     for (LocalTicker retained : prepared) {
                         dispatcher.requireHealthyLocalContinuation();
                         dispatcher.requireCurrentClosure(retained.receipt.key, 1);
+                        if (!retained.receipt.binding.ready()) throw new IllegalStateException("resident ticker source retired after selection");
                         retained.selection.requireCurrent();
                         TickingBlockEntity original = retained.selection.ticker();
                         if (original.isRemoved()) throw new IllegalStateException("local ticker retired after selection");
@@ -530,8 +554,8 @@ public final class RegionalChunkGameplayService implements NaturalSpawnContinuat
 
     private void bootstrapTicker(TickingBlockEntity ticker) {
         BlockPos position = ticker.getPos().immutable();
-        blockEntities.put(ticker, new BlockEntityReceipt(position,
-            new RoutingKey(world, ChunkPos.getX(ChunkPos.pack(position)), ChunkPos.getZ(ChunkPos.pack(position)))));
+        var key = new RoutingKey(world, ChunkPos.getX(ChunkPos.pack(position)), ChunkPos.getZ(ChunkPos.pack(position)));
+        blockEntities.put(ticker, new BlockEntityReceipt(position, key, new ResidentBlockEntityTickerBinding(level, ticker, directory, key)));
     }
 
     private PlayerCut capturePlayers() {
@@ -626,7 +650,7 @@ public final class RegionalChunkGameplayService implements NaturalSpawnContinuat
     private record PlayerProjection(ServerPlayer player, ServerGamePacketListenerImpl listener,
                                     FullEntityFacts.Candidate candidate, RoutingKey key, Vec3 position, boolean spectator) { }
     private record Contribution(BlockPos position, MobCategory category, double charge, boolean mob) { }
-    private record BlockEntityReceipt(BlockPos position, RoutingKey key) { }
+    private record BlockEntityReceipt(BlockPos position, RoutingKey key, ResidentBlockEntityTickerBinding binding) { }
     private record WeatherCut(boolean raining, boolean thundering) { }
     private static final class RetainedLocalMobCaps extends LocalMobCapCalculator {
         private final ChunkMap map; private final java.util.function.Supplier<List<PlayerProjection>> players;

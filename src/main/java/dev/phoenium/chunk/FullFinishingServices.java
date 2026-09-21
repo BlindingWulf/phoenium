@@ -51,6 +51,21 @@ public final class FullFinishingServices {
         entityFacts = new FullEntityFacts(this);
         for (Kind kind : Kind.values()) revisions.put(kind, 0L);
     }
+    /** Exact conversion holder while native block entities register before visible publication. */
+    public static net.minecraft.server.level.ChunkHolder registeringHolder(ServerLevel world, long key) {
+        Scope scope = CURRENT.get();
+        if (scope == null) return null;
+        scope.requireCurrent();
+        Reservation full = scope.fullReservation();
+        if (full == null || !full.worldCut.containsKey(world)) return null;
+        if (!(full.holder instanceof net.minecraft.server.level.ChunkHolder holder) || holder.getPos().pack() != key) return null;
+        var lifetime = ((FullHolderEvidence) holder).phoenium$lifetime();
+        if (lifetime == null) return null;
+        var provider = lifetime.services().residentPublication(lifetime);
+        if (provider != null) return provider.matches(world, holder) ? holder : null;
+        var runtime = ((FullGenerationSource) world.getChunkSource().chunkMap).phoenium$fullRegistration();
+        return runtime != null && runtime.level() == world && runtime.authority.services() == lifetime.services() ? holder : null;
+    }
     public static FullFinishingServices forServer(MinecraftServer server) {
         Objects.requireNonNull(server);
         FullFinishingServices service;
