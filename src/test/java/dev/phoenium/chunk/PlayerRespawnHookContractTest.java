@@ -52,6 +52,20 @@ final class PlayerRespawnHookContractTest {
         ordered(call(stop, "net/minecraft/world/level/entity/LevelCallback", "onTrackingEnd"),
             call(stop, "net/minecraft/world/level/entity/EntityLookup", "remove"));
     }
+    @Test void nativeDeathTickCompletesRemovalCallbackBeforeTheReceiptHookReturns() throws Exception {
+        var death = method(type("net/minecraft/world/entity/LivingEntity"), "tickDeath");
+        ordered(call(death, "net/minecraft/world/level/Level", "broadcastEntityEvent"),
+            call(death, "net/minecraft/world/entity/LivingEntity", "remove"));
+        var removal = method(type("net/minecraft/world/entity/Entity"), "setRemoved");
+        ordered(call(removal, "net/minecraft/world/level/entity/EntityInLevelCallback", "onRemove"),
+            call(removal, "net/minecraft/world/entity/Entity", "onRemoval"));
+        var callback = method(type("net/minecraft/world/level/entity/PersistentEntitySectionManager$Callback"), "onRemove");
+        ordered(call(callback, "net/minecraft/world/level/entity/PersistentEntitySectionManager", "stopTracking"),
+            call(callback, "java/util/Set", "remove"),
+            call(callback, "net/minecraft/world/level/entity/EntityAccess", "setLevelCallback"));
+        var hook = method(type("dev/phoenium/mixin/PlayerDeathRetirementMixin"), "phoenium$deathRetirementCompleted");
+        assertNotNull(hook);
+    }
     @Test void bothVanillaRespawnCallsAssignTheListenerOnlyAfterReturn() throws Exception {
         var body = method(type("net/minecraft/server/network/ServerGamePacketListenerImpl"), "handleClientCommand");
         int calls = 0;
@@ -103,7 +117,8 @@ final class PlayerRespawnHookContractTest {
         try (var input = getClass().getResourceAsStream("/phoenium.mixins.json")) {
             config = new String(Objects.requireNonNull(input).readAllBytes(), java.nio.charset.StandardCharsets.UTF_8);
         }
-        for (String mixin : List.of("PlayerRespawnIdentityMixin", "PlayerRespawnListenerMixin", "PlayerRespawnStorageMixin"))
+        for (String mixin : List.of("PlayerRespawnIdentityMixin", "PlayerRespawnListenerMixin", "PlayerRespawnStorageMixin",
+                "PlayerDeathRetirementMixin"))
             assertTrue(config.contains('"' + mixin + '"'));
     }
 }

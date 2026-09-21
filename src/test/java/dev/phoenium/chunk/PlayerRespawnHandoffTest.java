@@ -2,6 +2,8 @@ package dev.phoenium.chunk;
 
 import com.mojang.authlib.GameProfile;
 import java.util.*;
+import java.lang.invoke.MethodHandles;
+import java.lang.invoke.MethodType;
 import java.util.concurrent.atomic.AtomicBoolean;
 import net.minecraft.SharedConstants;
 import net.minecraft.network.Connection;
@@ -13,6 +15,8 @@ import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.server.network.ServerGamePacketListenerImpl;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.EntityTypes;
+import net.minecraft.world.entity.LivingEntity;
+import net.minecraft.world.level.entity.EntityInLevelCallback;
 import net.minecraft.world.level.entity.EntityLookup;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
@@ -28,6 +32,125 @@ final class PlayerRespawnHandoffTest {
     @BeforeAll static void bootstrap() { SharedConstants.tryDetectVersion(); Bootstrap.bootStrap(); }
     enum FailurePoint { OPEN, OLD_REMOVED, PREPARED, UUID_CLAIMED, CALLBACK_INSTALLED,
         WORLD_VISIBLE, TRACKING_ENTERED, TRACKING_ADMITTED, WORLD_INSERTED, LIST_PUBLISHED, UUID_PUBLISHED }
+
+    @Test void nativeTwentyTickDeathRetirementStillAdmitsTheExactRetainedSession() throws Exception {
+        try (var f = new Fixture()) {
+            ServerPlayer old = f.player;
+            f.nativeDeathTicks();
+            assertEquals(20, old.deathTime);
+            assertEquals(Entity.RemovalReason.KILLED, old.getRemovalReason());
+            assertNull(f.world.getEntity(f.uuid));
+            assertNull(f.world.getEntity(old.getId()));
+            assertSame(old, f.players.getFirst());
+            assertSame(old, f.uuids.get(f.uuid));
+            assertSame(old, f.listener.player);
+            var handoff = f.open();
+            f.oldRemoval(handoff); f.prepare(handoff); f.insert(handoff, null);
+            f.publishList(handoff); f.publishUuid(handoff); handoff.commit(handoff.replacement());
+            f.converge(handoff.replacement()); f.assertCurrent(f.player);
+            assertEquals(1, f.removals.get(old));
+        }
+    }
+    @Test void respawnBeforeNativeDeathRetirementKeepsThePresentOpening() throws Exception {
+        try (var f = new Fixture()) {
+            f.nativeDeathTicks(19);
+            assertFalse(f.player.isRemoved()); assertSame(f.player, f.world.getEntity(f.uuid));
+            var handoff = f.open(); f.oldRemoval(handoff); f.prepare(handoff); f.insert(handoff, null);
+            f.publishList(handoff); f.publishUuid(handoff); handoff.commit(handoff.replacement());
+            f.converge(handoff.replacement()); f.assertCurrent(f.player);
+        }
+    }
+    @Test void absenceWithoutCompletedNativeDeathAndUnrelatedRemovalAreRejected() throws Exception {
+        try (var f = new Fixture()) {
+            var old = f.player; f.lookup.remove(old);
+            assertTrue(precheck(f, old, old, 1, true, -1).contains("result=NATIVE_ABSENCE_WITHOUT_COMPLETED_DEATH"));
+            assertThrows(ChunkProtocolException.class, f::open);
+        }
+        try (var f = new Fixture()) {
+            f.nativeDeathTicks(19); f.player.remove(Entity.RemovalReason.KILLED);
+            assertFalse(deathRemovalCompleted(f.player));
+            assertThrows(ChunkProtocolException.class, f::open);
+        }
+    }
+    @Test void deathReceiptDoesNotAuthorizeConflictDisconnectOrNewerConnection() throws Exception {
+        try (var f = new Fixture()) {
+            f.nativeDeathTicks(); var impostor = f.newPlayer(f.listener); f.lookup.add(impostor);
+            assertTrue(precheck(f, f.player, f.player, 1, true, -1).contains("result=WORLD_UUID_CONFLICT"));
+            assertThrows(ChunkProtocolException.class, f::open);
+        }
+        try (var f = new Fixture()) {
+            f.nativeDeathTicks();
+            try (var turn = f.service.scoreboardAccess()) { f.service.scoreboard.remove(f.player, true); }
+            assertThrows(ChunkProtocolException.class, f::open);
+        }
+        try (var f = new Fixture()) {
+            f.nativeDeathTicks(); var stale = f.player;
+            try (var turn = f.service.scoreboardAccess()) { f.service.scoreboard.remove(stale, true); }
+            f.reconnect();
+            try (var turn = f.service.scoreboardAccess()) {
+                assertThrows(ChunkProtocolException.class, () -> f.service.scoreboard.openRespawn(f, stale));
+            }
+        }
+    }
+    @Test void deathRetiredFailurePrefixesRemainExactAndReconnectSafe() throws Exception {
+        for (boolean afterInsertion : new boolean[] {false, true}) try (var f = new Fixture()) {
+            f.nativeDeathTicks(); var old = f.player; var h = f.open();
+            var failure = new IllegalStateException("injected death-retired prefix");
+            assertSame(failure, assertThrows(IllegalStateException.class, () -> {
+                f.oldRemoval(h); f.prepare(h); if (afterInsertion) f.insert(h, null);
+                throw failure;
+            }));
+            h.rollback(); h.rollback(); assertEquals(1, f.removals.get(old)); f.assertEmpty();
+            var valid = f.reconnect(); h.rollback(); f.assertCurrent(valid);
+        }
+    }
+    @Test void twoNativeDeathCyclesRetainSessionAndNeverReplayOldRemoval() throws Exception {
+        try (var f = new Fixture()) {
+            var first = f.deathRetiredSuccess(); var second = f.deathRetiredSuccess();
+            assertNotSame(first.oldPlayer, second.oldPlayer);
+            assertNotSame(first.replacement(), second.replacement());
+            assertEquals(first.sessionId, second.sessionId);
+            assertEquals(1, f.removals.get(first.oldPlayer));
+            assertEquals(1, f.removals.get(second.oldPlayer));
+            f.assertCurrent(second.replacement());
+            first.rollback(); f.assertCurrent(second.replacement());
+        }
+    }
+    @Test void overlappingRequestCannotStartAfterDeathRetiredOpen() throws Exception {
+        try (var f = new Fixture()) {
+            f.nativeDeathTicks(); var h = f.open();
+            assertThrows(ChunkProtocolException.class, f::open);
+            h.rollback(); f.assertEmpty();
+        }
+    }
+    @Test void disconnectAfterCommittedDeathRespawnAllowsSameUuidReconnect() throws Exception {
+        try (var f = new Fixture()) {
+            var handoff = f.deathRetiredSuccess(); var committed = f.player;
+            assertEquals(State.COMMITTED, handoff.state());
+            f.disconnectCurrent();
+            var next = f.reconnect();
+            assertNotSame(committed, next); f.assertCurrent(next);
+            handoff.rollback(); f.assertCurrent(next);
+        }
+    }
+    @Test void diagnosticNamesMissingPredicateAndCannotMaskAdmissionFailure() throws Exception {
+        String previous = System.getProperty("phoenium.test.diagnostics");
+        System.setProperty("phoenium.test.diagnostics", "true");
+        try (var f = new Fixture()) {
+            f.lookup.remove(f.player);
+            String report = precheck(f, f.player, f.player, 1, true, -1);
+            assertTrue(report.contains("worldUuid=ABSENT"));
+            assertTrue(report.contains("worldId=ABSENT"));
+            assertTrue(report.contains("playerList=true"));
+            assertTrue(report.contains("result=NATIVE_ABSENCE_WITHOUT_COMPLETED_DEATH"));
+            var original = assertThrows(ChunkProtocolException.class, f::open);
+            assertTrue(original.getMessage().contains("old publication is not current"));
+            assertTrue(((Incarnation) f.player).phoenium$respawnPrecheckLogged());
+        } finally {
+            if (previous == null) System.clearProperty("phoenium.test.diagnostics");
+            else System.setProperty("phoenium.test.diagnostics", previous);
+        }
+    }
 
     @Test void successfulReplacementKeepsOneSessionAndCommitsOnlyAfterEveryPublication() throws Exception {
         try (var f = new Fixture()) {
@@ -190,6 +313,7 @@ final class PlayerRespawnHandoffTest {
                 new Answer(ServerLevel.class.getMethod("getServer"), args -> server),
                 new Answer(ServerLevel.class.getMethod("getEntity", UUID.class), args -> lookup.getEntity((UUID) args[0])),
                 new Answer(ServerLevel.class.getMethod("getEntity", int.class), args -> lookup.getEntity((int) args[0])),
+                new Answer(ServerLevel.class.getMethod("broadcastEntityEvent", Entity.class, byte.class), args -> null),
                 new Answer(ServerLevel.class.getMethod("players"), args -> worldPlayers),
                 new Answer(ServerLevel.class.getMethod("removePlayerImmediately", ServerPlayer.class, Entity.RemovalReason.class), args -> {
                     removeWorld((ServerPlayer) args[0]); return null;
@@ -207,6 +331,9 @@ final class PlayerRespawnHandoffTest {
         }
         ServerPlayer newPlayer(ServerGamePacketListenerImpl connection) throws Exception {
             var retired = new AtomicBoolean();
+            var deathRemoved = new AtomicBoolean();
+            var precheckLogged = new AtomicBoolean();
+            ServerPlayer[] exact = new ServerPlayer[1];
             ServerPlayer result = stub(ServerPlayer.class, List.of(
                 new Answer(ServerPlayer.class.getMethod("level"), args -> world),
                 new Answer(ServerPlayer.class.getMethod("getGameProfile"), args -> new GameProfile(uuid, "RespawnWitness")),
@@ -214,8 +341,17 @@ final class PlayerRespawnHandoffTest {
                 new Answer(ServerPlayer.class.getMethod("canBeSeenAsEnemy"), args -> true),
                 new Answer(ServerPlayer.class.getMethod("isCreative"), args -> false),
                 new Answer(ServerPlayer.class.getMethod("isSpectator"), args -> false),
+                new Answer(ServerPlayer.class.getMethod("remove", Entity.RemovalReason.class), args -> {
+                    exact[0].setRemoved((Entity.RemovalReason) args[0]); return null;
+                }),
+                new Answer(ServerPlayer.class.getMethod("onRemoval", Entity.RemovalReason.class), args -> null),
                 new Answer(Incarnation.class.getMethod("phoenium$respawnRetired"), args -> retired.get()),
-                new Answer(Incarnation.class.getMethod("phoenium$respawnRetired", boolean.class), args -> { retired.set((boolean) args[0]); return null; })), Incarnation.class);
+                new Answer(Incarnation.class.getMethod("phoenium$respawnRetired", boolean.class), args -> { retired.set((boolean) args[0]); return null; }),
+                new Answer(Incarnation.class.getMethod("phoenium$deathRemovalCompleted"), args -> deathRemoved.get()),
+                new Answer(Incarnation.class.getMethod("phoenium$deathRemovalCompleted", boolean.class), args -> { deathRemoved.set((boolean) args[0]); return null; }),
+                new Answer(Incarnation.class.getMethod("phoenium$respawnPrecheckLogged"), args -> precheckLogged.get()),
+                new Answer(Incarnation.class.getMethod("phoenium$respawnPrecheckLogged", boolean.class), args -> { precheckLogged.set((boolean) args[0]); return null; })), Incarnation.class);
+            exact[0] = result;
             result.connection = connection;
             set(result, Entity.class, "uuid", uuid); set(result, Entity.class, "id", 42);
             set(result, Entity.class, "type", EntityTypes.PLAYER);
@@ -244,6 +380,28 @@ final class PlayerRespawnHandoffTest {
                 assertTrue(players.removeIf(value -> value == player)); service.scoreboard.remove(player, false); h.oldListRemoved(player);
             }
             assertNoAuthority(); h.removeOldWorld(world, player, () -> world.removePlayerImmediately(player, Entity.RemovalReason.KILLED));
+        }
+        void nativeDeathTicks() throws Exception { nativeDeathTicks(20); }
+        void nativeDeathTicks(int ticks) throws Exception {
+            ServerPlayer dying = player;
+            EntityInLevelCallback callback = (EntityInLevelCallback) java.lang.reflect.Proxy.newProxyInstance(
+                EntityInLevelCallback.class.getClassLoader(), new Class<?>[] { EntityInLevelCallback.class },
+                (proxy, method, args) -> {
+                    if (method.getName().equals("onRemove")) {
+                        assertEquals(Entity.RemovalReason.KILLED, args[0]);
+                        lookup.remove(dying); worldPlayers.removeIf(value -> value == dying);
+                        tracked.remove(dying); stored.remove(dying); removals.merge(dying, 1, Integer::sum);
+                    }
+                    return null;
+                });
+            dying.setLevelCallback(callback);
+            var nativeTick = MethodHandles.privateLookupIn(LivingEntity.class, MethodHandles.lookup())
+                .findSpecial(LivingEntity.class, "tickDeath", MethodType.methodType(void.class), LivingEntity.class);
+            for (int tick = 0; tick < ticks; tick++) {
+                try { nativeTick.invoke(dying); } catch (Throwable failure) { throw new AssertionError(failure); }
+            }
+            // Production invokes this at the RETURN of the same native method.
+            PlayerRespawnHandoff.recordDeathRemovalCompleted(dying);
         }
         ServerPlayer prepare(PlayerRespawnHandoff h) throws Exception { var next = newPlayer(listener); h.prepare(next); assertNoAuthority(); return next; }
         void fail(FailurePoint selected, FailurePoint now) { if (selected == now) throw injection; }
@@ -290,6 +448,20 @@ final class PlayerRespawnHandoffTest {
         }
         PlayerRespawnHandoff success() throws Exception {
             var h = open(); oldRemoval(h); prepare(h); insert(h, null); publishList(h); publishUuid(h); h.commit(h.replacement()); converge(h.replacement()); return h;
+        }
+        PlayerRespawnHandoff deathRetiredSuccess() throws Exception {
+            nativeDeathTicks(); return success();
+        }
+        void disconnectCurrent() {
+            ServerPlayer old = player;
+            try (var turn = service.scoreboardAccess()) {
+                players.removeIf(value -> value == old);
+                service.scoreboard.remove(old, false);
+                if (uuids.get(uuid) == old) { uuids.remove(uuid); service.scoreboard.playerUuidRemoved(uuid); }
+                service.scoreboard.remove(old, true);
+            }
+            if (lookup.getEntity(uuid) == old) lookup.remove(old);
+            worldPlayers.removeIf(value -> value == old); tracked.remove(old); stored.remove(old);
         }
         void assertCurrent(ServerPlayer current) {
             assertEquals(1, players.size()); assertSame(current, players.getFirst()); assertSame(current, uuids.get(uuid));

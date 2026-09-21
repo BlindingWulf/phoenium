@@ -18,9 +18,56 @@ handoff before closing its backing services.
 
 The handoff captures the coordinator thread, generation, session ID, retained
 Connection/listener, UUID, old object/world/incarnation, and then the exact
-replacement object/world/incarnation. Until vanilla removes the old list entry,
-OPEN leaves the old player current: resolving the respawn location may load chunks
-and perform ordinary recipient tracking. List removal ends that permission.
+replacement object/world/incarnation. In the still-present opening, OPEN leaves
+the old player current until vanilla removes its list entry: resolving the respawn
+location may load chunks and perform ordinary recipient tracking. A death-retired
+old entity has no such ordinary tracking permission.
+
+### Death retirement amendment
+
+Minecraft 26.2 `LivingEntity.tickDeath` calls `remove(KILLED)` at death tick 20.
+`Entity.setRemoved` synchronously calls the persistent entity callback. That
+callback stops tracking, removes both visible lookup entries, removes the UUID
+storage claim and section member, and calls Phoenium's storage retirement hook.
+The `PlayerDeathRetirementMixin` wraps only that `tickDeath` removal call and marks
+the exact `ServerPlayer` after the original call returns. The mark is never made
+from a missing lookup. It is cleared on exact disconnect, handoff commit, or
+rollback; a disconnected object is not a live-session candidate.
+
+| Observation | Dead entity still present | Completed native death removal | Disconnect |
+| --- | --- | --- | --- |
+| Connection and Phoenium session | exact retained connection; LIVE session | same connection and LIVE session | session CLOSED/removed |
+| Vanilla `players` and `playersByUUID` | both point to old object | both still point to old object | old entries removed |
+| Native world UUID/runtime ID and `world.players` | exact old object | absent after callback | absent |
+| Phoenium UUID player directory | exact old object | exact old object until respawn list/UUID publication | retired with disconnect |
+| World identity and tracker publication | old entity published | retired by native callback; completion receipt is on exact old object | retired |
+| Old object | not removed, no removal reason | removed `KILLED`, death time at least 20, exact callback receipt | old object may remain `KILLED`; receipt invalidated |
+| Listener `player` alias | exact old object | exact old object until vanilla post-respawn assignment | not a current live alias |
+
+Opening requires the exact LIVE session, old list and UUID owners, Phoenium UUID
+owner, and listener alias. The still-present mode requires exact native world UUID,
+runtime ID, and world-player membership. The death-retired mode requires the
+completed death callback receipt, `KILLED`, death time at least 20, and absence
+from all three native world views. Any different world object, missing receipt,
+stale session, changed listener, or terminal object is rejected. OPEN never
+authorizes ordinary tracking of an already death-retired player.
+
+In the death-retired mode the native old-world removal invocation site is still
+observed in its original position, but its body is skipped because `remove(KILLED)`
+already completed. `OLD_RETIRING` and `OLD_RETIRED` still run; their storage and
+tracking checks use the completed callback receipt and exact native absence.
+The already executed scoreboard list removal is not replayed during rollback.
+Replacement preparation, insertion, publication and commit retain their existing
+order. No old entity is reinserted and no new ownership record is made for it.
+
+With diagnostics enabled, the bounded `PHOENIUM_PLAYER_RESPAWN_PRECHECK` record
+is emitted once per exact old object before session attachment. It reports
+independent list, UUID, world UUID, world ID, world-player, listener, session,
+native removal, receipt, and active-attempt fields, plus an accepted opening mode
+or rejection reason. Identity and ownership internals unavailable at this edge
+are explicitly `UNAVAILABLE`; the native callback completion receipt does not
+pretend to be a live tracker lookup. A diagnostic exception cannot replace the
+admission exception. Handoff phase markers also name the opening mode.
 
 SCOREBOARD scopes cover opening, old list removal, replacement preparation,
 new list addition, UUID publication, commit, and directory rollback individually.
@@ -79,7 +126,7 @@ generation/session, old/new incarnation/object identity and observed routes.
 `PHOENIUM_PLAYER_RESPAWN_LISTENER` records final convergence. No tick logging is
 added by this primitive.
 
-## Deterministic verification
+## 9063014 deterministic verification
 
 Final focused run: **34 tests, zero failures/errors/skips**. The production
 handoff lifecycle matrix covers success, truthful scopes, preparation before
@@ -120,6 +167,27 @@ The scoped filter is an external Gradle init script under ignored
 and accepted tests remain unchanged. Parent reproduction uses baseline production
 sources compiled under ignored build output, not a new worktree or a source reset.
 XML results, commands/filter and logs are preserved with the candidate evidence.
+
+## Death retirement amendment verification
+
+The new witness ran the mapped 26.2 `LivingEntity.tickDeath` body for 20 calls,
+including its real `Entity.setRemoved` call. The fixture controlled the world
+broadcast, `LivingEntity.remove` endpoint, and `EntityInLevelCallback.onRemove`
+projection; the production `PlayerDeathRetirementMixin` receipt call was invoked
+at that completed boundary. It asserted actual native removal and both absent
+world lookups before requesting respawn. On the unamended 9063014 guard it failed
+with `old publication is not current`. The ASM contract verifies the native
+`tickDeath` removal and persistent callback order; it does not claim that the
+controlled endpoint is a complete Bedrock server.
+
+Final amendment tests: **44 focused**, **138 targeted regressions**, and **1,181
+scoped broader**, each with zero failures/errors/skips. The same nine excluded
+classes remain in the scoped filter: the historical `FullNonselfInputDecisionTest`
+and the eight provider audits listed above. The unfiltered run had **1,264 tests,
+73 failures**: the same 48 parent-reproduced prototype failures and 25 unavailable
+provider-fixture failures. The unfiltered suite is not green. The XML, exact
+commands and filter are in the death-retirement evidence directory. Real Bedrock
+death, respawn, reconnect, and second-cycle acceptance remains for Luna.
 
 ## Scope and live evidence
 

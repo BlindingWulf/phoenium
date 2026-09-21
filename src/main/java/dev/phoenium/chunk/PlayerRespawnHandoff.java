@@ -21,6 +21,10 @@ public final class PlayerRespawnHandoff {
     public interface Incarnation {
         boolean phoenium$respawnRetired();
         void phoenium$respawnRetired(boolean retired);
+        boolean phoenium$deathRemovalCompleted();
+        void phoenium$deathRemovalCompleted(boolean completed);
+        boolean phoenium$respawnPrecheckLogged();
+        void phoenium$respawnPrecheckLogged(boolean logged);
     }
     public interface Directory {
         List<ServerPlayer> phoenium$respawnPlayers();
@@ -40,12 +44,13 @@ public final class PlayerRespawnHandoff {
     private ServerLevel replacementWorld;
     private long replacementIncarnation;
     private State state = State.OPEN;
-    private boolean oldWorldRemoved, oldTrackingRemoved, newTrackingAdded, newTrackingRemoved;
+    private boolean oldWorldRemoved, oldTrackingRemoved, oldDirectoryRemoved, newTrackingAdded, newTrackingRemoved;
     private boolean listPublished, uuidPublished, detached;
     private boolean abortRequested;
     private Tracking tracking;
     private Storage storage;
     private String oldRoute = "NONE", newRoute = "NONE";
+    private final boolean deathRetiredOpening;
 
     PlayerRespawnHandoff(FullFinishingServices service, Directory directory, ServerPlayer oldPlayer,
                          long generation, long sessionId, Connection connection) {
@@ -54,10 +59,19 @@ public final class PlayerRespawnHandoff {
         this.generation = generation; this.sessionId = sessionId; this.connection = connection;
         listener = oldPlayer.connection; uuid = oldPlayer.getUUID(); oldWorld = oldPlayer.level();
         oldIncarnation = incarnation(oldPlayer);
-        check(!retired(oldPlayer) && containsExact(directory.phoenium$respawnPlayers(), oldPlayer)
-            && directory.phoenium$respawnUuids().get(uuid) == oldPlayer
-            && oldWorld.getEntity(uuid) == oldPlayer && oldWorld.getEntity(oldPlayer.getId()) == oldPlayer,
+        Entity worldUuid = oldWorld.getEntity(uuid), worldId = oldWorld.getEntity(oldPlayer.getId());
+        boolean listed = containsExact(directory.phoenium$respawnPlayers(), oldPlayer);
+        boolean worldListed = containsExact(oldWorld.players(), oldPlayer);
+        boolean nativePresent = worldUuid == oldPlayer && worldId == oldPlayer && worldListed
+            && oldPlayer.getRemovalReason() == null;
+        deathRetiredOpening = deathRemovalCompleted(oldPlayer) && oldPlayer.deathTime >= 20
+            && oldPlayer.getRemovalReason() == Entity.RemovalReason.KILLED
+            && worldUuid == null && worldId == null && !worldListed;
+        check(!retired(oldPlayer) && listed && directory.phoenium$respawnUuids().get(uuid) == oldPlayer
+            && service.scoreboard.lookupPlayer(uuid) == oldPlayer
+            && listener.player == oldPlayer && (nativePresent || deathRetiredOpening),
             "old publication is not current");
+        if (deathRetiredOpening) oldTrackingRemoved = true;
         marker();
     }
 
@@ -85,18 +99,72 @@ public final class PlayerRespawnHandoff {
     public boolean rollingBack() { return state == State.ROLLING_BACK; }
     /** Vanilla resolves/loads the respawn position before removing its old player. Until that
      * exact list edge, the old incarnation is still current for ordinary tracking recipients. */
-    public boolean stillCurrent(ServerPlayer player) { return state == State.OPEN && player == oldPlayer && !abortRequested; }
+    public boolean stillCurrent(ServerPlayer player) { return state == State.OPEN && player == oldPlayer && !deathRetiredOpening && !abortRequested; }
+    /** Called only after the native tickDeath body and its removal callback returned normally. */
+    public static void recordDeathRemovalCompleted(ServerPlayer player) {
+        if (player.deathTime >= 20 && player.getRemovalReason() == Entity.RemovalReason.KILLED)
+            ((Incarnation) player).phoenium$deathRemovalCompleted(true);
+    }
+    public static boolean deathRemovalCompleted(ServerPlayer player) {
+        return player instanceof Incarnation access && access.phoenium$deathRemovalCompleted();
+    }
     public static boolean retired(ServerPlayer player) {
         return player instanceof Incarnation access && access.phoenium$respawnRetired();
     }
     private static void retire(ServerPlayer player) {
-        ((Incarnation) player).phoenium$respawnRetired(true);
+        var access = (Incarnation) player;
+        access.phoenium$respawnRetired(true);
+        access.phoenium$deathRemovalCompleted(false);
     }
     private static long incarnation(ServerPlayer player) {
         return ((FullEntityFacts.Access) player).phoenium$entityIncarnation();
     }
     public static boolean containsExact(List<ServerPlayer> players, ServerPlayer player) {
         return players.stream().anyMatch(value -> value == player);
+    }
+    /** Diagnostics only. Each lookup is reported independently; a missing entry is never
+     * interpreted as proof of a particular incarnation or of completed retirement. */
+    static String precheck(Directory directory, ServerPlayer player, ServerPlayer phoeniumUuid, long sessionId,
+                           boolean exactSession, long activeAttempt) {
+        UUID id = player.getUUID(); ServerLevel world = player.level();
+        Entity worldUuid = world.getEntity(id), worldId = world.getEntity(player.getId());
+        ServerPlayer listUuid = directory.phoenium$respawnUuids().get(id);
+        boolean listed = containsExact(directory.phoenium$respawnPlayers(), player);
+        boolean worldListed = containsExact(world.players(), player);
+        boolean alias = player.connection != null && player.connection.player == player;
+        boolean receipt = deathRemovalCompleted(player);
+        boolean present = worldUuid == player && worldId == player && worldListed && !player.isRemoved();
+        boolean deathRetired = receipt && player.deathTime >= 20
+            && player.getRemovalReason() == Entity.RemovalReason.KILLED
+            && worldUuid == null && worldId == null && !worldListed;
+        String reason = !exactSession ? "SESSION_NOT_EXACT" : activeAttempt >= 0 ? "ATTEMPT_ACTIVE"
+            : retired(player) ? "OLD_TERMINAL" : !alias ? "LISTENER_ALIAS_CHANGED"
+            : !listed ? "PLAYER_LIST_NOT_EXACT" : listUuid != player ? "UUID_DIRECTORY_NOT_EXACT"
+            : phoeniumUuid != player ? "PHOENIUM_UUID_NOT_EXACT"
+            : worldUuid != null && worldUuid != player ? "WORLD_UUID_CONFLICT"
+            : worldId != null && worldId != player ? "WORLD_ID_CONFLICT"
+            : present ? "ACCEPT_PRESENT" : deathRetired ? "ACCEPT_DEATH_RETIRED"
+            : "NATIVE_ABSENCE_WITHOUT_COMPLETED_DEATH";
+        return "old=" + System.identityHashCode(player) + " incarnation=" + incarnation(player)
+            + " uuid=" + id + " sessionGeneration=" + sessionId + " exactSession=" + exactSession
+            + " listenerAlias=" + alias + " playerList=" + listed + " playersByUUID=" + identity(listUuid, player)
+            + " phoeniumUuid=" + identity(phoeniumUuid, player)
+            + " worldUuid=" + identity(worldUuid, player) + " worldId=" + identity(worldId, player)
+            + " worldPlayers=" + worldListed + " alive=" + observe(player::isAlive)
+            + " deadOrDying=" + observe(player::isDeadOrDying)
+            + " removed=" + player.isRemoved() + " removalReason=" + player.getRemovalReason()
+            + " deathTime=" + player.deathTime + " nativeDeathCallbackComplete=" + receipt
+            + " tracking=" + (receipt ? "DEATH_CALLBACK_COMPLETE" : "UNAVAILABLE")
+            + " identityRetirement=UNAVAILABLE ownership=UNAVAILABLE activeAttempt="
+            + (activeAttempt < 0 ? "NONE" : activeAttempt)
+            + " result=" + reason;
+    }
+    private static String identity(Object entry, Object exact) {
+        return entry == null ? "ABSENT" : entry == exact ? "EXACT" : "DIFFERENT@" + System.identityHashCode(entry);
+    }
+    private static String observe(java.util.function.BooleanSupplier observation) {
+        try { return Boolean.toString(observation.getAsBoolean()); }
+        catch (RuntimeException unavailable) { return "UNAVAILABLE"; }
     }
     private void current() {
         check(Thread.currentThread() == coordinator, "handoff escaped its synchronous coordinator");
@@ -116,11 +184,13 @@ public final class PlayerRespawnHandoff {
     public void oldListRemoved(ServerPlayer player) {
         expect(State.OPEN); check(player == oldPlayer && !containsExact(directory.phoenium$respawnPlayers(), oldPlayer),
             "old list removal did not retire the exact alias");
-        transition(State.OLD_RETIRING);
+        oldDirectoryRemoved = true; transition(State.OLD_RETIRING);
     }
     public void removeOldWorld(ServerLevel world, ServerPlayer player, Runnable original) {
         expect(State.OLD_RETIRING); check(world == oldWorld && player == oldPlayer, "foreign old-world removal");
-        try (var turn = service.referenceAccess()) { original.run(); }
+        // The completed native death callback already retired storage, tracking, and identity.
+        // Calling remove(KILLED) again would replay death effects and tracker removal.
+        if (!deathRetiredOpening) try (var turn = service.referenceAccess()) { original.run(); }
         check(oldTrackingRemoved && world.getEntity(uuid) != oldPlayer && world.getEntity(player.getId()) != oldPlayer
             && !containsExact(world.players(), oldPlayer), "old world/tracker did not retire");
         oldWorldRemoved = true; transition(State.OLD_RETIRED);
@@ -291,7 +361,7 @@ public final class PlayerRespawnHandoff {
     private void cleanupDirectory(ServerPlayer player) {
         if (player == null) return;
         directory.phoenium$respawnPlayers().removeIf(value -> value == player);
-        service.scoreboard.remove(player, false);
+        if (player != oldPlayer || !oldDirectoryRemoved) service.scoreboard.remove(player, false);
         if (directory.phoenium$respawnUuids().get(uuid) == player) {
             directory.phoenium$respawnUuids().remove(uuid);
             service.scoreboard.playerUuidRemoved(uuid);
@@ -301,10 +371,10 @@ public final class PlayerRespawnHandoff {
     private void transition(State next) { state = next; marker(); }
     private void marker() {
         if (Boolean.getBoolean("phoenium.test.diagnostics")) LOGGER.info(
-            "PHOENIUM_PLAYER_RESPAWN_HANDOFF uuid={} generation={} session={} old={}@{} new={}@{} phase={} oldRoute={} newRoute={}",
+            "PHOENIUM_PLAYER_RESPAWN_HANDOFF uuid={} generation={} session={} old={}@{} new={}@{} opening={} phase={} oldRoute={} newRoute={}",
             uuid, generation, sessionId, oldIncarnation, System.identityHashCode(oldPlayer),
             replacement == null ? "NONE" : replacementIncarnation, replacement == null ? "NONE" : System.identityHashCode(replacement),
-            state, oldRoute, newRoute);
+            deathRetiredOpening ? "DEATH_RETIRED" : "PRESENT", state, oldRoute, newRoute);
     }
     private static void check(boolean condition, String message) {
         if (!condition) throw new ChunkProtocolException("respawn handoff: " + message);

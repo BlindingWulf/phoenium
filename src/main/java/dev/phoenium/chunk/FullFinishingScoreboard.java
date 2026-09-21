@@ -59,6 +59,8 @@ public final class FullFinishingScoreboard {
         if (session == null || session.player != player) return;
         order.remove(session); directoryRevision++;
         if (disconnect) {
+            if (player instanceof PlayerRespawnHandoff.Incarnation access)
+                access.phoenium$deathRemovalCompleted(false);
             session.state = State.CLOSED; catchup -= session.catchup.size(); session.catchup.clear();
             sessions.remove(session.connection); session.player = null; session.listener = null;
         }
@@ -133,6 +135,25 @@ public final class FullFinishingScoreboard {
 
     PlayerRespawnHandoff openRespawn(PlayerRespawnHandoff.Directory directory, ServerPlayer player) {
         require(); Session session = session(player, false);
+        if (Boolean.getBoolean("phoenium.test.diagnostics") && player instanceof PlayerRespawnHandoff.Incarnation access
+                && !access.phoenium$respawnPrecheckLogged()) {
+            access.phoenium$respawnPrecheckLogged(true);
+            try {
+                boolean exact = session != null && session.state == State.LIVE && session.player == player
+                    && Objects.equals(session.uuid, player.getUUID())
+                    && session.listener == player.connection && session.connection ==
+                        ((ConnectionAccess) player.connection).phoenium$serviceConnection();
+                org.slf4j.LoggerFactory.getLogger(PlayerRespawnHandoff.class).info(
+                    "PHOENIUM_PLAYER_RESPAWN_PRECHECK {}",
+                    PlayerRespawnHandoff.precheck(directory, player, byUuid.get(player.getUUID()), session == null ? -1 : session.id,
+                        exact, session == null || session.respawn == null ? -1 : session.respawn.generation));
+            } catch (Throwable diagnosticFailure) {
+                // The admission decision and its original failure remain authoritative.
+                org.slf4j.LoggerFactory.getLogger(PlayerRespawnHandoff.class).warn(
+                    "PHOENIUM_PLAYER_RESPAWN_PRECHECK_UNAVAILABLE old={} cause={}",
+                    System.identityHashCode(player), diagnosticFailure.toString());
+            }
+        }
         if (session == null || session.state != State.LIVE || session.player != player || session.respawn != null)
             throw new ChunkProtocolException("respawn requires one exact current live session");
         PlayerRespawnHandoff handoff = new PlayerRespawnHandoff(service, directory, player, ++nextRespawn, session.id, session.connection);
