@@ -3,6 +3,7 @@ package dev.phoenium.mixin;
 import net.minecraft.network.protocol.game.ServerboundInteractPacket;
 import net.minecraft.network.protocol.game.ServerboundMovePlayerPacket;
 import net.minecraft.network.protocol.game.ServerboundPlayerActionPacket;
+import net.minecraft.network.protocol.game.ServerboundUseItemPacket;
 import net.minecraft.network.protocol.game.ServerboundUseItemOnPacket;
 import net.minecraft.server.network.ServerGamePacketListenerImpl;
 import org.spongepowered.asm.mixin.Mixin;
@@ -19,4 +20,6 @@ public interface ServerGamePacketListenerInvoker {
     void phoenium$invokePlayerAction(ServerboundPlayerActionPacket packet);
     @Invoker("handleUseItemOn")
     void phoenium$invokeUseItemOn(ServerboundUseItemOnPacket packet);
+    @Invoker("handleUseItem")
+    void phoenium$invokeUseItem(ServerboundUseItemPacket packet);
 }

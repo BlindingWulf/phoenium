@@ -13,6 +13,8 @@ public record LivePacketDiagnostics(
     long playerActionReplay, long playerActionHandlerCompletion, long playerActionStaleTicketRejected,
     long useItemOnIngress, long useItemOnOwnerAdmission, long useItemOnOwnerExecution,
     long useItemOnReplay, long useItemOnHandlerCompletion, long useItemOnStaleTicketRejected,
+    long useItemIngress, long useItemOwnerAdmission, long useItemOwnerExecution,
+    long useItemReplay, long useItemHandlerCompletion, long useItemStaleTicketRejected,
     long blockPacketClosureRejected, long blockPacketDuplicate) {
     public String toLogLine() {
         String move = "move[in=" + movementIngress + ",defer=" + movementBootstrapDeferred + ",accept=" + movementFootprintAccepted + ",reject=" + movementFootprintRejected
@@ -28,6 +30,9 @@ public record LivePacketDiagnostics(
             + "] useItemOn[in=" + useItemOnIngress + ",admit=" + useItemOnOwnerAdmission
             + ",owner=" + useItemOnOwnerExecution + ",replay=" + useItemOnReplay
             + ",effect=" + useItemOnHandlerCompletion + ",stale=" + useItemOnStaleTicketRejected
+            + "] useItem[in=" + useItemIngress + ",admit=" + useItemOwnerAdmission
+            + ",owner=" + useItemOwnerExecution + ",replay=" + useItemReplay
+            + ",effect=" + useItemHandlerCompletion + ",stale=" + useItemStaleTicketRejected
             + "] block[closureReject=" + blockPacketClosureRejected + ",duplicate=" + blockPacketDuplicate + "]";
     }
 }

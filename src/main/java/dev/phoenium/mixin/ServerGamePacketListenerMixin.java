@@ -4,6 +4,7 @@ import dev.phoenium.Phoenium;
 import net.minecraft.network.protocol.game.ServerboundInteractPacket;
 import net.minecraft.network.protocol.game.ServerboundMovePlayerPacket;
 import net.minecraft.network.protocol.game.ServerboundPlayerActionPacket;
+import net.minecraft.network.protocol.game.ServerboundUseItemPacket;
 import net.minecraft.network.protocol.game.ServerboundUseItemOnPacket;
 import net.minecraft.server.network.ServerGamePacketListenerImpl;
 import net.minecraft.world.phys.Vec3;
@@ -25,6 +26,7 @@ abstract class ServerGamePacketListenerMixin {
     private static final String ENTITY_LOOKUP = "Lnet/minecraft/server/level/ServerLevel;getEntityOrPart(I)Lnet/minecraft/world/entity/Entity;";
     private static final String PLAYER_ACTION_POS = "Lnet/minecraft/network/protocol/game/ServerboundPlayerActionPacket;getPos()Lnet/minecraft/core/BlockPos;";
     private static final String USE_ITEM_ON_SEQUENCE = "Lnet/minecraft/network/protocol/game/ServerboundUseItemOnPacket;getSequence()I";
+    private static final String USE_ITEM_SEQUENCE = "Lnet/minecraft/network/protocol/game/ServerboundUseItemPacket;getSequence()I";
 
     @Shadow private double lastGoodX;
     @Shadow private double lastGoodY;
@@ -66,6 +68,15 @@ abstract class ServerGamePacketListenerMixin {
         ServerGamePacketListenerImpl connection = (ServerGamePacketListenerImpl) (Object) this;
         if (Phoenium.liveRuntime().matchesUseItemOnReplay(connection, packet)) return;
         Phoenium.liveRuntime().admitUseItemOnPacket(connection, packet);
+        ci.cancel();
+    }
+
+    @Inject(method = "handleUseItem(Lnet/minecraft/network/protocol/game/ServerboundUseItemPacket;)V",
+        at = @At(value = "INVOKE", target = USE_ITEM_SEQUENCE, ordinal = 0), require = 1, expect = 1, cancellable = true)
+    private void phoenium$routeUseItem(ServerboundUseItemPacket packet, CallbackInfo ci) {
+        ServerGamePacketListenerImpl connection = (ServerGamePacketListenerImpl) (Object) this;
+        if (Phoenium.liveRuntime().matchesUseItemReplay(connection, packet)) return;
+        Phoenium.liveRuntime().admitUseItemPacket(connection, packet);
         ci.cancel();
     }
 }

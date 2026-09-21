@@ -175,6 +175,16 @@ public final class FullFinishingServices {
     }
 
     public static boolean finishing() { Scope scope = CURRENT.get(); return scope != null && scope.full(); }
+    /** Bounded diagnostics only: describes the current thread's service capability without granting one. */
+    public static String currentTurn(MinecraftServer server) {
+        Scope scope = CURRENT.get();
+        if (scope == null) return "NONE";
+        if (scope.service.server != server) return "FOREIGN_SERVER";
+        try { scope.requireCurrent(); }
+        catch (RuntimeException expired) { return "EXPIRED"; }
+        return scope.full() ? "FULL(sequence=" + scope.sequence + ")"
+            : "SERIAL(phase=" + scope.phase + ",sequence=" + scope.sequence + ")";
+    }
     /**
      * Provider entry points can legitimately reach a shared-service boundary without passing
      * through one of MinecraftServer's serial wrappers. Reuse an already-admitted operation for

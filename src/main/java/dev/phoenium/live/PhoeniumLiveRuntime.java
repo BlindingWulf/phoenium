@@ -37,8 +37,11 @@ import dev.phoenium.topology.RegionDirectory;
 import dev.phoenium.topology.RegionRoute;
 import dev.phoenium.topology.RoutingKey;
 import dev.phoenium.topology.TopologyPlanner;
+import dev.phoenium.topology.ClosureEscapeException;
+import dev.phoenium.topology.FrozenRegionAuthority;
 import dev.phoenium.topology.LiveMovementAdmission;
 import dev.phoenium.topology.LiveBlockPacketAdmission;
+import dev.phoenium.topology.LivePlayerPacketAdmission;
 import dev.phoenium.topology.LivePacketReplayGate;
 import dev.phoenium.interaction.InteractionTargetIndex;
 import dev.phoenium.interaction.InteractionTargetRef;
@@ -59,6 +62,7 @@ import net.minecraft.server.network.ServerGamePacketListenerImpl;
 import net.minecraft.network.protocol.game.ServerboundMovePlayerPacket;
 import net.minecraft.network.protocol.game.ServerboundInteractPacket;
 import net.minecraft.network.protocol.game.ServerboundPlayerActionPacket;
+import net.minecraft.network.protocol.game.ServerboundUseItemPacket;
 import net.minecraft.network.protocol.game.ServerboundUseItemOnPacket;
 import net.minecraft.server.level.ChunkResult;
 import net.minecraft.world.level.chunk.ChunkAccess;
@@ -85,6 +89,7 @@ import org.slf4j.Logger;
 public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecutor, ObjectOperationExecutor, ChunkBindingRuntime.Authority {
     private static final String PLAYER_ACTION_OPERATION = "player-block-action";
     private static final String USE_ITEM_ON_OPERATION = "player-use-item-on";
+    private static final String USE_ITEM_OPERATION = "player-use-item";
     private final Logger logger;
     private final Map<WorldId, LiveRegion> regions = new ConcurrentHashMap<>();
     /** Per-world prerequisite service lifetime; original chunk producers retain exact work identities. */
@@ -134,6 +139,9 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
     private final ThreadLocal<ReplayIdentity> replayIdentity = new ThreadLocal<>();
     private final java.util.Set<TaskCorrelationId> consumedInteractionReplays = ConcurrentHashMap.newKeySet();
     private final java.util.Set<TaskCorrelationId> consumedBlockPacketReplays = ConcurrentHashMap.newKeySet();
+    private final java.util.concurrent.atomic.AtomicBoolean firstPlayerActionFailure = new java.util.concurrent.atomic.AtomicBoolean();
+    private final java.util.concurrent.atomic.AtomicBoolean firstUseItemOnFailure = new java.util.concurrent.atomic.AtomicBoolean();
+    private final java.util.concurrent.atomic.AtomicBoolean firstUseItemFailure = new java.util.concurrent.atomic.AtomicBoolean();
     private final FailureBarrier barrier = new FailureBarrier();
     private final ChunkBindingRuntime chunkBinding;
     private RegionScheduler scheduler;
@@ -174,6 +182,8 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
         playerActionHandlerCompletion, playerActionStaleTicketRejected;
     private long useItemOnIngress, useItemOnOwnerAdmission, useItemOnOwnerExecution, useItemOnReplay,
         useItemOnHandlerCompletion, useItemOnStaleTicketRejected;
+    private long useItemIngress, useItemOwnerAdmission, useItemOwnerExecution, useItemReplay,
+        useItemHandlerCompletion, useItemStaleTicketRejected;
     private long blockPacketClosureRejected, blockPacketDuplicate;
     private long entityRelocations;
     private long pearlCleanupAdmissions;
@@ -689,7 +699,9 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
             interactionStaleTicketRejected, playerActionIngress, playerActionOwnerAdmission, playerActionOwnerExecution,
             playerActionReplay, playerActionHandlerCompletion, playerActionStaleTicketRejected, useItemOnIngress,
             useItemOnOwnerAdmission, useItemOnOwnerExecution, useItemOnReplay, useItemOnHandlerCompletion,
-            useItemOnStaleTicketRejected, blockPacketClosureRejected, blockPacketDuplicate);
+            useItemOnStaleTicketRejected, useItemIngress, useItemOwnerAdmission, useItemOwnerExecution,
+            useItemReplay, useItemHandlerCompletion, useItemStaleTicketRejected,
+            blockPacketClosureRejected, blockPacketDuplicate);
     }
     public String failureDescription() {
         return barrier.record().map(record -> record.cause().toString()).orElse("");
@@ -990,6 +1002,13 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
         if (match) useItemOnReplay++;
         return match;
     }
+    public boolean matchesUseItemReplay(ServerGamePacketListenerImpl connection, ServerboundUseItemPacket packet) {
+        ReplayIdentity active = replayIdentity.get();
+        boolean match = active != null && active.kind == ReplayKind.USE_ITEM
+            && active.connection == connection && active.packet == packet;
+        if (match) useItemReplay++;
+        return match;
+    }
 
     /** Called at the required valid-input seam, before resetPosition, jumping, or player movement. */
     public void admitMovePacket(ServerGamePacketListenerImpl connection, ServerboundMovePlayerPacket packet,
@@ -1048,10 +1067,10 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
                 }
                 movementFootprintAccepted++;
                 long transitionEpoch = movementTransitionEpochs.getOrDefault(objectId, 0L);
-                boolean admitted = admitPacket(connection, player, new PendingMove(this, connection, packet, player.level(), current.objectId(),
+                PacketAdmissionResult admission = admitPacket(connection, player, new PendingMove(this, connection, packet, player.level(), current.objectId(),
                         current.incarnation(), transitionEpoch, ticket),
                     "player-movement", current, AdmissionPolicy.REJECT);
-                if (admitted && transition != null) movementTransitionFences.remove(objectId, transition);
+                if (admission.admitted() && transition != null) movementTransitionFences.remove(objectId, transition);
             } catch (RuntimeException rejected) { packetRejections++; movementFootprintRejected++; }
     }
 
@@ -1080,42 +1099,110 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
     /** Admits block breaking/action packets through the player's current regional owner. */
     public void admitPlayerActionPacket(ServerGamePacketListenerImpl connection, ServerboundPlayerActionPacket packet) {
         playerActionIngress++;
-        if (!acceptsGameplay()) { packetRejections++; return; }
+        if (!acceptsGameplay()) {
+            packetRejections++;
+            reportPlayerActionFailure("BEFORE_OWNER_ADMISSION", connection.player, null, packet,
+                new PacketAdmissionStateException("gameplay admission is closed"));
+            return;
+        }
         ServerPlayer player = connection.player;
-        if (player == null) { packetRejections++; return; }
+        if (player == null) {
+            packetRejections++;
+            reportPlayerActionFailure("BEFORE_OWNER_ADMISSION", null, null, packet,
+                new PacketAdmissionStateException("connection has no player"));
+            return;
+        }
         try {
             BlockPacketAdmission admission = prepareBlockPacketAdmission(player, packet.getPos());
-            boolean admitted = admitPacket(connection, player,
+            PacketAdmissionResult result = admitPacket(connection, player,
                 new PendingPlayerAction(connection, packet, player.level(), admission.binding().objectId(),
                     admission.binding().incarnation(), admission.transitionEpoch(), admission.ticket()),
                 PLAYER_ACTION_OPERATION, admission.binding(), AdmissionPolicy.REJECT);
-            if (admitted) playerActionOwnerAdmission++;
+            if (result.admitted()) playerActionOwnerAdmission++;
+            else reportPlayerActionFailure("DURING_OWNER_ADMISSION", player, admission, packet,
+                new PacketDeliveryRejectedException(result.delivery()));
         } catch (RuntimeException rejected) {
             packetRejections++;
             blockPacketClosureRejected++;
-            logger.debug("PHOENIUM_STAGE3 player-action admission rejected pos={} reason={}", packet.getPos(), rejected.toString());
+            reportPlayerActionFailure("BEFORE_OWNER_ADMISSION", player, null, packet, rejected);
         }
     }
 
     /** Admits block use/placement packets through the player's current regional owner. */
     public void admitUseItemOnPacket(ServerGamePacketListenerImpl connection, ServerboundUseItemOnPacket packet) {
         useItemOnIngress++;
-        if (!acceptsGameplay()) { packetRejections++; return; }
+        if (!acceptsGameplay()) {
+            packetRejections++;
+            reportUseItemOnFailure("BEFORE_OWNER_ADMISSION", connection.player, null, packet,
+                new PacketAdmissionStateException("gameplay admission is closed"));
+            return;
+        }
         ServerPlayer player = connection.player;
-        if (player == null) { packetRejections++; return; }
+        if (player == null) {
+            packetRejections++;
+            reportUseItemOnFailure("BEFORE_OWNER_ADMISSION", null, null, packet,
+                new PacketAdmissionStateException("connection has no player"));
+            return;
+        }
         try {
             BlockPacketAdmission admission = prepareBlockPacketAdmission(player, packet.getHitResult().getBlockPos());
-            boolean admitted = admitPacket(connection, player,
+            PacketAdmissionResult result = admitPacket(connection, player,
                 new PendingUseItemOn(connection, packet, player.level(), admission.binding().objectId(),
                     admission.binding().incarnation(), admission.transitionEpoch(), admission.ticket()),
                 USE_ITEM_ON_OPERATION, admission.binding(), AdmissionPolicy.REJECT);
-            if (admitted) useItemOnOwnerAdmission++;
+            if (result.admitted()) useItemOnOwnerAdmission++;
+            else reportUseItemOnFailure("DURING_OWNER_ADMISSION", player, admission, packet,
+                new PacketDeliveryRejectedException(result.delivery()));
         } catch (RuntimeException rejected) {
             packetRejections++;
             blockPacketClosureRejected++;
-            logger.debug("PHOENIUM_STAGE3 use-item-on admission rejected pos={} reason={}",
-                packet.getHitResult().getBlockPos(), rejected.toString());
+            reportUseItemOnFailure("BEFORE_OWNER_ADMISSION", player, null, packet, rejected);
         }
+    }
+
+    /** Admits target-free item use through the current player owner; native code derives its target once on replay. */
+    public void admitUseItemPacket(ServerGamePacketListenerImpl connection, ServerboundUseItemPacket packet) {
+        useItemIngress++;
+        if (!acceptsGameplay()) {
+            packetRejections++;
+            reportUseItemFailure("BEFORE_OWNER_ADMISSION", connection.player, null, packet,
+                new PacketAdmissionStateException("gameplay admission is closed"));
+            return;
+        }
+        ServerPlayer player = connection.player;
+        if (player == null) {
+            packetRejections++;
+            reportUseItemFailure("BEFORE_OWNER_ADMISSION", null, null, packet,
+                new PacketAdmissionStateException("connection has no player"));
+            return;
+        }
+        try {
+            PlayerPacketAdmission admission = preparePlayerPacketAdmission(player);
+            PacketAdmissionResult result = admitPacket(connection, player,
+                new PendingUseItem(connection, packet, player.level(), admission.binding().objectId(),
+                    admission.binding().incarnation(), admission.transitionEpoch(), admission.ticket()),
+                USE_ITEM_OPERATION, admission.binding(), AdmissionPolicy.REJECT);
+            if (result.admitted()) useItemOwnerAdmission++;
+            else reportUseItemFailure("DURING_OWNER_ADMISSION", player, admission.binding(), packet,
+                new PacketDeliveryRejectedException(result.delivery()));
+        } catch (RuntimeException rejected) {
+            packetRejections++;
+            reportUseItemFailure("BEFORE_OWNER_ADMISSION", player, null, packet, rejected);
+        }
+    }
+
+    private PlayerPacketAdmission preparePlayerPacketAdmission(ServerPlayer player) {
+        String objectId = player.getUUID().toString();
+        if (movementTransitionFences.containsKey(objectId) || playerDimensionTransitionPending(player))
+            throw new IllegalStateException("item-use packet arrived during player dimension transition");
+        ObjectOwnership binding;
+        // Packet processing precedes tickServer. Identity lookup needs its existing owner-free
+        // service turn, while native replay remains queued for the server-tick TICK_LIST turn.
+        try (var turn = dev.phoenium.chunk.FullFinishingServices.forServer(player.level().getServer()).referenceAccess()) {
+            binding = bindPlayer(player);
+        }
+        LivePlayerPacketAdmission.Ticket ticket = LivePlayerPacketAdmission.admit(directory, binding);
+        return new PlayerPacketAdmission(binding, movementTransitionEpochs.getOrDefault(objectId, 0L), ticket);
     }
 
     private BlockPacketAdmission prepareBlockPacketAdmission(ServerPlayer player, BlockPos target) {
@@ -1177,9 +1264,12 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
         }
     }
 
-    private boolean admitPacket(ServerGamePacketListenerImpl connection, ServerPlayer player, PendingPacket packet,
-                                String operationKind, ObjectOwnership prepared, AdmissionPolicy policy) {
-        if (!acceptsGameplay() || player == null) { packetRejections++; return false; }
+    private PacketAdmissionResult admitPacket(ServerGamePacketListenerImpl connection, ServerPlayer player, PendingPacket packet,
+                                              String operationKind, ObjectOwnership prepared, AdmissionPolicy policy) {
+        if (!acceptsGameplay() || player == null) {
+            packetRejections++;
+            return new PacketAdmissionResult(false, null);
+        }
         ObjectOwnership binding = prepared == null ? bindPlayer(player) : prepared;
         TaskCorrelationId correlation = new TaskCorrelationId(++sequence);
         packets.put(correlation, packet);
@@ -1188,11 +1278,11 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
         if (delivery == ObjectOwnerGateway.Delivery.QUEUED || delivery == ObjectOwnerGateway.Delivery.REROUTED) {
             packetAdmissions++;
             if (delivery == ObjectOwnerGateway.Delivery.REROUTED) packetStaleReroutes++;
-            return true;
+            return new PacketAdmissionResult(true, delivery);
         } else {
             packets.remove(correlation);
             packetRejections++;
-            return false;
+            return new PacketAdmissionResult(false, delivery);
         }
     }
 
@@ -1215,8 +1305,16 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
             pearlCleanupRejections++;
             return;
         }
-        if (packets.remove(operation.correlationId()) == null)
+        PendingPacket rejected = packets.remove(operation.correlationId());
+        if (rejected == null)
             throw new IllegalStateException("missing rejected packet custody " + operation.correlationId());
+        var failure = new PacketDeliveryRejectedException(null);
+        if (rejected instanceof PendingPlayerAction action)
+            reportPlayerActionFailure("DURING_OWNER_ADMISSION", action.connection().player, null, action.packet(), failure);
+        else if (rejected instanceof PendingUseItemOn useItemOn)
+            reportUseItemOnFailure("DURING_OWNER_ADMISSION", useItemOn.connection().player, null, useItemOn.packet(), failure);
+        else if (rejected instanceof PendingUseItem useItem)
+            reportUseItemFailure("DURING_OWNER_ADMISSION", useItem.connection().player, null, useItem.packet(), failure);
         packetRejections++;
     }
 
@@ -1304,6 +1402,9 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
                 requireCurrentBlockPacket(action, executingPlayer, runtime);
             } catch (RuntimeException stale) {
                 playerActionStaleTicketRejected++;
+                reportPlayerActionFailure("BEFORE_NATIVE_REPLAY", action.connection().player,
+                    new BlockPacketAdmission(executingPlayer, action.transitionEpoch(), action.ticket()),
+                    action.packet(), stale);
                 return;
             }
             try (PacketExecutionScope ignored = enterPacketExecution(operation.correlationId(), ReplayKind.PLAYER_ACTION,
@@ -1314,8 +1415,9 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
                     playerActionHandlerCompletion++;
                 } catch (ChunkProtocolException stale) {
                     playerActionStaleTicketRejected++;
-                    logger.debug("PHOENIUM_STAGE3 dropped stale player-action replay correlation={} reason={}",
-                        operation.correlationId(), stale.getMessage());
+                    reportPlayerActionFailure(packetFailureStage(stale), action.connection().player,
+                        new BlockPacketAdmission(executingPlayer, action.transitionEpoch(), action.ticket()),
+                        action.packet(), stale);
                 }
             }
             return;
@@ -1326,6 +1428,9 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
                 requireCurrentBlockPacket(useItemOn, executingPlayer, runtime);
             } catch (RuntimeException stale) {
                 useItemOnStaleTicketRejected++;
+                reportUseItemOnFailure("BEFORE_NATIVE_REPLAY", useItemOn.connection().player,
+                    new BlockPacketAdmission(executingPlayer, useItemOn.transitionEpoch(), useItemOn.ticket()),
+                    useItemOn.packet(), stale);
                 return;
             }
             try (PacketExecutionScope ignored = enterPacketExecution(operation.correlationId(), ReplayKind.USE_ITEM_ON,
@@ -1336,8 +1441,33 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
                     useItemOnHandlerCompletion++;
                 } catch (ChunkProtocolException stale) {
                     useItemOnStaleTicketRejected++;
-                    logger.debug("PHOENIUM_STAGE3 dropped stale use-item-on replay correlation={} reason={}",
-                        operation.correlationId(), stale.getMessage());
+                    reportUseItemOnFailure(packetFailureStage(stale), useItemOn.connection().player,
+                        new BlockPacketAdmission(executingPlayer, useItemOn.transitionEpoch(), useItemOn.ticket()),
+                        useItemOn.packet(), stale);
+                }
+            }
+            return;
+        }
+        if (packet instanceof PendingUseItem useItem) {
+            useItemOwnerExecution++;
+            try {
+                requireCurrentUseItemPacket(useItem, executingPlayer, runtime);
+            } catch (RuntimeException stale) {
+                useItemStaleTicketRejected++;
+                reportUseItemFailure("BEFORE_NATIVE_REPLAY", useItem.connection().player,
+                    executingPlayer, useItem.packet(), stale);
+                return;
+            }
+            try (PacketExecutionScope ignored = enterPacketExecution(operation.correlationId(), ReplayKind.USE_ITEM,
+                    useItem.connection(), useItem.packet())) {
+                try {
+                    useItem.execute();
+                    packetExecutions++;
+                    useItemHandlerCompletion++;
+                } catch (ChunkProtocolException stale) {
+                    useItemStaleTicketRejected++;
+                    reportUseItemFailure(packetFailureStage(stale), useItem.connection().player,
+                        executingPlayer, useItem.packet(), stale);
                 }
             }
             return;
@@ -1357,8 +1487,110 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
         packet.ticket().requireCurrent(directory, objects, runtime.id());
     }
 
+    private void requireCurrentUseItemPacket(PendingUseItem packet, ObjectOwnership executingPlayer,
+                                             RegionRuntime runtime) {
+        if (executingPlayer.incarnation() != packet.playerIncarnation())
+            throw new IllegalStateException("stale item-use player incarnation");
+        if (movementTransitionEpochs.getOrDefault(packet.objectId(), 0L) != packet.transitionEpoch())
+            throw new IllegalStateException("stale item-use transition epoch");
+        if (packet.playerLevel() != packet.connection().player.level()
+                || !runtime.id().world().equals(worldId(packet.connection().player.level())))
+            throw new IllegalStateException("stale item-use player world");
+        packet.ticket().requireCurrent(directory, objects, runtime.id());
+    }
+
+    private static String packetFailureStage(ChunkProtocolException failure) {
+        String message = failure.getMessage();
+        return message != null && (message.contains("TICK_LIST") || message.contains("world service access"))
+            ? "DURING_WORLD_SERVICE_TICK_LIST_ACCESS" : "DURING_NATIVE_REPLAY";
+    }
+
+    private void reportPlayerActionFailure(String stage, ServerPlayer player, BlockPacketAdmission admission,
+                                           ServerboundPlayerActionPacket packet, RuntimeException failure) {
+        Set<RoutingKey> footprint = admission == null ? requestedBlockFootprint(player, packet.getPos())
+            : admission.ticket().footprint();
+        ObjectOwnership binding = admission == null ? currentPlayerBinding(player) : admission.binding();
+        reportFirstPacketFailure(firstPlayerActionFailure, "ServerboundPlayerActionPacket", stage, player,
+            binding, footprint, admission == null ? null : admission.ticket().generation(), failure,
+            "action=" + packet.getAction() + " target=" + packet.getPos());
+    }
+
+    private void reportUseItemOnFailure(String stage, ServerPlayer player, BlockPacketAdmission admission,
+                                        ServerboundUseItemOnPacket packet, RuntimeException failure) {
+        BlockPos clicked = packet.getHitResult().getBlockPos();
+        Set<RoutingKey> footprint = admission == null ? requestedBlockFootprint(player, clicked)
+            : admission.ticket().footprint();
+        ObjectOwnership binding = admission == null ? currentPlayerBinding(player) : admission.binding();
+        reportFirstPacketFailure(firstUseItemOnFailure, "ServerboundUseItemOnPacket", stage, player,
+            binding, footprint, admission == null ? null : admission.ticket().generation(), failure,
+            "hand=" + packet.getHand() + " clicked=" + clicked + " face=" + packet.getHitResult().getDirection()
+                + " adjacent=" + clicked.relative(packet.getHitResult().getDirection()));
+    }
+
+    private void reportUseItemFailure(String stage, ServerPlayer player, ObjectOwnership binding,
+                                      ServerboundUseItemPacket packet, RuntimeException failure) {
+        ObjectOwnership current = binding == null ? currentPlayerBinding(player) : binding;
+        String item = "UNAVAILABLE";
+        if (player != null) {
+            try { item = String.valueOf(BuiltInRegistries.ITEM.getKey(player.getItemInHand(packet.getHand()).getItem())); }
+            catch (RuntimeException ignored) { item = "UNAVAILABLE"; }
+        }
+        reportFirstPacketFailure(firstUseItemFailure, "ServerboundUseItemPacket", stage, player,
+            current, null, current == null ? null : current.topologyGeneration(), failure,
+            "hand=" + packet.getHand() + " item=" + item);
+    }
+
+    private void reportFirstPacketFailure(java.util.concurrent.atomic.AtomicBoolean first, String packetClass,
+            String stage, ServerPlayer player, ObjectOwnership binding, Set<RoutingKey> footprint,
+            TopologyGeneration frozenGeneration, RuntimeException failure, String packetFacts) {
+        if (!first.compareAndSet(false, true)) return;
+        String world = player == null ? "UNAVAILABLE" : worldId(player.level()).value();
+        String position = player == null ? "UNAVAILABLE" : player.position().toString();
+        String owner = binding == null ? "UNAVAILABLE" : binding.owner().value();
+        String incarnation = binding == null ? "UNAVAILABLE" : Long.toString(binding.incarnation());
+        String objectEpoch = binding == null ? "UNAVAILABLE" : Long.toString(binding.objectEpoch().value());
+        String movementEpoch = player == null ? "UNAVAILABLE"
+            : Long.toString(movementTransitionEpochs.getOrDefault(player.getUUID().toString(), 0L));
+        String generation = frozenGeneration == null ? "UNAVAILABLE" : Long.toString(frozenGeneration.value());
+        Set<RoutingKey> missing = Set.of();
+        if (binding != null) {
+            FrozenRegionAuthority authority = FrozenRegionAuthority.freeze(directory, binding.owner());
+            if (frozenGeneration == null) generation = Long.toString(authority.generation().value());
+            if (failure instanceof ClosureEscapeException && footprint != null) {
+                java.util.LinkedHashSet<RoutingKey> escaped = new java.util.LinkedHashSet<>(footprint);
+                if (authority.wholeWorld()) escaped.removeIf(key -> key.world().equals(authority.region().world()));
+                else escaped.removeAll(authority.domain());
+                missing = Set.copyOf(escaped);
+            }
+        }
+        String ownerContext = OwnershipContext.current().map(active -> active.region().value()
+            + "/lease=" + active.lease().value() + "/category=" + active.category()).orElse("NONE");
+        String serviceTurn = player == null ? "UNAVAILABLE"
+            : dev.phoenium.chunk.FullFinishingServices.currentTurn(player.level().getServer());
+        logger.warn("PHOENIUM_STAGE7 first-packet-rejection packet={} stage={} exceptionClass={} message={} world={} "
+                + "authoritativePosition={} owner={} incarnation={} objectEpoch={} movementEpoch={} requestedFootprint={} "
+                + "frozenGeneration={} missingKeys={} ownerContext={} serviceTurn={} facts=[{}]",
+            packetClass, stage, failure.getClass().getName(), failure.getMessage(), world, position, owner,
+            incarnation, objectEpoch, movementEpoch, footprint == null ? "NOT_APPLICABLE" : footprint,
+            generation, failure instanceof ClosureEscapeException ? missing : "NOT_APPLICABLE",
+            ownerContext, serviceTurn, packetFacts);
+    }
+
+    private Set<RoutingKey> requestedBlockFootprint(ServerPlayer player, BlockPos target) {
+        if (player == null || target == null) return Set.of();
+        WorldId world = worldId(player.level());
+        RoutingKey playerKey = new RoutingKey(world, player.chunkPosition().x(), player.chunkPosition().z());
+        RoutingKey targetKey = new RoutingKey(world, target.getX() >> 4, target.getZ() >> 4);
+        return new TopologyPlanner().requiredClosure(Set.of(playerKey, targetKey), 1);
+    }
+
+    private ObjectOwnership currentPlayerBinding(ServerPlayer player) {
+        return player == null ? null : objects.current(player.getUUID().toString()).orElse(null);
+    }
+
     private static boolean isBlockPacketOperation(String operationKind) {
-        return PLAYER_ACTION_OPERATION.equals(operationKind) || USE_ITEM_ON_OPERATION.equals(operationKind);
+        return PLAYER_ACTION_OPERATION.equals(operationKind) || USE_ITEM_ON_OPERATION.equals(operationKind)
+            || USE_ITEM_OPERATION.equals(operationKind);
     }
 
     /** Exactly one native discard, after current-owner and exact-incarnation validation. */
@@ -1934,7 +2166,7 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
         logger.info("PHOENIUM_STAGE2 {} {} packets={}", event, diagnostics().toLogLine(), packetDiagnostics().toLogLine());
     }
 
-    private sealed interface PendingPacket permits PendingMove, PendingInteract, PendingBlockPacket {
+    private sealed interface PendingPacket permits PendingMove, PendingInteract, PendingBlockPacket, PendingUseItem {
         void execute();
     }
     private record PendingMove(PhoeniumLiveRuntime runtime, ServerGamePacketListenerImpl connection, ServerboundMovePlayerPacket packet,
@@ -1984,8 +2216,25 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
             implements PendingBlockPacket {
         @Override public void execute() { ((ServerGamePacketListenerInvoker) connection).phoenium$invokeUseItemOn(packet); }
     }
+    private record PendingUseItem(ServerGamePacketListenerImpl connection, ServerboundUseItemPacket packet,
+                                  ServerLevel playerLevel, String objectId, long playerIncarnation,
+                                  long transitionEpoch, LivePlayerPacketAdmission.Ticket ticket) implements PendingPacket {
+        @Override public void execute() { ((ServerGamePacketListenerInvoker) connection).phoenium$invokeUseItem(packet); }
+    }
     private record BlockPacketAdmission(ObjectOwnership binding, long transitionEpoch,
                                         LiveBlockPacketAdmission.Ticket ticket) { }
+    private record PlayerPacketAdmission(ObjectOwnership binding, long transitionEpoch,
+                                         LivePlayerPacketAdmission.Ticket ticket) { }
+    private record PacketAdmissionResult(boolean admitted, ObjectOwnerGateway.Delivery delivery) { }
+    private static final class PacketAdmissionStateException extends IllegalStateException {
+        private PacketAdmissionStateException(String message) { super(message); }
+    }
+    private static final class PacketDeliveryRejectedException extends IllegalStateException {
+        private PacketDeliveryRejectedException(ObjectOwnerGateway.Delivery delivery) {
+            super(delivery == null ? "owner gateway rejected retained packet during revalidation"
+                : "owner gateway rejected packet: " + delivery);
+        }
+    }
     private record PendingPearlRemoval(Entity entity, PearlMembershipLedger.Membership membership) { }
     private record DeferredPearlCleanup(Entity entity, PearlMembershipLedger.Membership membership) { }
     private record PendingProjectileRemoval(Entity entity, ProjectileMembershipLedger.Membership membership) { }
@@ -2012,7 +2261,7 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
             closed = true;
         }
     }
-    private enum ReplayKind { MOVE, INTERACT, PLAYER_ACTION, USE_ITEM_ON }
+    private enum ReplayKind { MOVE, INTERACT, PLAYER_ACTION, USE_ITEM_ON, USE_ITEM }
     private record ReplayIdentity(TaskCorrelationId correlation, ReplayKind kind, ServerGamePacketListenerImpl connection, Object packet) { }
     private record LiveRegion(ServerLevel level, RegionId id, RoutingKey key, RegionRuntime runtime,
                               long worldInstanceSequence) { }

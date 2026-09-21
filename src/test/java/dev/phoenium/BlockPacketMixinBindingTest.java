@@ -12,18 +12,23 @@ import org.objectweb.asm.tree.ClassNode;
 import org.objectweb.asm.tree.MethodInsnNode;
 import org.objectweb.asm.tree.MethodNode;
 
-/** Native-name/handler-seam proof for the two newly admitted block packet handlers. */
+/** Native-name/handler-seam proof for the three distinct block/item packet handlers. */
 final class BlockPacketMixinBindingTest {
     private static final String LISTENER = "net/minecraft/server/network/ServerGamePacketListenerImpl";
     private static final String ACTION = "net/minecraft/network/protocol/game/ServerboundPlayerActionPacket";
-    private static final String USE_ITEM = "net/minecraft/network/protocol/game/ServerboundUseItemOnPacket";
+    private static final String USE_ITEM_ON = "net/minecraft/network/protocol/game/ServerboundUseItemOnPacket";
+    private static final String USE_ITEM = "net/minecraft/network/protocol/game/ServerboundUseItemPacket";
 
     @Test
     void nativeHandlersExposeOneStablePreMutationAnchorEach() throws Exception {
         ClassNode listener = classNode(LISTENER + ".class");
         assertEquals(1, countInvoke(listener, "handlePlayerAction", "getPos",
             ACTION, "()Lnet/minecraft/core/BlockPos;"));
-        assertEquals(1, countInvoke(listener, "handleUseItemOn", "getSequence", USE_ITEM, "()I"));
+        assertEquals(1, countInvoke(listener, "handleUseItemOn", "getSequence", USE_ITEM_ON, "()I"));
+        assertEquals(1, countInvoke(listener, "handleUseItem", "getSequence", USE_ITEM, "()I"));
+        assertEquals(1, countInvoke(listener, "handleUseItem", "useItem",
+            "net/minecraft/server/level/ServerPlayerGameMode",
+            "(Lnet/minecraft/server/level/ServerPlayer;Lnet/minecraft/world/level/Level;Lnet/minecraft/world/item/ItemStack;Lnet/minecraft/world/InteractionHand;)Lnet/minecraft/world/InteractionResult;"));
     }
 
     @Test
@@ -31,8 +36,28 @@ final class BlockPacketMixinBindingTest {
         ClassNode invoker = classNode("dev/phoenium/mixin/ServerGamePacketListenerInvoker.class");
         assertNotNull(method(invoker, "phoenium$invokePlayerAction"));
         assertNotNull(method(invoker, "phoenium$invokeUseItemOn"));
+        assertNotNull(method(invoker, "phoenium$invokeUseItem"));
         assertEquals(List.of(Type.getType("Lnet/minecraft/server/network/ServerGamePacketListenerImpl;")),
             annotationValue(annotation(invoker, "Lorg/spongepowered/asm/mixin/Mixin;"), "value"));
+    }
+
+    @Test
+    void useItemRouteCapturesOnceAndHasOneReplayEscape() throws Exception {
+        ClassNode mixin = classNode("dev/phoenium/mixin/ServerGamePacketListenerMixin.class");
+        MethodNode route = method(mixin, "phoenium$routeUseItem");
+        assertNotNull(route);
+        assertEquals(1, countInvoke(route, "matchesUseItemReplay"));
+        assertEquals(1, countInvoke(route, "admitUseItemPacket"));
+        assertEquals(1, countInvoke(route, "cancel"));
+        assertEquals(0, countInvoke(route, "serial"),
+            "packet routing must not add a global serial authority wrapper");
+
+        ClassNode runtime = classNode("dev/phoenium/live/PhoeniumLiveRuntime.class");
+        assertEquals(1, countInvoke(method(runtime, "admitUseItemPacket"), "admitPacket"),
+            "UseItem must enter the existing owner gateway exactly once");
+        ClassNode retained = classNode("dev/phoenium/live/PhoeniumLiveRuntime$PendingUseItem.class");
+        assertEquals(1, countInvoke(method(retained, "execute"), "phoenium$invokeUseItem"),
+            "one retained packet must invoke the native handler exactly once");
     }
 
     private static int countInvoke(ClassNode owner, String methodName, String invokedName,
@@ -42,6 +67,13 @@ final class BlockPacketMixinBindingTest {
         for (var node : method.instructions) if (node instanceof MethodInsnNode invoke
                 && invoke.owner.equals(invokedOwner) && invoke.name.equals(invokedName)
                 && invoke.desc.equals(descriptorSuffix)) count++;
+        return count;
+    }
+
+    private static int countInvoke(MethodNode method, String invokedName) {
+        int count = 0;
+        for (var node : method.instructions)
+            if (node instanceof MethodInsnNode invoke && invoke.name.equals(invokedName)) count++;
         return count;
     }
 
