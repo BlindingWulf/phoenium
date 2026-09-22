@@ -162,14 +162,21 @@ public final class Stage7RepairClientTest implements FabricClientGameTest {
         JsonObject before=player();context.getInput().holdKey(o->o.keyUp);context.waitTicks(18);context.getInput().releaseKey(o->o.keyUp);
         context.waitTicks(12);JsonObject after=player();require(Math.abs(after.get("z").getAsDouble()-before.get("z").getAsDouble())>1,"native movement did not progress");
         context.runOnClient(c->c.getConnection().sendChat("STAGE7_AUTOMATED_CHAT"));
-        // Place and break via real client attack/use at a prepared reachable pad.
-        position(OW,8.5,65,5.5,180,45);cmd("item replace entity "+USER+" hotbar.0 with minecraft:cobblestone 8");
+        // Keep the baseline input control clear of the still-ticking portal mobs.
+        // This is scene geometry only; no entity is moved, removed or disabled.
+        cmd("execute in "+OW+" run fill 60 100 -2 68 100 10 minecraft:sea_lantern");
+        position(OW,64.5,101,5.5,180,45);cmd("item replace entity "+USER+" hotbar.0 with minecraft:cobblestone 8");
         context.getInput().pressKey(o->o.keyHotbarSlots[0]);context.waitTicks(10);
-        context.getInput().lookAt(new BlockPos(8,64,3));context.getInput().pressKey(o->o.keyUse);context.waitTicks(12);
-        require(cmd("execute in "+OW+" if block 8 65 3 minecraft:cobblestone").contains("Test passed"),"real block placement missing");
+        context.waitFor(c->c.player.getMainHandItem().is(Items.COBBLESTONE)&&c.player.getMainHandItem().getCount()==8,300);
+        context.getInput().lookAt(new BlockPos(64,100,3));context.waitTicks(2);
+        String aim=context.computeOnClient(c->String.valueOf(c.hitResult));
+        JsonObject input=new JsonObject();input.addProperty("label","baseline-placement-input");input.addProperty("clientHit",aim);observations.add(input);
+        require(context.computeOnClient(c->c.hitResult instanceof net.minecraft.world.phys.BlockHitResult hit&&hit.getBlockPos().equals(new BlockPos(64,100,3))),"baseline use did not target its support block: "+aim);
+        context.getInput().pressKey(o->o.keyUse);context.waitTicks(12);
+        require(cmd("execute in "+OW+" if block 64 101 3 minecraft:cobblestone").contains("Test passed"),"real block placement missing");
         cmd("item replace entity "+USER+" hotbar.1 with minecraft:iron_pickaxe");context.getInput().pressKey(o->o.keyHotbarSlots[1]);context.waitTicks(10);
-        context.getInput().lookAt(new BlockPos(8,65,3));context.getInput().holdKey(o->o.keyAttack);context.waitTicks(35);context.getInput().releaseKey(o->o.keyAttack);context.waitTicks(10);
-        require(cmd("execute in "+OW+" if block 8 65 3 minecraft:air").contains("Test passed"),"real block break missing");
+        context.getInput().lookAt(new BlockPos(64,101,3));context.getInput().holdKey(o->o.keyAttack);context.waitTicks(35);context.getInput().releaseKey(o->o.keyAttack);context.waitTicks(10);
+        require(cmd("execute in "+OW+" if block 64 101 3 minecraft:air").contains("Test passed"),"real block break missing");
         position(OW,14.5,65,5.5,-90,0);
         cmd("item replace entity "+USER+" hotbar.0 with minecraft:sugar_cane 1");context.getInput().pressKey(o->o.keyHotbarSlots[0]);context.waitTicks(8);
         long caneAdds=snapshot("before-moving-drop").get("caneAdds").getAsLong();
