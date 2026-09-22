@@ -880,6 +880,18 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
     private final boolean authoritativeFull = Boolean.getBoolean("phoenium.full.authoritative");
     private final java.util.Map<ServerLevel, dev.phoenium.chunk.FullRegistrationRuntime> fullRegistrations = new java.util.concurrent.ConcurrentHashMap<>();
     private dev.phoenium.chunk.FullRegionalEnclosure fullEnclosure;
+    /** Uses the existing immutable query/read-turn implementation even when native/provider
+     * generation is selected. Constructed at world publication, before generation workers;
+     * no FULL graph, finishing claim, or alternative generation policy is enabled here. */
+    public dev.phoenium.chunk.FullRegistrationRuntime naturalSpawnStructures(ServerLevel level) {
+        if (authoritativeFull) return fullRegistration(level);
+        var existing = fullRegistrations.get(level);
+        if (existing != null) return existing;
+        if (state == State.STOPPED || !level.getServer().isSameThread() || OwnershipContext.current().isPresent())
+            throw new IllegalStateException("natural-spawn structures requested before world publication or after shutdown");
+        return fullRegistrations.computeIfAbsent(level, world ->
+            new dev.phoenium.chunk.FullRegistrationRuntime(world, requireChunkWorld(world)));
+    }
     public dev.phoenium.chunk.FullRegistrationRuntime fullRegistration(ServerLevel level) {
         if (!authoritativeFull) return null;
         return fullRegistrations.computeIfAbsent(level, world -> {

@@ -37,6 +37,18 @@ class NaturalSpawnFenceBindingTest {
                 && value.desc.equals(Type.getMethodDescriptor(hook))), hook.toString());
         }
     }
+    @Test void captureBindsTheDeclaredNativeEntryAndPublishedWorldStructureRuntime() throws Exception {
+        var hook = Arrays.stream(RegionalNaturalSpawnerMixin.class.getDeclaredMethods())
+            .filter(method -> method.getName().equals("phoenium$retainQueries")).findFirst().orElseThrow();
+        assertArrayEquals(new String[] {"spawnForChunk"}, hook.getAnnotation(WrapMethod.class).method());
+        var nativeEntry = node(NaturalSpawner.class).methods.stream().filter(method -> method.name.equals("spawnForChunk")).findFirst().orElseThrow();
+        assertEquals("(Lnet/minecraft/server/level/ServerLevel;Lnet/minecraft/world/level/chunk/LevelChunk;Lnet/minecraft/world/level/NaturalSpawner$SpawnState;Ljava/util/List;)V", nativeEntry.desc);
+        var binding = node(FullProductionMapMixin.class).methods.stream().filter(method -> method.name.equals("phoenium$naturalSpawnStructures")).findFirst().orElseThrow();
+        assertTrue(Arrays.stream(binding.instructions.toArray()).anyMatch(insn -> insn instanceof MethodInsnNode call
+            && call.owner.equals("dev/phoenium/live/PhoeniumLiveRuntime") && call.name.equals("naturalSpawnStructures")));
+        var publication = node(FullFinishingWorldContextMixin.class).methods.stream().filter(method -> method.name.equals("phoenium$world")).findFirst().orElseThrow();
+        assertTrue(Arrays.stream(publication.instructions.toArray()).anyMatch(insn -> insn instanceof MethodInsnNode call && call.name.equals("naturalSpawnStructures")));
+    }
     @Test void nativeSpawningChunkHasNoMutationSuffixAfterTheCapturedSpawnCall() throws Exception {
         var method = node(ServerChunkCache.class).methods.stream().filter(value -> value.name.equals("tickSpawningChunk")).findFirst().orElseThrow();
         var call = Arrays.stream(method.instructions.toArray()).filter(insn -> insn instanceof MethodInsnNode invoke

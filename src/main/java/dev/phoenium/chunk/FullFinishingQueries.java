@@ -167,8 +167,13 @@ public final class FullFinishingQueries {
     public static ChunkAccess predicateChunk(ServerLevel world, int x, int z, ChunkStatus status, boolean create,
                                               Supplier<ChunkAccess> original) {
         Invocation invocation = CURRENT.get();
-        if (invocation == null || invocation.locationRead == null || invocation.query != null)
-            return BlockEntityChunkQueryDiagnostic.chunk(world, x, z, status, create, original);
+        if (invocation == null || invocation.locationRead == null || invocation.query != null) {
+            try { return BlockEntityChunkQueryDiagnostic.chunk(world, x, z, status, create, original); }
+            catch (RuntimeException | Error failure) {
+                dev.phoenium.service.NaturalSpawnContinuation.failedChunkQuery(world, x, z, status, create, failure);
+                throw failure;
+            }
+        }
         invocation.requireCurrent();
         if (world != invocation.locationRead.world) throw breach("location predicate getter changed worlds");
         if (status == ChunkStatus.STRUCTURE_REFERENCES || status == ChunkStatus.STRUCTURE_STARTS) {

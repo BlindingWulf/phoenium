@@ -14,4 +14,7 @@ abstract class FullProductionMapMixin implements FullGenerationSource {
     @Override public FullRegistrationRuntime phoenium$fullRegistration() {
         return Phoenium.liveRuntime().fullRegistration(level);
     }
+    @Override public FullRegistrationRuntime phoenium$naturalSpawnStructures() {
+        return Phoenium.liveRuntime().naturalSpawnStructures(level);
+    }
 }

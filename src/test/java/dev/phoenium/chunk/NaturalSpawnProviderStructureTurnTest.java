@@ -16,7 +16,9 @@ class NaturalSpawnProviderStructureTurnTest {
     @BeforeAll static void bootstrap() { FullProductionRegistrationTest.bootstrap(); }
     private FullRegistrationFixture fixture() throws Exception {
         var f = new FullRegistrationFixture(true);
-        var map = stub(ChunkMap.class, List.of(new Answer(FullGenerationSource.class.getMethod("phoenium$fullRegistration"), ignored -> f.runtime)), FullGenerationSource.class);
+        var map = stub(ChunkMap.class, List.of(
+            new Answer(FullGenerationSource.class.getMethod("phoenium$fullRegistration"), ignored -> null),
+            new Answer(FullGenerationSource.class.getMethod("phoenium$naturalSpawnStructures"), ignored -> f.runtime)), FullGenerationSource.class);
         set(f.world.cache, ServerChunkCache.class, "chunkMap", map); return f;
     }
     @Test void c2meFeatureWriterCoversReferencedStartsAndKeepsOriginalFuture() throws Exception {
@@ -43,6 +45,19 @@ class NaturalSpawnProviderStructureTurnTest {
             ChunkPyramid.GENERATION_PYRAMID.getStepTo(ChunkStatus.STRUCTURE_REFERENCES), cache, f.input(ChunkPos.ZERO), () -> original));
         original.completeExceptionally(failure);
         assertSame(failure, assertThrows(java.util.concurrent.CompletionException.class, original::join).getCause());
+        assertTrue(f.runtime.structureMutations.measurements().values().stream().allMatch(value -> value == 0));
+    }
+    @Test void nativeGenerationAlsoProtectsStructureWritersWithoutSelectingAuthoritativeFull() throws Exception {
+        var f = fixture();
+        var cache = StaticCache2D.create(0, 0, 0, (x, z) -> (GenerationChunkHolder) f.holder(new ChunkPos(x, z)));
+        var result = new CompletableFuture<ChunkAccess>(); var calls = new java.util.concurrent.atomic.AtomicInteger();
+        var map = (GeneratingChunkMap) f.world.cache.chunkMap;
+        assertNull(((FullGenerationSource) map).phoenium$fullRegistration());
+        assertSame(result, FullRegistrationRuntime.applyWinning(map, cache.get(0, 0),
+            ChunkPyramid.GENERATION_PYRAMID.getStepTo(ChunkStatus.STRUCTURE_STARTS), cache, () -> { calls.incrementAndGet(); return result; }));
+        assertEquals(1, calls.get()); assertEquals(1L, f.runtime.structureMutations.measurements().get("writers"));
+        result.complete(f.input(ChunkPos.ZERO));
+        assertTrue(f.runtime.graphSnapshot().isEmpty());
         assertTrue(f.runtime.structureMutations.measurements().values().stream().allMatch(value -> value == 0));
     }
 }

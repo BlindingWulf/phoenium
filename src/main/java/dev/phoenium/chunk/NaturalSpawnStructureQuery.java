@@ -195,5 +195,20 @@ public final class NaturalSpawnStructureQuery implements AutoCloseable {
         result.complete(new Snapshot(position, allReferences, facts, fortressMatch, spawns));
     }
     public Snapshot snapshot() { return result.join(); }
+    public String observationClass() {
+        return "references=" + (allReferences.stream().anyMatch(ref -> !ref.starts().isEmpty()) ? "PRESENT" : "EMPTY")
+            + ":fortress=" + (fortress != null);
+    }
+    public String observation() {
+        return "dimension=" + runtime.level().dimension().identifier() + " position=" + position
+            + " source=" + source.getPos() + " sourceHolder=" + identity(sourceHolder)
+            + " category=" + category + " fortressTest=" + (fortress != null)
+            + " referenceKeys=" + allReferences.stream().flatMap(ref -> ref.starts().stream()).distinct().limit(16).toList()
+            + " dependencies=" + demands.values().stream().limit(16).map(demand ->
+                demand.key + ":create=true:holder=" + identity(demand.holder) + ":future=" + identity(demand.future)
+                    + ":ready=" + demand.future.isDone() + ":failed=" + demand.future.isCompletedExceptionally()).toList()
+            + " complete=" + result.isDone() + " current=" + current();
+    }
+    private static String identity(Object object) { return object == null ? "UNAVAILABLE" : Integer.toHexString(System.identityHashCode(object)); }
     @Override public void close() { closed = true; demands.clear(); references = null; allReferences = List.of(); facts.clear(); }
 }

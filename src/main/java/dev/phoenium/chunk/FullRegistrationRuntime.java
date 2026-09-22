@@ -41,6 +41,7 @@ public final class FullRegistrationRuntime {
     public final FullInitializedInputs inputs;
     final FullStructureMutationTurns structureMutations;
     public final FullPublishedInputs published;
+    public final NaturalSpawnObservation naturalSpawnObservation = new NaturalSpawnObservation();
     private final AutoCloseable publishedSubscription;
     private final AutoCloseable inputRouteSubscription;
     private AutoCloseable inputViewSubscription;
@@ -78,9 +79,14 @@ public final class FullRegistrationRuntime {
     public static CompletableFuture<ChunkAccess> protectC2meStructures(WorldGenContext context,
             ChunkStep step, StaticCache2D<GenerationChunkHolder> cache, ChunkAccess input,
             Supplier<CompletableFuture<ChunkAccess>> original) {
-        var runtime = ((FullGenerationSource) context.level().getChunkSource().chunkMap).phoenium$fullRegistration();
+        var runtime = ((FullGenerationSource) context.level().getChunkSource().chunkMap).phoenium$naturalSpawnStructures();
         if (runtime == null) return original.get();
         var holder = cache.get(input.getPos().x(), input.getPos().z());
+        return protectStructures(runtime, holder, step, cache, original);
+    }
+    private static CompletableFuture<ChunkAccess> protectStructures(FullRegistrationRuntime runtime,
+            GenerationChunkHolder holder, ChunkStep step, StaticCache2D<GenerationChunkHolder> cache,
+            Supplier<CompletableFuture<ChunkAccess>> original) {
         var writer = runtime.structureMutations.beginWriter(holder, step, cache);
         if (writer == null) return original.get();
         final CompletableFuture<ChunkAccess> result;
@@ -129,7 +135,12 @@ public final class FullRegistrationRuntime {
     public static CompletableFuture<ChunkAccess> applyWinning(GeneratingChunkMap map, GenerationChunkHolder holder,
             ChunkStep step, StaticCache2D<GenerationChunkHolder> cache, Supplier<CompletableFuture<ChunkAccess>> original) {
         var runtime = map instanceof FullGenerationSource source ? source.phoenium$fullRegistration() : null;
-        if (runtime == null) return FullPublishedInputs.winning(map, holder, step, cache, original);
+        if (runtime == null) {
+            var structures = map instanceof FullGenerationSource source ? source.phoenium$naturalSpawnStructures() : null;
+            return structures == null ? FullPublishedInputs.winning(map, holder, step, cache, original)
+                : protectStructures(structures, holder, step, cache,
+                    () -> FullPublishedInputs.winning(map, holder, step, cache, original));
+        }
         return runtime.winning(map, holder, step, cache, original);
     }
 

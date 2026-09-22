@@ -1,6 +1,7 @@
 package dev.phoenium.chunk;
 
-/** Explicit generation-map binding. Ordinary ChunkMap deliberately does not implement this yet. */
+/** Generation selection and the independent, purpose-scoped structure reader binding. */
 public interface FullGenerationSource {
     FullRegistrationRuntime phoenium$fullRegistration();
+    default FullRegistrationRuntime phoenium$naturalSpawnStructures() { return phoenium$fullRegistration(); }
 }

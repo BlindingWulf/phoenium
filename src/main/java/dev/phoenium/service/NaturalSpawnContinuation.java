@@ -83,12 +83,22 @@ public final class NaturalSpawnContinuation {
             if (ACTIVE.get() != null) throw new IllegalStateException("only one natural-spawn callback may be suspended on the native thread");
             this.service = service; this.dispatcher = dispatcher; this.level = level; this.chunk = chunk;
             this.source = source; this.ordinal = ordinal; this.valid = valid;
-            this.structures = ((FullGenerationSource) level.getChunkSource().chunkMap).phoenium$fullRegistration();
+            this.structures = Objects.requireNonNull(((FullGenerationSource) level.getChunkSource().chunkMap)
+                .phoenium$naturalSpawnStructures(), "natural-spawn structures were not published for this world");
             ACTIVE.set(this);
         }
         public void original(Runnable original) {
-            entered = structures != null;
-            try { original.run(); } finally { entered = false; }
+            entered = true;
+            try { original.run(); }
+            catch (RuntimeException | Error failure) { failure(failure, "native callback"); throw failure; }
+            finally { entered = false; }
+        }
+        private void failure(Throwable failure, String detail) {
+            structures.naturalSpawnObservation.failure(failure, () -> "dimension=" + level.dimension().identifier()
+                + " operation=" + ordinal + " entered=" + entered + " " + detail + " "
+                + (continuation == null ? "pc=UNAVAILABLE query=UNAVAILABLE context=ABSENT"
+                    : "pc=" + continuation.pc + " generation=" + continuation.queryGeneration + " context=RETAINED "
+                        + (continuation.query == null ? "query=NONE" : continuation.query.observation())));
         }
         boolean current() { return !closed && valid.getAsBoolean() && dispatcher.naturalSpawnOpen() && structures.naturalSpawnOpen(); }
         public void finish(Consumer<Runnable> ownerBody) {
@@ -98,14 +108,21 @@ public final class NaturalSpawnContinuation {
             while (continuation.pc != Pc.DONE && current()) {
                 NaturalSpawnStructureQuery query = Objects.requireNonNull(continuation.query, "spawn yielded without a reached structure query");
                 long generation = continuation.queryGeneration;
+                String kind = continuation.pc == Pc.SELECT_RESULT ? "INITIAL_SELECTION" : "PACK_VALIDATION";
                 query.prepare();
+                structures.naturalSpawnObservation.summary(kind + ":PREPARED:" + query.observationClass(),
+                    () -> "operation=" + ordinal + " generation=" + generation + " ownerFree=true " + query.observation());
                 try (query; var reservation = fence.reserve(ordinal, continuation.queryGeneration, query.dependency(),
                         () -> current() && continuation.query == query && continuation.queryGeneration == generation && query.current(),
                         dispatcher::requireNaturalSpawnOwnerFree)
                         .prepareAtObservation(query::prepare)
                         .shutdownWhen(() -> !dispatcher.naturalSpawnOpen() || !structures.naturalSpawnOpen())) {
-                    reservation.awaitAndResume(loop::managedBlock, () -> dispatcher.resumeNaturalSpawn(reservation, source,
-                        ignored -> ownerBody.accept(continuation::runOwned)));
+                    try {
+                        reservation.awaitAndResume(loop::managedBlock, () -> dispatcher.resumeNaturalSpawn(reservation, source,
+                            ignored -> ownerBody.accept(continuation::runOwned)));
+                    } catch (RuntimeException | Error failure) { failure(failure, "resume " + kind); throw failure; }
+                    structures.naturalSpawnObservation.summary(kind + ":" + reservation.state() + ":" + query.observationClass(),
+                        () -> "operation=" + ordinal + " generation=" + generation + " ownerFree=true " + query.observation());
                     if (reservation.state() != ManagedBlockPollTurnFence.State.SETTLED) return;
                 }
             }
@@ -116,6 +133,16 @@ public final class NaturalSpawnContinuation {
             if (ACTIVE.get() == this) ACTIVE.remove();
             continuation = null;
         }
+    }
+
+    /** First escaping native getter only. A diagnostic failure must not replace its cause. */
+    public static void failedChunkQuery(ServerLevel world, int x, int z,
+            net.minecraft.world.level.chunk.status.ChunkStatus status, boolean create, Throwable original) {
+        Capture capture = ACTIVE.get();
+        if (capture == null) return;
+        try { capture.failure(original, "getterWorld=" + world.dimension().identifier() + " chunk=" + x + "," + z
+            + " status=" + status + " create=" + create); }
+        catch (Throwable diagnostic) { if (diagnostic != original) original.addSuppressed(diagnostic); }
     }
 
     private void runOwned() {
