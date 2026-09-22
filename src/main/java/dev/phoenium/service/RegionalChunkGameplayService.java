@@ -329,6 +329,9 @@ public final class RegionalChunkGameplayService implements NaturalSpawnContinuat
                     throw new IllegalStateException("entity tick vehicle relation changed");
                 output.accept(entity);
             });
+            // The enclosing native owner callback has returned. Finish this finite mob
+            // operation before the next entity tick/RNG draw in the native list order.
+            dev.phoenium.Phoenium.liveRuntime().advanceMobPortalAfterEntityCallback();
         });
     }
 

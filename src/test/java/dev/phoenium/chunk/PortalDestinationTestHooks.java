@@ -9,6 +9,7 @@ import org.objectweb.asm.tree.*;
 
 public final class PortalDestinationTestHooks {
     static ItemPortalTransitionManager items;
+    static dev.phoenium.live.MobPortalTransitionManager mobs;
     static Object pearls;
     static net.minecraft.world.phys.HitResult controlledHit;
     static Entity controlledBase;
@@ -29,6 +30,7 @@ public final class PortalDestinationTestHooks {
         throw new AssertionError("production invocation selector absent");
     }
     public static boolean capture(Entity entity) {
+        if(mobs!=null && entity instanceof Mob mob) return mobs.suspendDestination(mob,mob.portalProcess);
         if(pearls!=null && entity instanceof net.minecraft.world.entity.projectile.throwableitemprojectile.ThrownEnderpearl)
             return (boolean)pearlCall("suspendDestination",entity,entity.portalProcess);
         if(items==null || !(entity instanceof ItemEntity item) || !itemCutIsEarly()) return false;
@@ -37,6 +39,7 @@ public final class PortalDestinationTestHooks {
         catch(ReflectiveOperationException e) { throw new AssertionError(e); }
     }
     public static boolean suspended(Entity entity) {
+        if(mobs!=null && entity instanceof Mob mob) return mobs.suspended(mob);
         if(pearls!=null && entity instanceof net.minecraft.world.entity.projectile.throwableitemprojectile.ThrownEnderpearl) return (boolean)pearlCall("suspended",entity);
         return items!=null && entity instanceof ItemEntity item && items.suspended(item);
     }

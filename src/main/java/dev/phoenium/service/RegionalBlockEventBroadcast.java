@@ -23,6 +23,7 @@ public final class RegionalBlockEventBroadcast implements AutoCloseable {
     private final Map<ServerPlayer, FullFinishingScoreboard.TrackingSession> sessions = new IdentityHashMap<>();
     private ServerPlayer selected;
     private FullEntityFacts.PublishedPosition projection;
+    private boolean deathRetired;
     private boolean closed;
 
     private RegionalBlockEventBroadcast(ServerLevel level) {
@@ -41,7 +42,9 @@ public final class RegionalBlockEventBroadcast implements AutoCloseable {
     public ServerLevel level(ServerPlayer player) {
         requireOpen();
         selected = player;
-        projection = services.entityFacts.publishedPosition(player);
+        projection = dev.phoenium.chunk.PlayerRespawnHandoff.deathPosition(player);
+        deathRetired = projection != null;
+        if(!deathRetired) projection = services.entityFacts.publishedPosition(player);
         requireSelected(player);
         return projection.candidate().fact().world();
     }
@@ -61,7 +64,8 @@ public final class RegionalBlockEventBroadcast implements AutoCloseable {
     private void requireSelected(ServerPlayer player) {
         requireOpen();
         if (player == null || selected != player || projection == null
-                || !services.entityFacts.validTrackingCandidate(projection.candidate()))
+                || (deathRetired ? dev.phoenium.chunk.PlayerRespawnHandoff.deathPosition(player)!=projection
+                    : !services.entityFacts.validTrackingCandidate(projection.candidate())))
             throw new IllegalStateException("block-event recipient observation became stale");
         services.scoreboard.requireTrackingSession(connections,
             Objects.requireNonNull(sessions.get(player), "block-event recipient outside original live list"));

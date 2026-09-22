@@ -293,6 +293,7 @@ class NativeItemPortalTransferTest {
             ServerLevel level = stub(ServerLevel.class,List.of(
                 new Answer(ServerLevel.class.getMethod("isAllowedToEnterPortal",Level.class), args -> true),
                 new Answer(ServerLevel.class.getMethod("getServer"), args -> server),
+                new Answer(ServerLevel.class.getMethod("getWaypointManager"),args->new net.minecraft.server.waypoints.ServerWaypointManager()),
                 new Answer(ServerLevel.class.getMethod("getEntityInAnyDimension",UUID.class),args->visible.values().stream().map(map->map.get(args[0])).filter(Objects::nonNull).findFirst().orElse(null)),
                 new Answer(ServerLevel.class.getMethod("getLevelData"),args->levelData),
                 new Answer(ServerLevel.class.getMethod("isSpawningMonsters"),args->false),

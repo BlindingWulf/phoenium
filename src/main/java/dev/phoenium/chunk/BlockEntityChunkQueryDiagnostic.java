@@ -81,7 +81,11 @@ public final class BlockEntityChunkQueryDiagnostic {
                                    Supplier<ChunkAccess> original) {
         dev.phoenium.live.PortalDestinationObservation.query(world,x,z,status,create);
         Scope scope = CURRENT.get();
-        if (scope == null || scope.world != world) return original.get();
+        if (scope == null || scope.world != world) {
+            var result=original.get();
+            dev.phoenium.live.PortalDestinationObservation.result(world,x,z,status,result);
+            return result;
+        }
         Query previous = scope.query;
         Query query = new Query(new ChunkPos(x, z), status, create);
         scope.query = query;
@@ -94,7 +98,7 @@ public final class BlockEntityChunkQueryDiagnostic {
 
     public static void selected(ServerLevel world, int x, int z, ChunkStatus status, boolean create,
                                 CompletableFuture<ChunkResult<ChunkAccess>> future) {
-        dev.phoenium.live.PortalDestinationObservation.selected(future);
+        dev.phoenium.live.PortalDestinationObservation.selected(world,x,z,status,future);
         Scope scope = CURRENT.get();
         if (scope == null || scope.world != world || scope.query == null) return;
         Query query = scope.query;
@@ -126,6 +130,18 @@ public final class BlockEntityChunkQueryDiagnostic {
                           boolean sameChunk, boolean typedCurrentInputReceipt,
                           String failureClass, String failureMessage) { }
 
+    public static String portalHolderObservation(ServerLevel level,int x,int z,ChunkStatus status,CompletableFuture<?> selected) {
+        try {
+            var holder=((dev.phoenium.chunk.FullInputView)level.getChunkSource().chunkMap).phoenium$visibleInput(new net.minecraft.world.level.ChunkPos(x,z).pack());
+            if(holder==null)return " holder=ABSENT lifetime=UNAVAILABLE";
+            var evidence=(dev.phoenium.chunk.FullHolderEvidence)holder;var lifetime=evidence.phoenium$lifetime();
+            var slot=evidence.phoenium$futures().get(status.getIndex());
+            var provider=lifetime==null ? null : lifetime.services().residentPublication(lifetime);
+            return " holder="+System.identityHashCode(holder)+" requestedStatusSlot="+(slot==null?"ABSENT":System.identityHashCode(slot))
+                +" selectedIsRequestedSlot="+(selected==null?"UNAVAILABLE":selected==slot)+" lifetime="+(lifetime==null?"UNAVAILABLE":lifetime.lifecycle())
+                +" providerPublication="+(provider==null?"UNAVAILABLE":System.identityHashCode(provider));
+        } catch(Throwable unavailable) {return " holder=UNAVAILABLE lifetime=UNAVAILABLE providerPublication=UNAVAILABLE";}
+    }
     private static HolderObservation observe(ServerLevel world, ChunkPos position) {
         ChunkHolder holder = ((FullInputView) world.getChunkSource().chunkMap).phoenium$visibleInput(position.pack());
         if (holder == null) return new HolderObservation("ABSENT", null, false, -1, "ABSENT", "ABSENT");

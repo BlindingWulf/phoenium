@@ -20,7 +20,7 @@ public final class Stage7RepairProbe implements DedicatedServerModInitializer {
     private static final java.util.concurrent.atomic.AtomicLong caneRemoves=new java.util.concurrent.atomic.AtomicLong();
     public static boolean relevant(Entity e) {
         return e instanceof ServerPlayer || e instanceof ThrownEnderpearl || e.entityTags().contains("stage7_mob")
-            || e instanceof ItemEntity item && item.getItem().is(Items.SUGAR_CANE);
+            || e instanceof ItemEntity item && (item.getItem().is(Items.SUGAR_CANE)||item.getItem().is(Items.IRON_INGOT));
     }
     public static JsonObject entity(Entity e) {
         JsonObject j=new JsonObject();
@@ -30,11 +30,13 @@ public final class Stage7RepairProbe implements DedicatedServerModInitializer {
         j.addProperty("world",e.level().dimension().identifier().toString());
         j.addProperty("worldObject",Integer.toHexString(System.identityHashCode(e.level())));
         j.addProperty("type",BuiltInRegistries.ENTITY_TYPE.getKey(e.getType()).toString());
+        j.addProperty("tags",e.entityTags().toString());
         j.addProperty("x",e.getX());j.addProperty("y",e.getY());j.addProperty("z",e.getZ());
         j.addProperty("removed",e.isRemoved());
         j.addProperty("ticks",e.tickCount);
         j.addProperty("reason",String.valueOf(e.getRemovalReason()));
-        if(e instanceof ItemEntity item) {j.addProperty("count",item.getItem().getCount());j.addProperty("age",item.getAge());}
+        if(e instanceof ItemEntity item) {j.addProperty("count",item.getItem().getCount());j.addProperty("age",item.getAge());j.addProperty("item",BuiltInRegistries.ITEM.getKey(item.getItem().getItem()).toString());}
+        if(e instanceof net.minecraft.world.entity.animal.chicken.Chicken chicken) {j.addProperty("flap",chicken.flap);j.addProperty("eggTime",chicken.eggTime);}
         if(e instanceof ThrownEnderpearl pearl) {
             Entity owner=pearl.getOwner();j.addProperty("ownerObject",owner==null?"UNAVAILABLE":Integer.toHexString(System.identityHashCode(owner)));
             j.addProperty("ownerWorld",owner==null?"UNAVAILABLE":owner.level().dimension().identifier().toString());
@@ -43,6 +45,10 @@ public final class Stage7RepairProbe implements DedicatedServerModInitializer {
             j.addProperty("name",p.getName().getString());j.addProperty("health",p.getHealth());j.addProperty("deathTime",p.deathTime);
             j.addProperty("cane",p.getInventory().countItem(Items.SUGAR_CANE));
             j.addProperty("pearls",p.getInventory().countItem(Items.ENDER_PEARL));
+            j.addProperty("iron",p.getInventory().countItem(Items.IRON_INGOT));
+            j.addProperty("menuId",p.containerMenu.containerId);j.addProperty("menuOpen",p.containerMenu!=p.inventoryMenu);
+            j.addProperty("menuSlots",p.containerMenu.slots.size());
+            j.addProperty("cursorIron",p.containerMenu.getCarried().is(Items.IRON_INGOT)?p.containerMenu.getCarried().getCount():0);
             j.addProperty("connectionObject",Integer.toHexString(System.identityHashCode(p.connection)));
             j.addProperty("listenerPlayerObject",Integer.toHexString(System.identityHashCode(p.connection.player)));
         }
@@ -61,7 +67,22 @@ public final class Stage7RepairProbe implements DedicatedServerModInitializer {
         JsonObject j=new JsonObject();JsonArray entities=new JsonArray(),players=new JsonArray();
         for(var level:server.getAllLevels())for(Entity e:level.getAllEntities())if(relevant(e))entities.add(entity(e));
         for(var player:server.getPlayerList().getPlayers())players.add(entity(player));
-        j.add("entities",entities);j.add("players",players);j.addProperty("caneAdds",caneAdds.get());j.addProperty("caneRemoves",caneRemoves.get());return j;
+        JsonArray chests=new JsonArray();var nether=server.getLevel(net.minecraft.world.level.Level.NETHER);
+        for(int x:new int[]{15,16,20}) {
+            var pos=new net.minecraft.core.BlockPos(x,33,0);
+            if(!nether.getChunkSource().hasChunk(x>>4,0))continue;
+            var state=nether.getBlockState(pos);JsonObject chest=new JsonObject();chest.addProperty("position",x+",33,0");chest.addProperty("state",state.toString());
+            chest.addProperty("chunk",(x>>4)+",0");int iron=0;
+            if(nether.getBlockEntity(pos) instanceof net.minecraft.world.Container container) {
+                for(int slot=0;slot<container.getContainerSize();slot++)if(container.getItem(slot).is(Items.IRON_INGOT))iron+=container.getItem(slot).getCount();
+                if(state.getBlock() instanceof net.minecraft.world.level.block.ChestBlock block){
+                    var combined=net.minecraft.world.level.block.ChestBlock.getContainer(block,state,nether,pos,true);
+                    chest.addProperty("combinedSize",combined==null?0:combined.getContainerSize());
+                }
+            }
+            chest.addProperty("iron",iron);chests.add(chest);
+        }
+        j.add("chests",chests);j.add("entities",entities);j.add("players",players);j.addProperty("caneAdds",caneAdds.get());j.addProperty("caneRemoves",caneRemoves.get());return j;
     }
     @Override public void onInitializeServer() {
         CommandRegistrationCallback.EVENT.register((dispatcher,access,selection)->dispatcher.register(

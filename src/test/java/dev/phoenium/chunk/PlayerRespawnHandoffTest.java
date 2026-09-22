@@ -347,6 +347,7 @@ final class PlayerRespawnHandoffTest {
         ServerPlayer newPlayer(ServerGamePacketListenerImpl connection) throws Exception {
             var retired = new AtomicBoolean();
             var deathRemoved = new AtomicBoolean();
+            var deathPosition = new java.util.concurrent.atomic.AtomicReference<FullEntityFacts.PublishedPosition>();
             var precheckLogged = new AtomicBoolean();
             ServerPlayer[] exact = new ServerPlayer[1];
             ServerPlayer result = stub(ServerPlayer.class, List.of(
@@ -364,6 +365,8 @@ final class PlayerRespawnHandoffTest {
                 new Answer(Incarnation.class.getMethod("phoenium$respawnRetired", boolean.class), args -> { retired.set((boolean) args[0]); return null; }),
                 new Answer(Incarnation.class.getMethod("phoenium$deathRemovalCompleted"), args -> deathRemoved.get()),
                 new Answer(Incarnation.class.getMethod("phoenium$deathRemovalCompleted", boolean.class), args -> { deathRemoved.set((boolean) args[0]); return null; }),
+                new Answer(Incarnation.class.getMethod("phoenium$deathPosition"),args->deathPosition.get()),
+                new Answer(Incarnation.class.getMethod("phoenium$deathPosition",FullEntityFacts.PublishedPosition.class),args->{deathPosition.set((FullEntityFacts.PublishedPosition)args[0]);return null;}),
                 new Answer(Incarnation.class.getMethod("phoenium$respawnPrecheckLogged"), args -> precheckLogged.get()),
                 new Answer(Incarnation.class.getMethod("phoenium$respawnPrecheckLogged", boolean.class), args -> { precheckLogged.set((boolean) args[0]); return null; })), Incarnation.class);
             exact[0] = result;

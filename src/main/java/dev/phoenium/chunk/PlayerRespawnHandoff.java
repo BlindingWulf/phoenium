@@ -23,6 +23,8 @@ public final class PlayerRespawnHandoff {
         void phoenium$respawnRetired(boolean retired);
         boolean phoenium$deathRemovalCompleted();
         void phoenium$deathRemovalCompleted(boolean completed);
+        default FullEntityFacts.PublishedPosition phoenium$deathPosition() { return null; }
+        default void phoenium$deathPosition(FullEntityFacts.PublishedPosition position) { throw new IllegalStateException("death position binding absent"); }
         boolean phoenium$respawnPrecheckLogged();
         void phoenium$respawnPrecheckLogged(boolean logged);
     }
@@ -108,6 +110,21 @@ public final class PlayerRespawnHandoff {
     public static boolean deathRemovalCompleted(ServerPlayer player) {
         return player instanceof Incarnation access && access.phoenium$deathRemovalCompleted();
     }
+    /** Capture while the exact dying entity is still published, before native removal.
+     * The receipt is unusable until the existing completed-removal bit is published. */
+    public static void captureDeathPosition(ServerPlayer player) {
+        if(player.deathTime<20)throw new ChunkProtocolException("death position captured before native retirement");
+        var position=FullFinishingServices.forServer(player.level().getServer()).entityFacts.publishedPosition(player);
+        ((Incarnation)player).phoenium$deathPosition(position);
+    }
+    /** Connection-recipient data only; this never restores entity tracking authority. */
+    public static FullEntityFacts.PublishedPosition deathPosition(ServerPlayer player) {
+        if(!(player instanceof Incarnation access)||!access.phoenium$deathRemovalCompleted()||access.phoenium$respawnRetired())return null;
+        var position=access.phoenium$deathPosition();
+        return position!=null&&position.candidate().alias()==player
+            &&position.candidate().fact().incarnation()==((FullEntityFacts.Access)player).phoenium$entityIncarnation()
+                ? position : null;
+    }
     public static boolean retired(ServerPlayer player) {
         return player instanceof Incarnation access && access.phoenium$respawnRetired();
     }
@@ -115,6 +132,7 @@ public final class PlayerRespawnHandoff {
         var access = (Incarnation) player;
         access.phoenium$respawnRetired(true);
         access.phoenium$deathRemovalCompleted(false);
+        if(access.phoenium$deathPosition()!=null)access.phoenium$deathPosition(null);
     }
     private static long incarnation(ServerPlayer player) {
         return ((FullEntityFacts.Access) player).phoenium$entityIncarnation();
@@ -184,6 +202,8 @@ public final class PlayerRespawnHandoff {
     public void oldListRemoved(ServerPlayer player) {
         expect(State.OPEN); check(player == oldPlayer && !containsExact(directory.phoenium$respawnPlayers(), oldPlayer),
             "old list removal did not retire the exact alias");
+        var incarnation=(Incarnation)player;
+        if(incarnation.phoenium$deathPosition()!=null)incarnation.phoenium$deathPosition(null);
         oldDirectoryRemoved = true; transition(State.OLD_RETIRING);
     }
     public void removeOldWorld(ServerLevel world, ServerPlayer player, Runnable original) {

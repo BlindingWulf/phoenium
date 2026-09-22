@@ -32,11 +32,11 @@ public final class Stage7RepairClientTest implements FabricClientGameTest {
         try {
             connect();
             if(Boolean.getBoolean("phoenium.repair.restart")){restartCard();}
-            else {baseline();playerPortals();itemCard(OW,NETHER,3,0);itemCard(NETHER,OW,4,1);
+            else {mobPortals();containers();baseline();playerPortals();itemCard(OW,NETHER,3,0);itemCard(NETHER,OW,4,1);
                 itemCard(OW,NETHER,2,2);itemCard(NETHER,OW,5,3);localPearl();pearlCard(OW,NETHER);pearlCard(NETHER,OW);coldDestination();respawns();
                 cmd("execute in "+OW+" run setblock 8 65 8 minecraft:diamond_block");
                 cmd("item replace entity "+USER+" hotbar.0 with minecraft:sugar_cane 11");
-                context.waitTicks(10);snapshot("before-save");cmd("save-all flush");}
+                context.waitTicks(10);checkIron("before-save-counts",60);snapshot("before-save");cmd("save-all flush");}
             health("final");disconnect();receipt.addProperty("pass",true);
         } catch(Throwable failure){receipt.addProperty("pass",false);receipt.addProperty("failedCard",active);
             receipt.addProperty("failure",failure.toString());try{snapshot("failure");}catch(Throwable ignored){}
@@ -44,6 +44,118 @@ public final class Stage7RepairClientTest implements FabricClientGameTest {
         } finally {try{if(context.computeOnClient(c->c.player!=null))disconnect();}catch(Throwable ignored){}
             try{Files.createDirectories(evidence.getParent());Files.writeString(evidence,new GsonBuilder().setPrettyPrinting().create().toJson(receipt));}
             catch(IOException failure){throw new UncheckedIOException(failure);}}
+    }
+    void mobPortals()throws Exception {
+        int sequence=0;
+        for(String type:List.of("zombified_piglin","chicken","pig")) for(String from:List.of(OW,NETHER)) {
+            active="M0-"+type+"-"+from;String to=from.equals(OW)?NETHER:OW;
+            position(from,8.5,65,5.5,180,0);
+            String tag="stage7_portal_mob_"+(sequence++);
+            cmd("execute in "+from+" run summon minecraft:"+type+" 0.5 65 2.5 {Tags:[\"stage7_mob\",\""+tag+"\"],PersistenceRequired:1b}");
+            JsonObject before=taggedMob(snapshot(active+"-source"),tag);
+            require(before.get("world").getAsString().equals(from),"mob must begin outside its source portal");
+            // Initial scene velocity; no position/teleport or transfer helper is applied to this mob.
+            cmd("execute in "+from+" run data merge entity @e[tag="+tag+",limit=1] {Motion:[0.0d,0.0d,-0.8d]}");
+            JsonObject arrived=null;
+            for(int i=0;i<180;i++) {context.waitTick();JsonObject current=taggedMob(snapshot(active+"-wait"),tag);
+                if(current.get("world").getAsString().equals(to)){arrived=current;break;}}
+            require(arrived!=null,"native mob portal transfer missing: "+tag);
+            require(arrived.get("uuid").equals(before.get("uuid"))&&!arrived.get("object").equals(before.get("object")),"native mob replacement identity not preserved");
+            position(to,8.5,65,5.5,180,0);
+            JsonObject later=arrived;
+            for(int i=0;i<160&&later.get("ticks").getAsInt()<=arrived.get("ticks").getAsInt()+25;i++) {
+                context.waitTicks(2);later=taggedMob(snapshot(active+"-later"),tag);
+            }
+            if(type.equals("chicken"))require(later.get("eggTime").getAsInt()<arrived.get("eggTime").getAsInt(),"later native chicken AI/egg timer did not progress");
+            require(later.get("world").getAsString().equals(to)&&later.get("ticks").getAsInt()>arrived.get("ticks").getAsInt()+20,"destination native mob ticks did not progress");
+            String uuid=later.get("uuid").getAsString();
+            require(context.computeOnClient(c->{for(var e:c.level.entitiesForRendering())if(e.getUUID().toString().equals(uuid))return true;return false;}),"destination mob tracking absent");
+            health(active);pass(active,"native portal lookup, replacement, destination tracking and later ticks; UUID="+uuid);
+        }
+    }
+    JsonObject taggedMob(JsonObject state,String tag) {
+        JsonObject found=null;
+        for(var e:state.getAsJsonArray("entities")) {var o=e.getAsJsonObject();
+            if(o.has("tags")&&o.get("tags").getAsString().contains(tag)) {require(found==null,"duplicate tagged mob "+tag);found=o;}}
+        require(found!=null,"tagged mob absent "+tag);return found;
+    }
+    void containers()throws Exception {
+        active="C0-geometry";
+        for(String c:List.of("forceload add 0 -16 32 16","fill 12 32 -3 23 37 5 minecraft:glass hollow",
+                "fill 12 32 -3 23 32 5 minecraft:sea_lantern",
+                "setblock 15 33 0 minecraft:chest[facing=north,type=left]","setblock 16 33 0 minecraft:chest[facing=north,type=right]",
+                "setblock 20 33 0 minecraft:chest[facing=north]","item replace block 15 33 0 container.0 with minecraft:iron_ingot 23"))cmd("execute in "+NETHER+" run "+c);
+        cmd("clear "+USER+" minecraft:iron_ingot");cmd("item replace entity "+USER+" hotbar.0 with minecraft:iron_ingot 37");
+        JsonObject geometry=snapshot("verified-double-chest-geometry");
+        require(geometry.getAsJsonArray("chests").size()==3,"three actual chest block entities required");
+        for(int i=0;i<2;i++)require(geometry.getAsJsonArray("chests").get(i).getAsJsonObject().get("combinedSize").getAsInt()==54,"halves did not form a real double container");
+        require(geometry.getAsJsonArray("chests").get(0).getAsJsonObject().get("chunk").getAsString().equals("0,0")
+            &&geometry.getAsJsonArray("chests").get(1).getAsJsonObject().get("chunk").getAsString().equals("1,0"),"double chest did not span the chunk edge");
+        checkIron("initial",60);
+        active="C1-normal-close";
+        for(int i=0;i<5;i++){openChest(20,27);closeMenu();checkIron("ordinary-close-"+i,60);}
+        pass(active,"five real ordinary chest open/close cycles, iron total 60");
+        active="C2-double-counts-and-mob";openChest(15,54);
+        cmd("execute in "+NETHER+" run summon minecraft:zombified_piglin 0.5 65 2.5 {Tags:[\"stage7_mob\",\"stage7_container_mob\"],PersistenceRequired:1b,Motion:[0.0d,0.0d,-0.8d]}");
+        clickSlot(0,0,net.minecraft.world.inventory.ContainerInput.QUICK_MOVE);checkIron("double-transfer-out",60);
+        int slot=context.computeOnClient(c->{for(int i=54;i<c.player.containerMenu.slots.size();i++)if(c.player.containerMenu.getSlot(i).getItem().is(Items.IRON_INGOT))return i;return -1;});
+        require(slot>=54,"counted iron inventory slot missing");
+        clickSlot(slot,1,net.minecraft.world.inventory.ContainerInput.PICKUP);require(player().get("cursorIron").getAsInt()>0,"real cursor pickup missing");checkIron("cursor-held",60);
+        clickSlot(1,0,net.minecraft.world.inventory.ContainerInput.PICKUP);require(player().get("cursorIron").getAsInt()==0,"real cursor deposit missing");
+        for(int i=0;i<120;i++){context.waitTick();if(taggedMob(snapshot("container-active-mob"),"stage7_container_mob").get("world").getAsString().equals(OW))break;}
+        require(taggedMob(snapshot("container-mob-arrived"),"stage7_container_mob").get("world").getAsString().equals(OW),"mob portal did not complete while container was open");
+        require(player().get("menuOpen").getAsBoolean(),"double menu unexpectedly closed during mob transfer");checkIron("double-and-mob",60);
+        int menuA=player().get("menuId").getAsInt();closeMenu();openChest(20,27);int menuB=player().get("menuId").getAsInt();
+        require(menuB!=menuA,"replacement reused old menu id");
+        // Already-admitted delayed A work is exercised by NativeContainerCloseTest,
+        // including a replacement with the SAME numeric ID. Vanilla 26.2 deliberately
+        // ignores the ID of a newly arriving close packet; injecting one here would
+        // request B's close, not deliver the retained A operation.
+        context.waitTicks(12);
+        require(player().get("menuId").getAsInt()==menuB&&player().get("menuOpen").getAsBoolean(),"replacement menu B unexpectedly closed");
+        closeMenu();checkIron("menu-replacement",60);health(active);pass(active,"verified (15,33,0)/(16,33,0), native transfers/cursor totals, mob portal during open menu, ordinary close A/open B; delayed admitted A covered by native unit fixture");
+        active="C3-disconnect-open-menu";openChest(15,54);require(player().get("menuOpen").getAsBoolean(),"disconnect fixture was not open");
+        disconnect();context.waitTicks(25);connect();checkIron("reconnected-menu",60);require(!player().get("menuOpen").getAsBoolean(),"stale container after reconnect");
+        openChest(15,54);closeMenu();health(active);pass(active,"disconnect while double container open, reconnect, exact totals and usable reopen");
+        active="C4-menu-death";openChest(15,54);cmd("spawnpoint "+USER+" 17 33 3");
+        JsonObject beforeDeath=player();require(beforeDeath.get("menuOpen").getAsBoolean(),"death fixture was not open before kill");
+        cmd("kill "+USER);context.waitTicks(110);JsonObject dead=player();
+        require(dead.get("removed").getAsBoolean()&&dead.get("deathTime").getAsInt()>=20,"delayed menu death lacked native retirement");
+        checkIron("native-death-disposition",60);
+        context.runOnClient(c->c.player.respawn());context.waitFor(c->c.player!=null&&c.player.isAlive()&&c.gui.screen()==null,600);context.waitTicks(30);
+        require(!player().get("object").equals(beforeDeath.get("object")),"menu death did not replace player");
+        checkIron("menu-death-respawn",60);openChest(15,54);closeMenu();
+        // Recover the witnessed native death drops through normal pickup, then put the
+        // counted supply in the saved chest before later independent inventory scenes.
+        JsonObject disposition=snapshot("death-drops-before-recovery");
+        for(var e:disposition.getAsJsonArray("entities")){var drop=e.getAsJsonObject();
+            if(drop.has("item")&&drop.get("item").getAsString().equals("minecraft:iron_ingot")){
+                position(drop.get("world").getAsString(),drop.get("x").getAsDouble(),drop.get("y").getAsDouble(),drop.get("z").getAsDouble(),180,0);context.waitTicks(20);
+            }}
+        openChest(15,54);
+        for(int recoverySlot=54;recoverySlot<90;recoverySlot++){final int index=recoverySlot;
+            if(context.computeOnClient(c->c.player.containerMenu.getSlot(index).getItem().is(Items.IRON_INGOT)))
+                clickSlot(recoverySlot,0,net.minecraft.world.inventory.ContainerInput.QUICK_MOVE);}
+        closeMenu();checkIron("recovered-death-drops-in-chests",60);
+        require(player().get("iron").getAsInt()==0,"counted iron was not returned to saved containers");
+        require(snapshot("saved-chest-counts").getAsJsonArray("chests").asList().stream().mapToInt(e->e.getAsJsonObject().get("iron").getAsInt()).sum()==60,"saved physical chests must contain all 60 ingots");
+        health(active);pass(active,"menu observed open before death, native retirement, delayed respawn, exact unchanged-rule death totals, native drop recovery and 60 ingots returned to saved chests");
+    }
+    void openChest(int x,int chestSlots)throws Exception {
+        position(NETHER,x+.5,33,3.5,180,0);context.getInput().lookAt(new BlockPos(x,33,0));context.getInput().pressKey(o->o.keyUse);
+        context.waitFor(c->c.player.containerMenu!=c.player.inventoryMenu,300);context.waitTicks(8);
+        require(player().get("menuSlots").getAsInt()==chestSlots+36,"wrong native container geometry");
+    }
+    void closeMenu()throws Exception {context.getInput().pressKey(o->o.keyInventory);context.waitFor(c->c.player.containerMenu==c.player.inventoryMenu&&c.gui.screen()==null,300);context.waitTicks(8);}
+    void clickSlot(int slot,int button,net.minecraft.world.inventory.ContainerInput input)throws Exception {
+        context.runOnClient(c->c.gameMode.handleContainerInput(c.player.containerMenu.containerId,slot,button,input,c.player));context.waitTicks(8);
+    }
+    void checkIron(String label,int expected)throws Exception {
+        JsonObject state=snapshot(label);int total=0;
+        for(var e:state.getAsJsonArray("players")){var p=e.getAsJsonObject();total+=p.get("iron").getAsInt()+p.get("cursorIron").getAsInt();}
+        for(var e:state.getAsJsonArray("chests"))total+=e.getAsJsonObject().get("iron").getAsInt();
+        for(var e:state.getAsJsonArray("entities")){var o=e.getAsJsonObject();if(o.has("item")&&o.get("item").getAsString().equals("minecraft:iron_ingot"))total+=o.get("count").getAsInt();}
+        require(total==expected,label+" inventory + physical chest halves + cursor + dropped iron: "+total+" expected "+expected);
     }
     void baseline()throws Exception {
         active="I0";position(OW,8.5,65,5.5,180,0);context.waitTicks(30);
@@ -73,7 +185,7 @@ public final class Stage7RepairClientTest implements FabricClientGameTest {
         require(player().get("cane").getAsInt()==1,"moving drop/pickup did not return one item");
         require(items(snapshot("moving-picked-up"),OW).size()==0,"moving pickup left duplicate item");
         cmd("clear "+USER+" minecraft:sugar_cane");
-        cmd("execute in "+OW+" run summon minecraft:chicken -8 65 6 {Tags:[\"stage7_mob\"],PersistenceRequired:1b}");
+        cmd("execute in "+OW+" run summon minecraft:chicken -8 65 6 {Tags:[\"stage7_mob\",\"stage7_baseline\"],PersistenceRequired:1b}");
         JsonObject firstMob=mob(snapshot("mob-start"));context.waitTicks(45);JsonObject laterMob=mob(snapshot("mob-ticked"));
         require(firstMob.get("uuid").equals(laterMob.get("uuid"))&&laterMob.get("ticks").getAsInt()>firstMob.get("ticks").getAsInt()+20,"native mob ticks did not progress");
         health(active);pass(active,"native movement across chunk boundary, placement, break, moving drop/pickup, chat and bounded chicken ticking");
@@ -180,7 +292,15 @@ public final class Stage7RepairClientTest implements FabricClientGameTest {
         JsonObject beforeMovement=player();
         context.getInput().holdKey(o->o.keyUp);context.waitTicks(12);context.getInput().releaseKey(o->o.keyUp);context.waitTicks(10);
         require(moved(beforeMovement,player()),"post-restart native movement did not progress");
-        snapshot("restart-gameplay");pass(active,"same saved world, retained inventory/block, real reconnect and movement");
+        checkIron("restart-counts",60);openChest(15,54);closeMenu();checkIron("restart-menu-counts",60);
+        position(OW,8.5,65,5.5,180,0);
+        JsonObject savedMob=mob(snapshot("restart-mob-before")),later=savedMob;
+        for(int i=0;i<160&&later.get("ticks").getAsInt()<=savedMob.get("ticks").getAsInt()+25;i++){
+            context.waitTicks(2);later=mob(snapshot("restart-mob-later"));}
+        require(later.get("ticks").getAsInt()>savedMob.get("ticks").getAsInt()+20,"saved mob stopped ticking after restart");
+        String mobUuid=later.get("uuid").getAsString();
+        require(context.computeOnClient(c->{for(var e:c.level.entitiesForRendering())if(e.getUUID().toString().equals(mobUuid))return true;return false;}),"saved mob tracking absent after restart");
+        snapshot("restart-gameplay");pass(active,"same saved world; 11 cane, diamond block, 60 chest iron, real double-menu use, movement and saved mob ticking/client tracking");
     }
     void equipPearl()throws Exception {cmd("item replace entity "+USER+" hotbar.0 with minecraft:ender_pearl 16");context.getInput().pressKey(o->o.keyHotbarSlots[0]);context.waitTicks(30);require(context.computeOnClient(c->c.player.getMainHandItem().is(Items.ENDER_PEARL)),"client pearl supply absent");}
     void heal()throws Exception {cmd("effect give "+USER+" minecraft:instant_health 1 5 true");context.waitTicks(5);}
@@ -196,9 +316,9 @@ public final class Stage7RepairClientTest implements FabricClientGameTest {
     void disconnect(){context.runOnClient(c->{if(c.getConnection()!=null)c.getConnection().getConnection().disconnect(Component.literal("Stage7 automated reconnect"));c.disconnect(new TitleScreen(),false);});context.waitFor(c->c.level==null,600);}
     JsonObject player()throws Exception {JsonArray ps=JsonParser.parseString(cmd("stage7-probe snapshot")).getAsJsonObject().getAsJsonArray("players");require(ps.size()==1,"expected one native logged-in test player: "+ps);return ps.get(0).getAsJsonObject();}
     JsonObject snapshot(String label)throws Exception {JsonObject s=JsonParser.parseString(cmd("stage7-probe snapshot")).getAsJsonObject();JsonObject row=s.deepCopy();row.addProperty("label",label);observations.add(row);return s;}
-    JsonArray items(JsonObject state,String world){JsonArray out=new JsonArray();for(JsonElement e:state.getAsJsonArray("entities")){JsonObject o=e.getAsJsonObject();if(o.get("type").getAsString().equals("minecraft:item")&&o.get("world").getAsString().equals(world))out.add(o);}return out;}
+    JsonArray items(JsonObject state,String world){JsonArray out=new JsonArray();for(JsonElement e:state.getAsJsonArray("entities")){JsonObject o=e.getAsJsonObject();if(o.get("type").getAsString().equals("minecraft:item")&&o.get("item").getAsString().equals("minecraft:sugar_cane")&&o.get("world").getAsString().equals(world))out.add(o);}return out;}
     JsonArray pearls(JsonObject state){JsonArray out=new JsonArray();for(JsonElement e:state.getAsJsonArray("entities"))if(e.getAsJsonObject().get("type").getAsString().equals("minecraft:ender_pearl"))out.add(e);return out;}
-    JsonObject mob(JsonObject state){for(JsonElement e:state.getAsJsonArray("entities"))if(e.getAsJsonObject().get("type").getAsString().equals("minecraft:chicken"))return e.getAsJsonObject();throw new AssertionError("bounded native chicken absent");}
+    JsonObject mob(JsonObject state){for(JsonElement e:state.getAsJsonArray("entities"))if(e.getAsJsonObject().get("tags").getAsString().contains("stage7_baseline"))return e.getAsJsonObject();throw new AssertionError("bounded native chicken absent");}
     void health(String label)throws Exception {String d=cmd("phoenium diagnostics");require(d.contains("lifecycle=RUNNING")&&d.contains("scheduler=RUNNING"),"unhealthy scheduler: "+d);JsonObject row=new JsonObject();row.addProperty("label",label);row.addProperty("diagnostics",d);observations.add(row);}
     void pass(String card,String details){JsonObject c=new JsonObject();c.addProperty("card",card);c.addProperty("result","PASS");c.addProperty("details",details);cards.add(c);System.out.println("STAGE7_CARD_PASS "+card+" "+details);}
     static boolean moved(JsonObject before,JsonObject after){
@@ -210,8 +330,17 @@ public final class Stage7RepairClientTest implements FabricClientGameTest {
     String cmd(String command)throws IOException {
         try(Socket socket=new Socket()){socket.connect(new InetSocketAddress("127.0.0.1",Integer.getInteger("phoenium.repair.rconPort")),1500);socket.setSoTimeout(15000);
             DataInputStream in=new DataInputStream(new BufferedInputStream(socket.getInputStream()));OutputStream out=socket.getOutputStream();
-            write(out,1,3,"phoenium-stage7-local-test");read(in);write(out,2,2,command);return read(in);}
+            write(out,1,3,"phoenium-stage7-local-test");read(in);write(out,2,2,command);
+            Packet first=read(in);require(first.id()==2,"wrong RCON command response");
+            // Minecraft splits command output into 4096-character responses. Once the
+            // command has been received, an unknown packet type is a side-effect-free
+            // ordered terminator; it cannot be coalesced with the original request.
+            write(out,3,0,"");StringBuilder result=new StringBuilder(first.text());
+            for(int packets=0;packets<256;packets++){Packet next=read(in);if(next.id()==3)return result.toString();
+                if(next.id()!=2)throw new IOException("wrong RCON continuation id");result.append(next.text());}
+            throw new IOException("RCON response exceeded bounded packet count");}
     }
     static void write(OutputStream out,int id,int type,String text)throws IOException {byte[] body=text.getBytes(StandardCharsets.UTF_8);ByteBuffer b=ByteBuffer.allocate(body.length+14).order(ByteOrder.LITTLE_ENDIAN);b.putInt(body.length+10).putInt(id).putInt(type).put(body).put((byte)0).put((byte)0);out.write(b.array());out.flush();}
-    static String read(DataInputStream in)throws IOException {int size=Integer.reverseBytes(in.readInt());if(size<10||size>1000000)throw new IOException("bad RCON length");byte[] b=in.readNBytes(size);if(b.length!=size)throw new EOFException();if(ByteBuffer.wrap(b).order(ByteOrder.LITTLE_ENDIAN).getInt()<0)throw new IOException("RCON refused");return new String(b,8,size-10,StandardCharsets.UTF_8);}
+    record Packet(int id,String text){}
+    static Packet read(DataInputStream in)throws IOException {int size=Integer.reverseBytes(in.readInt());if(size<10||size>1000000)throw new IOException("bad RCON length");byte[] b=in.readNBytes(size);if(b.length!=size)throw new EOFException();int id=ByteBuffer.wrap(b).order(ByteOrder.LITTLE_ENDIAN).getInt();if(id<0)throw new IOException("RCON refused");return new Packet(id,new String(b,8,size-10,StandardCharsets.UTF_8));}
 }

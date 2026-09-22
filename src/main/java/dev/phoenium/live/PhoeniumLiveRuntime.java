@@ -105,6 +105,7 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
     private final ObjectOwnershipRegistry objects = new ObjectOwnershipRegistry(directory);
     private final PearlPortalTransitionManager pearlPortalTransitions;
     private final ItemPortalTransitionManager itemPortalTransitions;
+    private final MobPortalTransitionManager mobPortalTransitions;
     private final PlayerDimensionTransitionManager playerDimensionTransitions;
     private final PearlPlayerHitHandoff pearlPlayerHits;
     private final Map<TaskCorrelationId, PendingPacket> packets = new ConcurrentHashMap<>();
@@ -272,6 +273,7 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
         };
         this.pearlPortalTransitions = new PearlPortalTransitionManager(portalAuthority, objects);
         this.itemPortalTransitions = new ItemPortalTransitionManager(portalAuthority, objects);
+        this.mobPortalTransitions = new MobPortalTransitionManager(portalAuthority, objects);
         this.playerDimensionTransitions = new PlayerDimensionTransitionManager(
             new PlayerDimensionTransitionManager.Authority() {
                 @Override public boolean running() { return PhoeniumLiveRuntime.this.isRunning(); }
@@ -488,6 +490,7 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
                 // from its destination chunk. The entity-management cut below remains necessary
                 // for movement first observed during this tick's entity body.
                 entityIndexLifecycle.advancePendingRelocations(runtimes);
+                mobPortalTransitions.advance();
                 itemPortalTransitions.advance();
                 pearlPortalTransitions.advance();
                 pearlPlayerHits.advance();
@@ -529,6 +532,7 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
                 // here, after every owner callback has returned. Busy source/destination regions
                 // retain their bounded fact for the next tick instead of waiting on one another.
                 entityIndexLifecycle.advancePendingRelocations(runtimes);
+                mobPortalTransitions.advance();
                 itemPortalTransitions.advance();
                 pearlPortalTransitions.advance();
                 pearlPlayerHits.advance();
@@ -698,6 +702,7 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
             failures.run(playerDimensionTransitions::close);
             failures.run(pearlPortalTransitions::close);
             failures.run(itemPortalTransitions::close);
+            failures.run(mobPortalTransitions::close);
             failures.run(pearlPlayerHits::close);
             failures.run(() -> { if (scheduler != null) { scheduler.quiesce(); scheduler.stop(); } });
             failures.run(() -> {
@@ -2275,6 +2280,7 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
     public void onEntityRemoved(Entity entity, Entity.RemovalReason reason) {
         if (!isRunning() || !(entity.level() instanceof ServerLevel level)) return;
         if (NativePortalTransfer.expectedRemoval(entity, reason)) return;
+        if (mobPortalTransitions.onRemoval(entity, reason)) return;
         if (itemPortalTransitions.onRemoval(entity, reason)) return;
         if (entity instanceof ServerPlayer player && playerDimensionTransitions.onRemoval(player, reason)) return;
         if (pearlPortalTransitions.onRemoval(entity, reason)) return;
@@ -2294,6 +2300,16 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
     public void beginPearlPortalTick(ThrownEnderpearl pearl, int previousSectionX, int previousSectionZ, Entity retainedOwner) {
         pearlPortalTransitions.beginTick(pearl, previousSectionX, previousSectionZ, retainedOwner);
     }
+
+    public void beginMobPortalTick(net.minecraft.world.entity.Mob mob) { mobPortalTransitions.begin(mob); }
+    public boolean suspendMobPortalDestination(net.minecraft.world.entity.Mob mob, net.minecraft.world.entity.PortalProcessor processor) {
+        return mobPortalTransitions.suspendDestination(mob, processor);
+    }
+    public boolean mobPortalSuspended(net.minecraft.world.entity.Mob mob) { return mobPortalTransitions.suspended(mob); }
+    public boolean completeMobPortalTick(net.minecraft.world.entity.Mob mob) { return mobPortalTransitions.complete(mob); }
+    public void finishMobPortalTick(net.minecraft.world.entity.Mob mob) { mobPortalTransitions.finish(mob); }
+    /** Called after executeAndDrain returned, before the next entity consumes native RNG. */
+    public void advanceMobPortalAfterEntityCallback() { mobPortalTransitions.advance(); }
 
     public void beginItemPortalTick(net.minecraft.world.entity.item.ItemEntity item) { itemPortalTransitions.begin(item); }
     public boolean suspendItemPortalDestination(net.minecraft.world.entity.item.ItemEntity item, PortalProcessor processor) {
@@ -2353,6 +2369,7 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
         playerDimensionTransitions.worldClosing(level);
         pearlPortalTransitions.worldClosing(level);
         itemPortalTransitions.worldClosing(level);
+        mobPortalTransitions.worldClosing(level);
         pearlPlayerHits.worldClosing(level);
     }
 

@@ -10,6 +10,9 @@ abstract class PlayerRespawnIdentityMixin implements PlayerRespawnHandoff.Incarn
     @Unique private boolean phoenium$respawnRetired;
     @Unique private volatile boolean phoenium$deathRemovalCompleted;
     @Unique private boolean phoenium$respawnPrecheckLogged;
+    @Unique private dev.phoenium.chunk.FullEntityFacts.PublishedPosition phoenium$deathPosition;
+    @Override public dev.phoenium.chunk.FullEntityFacts.PublishedPosition phoenium$deathPosition() { return phoenium$deathPosition; }
+    @Override public void phoenium$deathPosition(dev.phoenium.chunk.FullEntityFacts.PublishedPosition position) { phoenium$deathPosition=position; }
     @Override public boolean phoenium$respawnRetired() { return phoenium$respawnRetired; }
     @Override public void phoenium$respawnRetired(boolean retired) { phoenium$respawnRetired = retired; }
     @Override public boolean phoenium$deathRemovalCompleted() { return phoenium$deathRemovalCompleted; }
