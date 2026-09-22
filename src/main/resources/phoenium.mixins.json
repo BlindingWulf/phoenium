@@ -169,6 +169,7 @@
     "MobPortalEntityMixin",
     "MobPortalLivingMixin",
     "MobPortalMobMixin",
+    "MobPortalCubeMixin",
     "PearlPortalProcessorAccess",
     "PearlPortalEntityMixin",
     "PearlPortalProjectileAccess",

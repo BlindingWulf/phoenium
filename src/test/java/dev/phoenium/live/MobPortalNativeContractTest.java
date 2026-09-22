@@ -25,4 +25,22 @@ class MobPortalNativeContractTest {
                 System.out.println("MOB_SUFFIX_PIN "+method.name+" "+VaultContinuationPin.fingerprint(method));
         }
     }
+    @Test void cubeFamilyDeclaresItsOwnTickTailAndUsesTheSharedPortalCaller() throws Exception {
+        assertTrue(MobPortalNativeAccess.CubeSuffix.class.isAssignableFrom(
+            net.minecraft.world.entity.monster.cubemob.AbstractCubeMob.class));
+        for (Class<?> type : java.util.List.of(
+                net.minecraft.world.entity.monster.cubemob.MagmaCube.class,
+                net.minecraft.world.entity.monster.cubemob.Slime.class)) {
+            assertEquals(net.minecraft.world.entity.monster.cubemob.AbstractCubeMob.class,type.getMethod("tick").getDeclaringClass());
+            assertEquals(net.minecraft.world.entity.Mob.class,type.getMethod("baseTick").getDeclaringClass());
+            assertEquals(net.minecraft.world.entity.Entity.class,type.getMethod("teleport",
+                net.minecraft.world.level.portal.TeleportTransition.class).getDeclaringClass());
+        }
+        var node=new ClassNode();
+        try(var in=getClass().getResourceAsStream("/"+MobPortalNativeSuffixes.CUBE+".class")) {
+            assertNotNull(in);new ClassReader(in).accept(node,ClassReader.EXPAND_FRAMES);
+        }
+        MobPortalNativeSuffixes.install(node);
+        assertEquals(1,node.methods.stream().filter(m->m.name.equals("phoenium$resumeMobCubeTickSuffix")).count());
+    }
 }

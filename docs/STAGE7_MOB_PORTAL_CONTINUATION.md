@@ -1,15 +1,60 @@
 # Stage 7 native mob portal continuation
 
-The repair supports the exact passenger-free vanilla `ZombifiedPiglin`, `Chicken`,
-`Pig`, and `EnderMan` classes through Nether portals in Minecraft 26.2. Subclasses, vehicles,
-passenger graphs, End portals, and arbitrary modded tick overrides are not covered.
-The binding is enabled in the primary authoritative-FULL-false profile.
+The current repair binds 33 reviewed, exact passenger-free vanilla mob classes through
+Nether portals in Minecraft 26.2. It retains the earlier ZombifiedPiglin, Chicken,
+Pig, and EnderMan results and adds the AbstractCubeMob family, MagmaCube and Slime.
+Other exact classes with the same native caller structure are bound and exercised in
+the transformed native-path fixture. This is not a universal Mob binding. Vehicles,
+passenger graphs, End portals, modded overrides, and the distinct vanilla caller
+families identified below remain open. The binding is enabled in the primary
+authoritative-FULL-false profile.
+
+The 2026-09-22 14:24:49 live failure was a MagmaCube runtime ID 2173 crossing
+Nether to Overworld. The old exact-four selector did not capture its Mob.tick. Native
+portal handling therefore proceeded inside the Nether owner callback. Already-ready
+destination insertion called Overworld tracking while that callback still held the
+Nether context and failed in RegionalTrackingService.addEntity. The source did not
+return before destination work. NativePortalTransfer did not own that insertion;
+its active operation was absent. This is a different first boundary from the older
+ZombifiedPiglin owner-held POI dependency. Runtime ID 2173 is not an incarnation or
+UUID. The old installed success and “Active failure: NONE” are historical.
 
 The preserved 2026-09-22 05:08:08 failure belongs to a Nether ZombifiedPiglin,
 runtime ID 2826, near (-17.57,38,8.72). Its UUID, operation generation and requested
 query coordinates are unavailable in the original crash. The player's reported
 chest coordinates do not identify that query. Close counters were 81 admitted,
 81 effects, zero failures; the crash was the mob's owner-held POI dependency.
+
+## Vanilla caller and selection coverage
+
+All supported rows use the exact-class selector in `MobPortalTransitionManager`,
+enter through the real native Mob.tick call, retain at Entity.handlePortal before
+destination lookup, and run the four shared LivingEntity/Mob tails after transfer.
+The existing Entity.baseTick tail also resumes. “Native-path” means a transformed
+fixture executing the real mob tick and portal code with controlled world-query
+endpoints; it is not an installed player observation.
+
+| Exact concrete classes | Declaring outer tick / portal path | Selection and remaining caller work | Verification |
+| --- | --- | --- | --- |
+| Chicken, Pig, EnderMan, Blaze, Bogged, Cow, ElderGuardian, Ghast, Goat, Guardian, Hoglin, IronGolem, MushroomCow, Ocelot, Parched, Piglin, PiglinBrute, Pillager, Ravager, Sheep, SnowGolem, Stray, Turtle, Vindicator, Witch, WitherSkeleton, Zoglin | Mob.tick and Mob.baseTick; LivingEntity.tick/baseTick; Entity.baseTick/handlePortal | DIRECT_MOB_TICK; no outer tick tail | All 27 native-path both directions, ready and controlled delayed; Chicken/Pig/EnderMan installed |
+| ZombifiedPiglin, Zombie, Drowned, Husk | Zombie.tick prefix before Mob.tick; same shared inner path | ZOMBIE_PREFIX; Zombie has no suffix after super tick | All four native-path both directions, ready and controlled delayed; ZombifiedPiglin installed |
+| MagmaCube, Slime | AbstractCubeMob.tick prefix, AgeableMob.tick to Mob.tick, same shared inner path | CUBE_OUTER_TAIL; extracted AbstractCubeMob.tick suffix runs once on the source after native transfer | Both classes native-path both directions, ready and controlled delayed, sizes 1/2/4; both installed with fitting portal scene |
+
+The 27 direct and four Zombie-family additions close selector holes that share the
+reviewed call/continuation shape. The exact class check remains intentional: an
+unreviewed override must not inherit this proof accidentally. The native-path test
+asserts selected disposition through real Mob.tick; it does not manually call
+`begin` to mask a missing binding.
+
+Distinct ordinary vanilla paths remain an engineering blocker. WanderingTrader
+inherits `AbstractVillager.teleport`, a different transfer override. Skeleton
+declares its own `tick` with work around Mob.tick. AbstractHorse subclasses have
+their own outer tick behavior; several aquatic mobs override baseTick or tick.
+These families are not bound by the current selector and have no pinned continuation
+or installed transfer proof. They can still reach a Nether portal via normal play;
+their unretained path can run destination effects under the source owner. The
+negative selector test confirms WanderingTrader and Skeleton stay unbound. Do not
+interpret a green 33-class matrix as safe coverage for every ordinary mob.
 
 ## Native execution and retained work
 
@@ -30,19 +75,30 @@ Mob.baseTick -> LivingEntity.baseTick -> Entity.baseTick -> Entity.handlePortal
 -> getExitPortal -> PortalForcer.findClosestPortalPosition ->
 PoiManager.ensureLoadedAndValid`.
 
-The cut is immediately before `getPortalDestination`. Native prefix effects,
+MagmaCube and Slime both inherit `AbstractCubeMob.tick`; neither declares a tick
+method. That outer method updates squish state before calling AgeableMob.tick and
+has landing particles/sound, ground state and squish decay afterward. Its fifth
+pinned suffix preserves those native branches, dispatch and random draws. The
+cube-only after-super cut cancels that outer suffix during retention. On completion
+the suffix runs exactly once on the source cube under the source operation, even if
+native teleport returned a distinct destination replacement. Size NBT and health
+take their native replacement path. Native `AbstractCubeMob.remove` splits only on
+death at size greater than one; CHANGED_DIMENSION retirement of a living cube does
+not split it.
+
+The inner cut is immediately before `getPortalDestination`. Native prefix effects,
 portal eligibility, process state and cooldown work already performed remain
 committed. The handlePortal and Entity baseTick profiler frames are balanced while
 unwinding. Each of the four after-super living/mob cuts has only `this` live;
 there is no captured arbitrary Java operand stack. The native Entity base suffix
-is reused from the existing item/pearl mechanism. Four additional native tails
+is reused from the existing item/pearl mechanism. Five additional native tails
 are copied into their own declaring classes, retaining private calls, branches,
 RNG and dispatch. Structural checks and fixed semantic fingerprints fail binding
 if the supported native code changes. Original methods continue serving ordinary
 ticks; only the retained operation runs their suffixes separately.
 
-The four tails run in native order: LivingEntity.baseTick, Mob.baseTick,
-LivingEntity.tick, Mob.tick. They retain living timers/effects, mob ambient RNG,
+The four shared tails run in native order: LivingEntity.baseTick, Mob.baseTick,
+LivingEntity.tick, Mob.tick, then the AbstractCubeMob.tick tail for cubes. They retain living timers/effects, mob ambient RNG,
 equipment and AI/aiStep work, animation/fall-flight state and control flags. The
 full original tick is never replayed. The source object receives the remaining
 native suffix even when native teleport returned a different replacement.
@@ -102,9 +158,9 @@ A/open B separately from controlled already-admitted delayed A unit coverage.
 
 ## Validation boundaries
 
-The red regression enters actual mob.tick, Entity.handlePortal, NetherPortalBlock
+The red regression enters actual Mob.tick, Entity.handlePortal, NetherPortalBlock
 and native POI enumeration on the unchanged baseline. Green tests run ready and
-controlled pending inputs in both directions for all four classes; endpoints for
+controlled pending inputs in both directions for all 33 selected classes; endpoints for
 native world queries/portal output are explicitly controlled in the fixture.
 They check multiple queries, no lookup before callback release, exact suffix state,
 replacement ordering, cancellation/invalidation and partial insertion cleanup.
@@ -113,7 +169,8 @@ Installed evidence uses ordinary native gameplay and a separate observer JAR,
 normal TCP Fabric client input, and the unchanged pinned core provider profile.
 Modeled pending futures do not prove an installed pending-provider timing window.
 
-Final candidate accounting and installed evidence live in the continuation campaign
-`.audit/astra-max-mob-continuation-20260922-110554`, outside the production JAR.
+The previous exact-four checkpoint lives in
+`.audit/astra-max-mob-continuation-20260922-110554`; the new Magma repair accounting
+and installed evidence live in `.audit/astra-max-magma-repair-20260922-150510`.
 Human Bedrock UI, legitimate older-client Via and two-client audio remain separate
 client validation gates. This document does not declare Stage 7 complete.

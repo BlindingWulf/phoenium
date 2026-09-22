@@ -41,6 +41,11 @@ public final class Stage7RepairProbe implements DedicatedServerModInitializer {
         j.addProperty("reason",String.valueOf(e.getRemovalReason()));
         if(e instanceof ItemEntity item) {j.addProperty("count",item.getItem().getCount());j.addProperty("age",item.getAge());j.addProperty("item",BuiltInRegistries.ITEM.getKey(item.getItem().getItem()).toString());}
         if(e instanceof net.minecraft.world.entity.animal.chicken.Chicken chicken) {j.addProperty("flap",chicken.flap);j.addProperty("eggTime",chicken.eggTime);}
+        if(e instanceof net.minecraft.world.entity.monster.cubemob.AbstractCubeMob cube) {
+            j.addProperty("size",cube.getSize());j.addProperty("health",cube.getHealth());
+            j.addProperty("targetSquish",cube.targetSquish);j.addProperty("squish",cube.squish);
+            j.addProperty("oldSquish",cube.oSquish);
+        }
         if(e instanceof ThrownEnderpearl pearl) {
             Entity owner=pearl.getOwner();j.addProperty("ownerObject",owner==null?"UNAVAILABLE":Integer.toHexString(System.identityHashCode(owner)));
             j.addProperty("ownerWorld",owner==null?"UNAVAILABLE":owner.level().dimension().identifier().toString());

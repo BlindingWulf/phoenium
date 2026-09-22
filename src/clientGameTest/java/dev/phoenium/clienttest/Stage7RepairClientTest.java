@@ -46,14 +46,28 @@ public final class Stage7RepairClientTest implements FabricClientGameTest {
             catch(IOException failure){throw new UncheckedIOException(failure);}}
     }
     void mobPortals()throws Exception {
+        for(String world:List.of(OW,NETHER)) {
+            cmd("execute in "+world+" run fill 0 64 7 10 73 11 minecraft:glass hollow");
+            cmd("execute in "+world+" run fill 1 65 8 9 72 10 minecraft:air");
+        }
         int sequence=0;
-        for(String type:List.of("zombified_piglin","chicken","pig","enderman")) for(String from:List.of(OW,NETHER)) {
-            active="M0-"+type+"-"+from;String to=from.equals(OW)?NETHER:OW;
+        for(String type:List.of("zombified_piglin","chicken","pig","enderman","magma_cube","slime"))
+            for(String from:List.of(OW,NETHER)) mobPortalCase(type,from,1,sequence++);
+        for(int size:List.of(2,4)) {
+            mobPortalCase("magma_cube",NETHER,size,sequence++);
+            mobPortalCase("slime",OW,size,sequence++);
+        }
+    }
+    void mobPortalCase(String type,String from,int size,int sequence)throws Exception {
+            active="M0-"+type+"-size"+size+"-"+from;String to=from.equals(OW)?NETHER:OW;
             position(from,8.5,65,5.5,180,0);
-            String tag="stage7_portal_mob_"+(sequence++);
-            cmd("execute in "+from+" run summon minecraft:"+type+" 0.5 65 2.5 {Tags:[\"stage7_mob\",\""+tag+"\"],PersistenceRequired:1b}");
+            String tag="stage7_portal_mob_"+sequence;
+            boolean cube=type.equals("magma_cube")||type.equals("slime");
+            String sizeData=cube?",Size:"+(size-1):"";
+            cmd("execute in "+from+" run summon minecraft:"+type+" 0.5 65 2.5 {Tags:[\"stage7_mob\",\""+tag+"\"],PersistenceRequired:1b"+sizeData+"}");
             JsonObject before=taggedMob(snapshot(active+"-source"),tag);
             require(before.get("world").getAsString().equals(from),"mob must begin outside its source portal");
+            if(cube)require(before.get("size").getAsInt()==size,"cube size setup changed");
             // Initial scene velocity; no position/teleport or transfer helper is applied to this mob.
             cmd("execute in "+from+" run data merge entity @e[tag="+tag+",limit=1] {Motion:[0.0d,0.0d,-0.8d]}");
             JsonObject arrived=null;
@@ -61,6 +75,7 @@ public final class Stage7RepairClientTest implements FabricClientGameTest {
                 if(current.get("world").getAsString().equals(to)){arrived=current;break;}}
             require(arrived!=null,"native mob portal transfer missing: "+tag);
             require(arrived.get("uuid").equals(before.get("uuid"))&&!arrived.get("object").equals(before.get("object")),"native mob replacement identity not preserved");
+            if(cube)require(arrived.get("size").getAsInt()==size&&arrived.get("health").getAsDouble()>0,"cube size or health changed on arrival");
             position(to,8.5,65,5.5,180,0);
             JsonObject later=arrived;
             for(int i=0;i<160&&later.get("ticks").getAsInt()<=arrived.get("ticks").getAsInt()+25;i++) {
@@ -71,7 +86,37 @@ public final class Stage7RepairClientTest implements FabricClientGameTest {
             String uuid=later.get("uuid").getAsString();
             require(context.computeOnClient(c->{for(var e:c.level.entitiesForRendering())if(e.getUUID().toString().equals(uuid))return true;return false;}),"destination mob tracking absent");
             health(active);pass(active,"native portal lookup, replacement, destination tracking and later ticks; UUID="+uuid);
-        }
+            if(type.equals("magma_cube")&&from.equals(NETHER)&&size==1) cubeReverseAfterCooldown(tag,arrived,uuid,size);
+            else if(cube) holdCube(to,tag);
+    }
+    void holdCube(String world,String tag)throws Exception {
+        // Same-world scene placement after the native portal and later-tick assertions.
+        cmd("execute in "+world+" run tp @e[tag="+tag+",limit=1] 5.5 65 9.5");
+        require(taggedMob(snapshot("held-"+tag),tag).get("world").getAsString().equals(world),"cube holding scene changed dimension");
+    }
+    void cubeReverseAfterCooldown(String tag,JsonObject firstArrival,String uuid,int size)throws Exception {
+        active="M1-magma-cube-reverse-after-cooldown";
+        holdCube(OW,tag);
+        context.waitTicks(310);
+        JsonObject before=taggedMob(snapshot(active+"-before"),tag);
+        require(before.get("world").getAsString().equals(OW),"cube left the destination before controlled reverse setup");
+        // Local position setup after natural cooldown. The dimension change remains native portal entry.
+        cmd("execute in "+OW+" run tp @e[tag="+tag+",limit=1] 0.5 65 2.5");
+        cmd("execute in "+OW+" run data merge entity @e[tag="+tag+",limit=1] {Motion:[0.0d,0.0d,-0.8d]}");
+        JsonObject returned=null;
+        for(int i=0;i<180;i++){context.waitTick();JsonObject current=taggedMob(snapshot(active+"-wait"),tag);
+            if(current.get("world").getAsString().equals(NETHER)){returned=current;break;}}
+        require(returned!=null,"magma cube failed native reverse portal entry after cooldown");
+        require(returned.get("uuid").getAsString().equals(uuid)
+            &&!returned.get("object").getAsString().equals(firstArrival.get("object").getAsString())
+            &&returned.get("size").getAsInt()==size,"reverse cube replacement identity/size changed");
+        position(NETHER,8.5,65,5.5,180,0);context.waitTicks(30);
+        JsonObject later=taggedMob(snapshot(active+"-later"),tag);
+        require(later.get("ticks").getAsInt()>returned.get("ticks").getAsInt()+20,"reverse cube native ticks did not progress");
+        require(context.computeOnClient(c->{for(var e:c.level.entitiesForRendering())if(e.getUUID().toString().equals(uuid))return true;return false;}),
+            "reverse cube client tracking absent");
+        health(active);pass(active,"same UUID, new native replacement after natural cooldown and local scene repositioning");
+        holdCube(NETHER,tag);
     }
     JsonObject taggedMob(JsonObject state,String tag) {
         JsonObject found=null;
@@ -96,7 +141,7 @@ public final class Stage7RepairClientTest implements FabricClientGameTest {
         for(int i=0;i<5;i++){openChest(20,27);closeMenu();checkIron("ordinary-close-"+i,60);}
         pass(active,"five real ordinary chest open/close cycles, iron total 60");
         active="C2-double-counts-and-mob";openChest(15,54);
-        cmd("execute in "+NETHER+" run summon minecraft:zombified_piglin 0.5 65 2.5 {Tags:[\"stage7_mob\",\"stage7_container_mob\"],PersistenceRequired:1b,Motion:[0.0d,0.0d,-0.8d]}");
+        cmd("execute in "+NETHER+" run summon minecraft:magma_cube 0.5 65 2.5 {Tags:[\"stage7_mob\",\"stage7_container_mob\"],PersistenceRequired:1b,Size:0,Motion:[0.0d,0.0d,-0.8d]}");
         clickSlot(0,0,net.minecraft.world.inventory.ContainerInput.QUICK_MOVE);checkIron("double-transfer-out",60);
         int slot=context.computeOnClient(c->{for(int i=54;i<c.player.containerMenu.slots.size();i++)if(c.player.containerMenu.getSlot(i).getItem().is(Items.IRON_INGOT))return i;return -1;});
         require(slot>=54,"counted iron inventory slot missing");
@@ -104,6 +149,7 @@ public final class Stage7RepairClientTest implements FabricClientGameTest {
         clickSlot(1,0,net.minecraft.world.inventory.ContainerInput.PICKUP);require(player().get("cursorIron").getAsInt()==0,"real cursor deposit missing");
         for(int i=0;i<120;i++){context.waitTick();if(taggedMob(snapshot("container-active-mob"),"stage7_container_mob").get("world").getAsString().equals(OW))break;}
         require(taggedMob(snapshot("container-mob-arrived"),"stage7_container_mob").get("world").getAsString().equals(OW),"mob portal did not complete while container was open");
+        holdCube(OW,"stage7_container_mob");
         require(player().get("menuOpen").getAsBoolean(),"double menu unexpectedly closed during mob transfer");checkIron("double-and-mob",60);
         int menuA=player().get("menuId").getAsInt();closeMenu();openChest(20,27);int menuB=player().get("menuId").getAsInt();
         require(menuB!=menuA,"replacement reused old menu id");

@@ -8,6 +8,10 @@ public final class FullRegistrationTestTransform {
     public static byte[] transform(String name, byte[] bytes) {
         ClassNode node = new ClassNode(); new ClassReader(bytes).accept(node, ClassReader.EXPAND_FRAMES);
         MobPortalTestTransform.install(node);
+        if (name.equals(dev.phoenium.live.MobPortalNativeSuffixes.CUBE)) {
+            ClassWriter cubeWriter = new ClassWriter(ClassWriter.COMPUTE_MAXS);
+            node.accept(cubeWriter); return cubeWriter.toByteArray();
+        }
         ContainerCloseTestTransform.install(node);
         if (NativePortalTestTransform.supports(name) && !name.equals("net/minecraft/world/entity/Entity")) {
             NativePortalTestTransform.install(node);

@@ -13,6 +13,13 @@ public final class PortalDestinationTestHooks {
     static Object pearls;
     static net.minecraft.world.phys.HitResult controlledHit;
     static Entity controlledBase;
+    static java.util.function.Consumer<net.minecraft.world.entity.monster.cubemob.AbstractCubeMob> cubeTail;
+    public static void cubeTail(net.minecraft.world.entity.monster.cubemob.AbstractCubeMob cube) {
+        if (cubeTail != null) cubeTail.accept(cube);
+    }
+    public static void beginMob(Mob mob) { if (mobs != null) mobs.begin(mob); }
+    public static void completeMob(Mob mob) { if (mobs != null) mobs.complete(mob); }
+    public static void finishMob(Mob mob) { if (mobs != null) mobs.finish(mob); }
     public static boolean itemCutIsEarly() {
         try (var stream=PortalDestinationTestHooks.class.getResourceAsStream("/dev/phoenium/mixin/ItemPortalEntityMixin.class")) {
             var node=new ClassNode(); new ClassReader(stream).accept(node,ClassReader.SKIP_CODE);

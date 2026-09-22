@@ -4,16 +4,22 @@ import java.util.*;
 import org.objectweb.asm.Opcodes;
 import org.objectweb.asm.tree.*;
 
-/** Bounded extraction of precisely four native void suffixes. Keeping the original
+/** Bounded extraction of precisely five native void suffixes. Keeping the original
  * instructions in their declaring class preserves private calls, dispatch, RNG and
  * every native branch. This is not an arbitrary stack/local continuation engine.
  * The reviewed cuts have only `this` live; a changed native shape fails binding. */
 public final class MobPortalNativeSuffixes {
     public static final String LIVING="net/minecraft/world/entity/LivingEntity";
     public static final String MOB="net/minecraft/world/entity/Mob";
+    public static final String CUBE="net/minecraft/world/entity/monster/cubemob/AbstractCubeMob";
     private MobPortalNativeSuffixes() { }
     public static void install(ClassNode node) {
-        if (!node.name.equals(LIVING) && !node.name.equals(MOB)) throw new IllegalArgumentException(node.name);
+        if (!node.name.equals(LIVING) && !node.name.equals(MOB) && !node.name.equals(CUBE)) throw new IllegalArgumentException(node.name);
+        if (node.name.equals(CUBE)) {
+            node.interfaces.add("dev/phoenium/live/MobPortalNativeAccess$CubeSuffix");
+            copy(node,"tick","phoenium$resumeMobCubeTickSuffix");
+            return;
+        }
         boolean living=node.name.equals(LIVING);
         node.interfaces.add("dev/phoenium/live/MobPortalNativeAccess$"+(living ? "LivingSuffix" : "MobSuffix"));
         copy(node,"baseTick",living ? "phoenium$resumeMobLivingBaseSuffix" : "phoenium$resumeMobBaseSuffix");
@@ -53,6 +59,7 @@ public final class MobPortalNativeSuffixes {
             case "phoenium$resumeMobLivingTickSuffix" -> "6903ac04c2ccf5c9ecf257279a07dd9340698e8c2f36cc08e753b322f88baae4";
             case "phoenium$resumeMobBaseSuffix" -> "c432d27117ab21139b6327c78d1a2ffbe3644314723890743de6fd9d6484be2a";
             case "phoenium$resumeMobTickSuffix" -> "d67927a767f718868dbaea5c231974b4d85cf2f53b3939b28d1ebb9d47c41b13";
+            case "phoenium$resumeMobCubeTickSuffix" -> "b3c50458cfec594f75422b7e48cd83c09461e1f533d975b7675e6e2bd4fd2c3d";
             default -> throw new IllegalStateException("unreviewed mob suffix");
         };
         String actual=dev.phoenium.service.VaultContinuationPin.fingerprint(suffix);

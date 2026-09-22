@@ -31,6 +31,7 @@ public final class FullRegistrationTestAgent {
                         && !name.equals("net/minecraft/nbt/ListTag")
                         && !name.equals("net/minecraft/world/level/storage/PrimaryLevelData")
                         && !NativePortalTestTransform.supports(name)
+                        && !MobPortalTestTransform.supports(name)
                         && !FullFinishingServicesTestTransform.supports(name)
                         && !FullSavedContextTestTransform.supports(name)) return null;
                 try {

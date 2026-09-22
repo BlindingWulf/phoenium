@@ -18,15 +18,36 @@ import static org.junit.jupiter.api.Assertions.*;
  * -> PoiManager; only world/provider endpoints are controlled. */
 class NativeMobPortalDestinationTest {
     @BeforeAll static void bootstrap() { NativeItemPortalTransferTest.bootstrap(); }
-    @AfterEach void reset() { if(PortalDestinationTestHooks.mobs!=null) PortalDestinationTestHooks.mobs.close(); PortalDestinationTestHooks.mobs=null; }
+    @AfterEach void reset() { if(PortalDestinationTestHooks.mobs!=null) PortalDestinationTestHooks.mobs.close(); PortalDestinationTestHooks.mobs=null; PortalDestinationTestHooks.cubeTail=null; }
+
+    @Test void distinctVanillaCallersRemainExplicitlyUnbound() throws Exception {
+        assertFalse(dev.phoenium.live.MobPortalTransitionManager.supports(
+            allocate(net.minecraft.world.entity.npc.wanderingtrader.WanderingTrader.class)));
+        assertFalse(dev.phoenium.live.MobPortalTransitionManager.supports(
+            allocate(net.minecraft.world.entity.monster.skeleton.Skeleton.class)));
+        assertEquals(net.minecraft.world.entity.npc.villager.AbstractVillager.class,
+            net.minecraft.world.entity.npc.wanderingtrader.WanderingTrader.class
+                .getMethod("teleport",net.minecraft.world.level.portal.TeleportTransition.class).getDeclaringClass());
+        assertEquals(net.minecraft.world.entity.monster.skeleton.Skeleton.class,
+            net.minecraft.world.entity.monster.skeleton.Skeleton.class.getMethod("tick").getDeclaringClass());
+    }
+
 
     static java.util.stream.Stream<org.junit.jupiter.params.provider.Arguments> cases() {
-        return java.util.stream.Stream.of("zombified_piglin","chicken","pig","enderman").flatMap(type->
-            java.util.stream.Stream.of(true,false).flatMap(forward->java.util.stream.Stream.of(true,false)
-                .map(ready->org.junit.jupiter.params.provider.Arguments.of(type,forward,ready))));
+        var established=java.util.stream.Stream.of("zombified_piglin","chicken","pig","enderman","magma_cube","slime").flatMap(type->
+            java.util.stream.IntStream.of(type.equals("magma_cube")||type.equals("slime") ? new int[]{1,2,4} : new int[]{1})
+                .boxed().flatMap(size->java.util.stream.Stream.of(true,false).flatMap(forward->java.util.stream.Stream.of(true,false)
+                    .map(ready->org.junit.jupiter.params.provider.Arguments.of(type,forward,ready,size)))));
+        var directSiblings=java.util.stream.Stream.of("blaze","bogged","cow","elder_guardian","ghast","goat",
+            "guardian","hoglin","iron_golem","mooshroom","ocelot","parched","piglin","piglin_brute",
+            "pillager","ravager","sheep","snow_golem","stray","turtle","vindicator",
+            "witch","wither_skeleton","zoglin","zombie","drowned","husk")
+            .flatMap(type->java.util.stream.Stream.of(true,false).flatMap(forward->java.util.stream.Stream.of(true,false)
+                .map(ready->org.junit.jupiter.params.provider.Arguments.of(type,forward,ready,1))));
+        return java.util.stream.Stream.concat(established,directSiblings);
     }
     @ParameterizedTest @org.junit.jupiter.params.provider.MethodSource("cases")
-    void nativeMobTickReleasesOwnerBeforeFirstPendingPoiQuery(String type,boolean forward,boolean ready) throws Exception {
+    void nativeMobTickReleasesOwnerBeforeFirstPendingPoiQuery(String type,boolean forward,boolean ready,int size) throws Exception {
         var f=new NativeItemPortalTransferTest.Fixture();
         var manager=new dev.phoenium.live.MobPortalTransitionManager(f.authority,f.objects);
         PortalDestinationTestHooks.mobs=manager;
@@ -38,13 +59,26 @@ class NativeMobPortalDestinationTest {
         set(f.overworld,Level.class,"registryAccess",registries);set(f.nether,Level.class,"registryAccess",registries);
         var source=forward ? f.overworld : f.nether;var destination=forward ? f.nether : f.overworld;
         var route=f.key(source);
-        EntityType<?> entityType=switch(type) {
-            case "zombified_piglin" -> EntityTypes.ZOMBIFIED_PIGLIN;
-            case "chicken" -> EntityTypes.CHICKEN;
-            case "enderman" -> EntityTypes.ENDERMAN;
-            default -> EntityTypes.PIG;
-        };
+        EntityType<?> entityType=net.minecraft.core.registries.BuiltInRegistries.ENTITY_TYPE.getValue(
+            net.minecraft.resources.Identifier.parse("minecraft:"+type));
+        assertNotNull(entityType,"reviewed native type must remain registered: "+type);
         var mob=(Mob)entityType.create(source,EntitySpawnReason.COMMAND);
+        assertTrue(dev.phoenium.live.MobPortalTransitionManager.supports(mob),"actual concrete class was not selected: "+type);
+        if(!(mob instanceof net.minecraft.world.entity.monster.cubemob.AbstractCubeMob)) {
+            Class<?> tick=java.util.Set.of("zombified_piglin","zombie","drowned","husk").contains(type)
+                ? net.minecraft.world.entity.monster.zombie.Zombie.class : Mob.class;
+            assertEquals(tick,mob.getClass().getMethod("tick").getDeclaringClass());
+            assertEquals(Mob.class,mob.getClass().getMethod("baseTick").getDeclaringClass());
+        }
+        assertEquals(Entity.class,mob.getClass().getMethod("teleport",
+            net.minecraft.world.level.portal.TeleportTransition.class).getDeclaringClass());
+        if(mob instanceof net.minecraft.world.entity.monster.cubemob.AbstractCubeMob cube) {
+            cube.setSize(size,true);cube.targetSquish=.8F;cube.squish=.4F;cube.oSquish=.1F;
+            PortalDestinationTestHooks.cubeTail=seen->{
+                assertSame(mob,seen,"the outer native tail belongs to the retired source");
+                f.dispatcher.requireCurrentOwner(route);f.order.add("cube-suffix");
+            };
+        }
         assertNotNull(mob); mob.setPos(.44,65.31,.02); f.publish(mob,route);
         mob.hurtTime=7;mob.invulnerableTime=9;mob.tickCount=83;
         set(mob,LivingEntity.class,"fallFlyTicks",7);
@@ -68,11 +102,15 @@ class NativeMobPortalDestinationTest {
             return null;
         };
         assertDoesNotThrow(()->f.dispatcher.executeAndDrain(route,RegionalServiceKind.CHUNK_GAMEPLAY,ignored->{
-            manager.begin(mob);
-            try { mob.tick(); assertTrue(manager.complete(mob)); } finally { manager.finish(mob); }
+            mob.tick();
         }));
         assertEquals(0,reads.get(),"lookup must wait until the enclosing owner callback has returned");
         assertEquals(1,manager.pendingCount());
+        if(mob instanceof net.minecraft.world.entity.monster.cubemob.AbstractCubeMob cube) {
+            assertEquals(.4F,cube.oSquish);assertEquals(.6F,cube.squish);
+            assertEquals(.8F,cube.targetSquish,"outer cube suffix must wait for the native transfer");
+            assertFalse(f.order.contains("cube-suffix"));
+        }
         assertEquals(1,manager.advance());
         assertTrue(reads.get()>1,"native POI enumeration must reach each required EMPTY query");
         assertEquals(0,manager.advance());
@@ -86,12 +124,22 @@ class NativeMobPortalDestinationTest {
         assertEquals(300,mob.getPortalCooldown());assertEquals(300,f.replacement.getPortalCooldown());
         assertTrue(f.order.indexOf("source-retire")<f.order.indexOf("insert"));
         assertTrue(f.order.indexOf("post")<f.order.indexOf("base-suffix"));
+        if(mob instanceof net.minecraft.world.entity.monster.cubemob.AbstractCubeMob cube) {
+            var replacement=(net.minecraft.world.entity.monster.cubemob.AbstractCubeMob)f.replacement;
+            assertEquals(size,replacement.getSize());assertEquals(cube.getHealth(),replacement.getHealth());
+            assertEquals(type.equals("magma_cube") ? .72F : .48F,cube.targetSquish,.00001F);
+            assertEquals(1,java.util.Collections.frequency(f.order,"cube-suffix"));
+            assertTrue(f.order.indexOf("post")<f.order.indexOf("cube-suffix"));
+            assertEquals(Entity.RemovalReason.CHANGED_DIMENSION,cube.getRemovalReason());
+            assertEquals(1,f.objects.liveCount(),"dimension retirement must not split a living cube");
+            assertEquals(1,f.visible.values().stream().mapToInt(java.util.Map::size).sum());
+        }
     }
 
     record Rig(NativeItemPortalTransferTest.Fixture f,dev.phoenium.live.MobPortalTransitionManager manager,Mob mob) {
         void tick() {
             f.dispatcher.executeAndDrain(f.from,RegionalServiceKind.CHUNK_GAMEPLAY,ignored->{
-                manager.begin(mob);try{mob.tick();assertTrue(manager.complete(mob));}finally{manager.finish(mob);}
+                mob.tick();
             });
         }
     }

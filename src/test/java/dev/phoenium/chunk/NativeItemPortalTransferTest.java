@@ -296,6 +296,7 @@ class NativeItemPortalTransferTest {
                 new Answer(ServerLevel.class.getMethod("getWaypointManager"),args->new net.minecraft.server.waypoints.ServerWaypointManager()),
                 new Answer(ServerLevel.class.getMethod("getEntityInAnyDimension",UUID.class),args->visible.values().stream().map(map->map.get(args[0])).filter(Objects::nonNull).findFirst().orElse(null)),
                 new Answer(ServerLevel.class.getMethod("getLevelData"),args->levelData),
+                new Answer(ServerLevel.class.getMethod("getSeaLevel"),args->63),
                 new Answer(ServerLevel.class.getMethod("isSpawningMonsters"),args->false),
                 new Answer(Level.class.getMethod("damageSources"),args->damageSources),
                 new Answer(Level.class.getMethod("playSound",Entity.class,double.class,double.class,double.class,net.minecraft.sounds.SoundEvent.class,net.minecraft.sounds.SoundSource.class),args->{sound.run();return null;}),
