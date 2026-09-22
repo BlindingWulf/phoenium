@@ -31,13 +31,7 @@ import net.minecraft.world.phys.HitResult;
 
 /** Owner-free preparation plus serial source/destination authority for native pearl replacement. */
 final class PearlPortalTransitionManager implements AutoCloseable {
-    interface Authority {
-        boolean running();
-        boolean worldActive(ServerLevel level);
-        WorldId worldId(ServerLevel level);
-        void execute(RoutingKey key, RegionalServiceKind kind, Runnable body);
-        void retireExpectedSource(ThrownEnderpearl source, Entity.RemovalReason reason);
-    }
+    interface Authority extends NativePortalTransfer.Authority { }
 
     private final Authority authority;
     private final ObjectOwnershipRegistry objects;
@@ -198,76 +192,29 @@ final class PearlPortalTransitionManager implements AutoCloseable {
     }
 
     private void replaceCrossDimension(Entry entry, ObjectOwnership sourceBinding, TeleportTransition transition) {
-        ServerLevel destinationLevel = transition.newLevel();
-        Entity created = entry.source.getType().create(destinationLevel, EntitySpawnReason.DIMENSION_TRAVEL);
-        if (!(created instanceof ThrownEnderpearl replacement))
-            throw new IllegalStateException("native pearl replacement could not be created");
-        replacement.restoreFrom(entry.source);
-        PositionMoveRotation sourcePose = PositionMoveRotation.of(entry.source);
-
-        entry.sourceRemoval = replacements.authorizeSourceRemoval(entry.token, sourceIdentity(entry, sourceBinding));
-        authority.execute(sourceBinding.routingKey(), RegionalServiceKind.ENTITY_PORTAL_SOURCE, () -> {
-            requireCurrentSourceAuthority(entry);
-            ((PearlPortalNativeAccess.EntitySuffix) entry.source).phoenium$removeAfterChangingDimensions();
-            if (entry.source.getRemovalReason() != Entity.RemovalReason.CHANGED_DIMENSION)
-                throw new IllegalStateException("pearl source retirement did not use CHANGED_DIMENSION");
-            authority.retireExpectedSource(entry.source, Entity.RemovalReason.CHANGED_DIMENSION);
-        });
-        replacements.sourceRetired(entry.sourceRemoval);
-
-        if (!authority.worldActive(destinationLevel)) { cancel(entry); return; }
-        BlockPos destinationBlock = BlockPos.containing(transition.position());
-        ChunkPos destinationChunk = ChunkPos.containing(destinationBlock);
-        RoutingKey destinationKey = new RoutingKey(authority.worldId(destinationLevel), destinationChunk.x(), destinationChunk.z());
-        var destinationAdmission = replacements.authorizeDestinationAdmission(entry.token);
-        authority.execute(destinationKey, RegionalServiceKind.ENTITY_PORTAL_DESTINATION, () -> {
-            if (!authority.worldActive(destinationLevel) || active.get(key(entry.source)) != entry
-                    || replacements.phase(entry.token) != CrossDimensionReplacementBoundary.Phase.DESTINATION_ADMITTING)
-                throw new IllegalStateException("destination admission became stale");
-            replacement.teleportSetPosition(sourcePose, PositionMoveRotation.of(transition), transition.relatives());
-            destinationLevel.addDuringTeleport(replacement);
-            ObjectOwnership destinationBinding = objects.current(replacement.getUUID().toString()).orElseThrow(
-                () -> new IllegalStateException("destination replacement was not published before tracking completion"));
-            if (!destinationBinding.routingKey().world().equals(destinationKey.world()))
-                throw new IllegalStateException("destination replacement published in the wrong world");
-            objects.requireCurrentOwner(destinationBinding.objectId(), destinationBinding.objectEpoch(),
-                OwnershipContext.current().orElseThrow().region());
-            var destinationIdentity = new CrossDimensionReplacementBoundary.DestinationIdentity(
-                destinationBinding.objectId(), access(replacement).phoenium$entityIncarnation(), destinationBinding.incarnation());
-            replacements.destinationAdmitted(destinationAdmission, destinationIdentity);
-            destinationLevel.resetEmptyTime();
-            transition.postTeleportTransition().onTransition(replacement);
-        });
-
-        ((PearlPortalNativeAccess.EntitySuffix) entry.source).phoenium$teleportSpectators(transition, entry.sourceLevel);
-        // ThrownEnderpearl.teleport adds its ticket only after Entity.teleportCrossDimension has
-        // completed the native spectator callback. Re-enter the destination owner in that order.
-        authority.execute(destinationKey, RegionalServiceKind.ENTITY_PORTAL_DESTINATION, () -> {
-            ObjectOwnership destinationBinding = objects.current(replacement.getUUID().toString()).orElseThrow(
-                () -> new IllegalStateException("destination replacement disappeared before its portal ticket"));
-            if (destinationBinding.incarnation() <= entry.token.source().registryIncarnation()
-                    || access(replacement).phoenium$entityIncarnation() == entry.token.source().nativeIncarnation()
-                    || replacement.level() != destinationLevel || replacement.isRemoved())
-                throw new IllegalStateException("destination replacement identity changed before its portal ticket");
-            objects.requireCurrentOwner(destinationBinding.objectId(), destinationBinding.objectEpoch(),
-                OwnershipContext.current().orElseThrow().region());
-            replacement.placePortalTicket(BlockPos.containing(replacement.position()));
-        });
+        var transfer = new NativePortalTransfer(authority, objects, replacements, entry.token,
+            entry.source, sourceBinding, transition, () -> active.get(key(entry.source)) == entry);
+        Entity result = transfer.run();
+        if (result == null) { resumeUnchanged(entry, sourceBinding); return; }
+        if (!(result instanceof ThrownEnderpearl)) throw new IllegalStateException("native pearl returned another type");
         var continuation = replacements.authorizeReplacementContinuation(entry.token);
         authority.execute(sourceBinding.routingKey(), RegionalServiceKind.ENTITY_PORTAL_SOURCE, () -> {
-            if (active.get(key(entry.source)) != entry || entry.source.getRemovalReason() != Entity.RemovalReason.CHANGED_DIMENSION
+            if (active.get(key(entry.source)) != entry || !authority.worldActive(entry.sourceLevel)
+                    || entry.source.getRemovalReason() != Entity.RemovalReason.CHANGED_DIMENSION
                     || access(entry.source).phoenium$entityIncarnation() != entry.token.source().nativeIncarnation())
                 throw new IllegalStateException("retired pearl continuation source changed");
             entry.continuation.resume();
         });
         replacements.settle(continuation);
+        transfer.settled();
         active.remove(key(entry.source), entry);
     }
-
     boolean onRemoval(Entity entity, Entity.RemovalReason reason) {
         if (!(entity instanceof ThrownEnderpearl pearl)) return false;
         Entry entry = active.get(key(pearl));
         if (entry == null) return false;
+        if (entry.continuation != null && entry.continuation.consumed()
+                && pearl.getRemovalReason() == Entity.RemovalReason.CHANGED_DIMENSION) return true;
         CrossDimensionReplacementBoundary.SourceIdentity current = nativeSourceIdentity(entry);
         if (reason == Entity.RemovalReason.CHANGED_DIMENSION && entry.sourceRemoval != null
                 && replacements.recognizesExpectedRemoval(entry.sourceRemoval, current)) return true;
@@ -287,7 +234,7 @@ final class PearlPortalTransitionManager implements AutoCloseable {
         if (closed) return;
         closed = true;
         Capture current = capture.get();
-        if (current != null && current.entry != null) current.entry.continuation.retire();
+        if (current != null && current.entry != null && current.entry.continuation != null) current.entry.continuation.retire();
         capture.remove();
         List<Entry> snapshot = List.copyOf(active.values());
         for (Entry entry : snapshot) if (entry.continuation != null) entry.continuation.retire();

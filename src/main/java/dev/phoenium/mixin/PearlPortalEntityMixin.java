@@ -73,7 +73,7 @@ abstract class PearlPortalEntityMixin implements PearlPortalNativeAccess.EntityS
                     else {
                         if (this.remainingFireTicks % 20 == 0 && !self.isInLava())
                             self.hurtServer(serverLevel, self.damageSources().onFire(), 1.0F);
-                        this.remainingFireTicks--;
+                        self.setRemainingFireTicks(this.remainingFireTicks - 1);
                     }
                 }
             } else self.clearFire();

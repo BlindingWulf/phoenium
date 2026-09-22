@@ -181,6 +181,17 @@ public final class EntityIndexLifecycleAdapter {
         index.invalidate(world, entityId, current.objectId(), current.incarnation());
         objects.remove(current.objectId());
     }
+
+    /** Completed portal retirement/rollback can retire only its recorded publication. */
+    public boolean retirePortalPublication(ObjectOwnership expected, WorldId world, int entityId) {
+        if (!expected.routingKey().world().equals(world)
+                || !Objects.equals(entityIds.get(expected.objectId()), entityId)) return false;
+        if (!objects.retirePublication(expected)) return false;
+        entityIds.remove(expected.objectId(), entityId);
+        pendingRelocations.remove(expected.objectId());
+        index.invalidate(world, entityId, expected.objectId(), expected.incarnation());
+        return true;
+    }
     /**
      * Source-world retirement for a same-object player dimension transition.  The derived lookup
      * identity is withdrawn immediately, but the ownership incarnation deliberately remains live

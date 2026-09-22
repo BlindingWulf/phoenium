@@ -24,6 +24,13 @@ abstract class PearlPortalThrownEnderpearlMixin implements PearlPortalNativeAcce
         PlayerDimensionTransitionNativeAccess.PearlHitSuffix {
     @Shadow private long ticketTimer;
 
+    @com.llamalad7.mixinextras.injector.wrapoperation.WrapOperation(method = "teleport", at = @At(value = "INVOKE",
+        target = "Lnet/minecraft/world/entity/Entity;placePortalTicket(Lnet/minecraft/core/BlockPos;)V"), require = 1, allow = 1)
+    private void phoenium$portalTicket(Entity entity, BlockPos position,
+            com.llamalad7.mixinextras.injector.wrapoperation.Operation<Void> original) {
+        dev.phoenium.live.NativePortalTransfer.destinationEffect(entity, "PEARL_TELEPORT_SUFFIX", () -> original.call(entity, position));
+    }
+
     @Inject(method = "tick()V", at = @At("HEAD"), cancellable = true, require = 1, expect = 1)
     private void phoenium$skipPendingPearlTick(CallbackInfo ci) {
         if (Phoenium.liveRuntime().skipPendingPearlPortalTick((ThrownEnderpearl) (Object) this)) ci.cancel();

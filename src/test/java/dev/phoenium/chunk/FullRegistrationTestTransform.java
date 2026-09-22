@@ -7,10 +7,16 @@ import org.objectweb.asm.tree.*;
 public final class FullRegistrationTestTransform {
     public static byte[] transform(String name, byte[] bytes) {
         ClassNode node = new ClassNode(); new ClassReader(bytes).accept(node, ClassReader.EXPAND_FRAMES);
+        if (NativePortalTestTransform.supports(name) && !name.equals("net/minecraft/world/entity/Entity")) {
+            NativePortalTestTransform.install(node);
+            ClassWriter portalWriter = new ClassWriter(ClassWriter.COMPUTE_MAXS);
+            node.accept(portalWriter); return portalWriter.toByteArray();
+        }
         ResidentTickerTestTransform.install(node);
         VaultContinuationTestTransform.install(node);
         FullFinishingQueryTestTransform.install(node);
         FullFinishingServicesTestTransform.install(node);
+        NativePortalTestTransform.install(node);
         FullSavedContextTestTransform.install(node);
         FullStructureTestTransform.install(node);
         FullEntityPredicateTestTransform.install(node);

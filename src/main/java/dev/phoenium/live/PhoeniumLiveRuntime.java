@@ -98,6 +98,7 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
     private final RegionDirectory directory = new RegionDirectory();
     private final ObjectOwnershipRegistry objects = new ObjectOwnershipRegistry(directory);
     private final PearlPortalTransitionManager pearlPortalTransitions;
+    private final ItemPortalTransitionManager itemPortalTransitions;
     private final PlayerDimensionTransitionManager playerDimensionTransitions;
     private final Map<TaskCorrelationId, PendingPacket> packets = new ConcurrentHashMap<>();
     /** Movement packets admitted before a native player-level change must retire before replay. */
@@ -204,7 +205,7 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
     public PhoeniumLiveRuntime(Logger logger) {
         this.logger = Objects.requireNonNull(logger, "logger");
         this.chunkBinding = new ChunkBindingRuntime(this, logger);
-        this.pearlPortalTransitions = new PearlPortalTransitionManager(new PearlPortalTransitionManager.Authority() {
+        var portalAuthority = new PearlPortalTransitionManager.Authority() {
             @Override public boolean running() { return PhoeniumLiveRuntime.this.isRunning(); }
             @Override public boolean worldActive(ServerLevel level) {
                 if (!running() || serverInstance == null || level == null || level.getServer() != serverInstance) return false;
@@ -217,10 +218,34 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
                     throw new IllegalStateException("portal authority stage entered with retained owner authority");
                 regionalDispatcher.executeAndDrain(key, kind, ignored -> body.run());
             }
-            @Override public void retireExpectedSource(ThrownEnderpearl source, Entity.RemovalReason reason) {
-                retireEntityLifecycle(source, reason);
+            @Override public java.util.function.BooleanSupplier prepare(Entity source,
+                    net.minecraft.world.level.portal.TeleportTransition transition, RoutingKey destination) {
+                if (OwnershipContext.current().isPresent()) throw new IllegalStateException("portal preparation retained owner authority");
+                ServerLevel level = transition.newLevel();
+                // Consume only the real public FULL input needed by this native insertion.
+                // getChunk's native wait, if necessary, occurs here without any owner lease.
+                var chunk = level.getChunkSource().getChunk(destination.x(), destination.z(),
+                    net.minecraft.world.level.chunk.status.ChunkStatus.FULL, true);
+                if (chunk == null) throw new IllegalStateException("portal destination FULL input absent");
+                var inputs = (dev.phoenium.chunk.FullInputView) level.getChunkSource().chunkMap;
+                long position = new net.minecraft.world.level.ChunkPos(destination.x(), destination.z()).pack();
+                var holder = inputs.phoenium$visibleInput(position);
+                if (holder == null) throw new IllegalStateException("portal destination visible holder absent");
+                int range = level.getServer().getScaledTrackingDistance(source.getType().clientTrackingRange() * 16);
+                regionalDispatcher.ensureClosure(destination, Math.max(1, (range + 15) / 16 + 2));
+                return () -> worldActive(level) && inputs.phoenium$visibleInput(position) == holder
+                    && level.getChunkSource().getChunkNow(destination.x(), destination.z()) == chunk;
             }
-        }, objects);
+            @Override public void retireExpectedSource(Entity source, Entity.RemovalReason reason, ObjectOwnership expected) {
+                if (!entityIndexLifecycle.retirePortalPublication(expected, worldId((ServerLevel) source.level()), source.getId()))
+                    throw new IllegalStateException("portal retirement no longer owns its exact entity publication");
+                if (source instanceof FullEntityFacts.Access access)
+                    mobDecisions.retire(source.getUUID().toString(), access.phoenium$entityIncarnation());
+                retirePearlMembership(source); retireProjectileMembership(source);
+            }
+        };
+        this.pearlPortalTransitions = new PearlPortalTransitionManager(portalAuthority, objects);
+        this.itemPortalTransitions = new ItemPortalTransitionManager(portalAuthority, objects);
         this.playerDimensionTransitions = new PlayerDimensionTransitionManager(
             new PlayerDimensionTransitionManager.Authority() {
                 @Override public boolean running() { return PhoeniumLiveRuntime.this.isRunning(); }
@@ -423,6 +448,7 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
                 // from its destination chunk. The entity-management cut below remains necessary
                 // for movement first observed during this tick's entity body.
                 entityIndexLifecycle.advancePendingRelocations(runtimes);
+                itemPortalTransitions.advance();
                 pearlPortalTransitions.advance();
                 playerDimensionTransitions.advance();
                 retryDeferredPearlCleanups();
@@ -462,6 +488,7 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
                 // here, after every owner callback has returned. Busy source/destination regions
                 // retain their bounded fact for the next tick instead of waiting on one another.
                 entityIndexLifecycle.advancePendingRelocations(runtimes);
+                itemPortalTransitions.advance();
                 pearlPortalTransitions.advance();
                 playerDimensionTransitions.advance();
                 retryDeferredPearlCleanups();
@@ -628,6 +655,7 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
             failures.run(chunkBinding::shutdown);
             failures.run(playerDimensionTransitions::close);
             failures.run(pearlPortalTransitions::close);
+            failures.run(itemPortalTransitions::close);
             failures.run(() -> { if (scheduler != null) { scheduler.quiesce(); scheduler.stop(); } });
             failures.run(() -> {
                 int abandoned = regionalDispatcher == null ? 0 : regionalDispatcher.abandonPending();
@@ -1811,6 +1839,7 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
             // rediscovered from the ServerLevel index at packet ingress.
             return;
         }
+        NativePortalTransfer.addressable(entity, binding);
         observePearlAddress(entity, binding, enforcePearlPolicy);
         observeMobDecision(entity, binding);
         if (projectileMemberships.settings().enabled())
@@ -2079,6 +2108,8 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
      */
     public void onEntityRemoved(Entity entity, Entity.RemovalReason reason) {
         if (!isRunning() || !(entity.level() instanceof ServerLevel level)) return;
+        if (NativePortalTransfer.expectedRemoval(entity, reason)) return;
+        if (itemPortalTransitions.onRemoval(entity, reason)) return;
         if (entity instanceof ServerPlayer player && playerDimensionTransitions.onRemoval(player, reason)) return;
         if (pearlPortalTransitions.onRemoval(entity, reason)) return;
         retireEntityLifecycle(entity, reason);
@@ -2097,6 +2128,14 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
     public void beginPearlPortalTick(ThrownEnderpearl pearl, int previousSectionX, int previousSectionZ, Entity retainedOwner) {
         pearlPortalTransitions.beginTick(pearl, previousSectionX, previousSectionZ, retainedOwner);
     }
+
+    public void beginItemPortalTick(net.minecraft.world.entity.item.ItemEntity item) { itemPortalTransitions.begin(item); }
+    public boolean captureItemPortal(net.minecraft.world.entity.item.ItemEntity item, net.minecraft.world.level.portal.TeleportTransition transition) {
+        return itemPortalTransitions.capture(item, transition);
+    }
+    public boolean itemPortalSuspended(net.minecraft.world.entity.item.ItemEntity item) { return itemPortalTransitions.suspended(item); }
+    public boolean completeItemPortalTick(net.minecraft.world.entity.item.ItemEntity item) { return itemPortalTransitions.complete(item); }
+    public void finishItemPortalTick(net.minecraft.world.entity.item.ItemEntity item) { itemPortalTransitions.finish(item); }
 
     public void retainPearlPortalHitResult(ThrownEnderpearl pearl, net.minecraft.world.phys.HitResult result) {
         pearlPortalTransitions.retainHitResult(pearl, result);
@@ -2138,6 +2177,7 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
         dev.phoenium.chunk.FullFinishingServices.passengerWorldClosing(level);
         playerDimensionTransitions.worldClosing(level);
         pearlPortalTransitions.worldClosing(level);
+        itemPortalTransitions.worldClosing(level);
     }
 
     private void preservePearlMembershipForReconnect(Entity entity) {

@@ -365,7 +365,7 @@ public final class RegionalTrackingService {
             activeAdd.set(plan);
             try { original.run(); }
             catch (Throwable failure) {
-                if (respawn != null) {
+                if (respawn != null || dev.phoenium.live.NativePortalTransfer.inserting(entity)) {
                     // A native send/pairing callback can fail after entityMap.put, before the
                     // normal sourceAdded suffix. Retain precisely that prefix for strict removal.
                     try {
