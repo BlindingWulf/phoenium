@@ -174,6 +174,9 @@ public final class Stage7RepairClientTest implements FabricClientGameTest {
     void restartCard()throws Exception {
         active="I8";context.waitTicks(35);require(player().get("cane").getAsInt()==11,"inventory failed save/restart");
         require(cmd("execute in "+OW+" if block 8 65 8 minecraft:diamond_block").contains("Test passed"),"persistent block absent");
+        // Native spawn yaw faces the persistence marker. Turn into the clear aisle;
+        // attempting to walk through that saved solid block is not a liveness test.
+        context.getInput().lookAt(new BlockPos(8,65,3));
         JsonObject beforeMovement=player();
         context.getInput().holdKey(o->o.keyUp);context.waitTicks(12);context.getInput().releaseKey(o->o.keyUp);context.waitTicks(10);
         require(moved(beforeMovement,player()),"post-restart native movement did not progress");
