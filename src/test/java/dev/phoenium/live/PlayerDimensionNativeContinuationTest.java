@@ -13,6 +13,16 @@ import org.objectweb.asm.tree.MethodInsnNode;
 import org.objectweb.asm.tree.MethodNode;
 
 final class PlayerDimensionNativeContinuationTest {
+    @Test void playerPortalBaseTickBelongsToNetworkDoTickNotRegionalServerPlayerTick() throws Exception {
+        List<String> regional=calls(method(net.minecraft.server.level.ServerPlayer.class,"tick"));
+        assertFalse(regional.contains("net/minecraft/world/entity/player/Player.tick()V"));
+        assertTrue(calls(method(net.minecraft.server.level.ServerPlayer.class,"doTick"))
+            .contains("net/minecraft/world/entity/player/Player.tick()V"));
+        assertTrue(calls(method(net.minecraft.server.network.ServerGamePacketListenerImpl.class,"tick"))
+            .contains("net/minecraft/server/network/ServerGamePacketListenerImpl.tickPlayer()Z"));
+        assertTrue(calls(method(net.minecraft.server.network.ServerGamePacketListenerImpl.class,"tickPlayer"))
+            .contains("net/minecraft/server/level/ServerPlayer.doTick()V"));
+    }
     @Test void retainedPlayerSuffixPreservesPinnedVanillaCallbackOrder() throws Exception {
         List<String> calls = calls(method(Class.forName("dev.phoenium.mixin.ServerPlayerLifecycleMixin"),
             "phoenium$resumePlayerDimensionChange"));

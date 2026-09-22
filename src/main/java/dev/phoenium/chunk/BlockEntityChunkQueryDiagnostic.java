@@ -79,6 +79,7 @@ public final class BlockEntityChunkQueryDiagnostic {
 
     public static ChunkAccess chunk(ServerLevel world, int x, int z, ChunkStatus status, boolean create,
                                    Supplier<ChunkAccess> original) {
+        dev.phoenium.live.PortalDestinationObservation.query(world,x,z,status,create);
         Scope scope = CURRENT.get();
         if (scope == null || scope.world != world) return original.get();
         Query previous = scope.query;
@@ -93,6 +94,7 @@ public final class BlockEntityChunkQueryDiagnostic {
 
     public static void selected(ServerLevel world, int x, int z, ChunkStatus status, boolean create,
                                 CompletableFuture<ChunkResult<ChunkAccess>> future) {
+        dev.phoenium.live.PortalDestinationObservation.selected(future);
         Scope scope = CURRENT.get();
         if (scope == null || scope.world != world || scope.query == null) return;
         Query query = scope.query;

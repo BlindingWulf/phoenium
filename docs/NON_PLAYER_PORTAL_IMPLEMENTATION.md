@@ -1,142 +1,152 @@
-# Non-player portal repair implementation note
+# Portal destination preparation repair
 
-Baseline: e1f80b7c71a950b27e0e540f35e371395d299bac, clean at inspection.
-The preserved Sugar Cane crash is destination tracking under the Overworld owner;
-item UUID is UNAVAILABLE. Both dimensions use the string stage2-live-world but
-their complete RegionIds differ.
+Baseline: 2ed5a836ae8e65ca77430f0314eef840b452fd95, parent
+ e1f80b7c71a950b27e0e540f35e371395d299bac, existing
+stage7/respawn-lifecycle-repair worktree. Earlier evidence and candidates remain
+in the project-root .audit/non-player-portal-repair-20260921 directory. This
+repair's receipts are in .audit/portal-destination-preparation-20260922.
 
-Pinned local 26.2 source and javap of the actual Loom compile JAR agree:
-Entity.teleport stops riding, teleportCrossDimension ejects/transfers passengers,
-creates the replacement, restoreFrom serializes/loads native state, then retires
-the source, applies PositionMoveRotation, inserts the destination, mounts returned
-passengers, resets empty time, invokes the post-transition callback, teleports
-spectators and returns the replacement. ItemEntity.teleport merges that returned
-item, then returns it. handlePortal ignores the value; baseTick and ItemEntity.tick
-still finish on the retired source. Item age/delay increments belong to that source
-suffix, after the replacement's native serialized snapshot. Do not copy those
-increments into the replacement. The source cooldown/portal processor and baseTick
-prefix are already changed before the proposed cut.
+## Proven missed boundary
 
-Retain the item at handlePortal's teleport invocation, after its actual transition
-and admission predicates have returned. Unwind baseTick and ItemEntity.tick using
-typed suffixes, and coordinate only after the enclosing regional callback returns.
-Use the native teleport call itself from the owner-free coordinator, with narrow
-operation wrappers for its source and destination effects. This preserves overrides,
-the real native result, native state copying and native insertion order. Reuse
-CrossDimensionReplacementBoundary and the identity publication at native tracking
-start, rather than constructing a registry entry or replaying the tick/portal lookup.
-The existing pearl manager retains portal preparation and its one hit continuation;
-its replacement operation will share this native boundary. Later player teleport
-from the hit remains a separate manager and separate validation obligation.
+The 2026-09-21 22:58:26 Red Sand ItemEntity crash (runtime ID 225) occurred before
+any transfer record. Its UUID, operation generation, incarnation, route and failed
+chunk coordinates are UNAVAILABLE. Runtime ID and position cannot recover them.
+The installed item mixin selected Entity.handlePortal's Entity.teleport call.
+That cut was too late: getPortalDestination had already called native
+NetherPortalBlock.getExitPortal -> PortalForcer.findClosestPortalPosition ->
+PoiManager.ensureLoadedAndValid -> Level.getChunk -> getChunkBlocking while the
+regional entity owner still held its lease. Local 26.2 bytecode/source and the
+native lookup regression establish ChunkStatus.EMPTY, create=true for the POI
+validation query, not FULL. Native transfer's later FULL admission is separate.
 
-The demonstrated item cut has a completed native portal destination result, not a
-pending portal/POI wait. Readiness and route observations must be revalidated before
-admission; no new provider mechanism or artificial readiness will be introduced.
-Limit admission to the demonstrated ordinary item and retained pearl without a
-passenger graph. Same-dimension native calls remain untouched. Journal exact native
-storage/tracker publication prefixes for cleanup; never blindly remove a same-UUID
-replacement, replay committed effects, or mark success before insertion and suffixes.
+A baseline red test was executed before production edits. It starts at native
+ItemEntity.tick -> Entity.tick/baseTick/handlePortal -> PortalProcessor, with a
+controlled NetherPortalBlock lookup endpoint reaching an unfinished dependency
+through the original ChunkSynchronousAccessGuard. It reproduces the original
+ChunkProtocolException. Its early-cut binding reads the compiled production
+mixin selector, so the baseline's late cut cannot pass the regression.
 
-Verification starts with a red native item destination callback through the real
-dispatcher. Controlled world endpoints will be disclosed. Preserve the existing
-broader filter (nine excluded historical/provider classes) and all earlier evidence.
+## Retention, preparation and application
 
-## Implemented boundary and failure contract
+The item cut now precedes PortalProcessor.getPortalDestination. Native cooldown
+and portal-prefix state are already complete. It retains the exact native item,
+world, processor, portal/entry/time/inside state, operation generation and registry
+incarnation/epoch/route. Only exact ordinary ItemEntity and NetherPortalBlock
+attempts without a passenger graph are admitted. Custom subclasses are outside
+this continuation. No placeholder transition or null suspension signal is returned.
 
-ItemPortalEntityMixin cuts immediately before handlePortal invokes teleport. The
-already completed cooldown, native transition and admission predicates are retained.
-Entity.baseTick and ItemEntity.tick then return at their typed suffix seams; the
-enclosing ServerLevel.tickNonPassenger has only its profiler pop and empty passenger
-loop left. ItemPortalTransitionManager runs after the regional phase has returned.
-It neither clears OwnershipContext nor drains another owner under the source lease.
+Typed baseTick and ItemEntity.tick return seams unwind the source callback. The
+remaining ServerLevel.tickNonPassenger suffix is profiler/pop and empty passenger
+iteration. The existing owner-free coordinator then executes native destination
+search exactly once. Tests check OwnershipContext is empty AND every real scheduler
+lease is inactive. Nested owned drains reject preparation; reentrant owner-free
+drains cannot repeat a search already on stack. Source identity and portal state
+are checked before/after preparation, admission and suffix consumption. A native
+null destination resumes the original source suffix once without transferring.
 
-NativePortalTransfer invokes the original virtual teleport once. Narrow operation
-wrappers admit source stop-riding/ejection, private replacement restore and native
-source retirement under the source route. Replacement creation, position, insertion,
-reset, post-transition callback and ItemEntity's actual merge run in separately
-validated destination operations. Native spectators retain their existing owner-free
-coordination point; player travel continues through its separate current machinery.
-The returned replacement is the actual native value; there is no pending placeholder.
-The original serialized item state and native position/motion reset execute unchanged.
-The retained source tick suffix preserves the native call/write order, including
-pickup-delay/age changes on the retired source only. The shared baseTick suffix now
-uses the native setRemainingFireTicks setter rather than directly decrementing its field.
+NativePortalTransfer and CrossDimensionReplacementBoundary remain the replacement
+mechanism. The original virtual teleport performs native serialization/restore,
+source retirement, destination position/insertion, post-transition effects and
+ItemEntity.teleport's native merge. Source/destination effects have separate owner
+operations. The original source then completes its base/item suffix once. Its
+later age/pickup-delay writes are not copied into the already-created replacement.
+The quantity regression merges incoming Red Sand 3 into destination Red Sand 60,
+producing total 63 with one native replacement and one original item suffix.
+Existing exact cleanup journals and original exception propagation are preserved.
+Committed source retirement is never resurrected by replaying a tick.
 
-PearlPortalTransitionManager keeps its one preparation and RetainedPearlTickContinuation.
-Its previous copied replacement body is replaced by the same NativePortalTransfer
-call. The actual ThrownEnderpearl.teleport return suffix adds its ticket once. Its
-existing retained collision suffix receives the original hit result once and retains
-the native isAlive guard: a dimension-retired source cannot hit again. A later hit
-by the destination pearl and the resulting player teleport remain distinct events.
+## Thrown pearl and player hit composition
 
-The existing addressability callback establishes the replacement's registry identity
-before tracking, and records an exact receipt in the transfer. No ownership entry is
-fabricated by the transfer. The same UUID has a new native and registry incarnation.
-Source/index retirement uses the exact expected publication, world and runtime ID.
-Current source incarnation/epoch/route, both exact world objects, the transition,
-token and replacement publication are checked at admission and before effects.
-Destination preparation consumes the actual public native FULL chunk, owner-free;
-its receipt binds both the visible holder object and LevelChunk object. It does not
-repeat portal search or manufacture provider futures. The dispatcher re-resolves
-and validates each operation's complete world/region route.
+ThrownEnderpearl already had the correct pre-destination cut. The pinned bytecode's
+server super.tick invocation is ordinal 1 (decompiler branch order is misleading).
+Its single RetainedPearlTickContinuation retains collision, section and owner
+locals; no item continuation is registered for a thrown pearl. Preparation now
+checks exact portal/registry state, rejects reentrant replay and records phases.
+The native replacement's ticket suffix and the original typed base/projectile/
+throwable/pearl suffix ordering remain. A retired source cannot collide again.
+The tick capture is cleaned in a finally wrapper, including cancellation/failure.
+A retained ticket suffix cannot mutate a stale respawn/reconnect owner pointer.
 
-The storage journal records successful UUID claim and native callback installation.
-Before callback installation it removes only the exact unpublished section/UUID
-prefix. After installation it first proves both visible aliases are absent or the
-same replacement, retains any partial native tracker insertion through the existing
-tracking projection, then invokes native removal under destination authority. It
-retires only the recorded ownership publication. A conflicting newer object is
-left intact and cleanup rejection is secondary to the original failure. Failed work
-is terminal and cannot replay a native tick or transfer. If failure follows committed
-source retirement, the source is not resurrected: the failed transfer is explicitly
-accounted as failed/cleaned, never successful or silently retried. Cleanup failure
-stops the operation with its original exception and secondary suppressed evidence.
-Successful native merging can retire the returned item normally; quantity follows
-the original ItemEntity merge implementation rather than a second registration.
+Destination projectile travel and player travel are separate operations. At real
+native onHit, the owner resolves through the existing scoreboard's current UUID
+and exact live connection/listener session. A foreign-owner player hit is retained
+before player cooldown mutation and teleport. Native collision/particles/endermite
+prefixes have already occurred; they are not replayed. The pearl callback returns.
+The coordinator validates both identities and invokes native ServerPlayer.teleport
+under the player's source owner. The existing PlayerDimensionTransitionManager
+cuts after committed native source removal and resumes its original native
+insertion/packet/advancement suffix under the destination owner. Player damage
+runs there; pearl sound/discard run under the exact pearl owner. All are consumed
+once. A same-world local native hit keeps its native path.
 
-Diagnostics are enabled only by phoenium.test.diagnostics. Each generation has a
-finite phase sequence with exact identities/routes/owners and UNAVAILABLE for unknown
-observations. CAPTURED/ADDRESSABLE/TRACKING_PENDING are not success. SETTLED is logged
-only after native return and the required retained source suffix complete. Stale
-retirement, external removal, world close, shutdown and failure use distinct reasons.
+The read-only session receipt uses the existing lifecycle journal; it creates no
+session and does not change death/respawn replacement. Pre-source stale hits retire
+only the exact pearl. Session/binding loss after a pearl transfer commits source
+retirement is a terminal FAILED operation, with no replay or mutation through a
+new same-UUID player pointer. Shutdown/world closure cancels queued operations;
+it cannot certify gameplay success. Reentrant dimension drains cannot duplicate
+source/destination work.
 
-## Deterministic accounting
+## Source/test matrix
 
-Evidence: workspace .audit/non-player-portal-repair-20260921/verification.
+| Entity | Native lookup / scheduling | Retained caller suffix | Classification |
+|---|---|---|---|
+| Dropped item | ItemEntity.tick -> baseTick -> handlePortal under regional owner; native POI may wait | Exact base + item suffix, now retained before lookup | CONFIRMED SAME HOLE at baseline; repaired and controlled-native tested |
+| Thrown pearl | ThrownEnderpearl -> Throwable/Projectile -> baseTick under regional owner | One existing collision/flight continuation; own early capture | COVERED BY EXISTING PATH for preparation, strengthened; native hit/player composition repaired |
+| Passenger-free pig | Pig.tick -> Mob/LivingEntity -> baseTick -> handlePortal under regional owner | No complete LivingEntity/Mob continuation | CONFIRMED SAME HOLE; native pig regression reaches original guard; mob support deferred |
+| Player-only portal | Network listener tick -> tickPlayer -> ServerPlayer.doTick -> Player.tick; owner-free serial path. Regional ServerPlayer.tick does not invoke Player.tick | Existing player dimension source-retirement/destination suffix | COVERED BY EXISTING PATH; native handlePortal/player transition regression in both directions |
 
-- Red: native ItemEntity.teleport/Entity.teleportCrossDimension, real dispatcher,
-  controlled destination callback reproduced the exact Overworld-versus-Nether
-  foreign-owner assertion before implementation.
-- Focused: 42/42 across five named classes (focused-classes.txt).
-- Related: 224/224 across the exact 28 classes in targeted-classes.txt, including
-  player-only dimension contracts, respawn/session, tracking receipts, relocation,
-  dispatcher, A2/pearl and projectile ledgers, and current readiness regressions.
-- The documented broader filter was run once, unchanged: 1,207 tests, 1 failure,
-  0 errors/skips. The failure was CoreAcceptanceTest's source-policy lock guard
-  detecting the new synchronized metadata map. The implementation now uses the
-  existing pearl manager's concurrent identity-map pattern; the guard was unchanged.
-- Final correction/affected regression selection: 276/276, 32 suites, 0 failures,
-  errors or skips. This includes every focused and related class and CoreAcceptanceTest.
-  The broader suite was not rerun, and its initial failure is retained rather than
-  represented as a fully green broader run.
-- Exact unchanged exclusions: FullNonselfInputDecisionTest and the eight existing
-  C2meDiskReadOperationTest, C2meDiskReadRxTest, C2meFullProviderBinaryTest,
-  C2meGenerationProviderBinaryTest, C2meNativeAvailabilityTest,
-  C2meNativeFailureSettlementTest, C2meReadProviderBinaryTest, C2meSendReadyInputsTest.
-  No transfer, respawn, tracking or core guard is excluded. No provider audit/refresh
-  or unfiltered historical audit was run. The baseline's 1,264/73 unfiltered failure
-  record remains distinct; it was never a fully green baseline.
+Mobs require a materially different LivingEntity/Mob base and tick continuation;
+a generic Entity suspension would discard their remaining native work. This repair
+does not claim mob, passenger/vehicle, arbitrary projectile, custom subclass or End
+portal support. Ender pearls dropped from inventory do not test thrown pearls.
 
-The native item tests exercise real factory construction, serialization/restore,
-teleport methods, item merge invocation, real dispatcher/leases, and real identity
-registry/index retirement. World storage/tracker endpoints and the final physics
-suffix endpoints are controlled. The copied production item suffix is independently
-pinned against the actual mapped native suffix's call/write sequence. Pearl coverage
-executes native replacement and the existing single-consumption continuation with
-controlled ticket/collision endpoints. It is not player-hit teleport acceptance.
-No artificial provider pending state was introduced; naturally delayed terrain and
-real Bedrock item/pearl gameplay remain for Luna. Only ordinary items and the existing
-retained pearl path without a passenger graph are in the supported scope here.
+## Evidence and limitations
 
-Final candidate identity, immutable hashes, exact packaging audit and the FINAL
-Fabric bootstrap receipt are recorded outside the commit in the audit handoff.
+New tests exercise native item/pearl ticks before lookup, native Nether portal/POI
+search requesting EMPTY/create=true, both directions and ready/incomplete controlled
+dependencies, native no-destination behavior, original failure propagation, stale
+processor/world/removal/incarnation, native item replacement/merge, native projectile
+flight/onHit, real native player teleport source and destination suffixes, separate
+owners, stale session, consecutive independent throws and player-only portal entry.
+Existing respawn/session, tracking/packet, provider resident-binding and lifecycle
+regressions remain in the affected selection. Production mixin selectors and suffix
+call ordering are checked independently against mapped bytecode.
+
+Controlled endpoints: world storage/tracking environment, chunk dependency future,
+portal placement failure, selected physics, collision stimulus, packets, damage,
+sound and advancement. The native POI tests do not manufacture a C2ME slot or claim
+installed pending-provider evidence. The composed hit tests preserve native flight,
+onHit, player teleport prefix and actual native suffix instructions, with those
+environment endpoints controlled. The final jar's fresh Fabric startup separately
+checks actual mixin binding, readiness and normal stop, not portal gameplay.
+
+The final affected selection is the preserved 32-class list plus
+NativePortalDestinationPreparationTest and NativePearlPlayerHitTest. The broader
+selection uses the preserved bounded-suite.gradle unchanged. Its nine exclusions
+are FullNonselfInputDecisionTest, C2meDiskReadOperationTest, C2meDiskReadRxTest,
+C2meFullProviderBinaryTest, C2meGenerationProviderBinaryTest,
+C2meNativeAvailabilityTest, C2meNativeFailureSettlementTest, C2meReadProviderBinaryTest
+and C2meSendReadyInputsTest. No new exclusions or weakened assertions were added.
+Final commands, counts, source fingerprints and XML are in this repair's audit.
+
+Historical accounting remains separate: the earlier unfiltered 1,264 tests with
+73 failures was not green; the 1,225-count reconciliation remains unresolved.
+The original 2ed5a83 artifact creation had a broader 1,207/1 failure followed by
+276/276 affected tests. Luna subsequently reran the unchanged broader selection
+on clean 2ed5a83 and recorded 1,207/1,207; neither result substitutes for this
+repair's final-source verification. No new provider binary audit was performed.
+
+Diagnostics-only milestones use PHOENIUM_NON_PLAYER_PORTAL,
+PHOENIUM_PORTAL_DESTINATION and PHOENIUM_PEARL_PLAYER_HIT. They include exact identities,
+operation generation, known worlds/routes, owner context, observed requested chunk/
+status/create and first failing phase; unknown values are explicit. Selected futures
+are observed as native objects, never invented provider slots. Diagnostic exceptions
+cannot replace an original failure. Capture/crossing/source-retirement is not settled
+player travel; any crash or scheduler FAILED overrides aggregate counters and exit 0.
+
+The immutable candidate identity, all eight pinned provider/config identities,
+packaging audit, final startup receipt and short live action cards are recorded in
+LUNA_PORTAL_DESTINATION_VALIDATION_HANDOFF.md in the project-root audit directory.
+Only Luna with the user's real client actions can establish Bedrock gameplay
+acceptance. No Stage 7/W4/all-entity/End-portal acceptance follows from this repair.

@@ -37,6 +37,7 @@ final class PlayerDimensionTransitionManager implements AutoCloseable {
         WorldId worldId(ServerLevel level);
         void execute(RoutingKey key, RegionalServiceKind kind, Runnable body);
         void retireSourceIndex(ServerPlayer player, WorldId sourceWorld, long registryIncarnation);
+        long currentSession(ServerPlayer player);
     }
 
     private final Authority authority;
@@ -80,7 +81,8 @@ final class PlayerDimensionTransitionManager implements AutoCloseable {
             access.phoenium$entityIncarnation(), binding.incarnation(), sourceWorld, destinationWorld);
         var token = transitions.begin(source);
         Entry entry = new Entry(token, player, transition, sourceLevel, destinationLevel,
-            binding.objectEpoch(), binding.owner());
+            binding.objectEpoch(), binding.owner(), authority.currentSession(player));
+        if (entry.session < 0) { transitions.cancel(token); throw new IllegalStateException("player dimension session is not current"); }
         if (active.putIfAbsent(key(player), entry) != null) {
             transitions.cancel(token);
             throw new IllegalStateException("player already has a retained dimension transition");
@@ -138,6 +140,9 @@ final class PlayerDimensionTransitionManager implements AutoCloseable {
         Entry entry = active.get(key(player));
         return entry != null && transitions.isCurrent(entry.token);
     }
+    boolean pendingPearlHit(ThrownEnderpearl pearl) {
+        return active.values().stream().anyMatch(entry -> entry.pearlHit != null && entry.pearlHit.pearl == pearl);
+    }
 
     /** Retains only the native ThrownEnderpearl.onHit suffix after its player teleport call. */
     boolean retainPearlHit(ThrownEnderpearl pearl, ServerLevel destination, Vec3 teleportPosition,
@@ -152,8 +157,9 @@ final class PlayerDimensionTransitionManager implements AutoCloseable {
         if (entry.pearlHit != null) throw new IllegalStateException("pearl player-hit suffix retained twice");
         if (pearl.level() != destination || pearl.isRemoved())
             throw new IllegalStateException("pearl hit continuation is not in the player destination world");
+        ObjectOwnership binding = objects.current(pearl.getUUID().toString()).orElseThrow();
         entry.pearlHit = new PearlHit(pearl, access(pearl).phoenium$entityIncarnation(),
-            destination, teleportPosition);
+            destination, teleportPosition, binding);
         return true;
     }
 
@@ -166,15 +172,25 @@ final class PlayerDimensionTransitionManager implements AutoCloseable {
         snapshot.sort(Comparator.comparingLong(entry -> entry.token.generation()));
         for (Entry entry : snapshot) {
             if (active.get(key(entry.player)) != entry
+                    || entry.advancing
                     || transitions.phase(entry.token) != PlayerDimensionTransitionBoundary.Phase.SOURCE_RETIRED)
                 continue;
+            entry.advancing = true;
             try {
-                if (!validRetiredSource(entry)) { cancel(entry); continue; }
+                if (!validRetiredSource(entry)) {
+                    if (entry.pearlHit != null)
+                        throw new IllegalStateException("pearl player transfer lost its session after committed source retirement");
+                    cancel(entry); continue;
+                }
                 RoutingKey destinationKey = destinationKey(entry);
                 RegionRoute destinationRoute = directory.resolve(destinationKey).orElse(null);
                 if (destinationRoute == null) continue;
                 ObjectOwnership source = currentSource(entry);
-                if (source == null) { cancel(entry); continue; }
+                if (source == null) {
+                    if (entry.pearlHit != null)
+                        throw new IllegalStateException("pearl player transfer lost its binding after committed source retirement");
+                    cancel(entry); continue;
+                }
 
                 ObjectOwnership destination = source.owner().equals(destinationRoute.region())
                     ? objects.updateRoutingKey(source.objectId(), destinationKey, source.objectEpoch())
@@ -191,16 +207,31 @@ final class PlayerDimensionTransitionManager implements AutoCloseable {
                         new PlayerDimensionTransitionBoundary.DestinationIdentity(admitted.objectId(),
                             access(entry.player).phoenium$entityIncarnation(), admitted.incarnation(),
                             authority.worldId(entry.destinationLevel)));
-                    var continuation = transitions.authorizeContinuation(entry.token);
-                    if (entry.pearlHit != null) resumePearlHit(entry, entry.pearlHit);
-                    transitions.settle(continuation);
+                    if (entry.pearlHit != null) resumePearlDamage(entry, entry.pearlHit);
                 });
+                var continuation = transitions.authorizeContinuation(entry.token);
+                if (entry.pearlHit != null) {
+                    PearlHit hit=entry.pearlHit;
+                    authority.execute(hit.binding.routingKey(), RegionalServiceKind.ENTITY_PORTAL_DESTINATION, () -> {
+                        requirePearlHit(entry, hit);
+                        ObjectOwnership current=objects.current(hit.binding.objectId()).orElseThrow();
+                        if(current.incarnation()!=hit.binding.incarnation() || !current.objectEpoch().equals(hit.binding.objectEpoch())
+                                || !current.routingKey().equals(hit.binding.routingKey()))
+                            throw new IllegalStateException("pearl hit destination binding changed");
+                        objects.requireCurrentOwner(current.objectId(),current.objectEpoch(),OwnershipContext.current().orElseThrow().region());
+                        ((PlayerDimensionTransitionNativeAccess.PearlHitSuffix)hit.pearl)
+                            .phoenium$resumePearlHitEffects(hit.destination,hit.teleportPosition);
+                    });
+                    hitMarker(entry,"PLAYER_TELEPORT_SETTLED");
+                }
+                transitions.settle(continuation);
                 active.remove(key(entry.player), entry);
                 settled++;
             } catch (RuntimeException | Error failure) {
+                if (entry.pearlHit != null) hitMarker(entry,"FAILED:"+failure.getClass().getSimpleName());
                 cancel(entry);
                 throw failure;
-            }
+            } finally { entry.advancing = false; }
         }
         return settled;
     }
@@ -220,13 +251,16 @@ final class PlayerDimensionTransitionManager implements AutoCloseable {
         transitions.close();
     }
 
-    private void resumePearlHit(Entry entry, PearlHit hit) {
+    private void requirePearlHit(Entry entry, PearlHit hit) {
         if (access(hit.pearl).phoenium$entityIncarnation() != hit.nativeIncarnation
                 || hit.pearl.level() != hit.destination || hit.pearl.isRemoved()
-                || entry.player.level() != hit.destination)
+                || entry.player.level() != hit.destination || authority.currentSession(entry.player) != entry.session)
             throw new IllegalStateException("pearl player-hit continuation became stale");
+    }
+    private void resumePearlDamage(Entry entry, PearlHit hit) {
+        requirePearlHit(entry,hit);
         ((PlayerDimensionTransitionNativeAccess.PearlHitSuffix) hit.pearl)
-            .phoenium$resumePearlPlayerHit(entry.player, hit.destination, hit.teleportPosition);
+            .phoenium$resumePearlPlayerDamage(entry.player);
     }
 
     private ObjectOwnership requireDestination(Entry entry, RoutingKey destinationKey,
@@ -234,7 +268,8 @@ final class PlayerDimensionTransitionManager implements AutoCloseable {
         if (active.get(key(entry.player)) != entry
                 || transitions.phase(entry.token) == PlayerDimensionTransitionBoundary.Phase.RETIRED)
             throw new IllegalStateException("player destination transition became stale");
-        if (!authority.worldActive(entry.destinationLevel) || !entry.player.connection.isAcceptingMessages())
+        if (!authority.worldActive(entry.destinationLevel) || !entry.player.connection.isAcceptingMessages()
+                || authority.currentSession(entry.player) != entry.session)
             throw new IllegalStateException("player destination is unavailable");
         ObjectOwnership current = objects.current(entry.token.source().objectId()).orElseThrow(
             () -> new IllegalStateException("player destination ownership is absent or stale"));
@@ -256,6 +291,7 @@ final class PlayerDimensionTransitionManager implements AutoCloseable {
             && entry.player.level() == entry.sourceLevel
             && entry.player.getRemovalReason() == Entity.RemovalReason.CHANGED_DIMENSION
             && entry.player.connection.isAcceptingMessages()
+            && authority.currentSession(entry.player) == entry.session
             && access(entry.player).phoenium$entityIncarnation() == entry.token.source().nativeIncarnation();
     }
 
@@ -282,6 +318,14 @@ final class PlayerDimensionTransitionManager implements AutoCloseable {
         if (entry == null) return;
         transitions.cancel(entry.token);
         active.remove(key(entry.player), entry);
+    }
+    private void hitMarker(Entry entry,String phase) {
+        if(!Boolean.getBoolean("phoenium.test.diagnostics")) return;
+        try { org.slf4j.LoggerFactory.getLogger(PlayerDimensionTransitionManager.class).info(
+            "PHOENIUM_PEARL_PLAYER_HIT player={} playerNative={} generation={} session={} destinationWorld={} owner={} phase={}",
+            entry.token.source().objectId(),entry.token.source().nativeIncarnation(),entry.token.generation(),entry.session,
+            entry.destinationLevel.dimension().identifier(),OwnershipContext.current().map(Object::toString).orElse("NONE"),phase);
+        } catch(Throwable ignored) { }
     }
 
     private static FullEntityFacts.Access access(Entity entity) {
@@ -310,13 +354,15 @@ final class PlayerDimensionTransitionManager implements AutoCloseable {
         final ServerLevel destinationLevel;
         final dev.phoenium.core.OwnerEpoch sourceObjectEpoch;
         final dev.phoenium.region.RegionId sourceOwner;
+        final long session;
         volatile PlayerDimensionTransitionBoundary.SourceRemoval sourceRemoval;
         volatile PearlHit pearlHit;
         volatile boolean suspended;
+        volatile boolean advancing;
 
         Entry(PlayerDimensionTransitionBoundary.Token token, ServerPlayer player,
               TeleportTransition transition, ServerLevel sourceLevel, ServerLevel destinationLevel,
-              dev.phoenium.core.OwnerEpoch sourceObjectEpoch, dev.phoenium.region.RegionId sourceOwner) {
+              dev.phoenium.core.OwnerEpoch sourceObjectEpoch, dev.phoenium.region.RegionId sourceOwner, long session) {
             this.token = token;
             this.player = player;
             this.transition = transition;
@@ -324,9 +370,10 @@ final class PlayerDimensionTransitionManager implements AutoCloseable {
             this.destinationLevel = destinationLevel;
             this.sourceObjectEpoch = sourceObjectEpoch;
             this.sourceOwner = sourceOwner;
+            this.session = session;
         }
     }
 
     private record PearlHit(ThrownEnderpearl pearl, long nativeIncarnation,
-                            ServerLevel destination, Vec3 teleportPosition) { }
+                            ServerLevel destination, Vec3 teleportPosition, ObjectOwnership binding) { }
 }

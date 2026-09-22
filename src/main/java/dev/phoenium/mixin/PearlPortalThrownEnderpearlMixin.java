@@ -33,7 +33,8 @@ abstract class PearlPortalThrownEnderpearlMixin implements PearlPortalNativeAcce
 
     @Inject(method = "tick()V", at = @At("HEAD"), cancellable = true, require = 1, expect = 1)
     private void phoenium$skipPendingPearlTick(CallbackInfo ci) {
-        if (Phoenium.liveRuntime().skipPendingPearlPortalTick((ThrownEnderpearl) (Object) this)) ci.cancel();
+        if (Phoenium.liveRuntime().skipPendingPearlPortalTick((ThrownEnderpearl) (Object) this)
+                || Phoenium.liveRuntime().pearlPlayerHitPending((ThrownEnderpearl) (Object) this)) ci.cancel();
     }
 
     @Inject(method = "tick()V", at = @At(value = "INVOKE",
@@ -51,12 +52,28 @@ abstract class PearlPortalThrownEnderpearlMixin implements PearlPortalNativeAcce
         target = "Lnet/minecraft/world/entity/projectile/throwableitemprojectile/ThrowableItemProjectile;tick()V",
         ordinal = 1, shift = At.Shift.AFTER), cancellable = true, require = 1, expect = 1)
     private void phoenium$completeSuspendedPearlTick(CallbackInfo ci) {
-        if (Phoenium.liveRuntime().completePearlPortalTick((ThrownEnderpearl) (Object) this)) ci.cancel();
+        if (Phoenium.liveRuntime().completePearlPortalTick((ThrownEnderpearl) (Object) this)
+                || Phoenium.liveRuntime().pearlPlayerHitPending((ThrownEnderpearl) (Object) this)) ci.cancel();
     }
 
-    @Inject(method = "tick()V", at = @At("RETURN"), require = 1)
-    private void phoenium$finishPearlPortalTick(CallbackInfo ci) {
-        Phoenium.liveRuntime().finishPearlPortalTick((ThrownEnderpearl) (Object) this);
+    @com.llamalad7.mixinextras.injector.wrapmethod.WrapMethod(method = "tick()V")
+    private void phoenium$finishPearlPortalTick(com.llamalad7.mixinextras.injector.wrapoperation.Operation<Void> original) {
+        try { original.call(); }
+        finally { Phoenium.liveRuntime().finishPearlPortalTick((ThrownEnderpearl) (Object) this); }
+    }
+    @com.llamalad7.mixinextras.injector.ModifyExpressionValue(method = "onHit", at = @At(value = "INVOKE",
+        target = "Lnet/minecraft/world/entity/projectile/throwableitemprojectile/ThrownEnderpearl;getOwner()Lnet/minecraft/world/entity/Entity;"), require = 1, allow = 1)
+    private Entity phoenium$currentHitOwner(Entity original) {
+        return Phoenium.liveRuntime().currentPearlHitOwner(original);
+    }
+
+    @Inject(method = "onHit(Lnet/minecraft/world/phys/HitResult;)V", at = @At(value = "INVOKE",
+        target = "Lnet/minecraft/world/entity/projectile/throwableitemprojectile/ThrownEnderpearl;isOnPortalCooldown()Z"),
+        cancellable = true, require = 1, allow = 1)
+    private void phoenium$retainForeignPlayerHit(HitResult result, CallbackInfo ci,
+            @Local(ordinal = 0) ServerLevel destination, @Local(ordinal = 0) Vec3 position,
+            @Local(ordinal = 0) ServerPlayer player) {
+        if (Phoenium.liveRuntime().capturePearlPlayerHit((ThrownEnderpearl)(Object)this,destination,position,player)) ci.cancel();
     }
 
     /**
@@ -78,7 +95,9 @@ abstract class PearlPortalThrownEnderpearlMixin implements PearlPortalNativeAcce
     @Override public void phoenium$resumePearlPortalPearlTickSuffix(
             int previousSectionX, int previousSectionZ, Entity retainedOwner) {
         ThrownEnderpearl self = (ThrownEnderpearl) (Object) this;
-        if (!self.isAlive()) return;
+        if (!self.isAlive() || Phoenium.liveRuntime().pearlPlayerHitPending(self)) return;
+        // A paused tick must not update tickets through a respawned/disconnected incarnation.
+        if (Phoenium.liveRuntime().currentPearlHitOwner(retainedOwner) != retainedOwner) return;
         BlockPos currentPos = BlockPos.containing(self.position());
         if ((--this.ticketTimer <= 0L
                 || previousSectionX != SectionPos.blockToSectionCoord(currentPos.getX())
@@ -90,10 +109,17 @@ abstract class PearlPortalThrownEnderpearlMixin implements PearlPortalNativeAcce
     /** Exact pinned 26.2 suffix after ServerPlayer.teleport returned a non-null player. */
     @Override public void phoenium$resumePearlPlayerHit(ServerPlayer player, ServerLevel destination,
                                                         Vec3 teleportPosition) {
+        phoenium$resumePearlPlayerDamage(player);
+        phoenium$resumePearlHitEffects(destination,teleportPosition);
+    }
+    @Override public void phoenium$resumePearlPlayerDamage(ServerPlayer player) {
         ThrownEnderpearl self = (ThrownEnderpearl) (Object) this;
         player.resetFallDistance();
         player.resetCurrentImpulseContext();
         player.hurtServer(player.level(), self.damageSources().enderPearl(), 5.0F);
+    }
+    @Override public void phoenium$resumePearlHitEffects(ServerLevel destination, Vec3 teleportPosition) {
+        ThrownEnderpearl self = (ThrownEnderpearl) (Object) this;
         ((PearlPortalThrownEnderpearlAccess) (Object) self)
             .phoenium$invokePlaySound(destination, teleportPosition);
         self.discard();

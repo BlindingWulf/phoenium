@@ -15,5 +15,7 @@ public final class PlayerDimensionTransitionNativeAccess {
 
     public interface PearlHitSuffix {
         void phoenium$resumePearlPlayerHit(ServerPlayer player, ServerLevel destination, Vec3 teleportPosition);
+        void phoenium$resumePearlPlayerDamage(ServerPlayer player);
+        void phoenium$resumePearlHitEffects(ServerLevel destination, Vec3 teleportPosition);
     }
 }

@@ -90,6 +90,17 @@ public final class FullFinishingScoreboard {
     public TrackingCut trackingCut(List<ServerPlayer> actualPlayers) {
         return trackingCut(actualPlayers, null);
     }
+    /** Read-only exact session receipt for a retained native pearl hit. No session is created. */
+    public long portalSession(ServerPlayer player) {
+        require();
+        if (player == null || !(player.connection instanceof ConnectionAccess access)) return -1;
+        Session session = sessions.get(access.phoenium$serviceConnection());
+        return session != null && session.state == State.LIVE && session.player == player
+            && session.listener == player.connection && session.listener.player == player
+            && session.respawn == null && !session.awaitingRespawnListener
+            && byUuid.get(player.getUUID()) == player && !PlayerRespawnHandoff.retired(player)
+                ? session.id : -1;
+    }
     public TrackingCut trackingCut(List<ServerPlayer> actualPlayers, PlayerRespawnHandoff.Tracking transition) {
         FullFinishingServices.requireServer(server, FullFinishingServices.Kind.CONNECTIONS);
         var result = new ArrayList<TrackingSession>(actualPlayers.size());

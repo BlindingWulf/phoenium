@@ -62,20 +62,23 @@ final class PearlPortalTransitionManager implements AutoCloseable {
         if (current == null || current.pearl != pearl || current.hitResult == null || closed || !authority.running()) return false;
         if (OwnershipContext.current().isEmpty())
             throw new IllegalStateException("pearl portal suspension was reached without source owner authority");
-        if (!(pearl.level() instanceof ServerLevel sourceLevel) || pearl.portalProcess != processor || pearl.isRemoved()) return false;
+        if (!(pearl.level() instanceof ServerLevel sourceLevel) || pearl.portalProcess != processor || pearl.isRemoved()
+                || pearl.getClass() != ThrownEnderpearl.class) return false;
         Portal portal = ((PearlPortalProcessorAccess) processor).phoenium$portal();
         if (!(portal instanceof NetherPortalBlock)) return false;
-        if (!pearl.getPassengers().isEmpty())
+        if (pearl.isPassenger() || pearl.isVehicle())
             throw new IllegalStateException("ridden pearl cannot use the retained portal continuation");
         FullEntityFacts.Access access = access(pearl);
         ObjectOwnership binding = objects.current(pearl.getUUID().toString()).orElse(null);
         if (binding == null || binding.kind() != OwnedObjectKind.ENTITY) return false;
+        objects.requireCurrentOwner(binding.objectId(), binding.objectEpoch(), OwnershipContext.current().orElseThrow().region());
         var sourceIdentity = new CrossDimensionReplacementBoundary.SourceIdentity(
             binding.objectId(), access.phoenium$entityIncarnation(), binding.incarnation());
         var token = replacements.begin(sourceIdentity);
-        Entry entry = new Entry(token, pearl, sourceLevel, processor, portal, processor.getEntryPosition().immutable());
+        Entry entry = new Entry(token, pearl, sourceLevel, processor, portal, processor.getEntryPosition().immutable(), binding);
         active.put(key(pearl), entry);
         current.entry = entry;
+        NativePortalTransfer.retained(pearl, binding, token, null, "CAPTURED");
         return true;
     }
 
@@ -114,12 +117,13 @@ final class PearlPortalTransitionManager implements AutoCloseable {
         List<Entry> snapshot = new ArrayList<>(active.values());
         snapshot.sort(Comparator.comparingLong(entry -> entry.token.generation()));
         for (Entry entry : snapshot) {
-            if (active.get(key(entry.source)) != entry || entry.continuation == null) continue;
+            if (active.get(key(entry.source)) != entry || entry.continuation == null || entry.advancing) continue;
+            entry.advancing = true;
             try {
                 if (replacements.phase(entry.token) == CrossDimensionReplacementBoundary.Phase.CAPTURED) {
                     ObjectOwnership current = currentSource(entry);
                     if (current == null) {
-                        if (entry.source.isRemoved() || !authority.worldActive(entry.sourceLevel)) cancel(entry);
+                        cancel(entry);
                         continue;
                     }
                     prepare(entry);
@@ -130,9 +134,11 @@ final class PearlPortalTransitionManager implements AutoCloseable {
                     if (active.get(key(entry.source)) != entry) settled++;
                 }
             } catch (RuntimeException | Error failure) {
+                NativePortalTransfer.retained(entry.source, entry.binding, entry.token,
+                    entry.prepared == null ? null : entry.prepared.newLevel(), "FAILED:" + failure.getClass().getSimpleName());
                 cancel(entry);
                 throw failure;
-            }
+            } finally { entry.advancing = false; }
         }
         return settled;
     }
@@ -142,14 +148,18 @@ final class PearlPortalTransitionManager implements AutoCloseable {
         TeleportTransition prepared;
         Profiler.get().push("phoeniumPearlPortalPreparation");
         try {
-            prepared = entry.processor.getPortalDestination(entry.sourceLevel, entry.source);
+            NativePortalTransfer.retained(entry.source, entry.binding, entry.token, null, "DESTINATION_PREPARING");
+            prepared = PortalDestinationObservation.prepare(entry.source,entry.binding,entry.token,
+                () -> entry.processor.getPortalDestination(entry.sourceLevel, entry.source));
         } finally {
             Profiler.get().pop();
         }
-        if (active.get(key(entry.source)) != entry || !replacements.isCurrent(entry.token)) return;
+        if (currentSource(entry) == null) { cancel(entry); return; }
         entry.prepared = prepared;
         entry.preparedGeneration = entry.token.generation();
         replacements.prepared(entry.token);
+        NativePortalTransfer.retained(entry.source, entry.binding, entry.token,
+            prepared == null ? null : prepared.newLevel(), "DESTINATION_READY");
     }
 
     private void applyPrepared(Entry entry) {
@@ -159,7 +169,7 @@ final class PearlPortalTransitionManager implements AutoCloseable {
         }
         ObjectOwnership sourceBinding = currentSource(entry);
         if (sourceBinding == null) {
-            if (entry.source.isRemoved() || !authority.worldActive(entry.sourceLevel)) cancel(entry);
+            cancel(entry);
             return;
         }
         TeleportTransition transition = entry.prepared;
@@ -188,6 +198,7 @@ final class PearlPortalTransitionManager implements AutoCloseable {
             entry.continuation.resume();
         });
         replacements.settle(authorization);
+        NativePortalTransfer.retained(entry.source, entry.binding, entry.token, null, "SETTLED_NATIVE_NO_TRANSFER");
         active.remove(key(entry.source), entry);
     }
 
@@ -197,6 +208,7 @@ final class PearlPortalTransitionManager implements AutoCloseable {
         Entity result = transfer.run();
         if (result == null) { resumeUnchanged(entry, sourceBinding); return; }
         if (!(result instanceof ThrownEnderpearl)) throw new IllegalStateException("native pearl returned another type");
+        NativePortalTransfer.retained(entry.source, entry.binding, entry.token, transition.newLevel(), "PROJECTILE_TRANSFER");
         var continuation = replacements.authorizeReplacementContinuation(entry.token);
         authority.execute(sourceBinding.routingKey(), RegionalServiceKind.ENTITY_PORTAL_SOURCE, () -> {
             if (active.get(key(entry.source)) != entry || !authority.worldActive(entry.sourceLevel)
@@ -246,7 +258,9 @@ final class PearlPortalTransitionManager implements AutoCloseable {
         if (!validNativeSource(entry)) return null;
         ObjectOwnership binding = objects.current(entry.token.source().objectId()).orElse(null);
         if (binding == null || binding.kind() != OwnedObjectKind.ENTITY
-                || binding.incarnation() != entry.token.source().registryIncarnation()) return null;
+                || binding.incarnation() != entry.token.source().registryIncarnation()
+                || !binding.objectEpoch().equals(entry.binding.objectEpoch())
+                || !binding.routingKey().equals(entry.binding.routingKey())) return null;
         return binding;
     }
 
@@ -267,6 +281,8 @@ final class PearlPortalTransitionManager implements AutoCloseable {
             && authority.worldActive(entry.sourceLevel) && entry.source.level() == entry.sourceLevel
             && !entry.source.isRemoved() && entry.source.portalProcess == entry.processor
             && entry.processor.getEntryPosition().equals(entry.entryPosition)
+            && entry.processor.getPortalTime() == entry.portalTime
+            && entry.processor.isInsidePortalThisTick() == entry.insidePortal
             && ((PearlPortalProcessorAccess) entry.processor).phoenium$portal() == entry.portal
             && access(entry.source).phoenium$entityIncarnation() == entry.token.source().nativeIncarnation()
             && entry.source.getUUID().toString().equals(entry.token.source().objectId());
@@ -337,18 +353,25 @@ final class PearlPortalTransitionManager implements AutoCloseable {
         final PortalProcessor processor;
         final Portal portal;
         final BlockPos entryPosition;
+        final ObjectOwnership binding;
+        final int portalTime;
+        final boolean insidePortal;
+        volatile boolean advancing;
         volatile RetainedPearlTickContinuation continuation;
         volatile TeleportTransition prepared;
         volatile long preparedGeneration;
         volatile CrossDimensionReplacementBoundary.SourceRemoval sourceRemoval;
         Entry(CrossDimensionReplacementBoundary.Token token, ThrownEnderpearl source, ServerLevel sourceLevel,
-                PortalProcessor processor, Portal portal, BlockPos entryPosition) {
+                PortalProcessor processor, Portal portal, BlockPos entryPosition, ObjectOwnership binding) {
             this.token = token;
             this.source = source;
             this.sourceLevel = sourceLevel;
             this.processor = processor;
             this.portal = portal;
             this.entryPosition = entryPosition;
+            this.binding = binding;
+            this.portalTime = processor.getPortalTime();
+            this.insidePortal = processor.isInsidePortalThisTick();
         }
     }
 }

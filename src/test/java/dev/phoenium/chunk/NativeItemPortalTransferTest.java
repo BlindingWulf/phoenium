@@ -208,6 +208,16 @@ class NativeItemPortalTransferTest {
         final List<String> order = new ArrayList<>();
         int nextId;
         final ServerLevel overworld, nether;
+        net.minecraft.server.MinecraftServer server;
+        final Map<ServerLevel,net.minecraft.world.level.portal.PortalForcer> forcers = new IdentityHashMap<>();
+        final Map<ServerLevel,net.minecraft.world.entity.ai.village.poi.PoiManager> pois = new IdentityHashMap<>();
+        java.util.function.Function<Object[],Object> chunkRead = args -> null;
+        java.util.function.BiConsumer<ServerLevel,net.minecraft.server.level.ServerPlayer> playerRemove = (level,player)->{};
+        java.util.function.BiConsumer<ServerLevel,net.minecraft.server.level.ServerPlayer> playerInsert = (level,player)->{};
+        net.minecraft.world.level.storage.LevelData levelData;
+        net.minecraft.world.damagesource.DamageSources damageSources;
+        Runnable sound=()->{};
+        final List<ItemEntity> mergeTargets=new ArrayList<>();
         Fixture() throws Exception {
             for (var id : List.of(ar,br)) {
                 var runtime = new RegionRuntime(id,new OwnerEpoch(0)); runtime.transitionTo(RegionLifecycle.READY); runtimes.put(id,runtime);
@@ -261,7 +271,7 @@ class NativeItemPortalTransferTest {
         }
         void publish(Entity entity, RoutingKey key) {
             visible.get((ServerLevel)entity.level()).put(entity.getUUID(),entity);
-            var binding = identities.addressable(entity.getUUID().toString(),OwnedObjectKind.ENTITY,key.world(),entity.getId(),key,false);
+            var binding = identities.addressable(entity.getUUID().toString(),entity instanceof net.minecraft.server.level.ServerPlayer ? OwnedObjectKind.PLAYER : OwnedObjectKind.ENTITY,key.world(),entity.getId(),key,false);
             NativePortalTransfer.addressable(entity,binding);
             callback(entity,key);
         }
@@ -281,10 +291,31 @@ class NativeItemPortalTransferTest {
         ServerLevel world(net.minecraft.resources.ResourceKey<Level> dimension, RoutingKey key) throws Exception {
             Map<UUID,Entity> entities = new HashMap<>();
             ServerLevel level = stub(ServerLevel.class,List.of(
+                new Answer(ServerLevel.class.getMethod("isAllowedToEnterPortal",Level.class), args -> true),
+                new Answer(ServerLevel.class.getMethod("getServer"), args -> server),
+                new Answer(ServerLevel.class.getMethod("getEntityInAnyDimension",UUID.class),args->visible.values().stream().map(map->map.get(args[0])).filter(Objects::nonNull).findFirst().orElse(null)),
+                new Answer(ServerLevel.class.getMethod("getLevelData"),args->levelData),
+                new Answer(ServerLevel.class.getMethod("isSpawningMonsters"),args->false),
+                new Answer(Level.class.getMethod("damageSources"),args->damageSources),
+                new Answer(Level.class.getMethod("playSound",Entity.class,double.class,double.class,double.class,net.minecraft.sounds.SoundEvent.class,net.minecraft.sounds.SoundSource.class),args->{sound.run();return null;}),
+                new Answer(ServerLevel.class.getMethod("gameEvent",net.minecraft.core.Holder.class,Vec3.class,net.minecraft.world.level.gameevent.GameEvent.Context.class),args->null),
+                new Answer(ServerLevel.class.getMethod("removePlayerImmediately",net.minecraft.server.level.ServerPlayer.class,Entity.RemovalReason.class),args->{
+                    playerRemove.accept(dimension == Level.OVERWORLD ? overworld : nether,(net.minecraft.server.level.ServerPlayer)args[0]); return null;
+                }),
+                new Answer(ServerLevel.class.getMethod("getPortalForcer"), args -> forcers.get(dimension == Level.OVERWORLD ? overworld : nether)),
+                new Answer(ServerLevel.class.getMethod("getPoiManager"), args -> pois.get(dimension == Level.OVERWORLD ? overworld : nether)),
+                new Answer(Level.class.getMethod("getWorldBorder"), args -> new net.minecraft.world.level.border.WorldBorder()),
+                new Answer(Level.class.getMethod("dimensionType"), args -> net.minecraft.data.registries.VanillaRegistries.createLookup()
+                    .lookupOrThrow(net.minecraft.core.registries.Registries.DIMENSION_TYPE)
+                    .getOrThrow(dimension == Level.OVERWORLD ? net.minecraft.world.level.dimension.BuiltinDimensionTypes.OVERWORLD : net.minecraft.world.level.dimension.BuiltinDimensionTypes.NETHER).value()),
+                new Answer(Level.class.getMethod("getBlockState",net.minecraft.core.BlockPos.class), args -> net.minecraft.world.level.block.Blocks.AIR.defaultBlockState()),
+                new Answer(Level.class.getMethod("getChunk",int.class,int.class,net.minecraft.world.level.chunk.status.ChunkStatus.class,boolean.class), args -> chunkRead.apply(args)),
                 new Answer(ServerLevel.class.getMethod("getEntity",UUID.class), args -> entities.get(args[0])),
                 new Answer(ServerLevel.class.getMethod("getEntity",int.class), args -> entities.values().stream().filter(e -> e.getId() == (int)args[0]).findFirst().orElse(null)),
                 new Answer(Level.class.getMethod("getEntitiesOfClass",Class.class,net.minecraft.world.phys.AABB.class,java.util.function.Predicate.class), args -> {
-                    owner(key); order.add("merge"); fail(FailurePoint.MERGE); return List.of();
+                    owner(key); order.add("merge"); fail(FailurePoint.MERGE);
+                    @SuppressWarnings("unchecked") var predicate=(java.util.function.Predicate<ItemEntity>)args[2];
+                    return mergeTargets.stream().filter(predicate).toList();
                 }),
                 new Answer(Level.class.getMethod("getNextEntityId"), args -> ++nextId),
                 new Answer(Level.class.getMethod("enabledFeatures"), args -> FeatureFlags.REGISTRY.allFlags()),
@@ -292,6 +323,7 @@ class NativeItemPortalTransferTest {
                 new Answer(ServerLevel.class.getMethod("players"), args -> List.of()),
                 new Answer(ServerLevel.class.getMethod("resetEmptyTime"), args -> null),
                 new Answer(ServerLevel.class.getMethod("addDuringTeleport",Entity.class), args -> {
+                    if(args[0] instanceof net.minecraft.server.level.ServerPlayer player) {playerInsert.accept(dimension == Level.OVERWORLD ? overworld : nether,player);return null;}
                     owner(key); order.add("insert"); replacement=(Entity)args[0]; fail(FailurePoint.BEFORE_CLAIM);
                     Entity exact=replacement;
                     NativePortalTransfer.storageClaimed(exact, () -> {

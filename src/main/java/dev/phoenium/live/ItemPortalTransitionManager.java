@@ -3,14 +3,18 @@ package dev.phoenium.live;
 import dev.phoenium.chunk.FullEntityFacts;
 import dev.phoenium.ownership.*;
 import dev.phoenium.service.RegionalServiceKind;
+import dev.phoenium.mixin.PearlPortalProcessorAccess;
 import java.util.*;
+import net.minecraft.core.BlockPos;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.PortalProcessor;
 import net.minecraft.world.entity.item.ItemEntity;
+import net.minecraft.world.level.block.NetherPortalBlock;
+import net.minecraft.world.level.block.Portal;
 import net.minecraft.world.level.portal.TeleportTransition;
 
-/** The exact ItemEntity tick suffix after its already completed portal lookup. */
+/** The exact ItemEntity tick prefix retained BEFORE native portal destination lookup. */
 public final class ItemPortalTransitionManager implements AutoCloseable {
     public interface ItemSuffix { void phoenium$resumeItemTickSuffix(); }
     private final NativePortalTransfer.Authority authority;
@@ -42,6 +46,27 @@ public final class ItemPortalTransitionManager implements AutoCloseable {
         NativePortalTransfer.retained(item,binding,token,transition.newLevel(),"CAPTURED_TICK_PREFIX");
         return true;
     }
+    public boolean suspendDestination(ItemEntity item, PortalProcessor processor) {
+        if (ticking.get() != item || closed || !authority.running() || item.isRemoved()
+                || !(item.level() instanceof ServerLevel level) || item.portalProcess != processor
+                || processor == null || item.getClass() != ItemEntity.class) return false;
+        Portal portal = ((PearlPortalProcessorAccess) processor).phoenium$portal();
+        if (!(portal instanceof NetherPortalBlock)) return false;
+        if (item.isPassenger() || item.isVehicle())
+            throw new IllegalStateException("item portal passenger graph is outside this continuation");
+        ObjectOwnership binding = objects.current(item.getUUID().toString()).orElseThrow();
+        objects.requireCurrentOwner(binding.objectId(), binding.objectEpoch(), OwnershipContext.current().orElseThrow().region());
+        var token = replacements.begin(new CrossDimensionReplacementBoundary.SourceIdentity(binding.objectId(),
+            ((FullEntityFacts.Access) item).phoenium$entityIncarnation(), binding.incarnation()));
+        Entry entry = new Entry(item, level, processor, null, binding, token);
+        entry.destinationPending = true;
+        if (active.putIfAbsent(key(item), entry) != null) {
+            replacements.cancel(token);
+            throw new IllegalStateException("item portal was captured twice");
+        }
+        NativePortalTransfer.retained(item, binding, token, null, "CAPTURED");
+        return true;
+    }
     public boolean suspended(ItemEntity item) { return active.containsKey(key(item)); }
     public boolean complete(ItemEntity item) {
         Entry entry = active.get(key(item)); if (entry == null || ticking.get() != item) return false;
@@ -59,34 +84,61 @@ public final class ItemPortalTransitionManager implements AutoCloseable {
         entries.sort(Comparator.comparingLong(entry -> entry.token.generation()));
         int settled = 0;
         for (Entry entry : entries) {
-            if (!entry.retained || active.get(key(entry.item)) != entry) continue;
+            if (!entry.retained || entry.advancing || active.get(key(entry.item)) != entry) continue;
             if (!current(entry)) { cancel(entry,"STALE_BEFORE_NATIVE"); continue; }
+            entry.advancing = true;
             try {
-                var transfer = new NativePortalTransfer(authority, objects, replacements, entry.token,
-                    entry.item, entry.binding, entry.transition, () -> active.get(key(entry.item)) == entry);
-                Entity result = transfer.run();
+                if (entry.destinationPending) {
+                    NativePortalTransfer.retained(entry.item, entry.binding, entry.token, null, "DESTINATION_PREPARING");
+                    entry.transition = PortalDestinationObservation.prepare(entry.item,entry.binding,entry.token,
+                        () -> entry.processor.getPortalDestination(entry.level, entry.item));
+                    entry.destinationPending = false;
+                    if (!current(entry)) { cancel(entry,"STALE_AFTER_PREPARATION"); continue; }
+                    replacements.prepared(entry.token);
+                    NativePortalTransfer.retained(entry.item, entry.binding, entry.token,
+                        entry.transition == null ? null : entry.transition.newLevel(), "DESTINATION_READY");
+                }
+                boolean permitted = entry.transition != null && entry.level.isAllowedToEnterPortal(entry.transition.newLevel())
+                    && (entry.level.dimension() == entry.transition.newLevel().dimension()
+                        || entry.item.canTeleport(entry.level, entry.transition.newLevel()));
+                if (permitted && entry.level.dimension() == entry.transition.newLevel().dimension())
+                    throw new IllegalStateException("vanilla Nether portal produced a same-dimension item transition");
+                var transfer = permitted ? new NativePortalTransfer(authority, objects, replacements, entry.token,
+                    entry.item, entry.binding, entry.transition, () -> active.get(key(entry.item)) == entry) : null;
+                Entity result = transfer == null ? null : transfer.run();
                 var suffix = result == null
                     ? replacements.authorizeUnchangedSourceContinuation(entry.token, entry.token.source())
                     : replacements.authorizeReplacementContinuation(entry.token);
                 authority.execute(entry.binding.routingKey(), RegionalServiceKind.ENTITY_PORTAL_SOURCE, () -> {
                     if (active.get(key(entry.item)) != entry || entry.consumed || !authority.worldActive(entry.level)
                             || ((FullEntityFacts.Access) entry.item).phoenium$entityIncarnation() != entry.token.source().nativeIncarnation()
+                            || result == null && !current(entry)
                             || result != null && entry.item.getRemovalReason() != Entity.RemovalReason.CHANGED_DIMENSION)
                         throw new IllegalStateException("stale item portal tick suffix");
                     entry.consumed = true;
                     ((PearlPortalNativeAccess.EntitySuffix) entry.item).phoenium$resumePearlPortalBaseTickSuffix();
                     ((ItemSuffix) entry.item).phoenium$resumeItemTickSuffix();
                 });
-                replacements.settle(suffix); transfer.settled(); active.remove(key(entry.item), entry); settled++;
+                replacements.settle(suffix);
+                if (transfer != null) transfer.settled();
+                else NativePortalTransfer.retained(entry.item, entry.binding, entry.token, null, "SETTLED_NATIVE_NO_TRANSFER");
+                active.remove(key(entry.item), entry); settled++;
             } catch (RuntimeException | Error failure) { cancel(entry,"FAILED:"+failure.getClass().getSimpleName()); throw failure; }
+            finally { entry.advancing = false; }
         }
         return settled;
     }
     private boolean current(Entry entry) {
         ObjectOwnership current = objects.current(entry.token.source().objectId()).orElse(null);
         return replacements.isCurrent(entry.token) && authority.worldActive(entry.level)
-            && authority.worldActive(entry.transition.newLevel()) && !entry.item.isRemoved()
+            && (entry.transition == null || authority.worldActive(entry.transition.newLevel())) && !entry.item.isRemoved()
             && entry.item.level() == entry.level && entry.item.portalProcess == entry.processor
+            && ((FullEntityFacts.Access) entry.item).phoenium$entityIncarnation() == entry.token.source().nativeIncarnation()
+            && entry.item.getUUID().toString().equals(entry.token.source().objectId())
+            && (entry.processor == null || entry.processor.getEntryPosition().equals(entry.entryPosition)
+                && ((PearlPortalProcessorAccess) entry.processor).phoenium$portal() == entry.portal
+                && entry.processor.getPortalTime() == entry.portalTime
+                && entry.processor.isInsidePortalThisTick() == entry.insidePortal)
             && current != null && current.incarnation() == entry.binding.incarnation()
             && current.objectEpoch().equals(entry.binding.objectEpoch()) && current.routingKey().equals(entry.binding.routingKey());
     }
@@ -100,11 +152,11 @@ public final class ItemPortalTransitionManager implements AutoCloseable {
     }
     public void worldClosing(ServerLevel level) {
         List<Entry> entries = List.copyOf(active.values());
-        for (Entry entry : entries) if (entry.level == level || entry.transition.newLevel() == level) cancel(entry,"WORLD_CLOSED");
+        for (Entry entry : entries) if (entry.level == level || entry.transition != null && entry.transition.newLevel() == level) cancel(entry,"WORLD_CLOSED");
     }
     private void cancel(Entry entry) { cancel(entry,"UNRETAINED_PREFIX"); }
     private void cancel(Entry entry,String reason) {
-        NativePortalTransfer.retained(entry.item,entry.binding,entry.token,entry.transition.newLevel(),reason);
+        NativePortalTransfer.retained(entry.item,entry.binding,entry.token,entry.transition == null ? null : entry.transition.newLevel(),reason);
         replacements.cancel(entry.token); active.remove(key(entry.item), entry);
     }
     public int pendingCount() { return active.size(); }
@@ -123,12 +175,17 @@ public final class ItemPortalTransitionManager implements AutoCloseable {
     }
     private static final class Entry {
         final ItemEntity item; final ServerLevel level; final PortalProcessor processor;
-        final TeleportTransition transition; final ObjectOwnership binding;
+        TeleportTransition transition; final ObjectOwnership binding;
+        final Portal portal; final BlockPos entryPosition; final int portalTime; final boolean insidePortal;
         final CrossDimensionReplacementBoundary.Token token;
-        volatile boolean retained, consumed;
+        volatile boolean retained, consumed, destinationPending, advancing;
         Entry(ItemEntity item, ServerLevel level, PortalProcessor processor, TeleportTransition transition,
                 ObjectOwnership binding, CrossDimensionReplacementBoundary.Token token) {
             this.item=item; this.level=level; this.processor=processor; this.transition=transition; this.binding=binding; this.token=token;
+            this.portal=processor == null ? null : ((PearlPortalProcessorAccess) processor).phoenium$portal();
+            this.entryPosition=processor == null ? null : processor.getEntryPosition().immutable();
+            this.portalTime=processor == null ? 0 : processor.getPortalTime();
+            this.insidePortal=processor != null && processor.isInsidePortalThisTick();
         }
     }
 }

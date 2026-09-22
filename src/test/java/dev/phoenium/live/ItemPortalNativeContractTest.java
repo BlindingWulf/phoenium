@@ -29,7 +29,8 @@ class ItemPortalNativeContractTest {
         assertEquals(nativeWrites,suffixWrites);
         assertFalse(calls(suffix).contains("tick")); assertFalse(calls(suffix).contains("getPortalDestination"));
     }
-    @Test void itemCutIsAtActualTeleportAndBaseSuffixPreservesNativeFireSetter() throws Exception {
+    @Test void itemCutPrecedesDestinationAndBaseSuffixPreservesNativeFireSetter() throws Exception {
+        assertTrue(dev.phoenium.chunk.PortalDestinationTestHooks.itemCutIsEarly(), "actual production selector must precede destination lookup");
         var handle=calls(method("net/minecraft/world/entity/Entity","handlePortal"));
         ordered(handle,"processPortalCooldown","processPortalTeleportation","setPortalCooldown","getPortalDestination","isAllowedToEnterPortal","teleport");
         assertTrue(calls(method("dev/phoenium/mixin/PearlPortalEntityMixin","phoenium$resumePearlPortalBaseTickSuffix")).contains("setRemainingFireTicks"));

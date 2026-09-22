@@ -11,9 +11,13 @@ public final class NativePortalTestTransform {
     private static final String ITEM = "net/minecraft/world/entity/item/ItemEntity";
     private static final String PEARL = "net/minecraft/world/entity/projectile/throwableitemprojectile/ThrownEnderpearl";
     private static final String HOOK = "dev/phoenium/chunk/NativePortalTestHooks";
-    public static boolean supports(String name) { return Set.of(ENTITY, ITEM, PEARL).contains(name); }
+    public static boolean supports(String name) { return Set.of(ENTITY, ITEM, PEARL, "net/minecraft/world/entity/PortalProcessor",
+        "net/minecraft/world/entity/projectile/Projectile", "net/minecraft/world/entity/projectile/ThrowableProjectile",
+        "net/minecraft/server/level/ServerPlayer").contains(name); }
     static void install(ClassNode node) {
         if (!supports(node.name)) return;
+        PortalDestinationTestTransform.install(node);
+        NativePlayerPortalTestTransform.install(node);
         for (MethodNode method : node.methods.toArray(MethodNode[]::new)) {
             if (!method.name.equals("teleport") && !method.name.equals("teleportCrossDimension")) continue;
             for (var at : method.instructions.toArray()) if (at instanceof MethodInsnNode call) {

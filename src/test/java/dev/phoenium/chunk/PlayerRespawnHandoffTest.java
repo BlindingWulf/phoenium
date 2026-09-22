@@ -32,6 +32,21 @@ final class PlayerRespawnHandoffTest {
     @BeforeAll static void bootstrap() { SharedConstants.tryDetectVersion(); Bootstrap.bootStrap(); }
     enum FailurePoint { OPEN, OLD_REMOVED, PREPARED, UUID_CLAIMED, CALLBACK_INSTALLED,
         WORLD_VISIBLE, TRACKING_ENTERED, TRACKING_ADMITTED, WORLD_INSERTED, LIST_PUBLISHED, UUID_PUBLISHED }
+    @Test void portalSessionReceiptFollowsExactRespawnAndReconnectIncarnations() throws Exception {
+        try(var f=new Fixture()) {
+            var old=f.player;long original;
+            try(var turn=f.service.scoreboardAccess()) { original=f.service.scoreboard.portalSession(old);assertTrue(original>=0); }
+            f.nativeDeathTicks();var h=f.open();
+            try(var turn=f.service.scoreboardAccess()) { assertEquals(-1,f.service.scoreboard.portalSession(old)); }
+            f.oldRemoval(h);f.prepare(h);f.insert(h,null);f.publishList(h);f.publishUuid(h);h.commit(h.replacement());f.converge(h.replacement());
+            try(var turn=f.service.scoreboardAccess()) {
+                assertEquals(-1,f.service.scoreboard.portalSession(old));assertEquals(original,f.service.scoreboard.portalSession(f.player));
+                f.service.scoreboard.remove(f.player,true);
+            }
+            f.reconnect();
+            try(var turn=f.service.scoreboardAccess()) { assertNotEquals(original,f.service.scoreboard.portalSession(f.player));assertTrue(f.service.scoreboard.portalSession(f.player)>=0); }
+        }
+    }
 
     @Test void nativeTwentyTickDeathRetirementStillAdmitsTheExactRetainedSession() throws Exception {
         try (var f = new Fixture()) {
