@@ -1,6 +1,7 @@
 package dev.phoenium.mixin;
 
 import net.minecraft.network.protocol.game.ServerboundInteractPacket;
+import net.minecraft.network.protocol.game.ServerboundContainerClosePacket;
 import net.minecraft.network.protocol.game.ServerboundMovePlayerPacket;
 import net.minecraft.network.protocol.game.ServerboundPlayerActionPacket;
 import net.minecraft.network.protocol.game.ServerboundUseItemPacket;
@@ -12,6 +13,8 @@ import org.spongepowered.asm.mixin.gen.Invoker;
 /** Narrow invokers replay only a previously admitted packet while Phoenium's execution marker is active. */
 @Mixin(ServerGamePacketListenerImpl.class)
 public interface ServerGamePacketListenerInvoker {
+    @Invoker("handleContainerClose")
+    void phoenium$invokeContainerClose(ServerboundContainerClosePacket packet);
     @Invoker("handleMovePlayer")
     void phoenium$invokeMovePlayer(ServerboundMovePlayerPacket packet);
     @Invoker("handleInteract")

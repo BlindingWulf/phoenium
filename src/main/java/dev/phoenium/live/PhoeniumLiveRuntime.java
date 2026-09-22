@@ -61,6 +61,9 @@ import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.server.network.ServerGamePacketListenerImpl;
 import net.minecraft.network.protocol.game.ServerboundMovePlayerPacket;
 import net.minecraft.network.protocol.game.ServerboundInteractPacket;
+import net.minecraft.network.protocol.game.ServerboundContainerClosePacket;
+import net.minecraft.world.inventory.AbstractContainerMenu;
+import dev.phoenium.chunk.FullFinishingServices;
 import net.minecraft.network.protocol.game.ServerboundPlayerActionPacket;
 import net.minecraft.network.protocol.game.ServerboundUseItemPacket;
 import net.minecraft.network.protocol.game.ServerboundUseItemOnPacket;
@@ -90,6 +93,9 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
     private static final String PLAYER_ACTION_OPERATION = "player-block-action";
     private static final String USE_ITEM_ON_OPERATION = "player-use-item-on";
     private static final String USE_ITEM_OPERATION = "player-use-item";
+    private static final String CONTAINER_CLOSE_OPERATION = "player-container-close";
+    private long closeIngress, closeAdmitted, closeCompleted, closeRetired, closeFailed;
+    private final java.util.concurrent.atomic.AtomicBoolean firstCloseFailure = new java.util.concurrent.atomic.AtomicBoolean();
     private final Logger logger;
     private final Map<WorldId, LiveRegion> regions = new ConcurrentHashMap<>();
     /** Per-world prerequisite service lifetime; original chunk producers retain exact work identities. */
@@ -290,6 +296,8 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
         try {
             ClassLoader loader = server.getClass().getClassLoader();
             Class.forName(ServerGamePacketListenerImpl.class.getName(), true, loader);
+            Class.forName("net.minecraft.world.CompoundContainer", true, loader);
+            Class.forName("net.minecraft.world.inventory.PlayerEnderChestContainer", true, loader);
             Class.forName("net.minecraft.server.players.PlayerList", true, loader);
             Class.forName(Entity.class.getName(), true, loader);
             Class.forName(PortalProcessor.class.getName(), true, loader);
@@ -1247,6 +1255,79 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
         }
     }
 
+    public boolean matchesContainerCloseReplay(ServerGamePacketListenerImpl connection, ServerboundContainerClosePacket packet) {
+        ReplayIdentity active = replayIdentity.get();
+        return active != null && active.kind == ReplayKind.CONTAINER_CLOSE
+            && active.connection == connection && active.packet == packet;
+    }
+
+    /** Retire competing network work before native cleanup starts. Its block-event enqueue
+     * can itself drain the owner queue before doCloseContainer has installed inventoryMenu. */
+    public void containerCloseStarting(ServerPlayer player) {
+        for (PendingPacket packet : packets.values())
+            if (packet instanceof PendingContainerClose close && close.player() == player && close.menu() == player.containerMenu)
+                close.superseded().set(true);
+    }
+
+    /** The native listener has completed its thread check, but no menu removal has begun. */
+    public void admitContainerClosePacket(ServerGamePacketListenerImpl connection, ServerboundContainerClosePacket packet) {
+        closeIngress++;
+        ServerPlayer player = connection.player;
+        try {
+            if (!acceptsGameplay() || player == null) throw new PacketAdmissionStateException("container close admission is closed");
+            if (OwnershipContext.current().isPresent()) throw new IllegalStateException("container packet admission retained owner authority");
+            // Existing owner-free packet preparation supplies a real serial service reservation
+            // while FIFO movement/earlier packets settle, before taking any selection receipt.
+            try (var turn = FullFinishingServices.forServer(player.level().getServer()).referenceAccess()) {
+                regionalDispatcher.drainBeforeSelection();
+                if (connection.player != player || player.connection != connection)
+                    throw new IllegalStateException("container close player changed before selection");
+                long session = FullFinishingServices.forServer(player.level().getServer()).scoreboard.portalSession(player);
+                if (session < 0) throw new IllegalStateException("container close has no current connection session");
+                String id = player.getUUID().toString();
+                if (movementTransitionFences.containsKey(id) || playerDimensionTransitionPending(player))
+                    throw new IllegalStateException("container close arrived during player dimension transition");
+                AbstractContainerMenu menu = player.containerMenu;
+                ContainerCloseFootprint effects = ContainerCloseFootprint.capture(player, menu);
+                regionalDispatcher.ensureClosure(effects.closure());
+                if (connection.player != player || player.containerMenu != menu
+                        || FullFinishingServices.forServer(player.level().getServer()).scoreboard.portalSession(player) != session
+                        || !effects.equals(ContainerCloseFootprint.capture(player, menu)))
+                    throw new IllegalStateException("container close selection changed during enclosure");
+                ObjectOwnership binding = bindPlayer(player);
+                var ticket = LiveBlockPacketAdmission.admit(directory, binding, effects.closure());
+                var retained = new PendingContainerClose(connection, packet, player.level(), binding.objectId(),
+                    binding.incarnation(), movementTransitionEpochs.getOrDefault(id, 0L), ticket, player, menu, session, effects,
+                    new java.util.concurrent.atomic.AtomicBoolean());
+                var result = admitPacket(connection, player, retained, CONTAINER_CLOSE_OPERATION, binding, AdmissionPolicy.REJECT);
+                if (!result.admitted()) throw new PacketDeliveryRejectedException(result.delivery());
+                closeAdmitted++;
+            }
+        } catch (RuntimeException failure) {
+            closeFailed++;
+            reportCloseFailure("BEFORE_NATIVE_EFFECTS", player, null, failure);
+            throw failure;
+        }
+    }
+
+    public String containerCloseDiagnostics() {
+        return "close[in=" + closeIngress + ",admit=" + closeAdmitted + ",effect=" + closeCompleted
+            + ",retired=" + closeRetired + ",failed=" + closeFailed + "]";
+    }
+
+    private void reportCloseFailure(String stage, ServerPlayer player, PendingContainerClose retained, RuntimeException failure) {
+        try {
+            reportFirstPacketFailure(firstCloseFailure, "ServerboundContainerClosePacket", stage, player,
+                packetDiagnosticValue(failure, () -> currentPlayerBinding(player), null),
+                retained == null ? null : retained.ticket().footprint(), retained == null ? null : retained.ticket().generation(),
+                failure, retained == null ? "menu/session/container=UNAVAILABLE"
+                    : "menu=" + retained.menu().containerId + "@" + Integer.toHexString(System.identityHashCode(retained.menu()))
+                        + " session=" + retained.session() + " recipients=" + retained.effects().targets());
+        } catch (RuntimeException | Error diagnosticFailure) {
+            if (failure != diagnosticFailure) failure.addSuppressed(diagnosticFailure);
+        }
+    }
+
     private PlayerPacketAdmission preparePlayerPacketAdmission(ServerPlayer player) {
         String objectId = player.getUUID().toString();
         if (movementTransitionFences.containsKey(objectId) || playerDimensionTransitionPending(player))
@@ -1371,6 +1452,10 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
             reportUseItemOnFailure("DURING_OWNER_ADMISSION", useItemOn.connection().player, null, useItemOn.packet(), failure);
         else if (rejected instanceof PendingUseItem useItem)
             reportUseItemFailure("DURING_OWNER_ADMISSION", useItem.connection().player, null, useItem.packet(), failure);
+        if (rejected instanceof PendingContainerClose close) {
+            closeRetired++;
+            reportCloseFailure("OWNER_DELIVERY_RETIRED", close.player(), close, failure);
+        }
         packetRejections++;
     }
 
@@ -1397,6 +1482,40 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
         if (isBlockPacketOperation(operation.operationKind())
                 && !consumedBlockPacketReplays.add(operation.correlationId())) {
             blockPacketDuplicate++;
+            return;
+        }
+        if (packet instanceof PendingContainerClose close) {
+            if (close.superseded().get()) { closeRetired++; return; }
+            try {
+                FullFinishingServices.requireWorld(close.playerLevel(), FullFinishingServices.Kind.TICK_LIST);
+                if (close.connection().player != close.player() || close.player().connection != close.connection()
+                        || close.player().containerMenu != close.menu()
+                        || FullFinishingServices.forServer(close.playerLevel().getServer()).scoreboard.portalSession(close.player()) != close.session())
+                    throw new IllegalStateException("retired container close player/session/menu identity");
+                requireCurrentBlockPacket(close, executingPlayer, runtime);
+                if (!close.effects().equals(ContainerCloseFootprint.capture(close.player(), close.menu())))
+                    throw new IllegalStateException("retired container close recipient footprint");
+            } catch (ChunkProtocolException failure) {
+                closeFailed++;
+                reportCloseFailure("BEFORE_NATIVE_REPLAY_SERVICE_FAILED", close.player(), close, failure);
+                throw failure;
+            } catch (RuntimeException stale) {
+                closeRetired++;
+                reportCloseFailure("BEFORE_NATIVE_REPLAY_RETIRED", close.player(), close, stale);
+                return;
+            }
+            try (PacketExecutionScope ignored = enterPacketExecution(operation.correlationId(), ReplayKind.CONTAINER_CLOSE,
+                    close.connection(), close.packet())) {
+                // An owner ticket is not a service capability. Check before cursor/opener effects.
+                FullFinishingServices.requireWorld(close.playerLevel(), FullFinishingServices.Kind.TICK_LIST);
+                close.execute();
+                packetExecutions++;
+                closeCompleted++;
+            } catch (RuntimeException failure) {
+                closeFailed++;
+                reportCloseFailure("NATIVE_CLOSE_FAILED", close.player(), close, failure);
+                throw failure; // Prefix effects are consumed even on failure; never replay them.
+            }
             return;
         }
         if (packet instanceof PendingMove move) {
@@ -1692,7 +1811,7 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
 
     private static boolean isBlockPacketOperation(String operationKind) {
         return PLAYER_ACTION_OPERATION.equals(operationKind) || USE_ITEM_ON_OPERATION.equals(operationKind)
-            || USE_ITEM_OPERATION.equals(operationKind);
+            || USE_ITEM_OPERATION.equals(operationKind) || CONTAINER_CLOSE_OPERATION.equals(operationKind);
     }
 
     /** Exactly one native discard, after current-owner and exact-incarnation validation. */
@@ -2323,7 +2442,7 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
         return entityIndexLifecycle.addressable(id, OwnedObjectKind.PLAYER, world, player.getId(), key, explicitFixture);
     }
     private void logStatus(String event) {
-        logger.info("PHOENIUM_STAGE2 {} {} packets={}", event, diagnostics().toLogLine(), packetDiagnostics().toLogLine());
+        logger.info("PHOENIUM_STAGE2 {} {} packets={}", event, diagnostics().toLogLine(), packetDiagnostics().toLogLine() + " " + containerCloseDiagnostics());
     }
 
     private sealed interface PendingPacket permits PendingMove, PendingInteract, PendingBlockPacket, PendingUseItem {
@@ -2356,13 +2475,20 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
                                    LiveInteractionAdmission.Ticket ticket) implements PendingPacket {
         @Override public void execute() { ((ServerGamePacketListenerInvoker) connection).phoenium$invokeInteract(packet); }
     }
-    private sealed interface PendingBlockPacket extends PendingPacket permits PendingPlayerAction, PendingUseItemOn {
+    private sealed interface PendingBlockPacket extends PendingPacket permits PendingPlayerAction, PendingUseItemOn, PendingContainerClose {
         ServerGamePacketListenerImpl connection();
         ServerLevel playerLevel();
         String objectId();
         long playerIncarnation();
         long transitionEpoch();
         LiveBlockPacketAdmission.Ticket ticket();
+    }
+    private record PendingContainerClose(ServerGamePacketListenerImpl connection, ServerboundContainerClosePacket packet,
+                                         ServerLevel playerLevel, String objectId, long playerIncarnation,
+                                         long transitionEpoch, LiveBlockPacketAdmission.Ticket ticket, ServerPlayer player,
+                                         AbstractContainerMenu menu, long session, ContainerCloseFootprint effects,
+                                         java.util.concurrent.atomic.AtomicBoolean superseded) implements PendingBlockPacket {
+        @Override public void execute() { ((ServerGamePacketListenerInvoker) connection).phoenium$invokeContainerClose(packet); }
     }
     private record PendingPlayerAction(ServerGamePacketListenerImpl connection, ServerboundPlayerActionPacket packet,
                                        ServerLevel playerLevel, String objectId, long playerIncarnation,
@@ -2421,7 +2547,7 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
             closed = true;
         }
     }
-    private enum ReplayKind { MOVE, INTERACT, PLAYER_ACTION, USE_ITEM_ON, USE_ITEM }
+    private enum ReplayKind { CONTAINER_CLOSE, MOVE, INTERACT, PLAYER_ACTION, USE_ITEM_ON, USE_ITEM }
     private record ReplayIdentity(TaskCorrelationId correlation, ReplayKind kind, ServerGamePacketListenerImpl connection, Object packet) { }
     private record LiveRegion(ServerLevel level, RegionId id, RoutingKey key, RegionRuntime runtime,
                               long worldInstanceSequence) { }
