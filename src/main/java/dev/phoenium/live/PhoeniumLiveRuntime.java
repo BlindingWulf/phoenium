@@ -234,14 +234,33 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
                 var chunk = level.getChunkSource().getChunk(destination.x(), destination.z(),
                     net.minecraft.world.level.chunk.status.ChunkStatus.FULL, true);
                 if (chunk == null) throw new IllegalStateException("portal destination FULL input absent");
-                var inputs = (dev.phoenium.chunk.FullInputView) level.getChunkSource().chunkMap;
                 long position = new net.minecraft.world.level.ChunkPos(destination.x(), destination.z()).pack();
-                var holder = inputs.phoenium$visibleInput(position);
-                if (holder == null) throw new IllegalStateException("portal destination visible holder absent");
+                var resident = dev.phoenium.chunk.ResidentChunkSourceBinding.capture(level, position);
+                if (resident == null || resident.chunk() != chunk)
+                    throw new IllegalStateException("portal destination lacks exact resident publication for native FULL result");
                 int range = level.getServer().getScaledTrackingDistance(source.getType().clientTrackingRange() * 16);
                 regionalDispatcher.ensureClosure(destination, Math.max(1, (range + 15) / 16 + 2));
-                return () -> worldActive(level) && inputs.phoenium$visibleInput(position) == holder
-                    && level.getChunkSource().getChunkNow(destination.x(), destination.z()) == chunk;
+                // Native lookup identity alone survives some provider slot/state replacements.
+                // Retain the existing provider-aware publication/lifetime receipt as well.
+                var readiness = new java.util.function.BooleanSupplier() {
+                    @Override public boolean getAsBoolean() {
+                        return worldActive(level) && resident.current()
+                            && level.getChunkSource().getChunkNow(destination.x(), destination.z()) == chunk;
+                    }
+                    @Override public String toString() {
+                        try { return "worldActive=" + worldActive(level) + " worldObject=" + System.identityHashCode(level)
+                            + " chunk=" + position + " holderObject=" + System.identityHashCode(resident.holder())
+                            + " chunkObject=" + System.identityHashCode(chunk) + " receiptObject=" + System.identityHashCode(resident)
+                            + " lifetime=" + resident.lifetime().lifecycle() + " residentCurrent=" + resident.current()
+                            + " " + resident.observation(); }
+                        catch (Throwable unavailable) { return "portal readiness observation=UNAVAILABLE"; }
+                    }
+                };
+                if (Boolean.getBoolean("phoenium.test.diagnostics")) {
+                    try { logger.info("PHOENIUM_PORTAL_READINESS source={} route={} {}", source.getUUID(), destination, readiness); }
+                    catch (Throwable unavailable) { /* Read-only diagnostics never replace the native outcome. */ }
+                }
+                return readiness;
             }
             @Override public void retireExpectedSource(Entity source, Entity.RemovalReason reason, ObjectOwnership expected) {
                 if (!entityIndexLifecycle.retirePortalPublication(expected, worldId((ServerLevel) source.level()), source.getId()))

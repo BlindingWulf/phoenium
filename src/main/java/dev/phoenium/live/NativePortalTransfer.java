@@ -240,7 +240,12 @@ public final class NativePortalTransfer {
             throw new IllegalStateException("native portal source incarnation or route changed");
     }
     private void checkReady() {
-        if (readiness == null || !readiness.getAsBoolean()) throw new IllegalStateException("native portal readiness changed");
+        if (readiness == null) throw new IllegalStateException("native portal readiness absent");
+        if (!readiness.getAsBoolean()) {
+            String observation = "UNAVAILABLE";
+            try { observation = readiness.toString(); } catch (Throwable unavailable) { /* Preserve admission failure. */ }
+            throw new IllegalStateException("native portal readiness changed: " + observation);
+        }
     }
     private void checkReplacement() {
         ObjectOwnership current = objects.current(token.source().objectId()).orElse(null);

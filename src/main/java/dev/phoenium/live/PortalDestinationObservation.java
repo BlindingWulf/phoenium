@@ -16,7 +16,7 @@ public final class PortalDestinationObservation {
     private final ObjectOwnership binding;
     private final CrossDimensionReplacementBoundary.Token token;
     private String query="requestedStatus=UNAVAILABLE chunk=UNAVAILABLE create=UNAVAILABLE providerFuture=UNAVAILABLE";
-    private boolean observed;
+    private boolean observed, unfinishedObserved;
     private PortalDestinationObservation(Entity entity,ObjectOwnership binding,CrossDimensionReplacementBoundary.Token token) {
         this.entity=entity;this.binding=binding;this.token=token;
     }
@@ -39,7 +39,14 @@ public final class PortalDestinationObservation {
     }
     public static void selected(CompletableFuture<?> future) {
         var observation=CURRENT.get();if(observation==null)return;
-        try { observation.query += " selectedNativeFuture="+System.identityHashCode(future)+" selectedDone="+future.isDone(); }
+        try {
+            boolean done=future.isDone();
+            observation.query += " selectedNativeFuture="+System.identityHashCode(future)+" selectedDone="+done;
+            if(!done && !observation.unfinishedObserved) {
+                observation.unfinishedObserved=true;
+                observation.report("FIRST_UNFINISHED_DESTINATION_DEPENDENCY");
+            }
+        }
         catch(Throwable ignored) { }
     }
     private void report(String phase) {

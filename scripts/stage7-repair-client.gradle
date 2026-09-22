@@ -1,0 +1,21 @@
+// Explicit installed-test entry point. Neither observer nor client classes enter the product JAR.
+allprojects {
+    afterEvaluate {
+        tasks.register('stage7RepairHarness', Jar) {
+            dependsOn tasks.named('compileTestJava')
+            archiveFileName = 'stage7-repair-probe.jar'
+            destinationDirectory = layout.buildDirectory.dir('test-harness')
+            from(sourceSets.test.output.classesDirs) { include 'dev/phoenium/stage7repair/**' }
+            from('src/stage7RepairHarness/resources')
+        }
+        tasks.named('runClientGameTest') {
+            systemProperty 'phoenium.test.mode', 'stage7-repair'
+            ['evidence','address','rconPort','sha256','restart'].each { name ->
+                systemProperty 'phoenium.repair.' + name, project.findProperty('repair' + name.capitalize()) ?: ''
+            }
+            systemProperty 'java.net.useSystemProxies', 'false'
+            systemProperty 'minecraft.api.session.host', 'http://127.0.0.1:9'
+            systemProperty 'minecraft.api.services.host', 'http://127.0.0.1:9'
+        }
+    }
+}
