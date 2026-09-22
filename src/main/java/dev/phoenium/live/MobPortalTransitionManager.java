@@ -14,7 +14,7 @@ import net.minecraft.world.level.block.NetherPortalBlock;
 import net.minecraft.world.level.block.Portal;
 import net.minecraft.world.level.portal.TeleportTransition;
 
-/** Exact passenger-free ZombifiedPiglin, Chicken and Pig native tick retention before Nether lookup. */
+/** Exact passenger-free ZombifiedPiglin, Chicken, Pig and EnderMan tick retention before Nether lookup. */
 public final class MobPortalTransitionManager implements AutoCloseable {
     private final NativePortalTransfer.Authority authority;
     private final ObjectOwnershipRegistry objects;
@@ -28,7 +28,8 @@ public final class MobPortalTransitionManager implements AutoCloseable {
     public static boolean supports(Entity entity) {
         return entity.getClass() == net.minecraft.world.entity.monster.zombie.ZombifiedPiglin.class
             || entity.getClass() == net.minecraft.world.entity.animal.chicken.Chicken.class
-            || entity.getClass() == net.minecraft.world.entity.animal.pig.Pig.class;
+            || entity.getClass() == net.minecraft.world.entity.animal.pig.Pig.class
+            || entity.getClass() == net.minecraft.world.entity.monster.EnderMan.class;
     }
     public void begin(Mob mob) {
         if (closed || !authority.running() || !supports(mob)) return;

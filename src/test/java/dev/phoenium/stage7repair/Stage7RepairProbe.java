@@ -20,6 +20,10 @@ public final class Stage7RepairProbe implements DedicatedServerModInitializer {
     private static final java.util.concurrent.atomic.AtomicLong caneRemoves=new java.util.concurrent.atomic.AtomicLong();
     public static boolean relevant(Entity e) {
         return e instanceof ServerPlayer || e instanceof ThrownEnderpearl || e.entityTags().contains("stage7_mob")
+            || e instanceof net.minecraft.world.entity.monster.EnderMan
+            || e instanceof net.minecraft.world.entity.monster.zombie.ZombifiedPiglin
+            || e instanceof net.minecraft.world.entity.animal.chicken.Chicken
+            || e instanceof net.minecraft.world.entity.animal.pig.Pig
             || e instanceof ItemEntity item && (item.getItem().is(Items.SUGAR_CANE)||item.getItem().is(Items.IRON_INGOT));
     }
     public static JsonObject entity(Entity e) {

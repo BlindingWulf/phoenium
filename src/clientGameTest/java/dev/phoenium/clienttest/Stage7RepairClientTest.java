@@ -47,7 +47,7 @@ public final class Stage7RepairClientTest implements FabricClientGameTest {
     }
     void mobPortals()throws Exception {
         int sequence=0;
-        for(String type:List.of("zombified_piglin","chicken","pig")) for(String from:List.of(OW,NETHER)) {
+        for(String type:List.of("zombified_piglin","chicken","pig","enderman")) for(String from:List.of(OW,NETHER)) {
             active="M0-"+type+"-"+from;String to=from.equals(OW)?NETHER:OW;
             position(from,8.5,65,5.5,180,0);
             String tag="stage7_portal_mob_"+(sequence++);

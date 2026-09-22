@@ -1,7 +1,7 @@
 # Stage 7 native mob portal continuation
 
 The repair supports the exact passenger-free vanilla `ZombifiedPiglin`, `Chicken`,
-and `Pig` classes through Nether portals in Minecraft 26.2. Subclasses, vehicles,
+`Pig`, and `EnderMan` classes through Nether portals in Minecraft 26.2. Subclasses, vehicles,
 passenger graphs, End portals, and arbitrary modded tick overrides are not covered.
 The binding is enabled in the primary authoritative-FULL-false profile.
 
@@ -17,6 +17,13 @@ chest coordinates do not identify that query. Close counters were 81 admitted,
 ZombifiedPiglin inherits `Zombie.tick`: conversion work precedes `Mob.tick`, with
 no Zombie suffix after it. Chicken and Pig reach `Mob.tick` through Animal and
 AgeableMob, and dispatch their different native AI through the living tick tail.
+EnderMan inherits tick/baseTick through Monster and PathfinderMob directly from Mob;
+its own aiStep clears jumping, updates persistent anger, then calls Monster.aiStep.
+It has no outer tick suffix or TeleportTransition override and uses the same cuts.
+This fourth exact class was added after a natural Enderman reached foreign-owner
+destination tracking during the first final W4 restart (2026-09-22 12:03:13,
+runtime ID52, source Nether near 0.70,65,-0.25). That failed candidate and restart
+remain preserved. No new continuation primitive or gameplay restriction was needed.
 The shared nested path is `Mob.tick -> LivingEntity.tick -> Entity.tick ->
 Mob.baseTick -> LivingEntity.baseTick -> Entity.baseTick -> Entity.handlePortal
 -> PortalProcessor.getPortalDestination -> NetherPortalBlock.getPortalDestination
@@ -97,7 +104,7 @@ A/open B separately from controlled already-admitted delayed A unit coverage.
 
 The red regression enters actual mob.tick, Entity.handlePortal, NetherPortalBlock
 and native POI enumeration on the unchanged baseline. Green tests run ready and
-controlled pending inputs in both directions for all three classes; endpoints for
+controlled pending inputs in both directions for all four classes; endpoints for
 native world queries/portal output are explicitly controlled in the fixture.
 They check multiple queries, no lookup before callback release, exact suffix state,
 replacement ordering, cancellation/invalidation and partial insertion cleanup.

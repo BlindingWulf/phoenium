@@ -21,7 +21,7 @@ class NativeMobPortalDestinationTest {
     @AfterEach void reset() { if(PortalDestinationTestHooks.mobs!=null) PortalDestinationTestHooks.mobs.close(); PortalDestinationTestHooks.mobs=null; }
 
     static java.util.stream.Stream<org.junit.jupiter.params.provider.Arguments> cases() {
-        return java.util.stream.Stream.of("zombified_piglin","chicken","pig").flatMap(type->
+        return java.util.stream.Stream.of("zombified_piglin","chicken","pig","enderman").flatMap(type->
             java.util.stream.Stream.of(true,false).flatMap(forward->java.util.stream.Stream.of(true,false)
                 .map(ready->org.junit.jupiter.params.provider.Arguments.of(type,forward,ready))));
     }
@@ -41,6 +41,7 @@ class NativeMobPortalDestinationTest {
         EntityType<?> entityType=switch(type) {
             case "zombified_piglin" -> EntityTypes.ZOMBIFIED_PIGLIN;
             case "chicken" -> EntityTypes.CHICKEN;
+            case "enderman" -> EntityTypes.ENDERMAN;
             default -> EntityTypes.PIG;
         };
         var mob=(Mob)entityType.create(source,EntitySpawnReason.COMMAND);

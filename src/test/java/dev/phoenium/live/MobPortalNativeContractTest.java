@@ -7,6 +7,13 @@ import org.objectweb.asm.tree.ClassNode;
 import static org.junit.jupiter.api.Assertions.*;
 
 class MobPortalNativeContractTest {
+    @Test void implicatedEndermanUsesTheSameReviewedMobAndEntityCallers()throws Exception {
+        Class<?> type=net.minecraft.world.entity.monster.EnderMan.class;
+        assertEquals(net.minecraft.world.entity.Mob.class,type.getMethod("tick").getDeclaringClass());
+        assertEquals(net.minecraft.world.entity.Mob.class,type.getMethod("baseTick").getDeclaringClass());
+        assertEquals(net.minecraft.world.entity.Entity.class,type.getMethod("teleport",net.minecraft.world.level.portal.TeleportTransition.class).getDeclaringClass());
+        assertEquals(type,type.getMethod("aiStep").getDeclaringClass(),"Enderman's native AI remains dynamically dispatched by the retained living suffix");
+    }
     @Test void fourNativeSuffixesBindWithoutRewritingTheirInstructions()throws Exception {
         for(String name:java.util.List.of(MobPortalNativeSuffixes.LIVING,MobPortalNativeSuffixes.MOB)) {
             var node=new ClassNode();try(var in=getClass().getResourceAsStream("/"+name+".class")){
