@@ -29,7 +29,8 @@ final class FullNonselfInputDecisionTest {
         var p = new FullNonselfPrototype(reload, reverse);
         List<FullNonselfPrototype.Work> order = List.copyOf(p.works.values());
         var first = p.plan(order.getFirst());
-        assertEquals(2, first.inputs().size()); assertTrue(p.prepare(first));
+        assertEquals(2, first.inputs().size()); assertTrue(p.prepare(first),()->p.works.values().stream()
+            .map(w->w.construction==null ? "NOT_CONSTRUCTED" : w.construction.outcome().getNow(null)).toList().toString());
         for (var w : order) {
             assertEquals(1, w.constructions); assertEquals(0, w.callbacks);
             assertEquals(false, field(w.actual, LevelChunk.class, "loaded"));
