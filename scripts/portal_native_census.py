@@ -178,6 +178,8 @@ def falling_materials(sources: zipfile.ZipFile) -> list[dict]:
             continue
         if ctor == "SulfurSpikeBlock":
             assert name == "sulfur_spike"
+            sulfur = sources.read("net/minecraft/world/level/block/SulfurSpikeBlock.java").decode()
+            assert re.search(r"class\s+SulfurSpikeBlock\s+extends\s+SpeleothemBlock\b", sulfur)
             speleothem = sources.read("net/minecraft/world/level/block/SpeleothemBlock.java").decode()
             assert "FallingBlockEntity.fall(level, fallPos, fallState)" in speleothem
         result.append({"blockState": "minecraft:" + name, "nativeProducer": ctor,
