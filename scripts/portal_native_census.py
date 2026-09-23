@@ -46,6 +46,10 @@ ALWAYS_NO_ENTRY = {"minecraft:ender_dragon", "minecraft:wither", "minecraft:fish
 NO_TICK_ENTRY = {"minecraft:block_display", "minecraft:glow_item_frame", "minecraft:interaction",
                  "minecraft:item_display", "minecraft:item_frame", "minecraft:leash_knot",
                  "minecraft:marker", "minecraft:painting", "minecraft:text_display"}
+SOURCE_PROVEN_HURTING_NETHER = {
+    "minecraft:fireball", "minecraft:small_fireball", "minecraft:dragon_fireball",
+    "minecraft:wither_skull", "minecraft:wind_charge", "minecraft:breeze_wind_charge",
+}
 
 
 def sha(data: bytes) -> str:
@@ -265,6 +269,25 @@ def build_inventory(source_path: pathlib.Path, binary_path: pathlib.Path, javap:
                 "NetherPortalBlock", "EndPortalBlock", "EndGatewayBlock"}:
             raise ValueError("portal implementation inventory differs from pinned three implementations")
         materials = falling_materials(sources)
+        transfer_factories = {}
+        for entity_id in sorted(SOURCE_PROVEN_HURTING_NETHER):
+            constant = entity_id.removeprefix("minecraft:").upper()
+            concrete_simple = types[entity_id].rsplit(".", 1)[-1]
+            declaration = re.search(r"public static final EntityType<" + re.escape(concrete_simple)
+                                    + r">\s+" + re.escape(constant) + r"\s*=\s*register\(", entity_source)
+            if declaration is None:
+                raise ValueError(f"missing native factory registration: {entity_id}")
+            following = entity_source[declaration.start():]
+            next_declaration = re.search(r"\n\s*public static final EntityType<", following[1:])
+            fragment = following[:next_declaration.start() + 1] if next_declaration else following
+            if f"{concrete_simple}::new" not in fragment:
+                raise ValueError(f"native factory changed: {entity_id}")
+            transfer_factories[entity_id] = {
+                "file": "net/minecraft/world/entity/EntityTypes.java",
+                "line": entity_source.count("\n", 0, declaration.start()) + 1,
+                "registeredConstructor": concrete_simple + "::new",
+                "declarationSha256": sha(fragment.encode()),
+            }
         primitive_specs = (
             ("net.minecraft.world.entity.Entity", "setAsInsidePortal",
              "if (this.isOnPortalCooldown())"),
@@ -307,6 +330,7 @@ def build_inventory(source_path: pathlib.Path, binary_path: pathlib.Path, javap:
                 "entityTypes": rows, "portalImplementations": portal_classes,
                 "fallingBlockStates": materials, "handlePortalDirectCallSites": handle_portal_calls,
                 "portalEligibilityPrimitives": eligibility_primitives,
+                "hurtingNetherTransferFactories": transfer_factories,
                 "scope": "Pinned vanilla 26.2 mapped source/binary and detectable registry/caller/portal drift; not arbitrary mod code."}
 
 
@@ -315,7 +339,7 @@ def drift_signature(inventory: dict) -> dict:
     return {key: inventory[key] for key in ("sourceJarSha256", "mappedBinarySha256", "registeredTypeCount",
                                             "registeredTypeIds", "callerProfileCount", "entityTypes",
                                             "portalImplementations", "fallingBlockStates", "handlePortalDirectCallSites",
-                                            "portalEligibilityPrimitives")}
+                                            "portalEligibilityPrimitives", "hurtingNetherTransferFactories")}
 
 
 def build_census(inventory: dict, frozen: dict) -> dict:
@@ -403,6 +427,34 @@ def build_census(inventory: dict, frozen: dict) -> dict:
                             "eligibilityPredicate": condition,
                             "applicabilityDemonstrated": False,
                             "artifact": "NATIVE_CONDITIONAL_REFUSAL_SOURCE_PROOFS.json"}
+        if entity_type in SOURCE_PROVEN_HURTING_NETHER and route in ("NETHER_ENTRY", "NETHER_RETURN") and variant is None:
+            assert profile is not None
+            methods = profile["declaringMethods"]
+            if (methods["canUsePortal"] != "net.minecraft.world.entity.Entity"
+                    or methods["canTeleport"] != "net.minecraft.world.entity.Entity"
+                    or methods["teleport"] != "net.minecraft.world.entity.Entity"
+                    or "net.minecraft.world.entity.projectile.hurtingprojectile.AbstractHurtingProjectile"
+                    not in profile["hierarchy"]):
+                raise ValueError(f"native transfer caller/eligibility changed: {entity_type}")
+            expected = "TRANSFER"
+            factory = inventory["hurtingNetherTransferFactories"][entity_type]
+            handle = profile["methodReferences"]["handlePortal"]
+            source_proof = {"kind": "conditional_hurting_projectile_nether_transfer",
+                            "sourceJarSha256": inventory["sourceJarSha256"],
+                            "mappedBinarySha256": inventory["mappedBinarySha256"],
+                            "nativeOutcome": expected,
+                            "reference": {"file": handle["file"], "method": "handlePortal",
+                                          "line": handle["method"]["line"],
+                                          "sourceMethodSha256": handle["method"]["sourceSha256"],
+                                          "classBytecodeSha256": handle["classBytecodeSha256"]},
+                            "registrationReference": factory,
+                            "portalReference": "NetherPortalBlock.entityInside/getPortalDestination, pinned source lines 112-143",
+                            "creationReference": "Entity.teleportCrossDimension/EntityType.create, pinned source lines 3069-3093 and 296-305",
+                            "eligibilityPredicate": "alive standalone projectile, no cooldown, valid Nether portal and destination; "
+                                                    "Entity.canUsePortal(false), Entity.canTeleport, and Entity.teleport inherited; "
+                                                    "registered exact class constructor available in enabled destination",
+                            "applicabilityDemonstrated": False,
+                            "artifact": "NATIVE_CONDITIONAL_TRANSFER_SOURCE_PROOFS.json"}
         predicates = ["alive at contact", "not a passenger unless type override permits",
                       "portal processor ready; cooldown elapsed", "valid portal geometry and destination world",
                       "source and destination owner context valid"]
@@ -448,12 +500,17 @@ def build_census(inventory: dict, frozen: dict) -> dict:
                      "expectedNativeOutcome": expected, "observedPhoeniumResult": None,
                      "fixture": ({"contactImpossible": True, "reason": "No native portal entry path"} if no_entry else
                                  {"contactImpossible": False, "statePredicate": condition, "constructed": False}
-                                 if conditional_key else None),
+                                 if conditional_key else
+                                 {"contactImpossible": False, "requiredPredicates": source_proof["eligibilityPredicate"],
+                                  "constructed": False}
+                                 if expected == "TRANSFER" and source_proof else None),
                      "receipts": {"W1": [], "W4": []},
                      "finalCandidateSha256": None, "semanticAssertions": semantic_assertions,
                      "requiredAssertions": required_assertions,
                      "disposition": None,
-                     "unresolvedReasons": (["Conditional state not yet demonstrated in a fixture", "No final-byte W1/W4 negative observation"]
+                     "unresolvedReasons": (["Native-required transfer awaits exact final-byte W1/W4 semantic observation"]
+                                           if expected == "TRANSFER" else
+                                           ["Conditional state not yet demonstrated in a fixture", "No final-byte W1/W4 negative observation"]
                                            if conditional_key else
                                            ["No final-byte row observation or qualifying no-entry proof receipt"] if no_entry else
                                            ["Native outcome and fixture applicability require proof", "No final-byte row observation"]),
@@ -516,6 +573,8 @@ def build_census(inventory: dict, frozen: dict) -> dict:
                      if row["sourceProof"] and row["sourceProof"]["nativeOutcome"] == "NO_NATIVE_ENTRY_PATH"}
     conditional_proofs = {row["id"]: row["sourceProof"] for row in rows
                           if row["sourceProof"] and row["sourceProof"]["nativeOutcome"] == "REFUSAL"}
+    transfer_proofs = {row["id"]: row["sourceProof"] for row in rows
+                       if row["sourceProof"] and row["sourceProof"]["nativeOutcome"] == "TRANSFER"}
     vocabulary = ["TRANSFER_VERIFIED", "NATIVE_REFUSAL_VERIFIED",
                   "NO_NATIVE_ENTRY_PATH_VERIFIED", "ROUTE_NOT_APPLICABLE_VERIFIED",
                   "SAME_DIMENSION_TRANSFER_VERIFIED"]
@@ -528,7 +587,8 @@ def build_census(inventory: dict, frozen: dict) -> dict:
             "frozenIdMapping": mapping, "addedCaseCount": len(rows) - len(ids),
             "dispositionVocabulary": vocabulary, "dispositionCounts": counts,
             "nativeNoEntrySourceProofs": source_proofs,
-            "nativeConditionalRefusalSourceProofs": conditional_proofs, "rows": rows}
+            "nativeConditionalRefusalSourceProofs": conditional_proofs,
+            "nativeConditionalTransferSourceProofs": transfer_proofs, "rows": rows}
 
 
 def write_report(path: pathlib.Path, census: dict, drift: dict) -> None:
@@ -590,6 +650,10 @@ def main() -> int:
          {"schemaVersion": 1, "sourceJarSha256": inventory["sourceJarSha256"],
           "mappedBinarySha256": inventory["mappedBinarySha256"],
           "proofsByRowId": census["nativeConditionalRefusalSourceProofs"]})
+    dump(output / "NATIVE_CONDITIONAL_TRANSFER_SOURCE_PROOFS.json",
+         {"schemaVersion": 1, "sourceJarSha256": inventory["sourceJarSha256"],
+          "mappedBinarySha256": inventory["mappedBinarySha256"],
+          "proofsByRowId": census["nativeConditionalTransferSourceProofs"]})
     write_report(output / "PORTAL_BEHAVIOR_CENSUS_V2.md", census, drift)
     summary = {"driftPass": drift["pass"], "registeredTypes": inventory["registeredTypeCount"],
                "callerProfiles": inventory["callerProfileCount"], "portalImplementations": len(inventory["portalImplementations"]),

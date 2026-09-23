@@ -21965,5 +21965,43 @@
       "classBytecodeSha256": "2095D30911A4CA1E3933F7CB975518CEF4F022AE4E8B0F317B4C5E4539CE3F8D",
       "predicateText": "!this.isHeartBound() && super.canUsePortal(ignorePassenger)"
     }
+  },
+  "hurtingNetherTransferFactories": {
+    "minecraft:breeze_wind_charge": {
+      "file": "net/minecraft/world/entity/EntityTypes.java",
+      "line": 232,
+      "registeredConstructor": "BreezeWindCharge::new",
+      "declarationSha256": "59B7363B6F0C8A2D711DFC9EF1A2D1E3DF60F135C8B1BC2CEF6DA3860E305FC9"
+    },
+    "minecraft:dragon_fireball": {
+      "file": "net/minecraft/world/entity/EntityTypes.java",
+      "line": 322,
+      "registeredConstructor": "DragonFireball::new",
+      "declarationSha256": "92F3975A1D24D7CBFB57BB8AE97C2C6989FAF18565405A594C2D712EEDD1B653"
+    },
+    "minecraft:fireball": {
+      "file": "net/minecraft/world/entity/EntityTypes.java",
+      "line": 421,
+      "registeredConstructor": "LargeFireball::new",
+      "declarationSha256": "967A65DB0C9B81A96254F9B97AA308E696C4B54C0C649D6B09BD7D866D8B20E8"
+    },
+    "minecraft:small_fireball": {
+      "file": "net/minecraft/world/entity/EntityTypes.java",
+      "line": 829,
+      "registeredConstructor": "SmallFireball::new",
+      "declarationSha256": "ED0519BAF6F609FA87945BA896A196783DD02564FE6E5A7C690CB788C97B321C"
+    },
+    "minecraft:wind_charge": {
+      "file": "net/minecraft/world/entity/EntityTypes.java",
+      "line": 985,
+      "registeredConstructor": "WindCharge::new",
+      "declarationSha256": "C8BF4C3CE3EBE4FA87A55DA2990F06E962F53D365D2B7A509C2A3D71E89F83ED"
+    },
+    "minecraft:wither_skull": {
+      "file": "net/minecraft/world/entity/EntityTypes.java",
+      "line": 1023,
+      "registeredConstructor": "WitherSkull::new",
+      "declarationSha256": "B5376C6DBA1378ABFE5CFEF13DB6BF03DB063E9C336CC6DC74C1BCC7F23F5B86"
+    }
   }
 }
