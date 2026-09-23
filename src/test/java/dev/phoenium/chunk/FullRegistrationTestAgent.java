@@ -33,6 +33,10 @@ public final class FullRegistrationTestAgent {
                         && !NativePortalTestTransform.supports(name)
                         && !MobPortalTestTransform.supports(name)
                         && !name.equals(dev.phoenium.live.FallingBlockPortalNativeSuffix.OWNER)
+                        && !name.equals("net/minecraft/world/entity/projectile/ShulkerBullet")
+                        && !name.equals(BoatPortalTestTransform.TARGET)
+                        && !name.equals(NativeMinecartTestTransform.CART)
+                        && !name.equals(NativeMinecartChestTestTransform.CART)
                         && !FullFinishingServicesTestTransform.supports(name)
                         && !FullSavedContextTestTransform.supports(name)) return null;
                 try {

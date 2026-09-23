@@ -1,0 +1,54 @@
+{
+  "schema": "stage7-shulker-direct-tick-profile-v1",
+  "purpose": "Pinned native profile for the one-entity W1 Shulker Bullet diagnostic; no runtime adapter is claimed",
+  "sourceJarSha256": "055D5A99D49917A03F68007A1AC2F1D0CBD84E28A16D953C6FFC943CE3E15E1E",
+  "mappedBinarySha256": "BA0569DEEC34D82FB3B31BC71F2400EE735E5711D4C4F54CE5ED9A789EA52892",
+  "sourceFile": "net/minecraft/world/entity/projectile/ShulkerBullet.java",
+  "classBytecodeSha256": "AF5CF6ABD9473A055D175EF5A9409AD4C895E7B03F5EC8015BE3262FAD73A7E1",
+  "tickSourceSha256": "CEA546D20CC4BB2E2BA036FBCD4ECB6CF8817A0442229F3A2E14594991A854FB",
+  "directCallLexicalSuffixSha256": "93F3D0E441B4E742A14B073F32CCEBFACA32548C5C6EE46BB8D0C439C8347A79",
+  "hierarchy": ["ShulkerBullet", "Projectile", "Entity"],
+  "portalCalls": [
+    {
+      "kind": "inherited_base_tick",
+      "sourceLine": 191,
+      "binaryOffset": 1,
+      "detail": "ShulkerBullet.tick calls Projectile.tick, then Entity.baseTick, which can call Entity.handlePortal"
+    },
+    {
+      "kind": "direct_after_movement",
+      "sourceLines": [213, 217],
+      "binaryOffset": 242,
+      "detail": "setPos and applyEffectsFromBlocks precede direct handlePortal when portalProcess.isInsidePortalThisTick"
+    }
+  ],
+  "directCallLiveLocals": {
+    "slot1": "finalTarget",
+    "slot2": "hitResult",
+    "slot3": "movement"
+  },
+  "directCallNativeSuffix": {
+    "sourceLines": [219, 248],
+    "binaryOffsets": [245, 515],
+    "effects": [
+      "If hitResult is nonmiss and the original bullet remains alive, call hitTargetOrDeflectSelf",
+      "Rotate the original bullet toward its movement",
+      "On client, emit END_ROD particle using captured movement",
+      "On server with finalTarget, decrement flightSteps, select next direction and read block and target positions"
+    ]
+  },
+  "diagnostic": {
+    "workers": 1,
+    "attempts": 1,
+    "route": "NETHER_ENTRY",
+    "family": "shulker_bullet",
+    "summonState": "deterministic UUID, no owner or target, NoGravity:1b, initial z motion -0.8",
+    "command": "python -u scripts/stage7/run_storm.py --name <unique> --candidate build/libs/phoenium-0.2.0-stage2.jar --attempts 1 --minimum-contacts 1 --wave-size 1 --families shulker_bullet --workers 1"
+  },
+  "remainingExactFixtureObligations": [
+    "Preserve owner and target references through a native cross-dimension transfer",
+    "Observe direct-call suffix effects with a nonnull target and a meaningful hit result",
+    "Retain Entity.baseTick and Projectile.tick suffixes for the earlier inherited portal path",
+    "Fence all continuation effects to their native source or destination owner"
+  ]
+}

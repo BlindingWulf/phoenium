@@ -9,13 +9,17 @@ import java.io.InputStream;
 import java.lang.reflect.Method;
 import java.util.Arrays;
 import java.util.List;
+import com.llamalad7.mixinextras.injector.wrapoperation.WrapOperation;
+import net.minecraft.server.commands.SummonCommand;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.level.entity.PersistentEntitySectionManager;
 import org.junit.jupiter.api.Test;
 import org.objectweb.asm.ClassReader;
+import org.objectweb.asm.Opcodes;
 import org.objectweb.asm.tree.AnnotationNode;
 import org.objectweb.asm.tree.ClassNode;
+import org.objectweb.asm.tree.JumpInsnNode;
 import org.objectweb.asm.tree.MethodInsnNode;
 import org.objectweb.asm.tree.MethodNode;
 import org.spongepowered.asm.mixin.injection.Inject;
@@ -52,6 +56,45 @@ final class ServerLevelEntityLifecycleTargetTest {
         int tracking = index(insert, manager.name, "startTracking", "(" + ACCESS + ")V");
         int ticking = index(insert, manager.name, "startTicking", "(" + ACCESS + ")V");
         assertTrue(storage >= 0 && storage < created && created < tracking && tracking < ticking);
+    }
+    @Test void commandGraphAdmissionBeginsOnlyAfterNativeDuplicateUuidRefusal() throws Exception {
+        MethodNode nativeMethod = method(original(ServerLevel.class), "tryAddFreshEntityWithPassengers",
+            "(Lnet/minecraft/world/entity/Entity;)Z");
+        var instructions = Arrays.asList(nativeMethod.instructions.toArray());
+        int duplicateTest = -1, nativeInsert = -1;
+        for (int index = 0; index < instructions.size(); index++) {
+            if (instructions.get(index) instanceof MethodInsnNode call && call.name.equals("anyMatch"))
+                duplicateTest = index;
+            if (instructions.get(index) instanceof MethodInsnNode call
+                    && call.name.equals("addFreshEntityWithPassengers")) nativeInsert = index;
+        }
+        assertTrue(duplicateTest >= 0 && nativeInsert > duplicateTest);
+        int branch = -1, target = -1;
+        for (int index = duplicateTest + 1; index < nativeInsert; index++) {
+            if (instructions.get(index) instanceof JumpInsnNode jump && jump.getOpcode() == Opcodes.IFEQ) {
+                branch = index; target = instructions.indexOf(jump.label); break;
+            }
+        }
+        assertTrue(branch > duplicateTest && target > branch && nativeInsert > target,
+            "native duplicate UUID result must bypass graph admission and original insertion");
+        assertTrue(instructions.subList(branch + 1, target).stream().anyMatch(node -> node.getOpcode() == Opcodes.ICONST_0));
+        assertTrue(instructions.subList(branch + 1, target).stream().anyMatch(node -> node.getOpcode() == Opcodes.IRETURN));
+        assertEquals(1, original(SummonCommand.class).methods.stream()
+            .filter(method -> method.name.equals("createEntity"))
+            .flatMap(method -> calls(method).stream())
+            .filter(call -> call.owner.equals("net/minecraft/server/level/ServerLevel")
+                && call.name.equals("tryAddFreshEntityWithPassengers")).count());
+
+        Class<?> mixin = Class.forName("dev.phoenium.mixin.CommandPassengerAdmissionMixin");
+        Method handler = Arrays.stream(mixin.getDeclaredMethods())
+            .filter(method -> method.getName().equals("phoenium$commandPassengerIdentity"))
+            .findFirst().orElseThrow();
+        WrapOperation operation = handler.getAnnotation(WrapOperation.class);
+        assertNotNull(operation);
+        assertArrayEquals(new String[] {"tryAddFreshEntityWithPassengers"}, operation.method());
+        assertEquals(1, operation.require()); assertEquals(1, operation.expect());
+        assertEquals("Lnet/minecraft/server/level/ServerLevel;addFreshEntityWithPassengers(Lnet/minecraft/world/entity/Entity;)V",
+            operation.at()[0].target());
     }
     private static List<MethodInsnNode> calls(MethodNode method) {
         return Arrays.stream(method.instructions.toArray()).filter(MethodInsnNode.class::isInstance).map(MethodInsnNode.class::cast).toList();

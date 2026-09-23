@@ -30,9 +30,43 @@ public final class Stage7RepairClientTest implements FabricClientGameTest {
         receipt.addProperty("username",USER);receipt.addProperty("facility","Fabric Client GameTest over TCP, separate dedicated server");
         receipt.addProperty("humanActions",false);receipt.addProperty("candidateSha256",System.getProperty("phoenium.repair.sha256"));
         String group=System.getProperty("phoenium.repair.group","");receipt.addProperty("group",group);
+        String selectedCards=System.getProperty("phoenium.repair.cards","");
+        receipt.addProperty("selectedCards",selectedCards);
         try {
+            if(!selectedCards.isBlank() && !(group.equals("projectile-fireball")
+                    && selectedCards.equals("P0-fireball-nether-return"))
+                    && !(group.equals("arrow-trident")
+                    && selectedCards.matches("P2-(arrow|spectral_arrow|trident)-(NETHER_ENTRY|NETHER_RETURN)"))
+                    && !(group.equals("throwable-projectiles")
+                    && selectedCards.equals("P3-experience_bottle-NETHER_RETURN"))
+                    && !(group.equals("passenger-graph")
+                    && selectedCards.equals("G0-pig-chicken-NETHER_ENTRY"))
+                    && !(group.equals("vehicle-empty")
+                    && selectedCards.matches("V0-(acacia_boat|birch_boat|cherry_boat|dark_oak_boat|jungle_boat|mangrove_boat|oak_boat|pale_oak_boat|spruce_boat|bamboo_raft|minecart)-(NETHER_ENTRY|NETHER_RETURN)"))
+                    && !(group.equals("vehicle-chest")
+                    && selectedCards.matches("V1-(acacia_chest_boat|birch_chest_boat|cherry_chest_boat|dark_oak_chest_boat|jungle_chest_boat|mangrove_chest_boat|oak_chest_boat|pale_oak_chest_boat|spruce_chest_boat|bamboo_chest_raft)-items-(NETHER_ENTRY|NETHER_RETURN)|V1-(oak_chest_boat|bamboo_chest_raft)-loot-(NETHER_ENTRY|NETHER_RETURN)"))
+                    && !(group.equals("vehicle-minecart-chest")
+                    && selectedCards.matches("V2-chest_minecart-(items|loot)-(NETHER_ENTRY|NETHER_RETURN)"))
+                    && !(group.equals("item-end-platform")
+                    && selectedCards.equals("I0-item-END_ENTRY"))
+                    && !(group.equals("same-dimension-gateway")
+                    && selectedCards.equals("G1-pig-END_GATEWAY"))
+                    && !(group.equals("no-native-entry")
+                    && selectedCards.matches("N0-(block_display|ender_dragon|glow_item_frame|interaction|item_display|item_frame|marker|painting|text_display|fishing_bobber|wither)-(NETHER_ENTRY|NETHER_RETURN|END_ENTRY|END_EXIT|END_GATEWAY)")))
+                throw new IllegalArgumentException("unbound exact card selection: "+group+"/"+selectedCards);
             connect();
             if(group.equals("end-falling")){fallingEndCards();}
+            else if(group.equals("projectile-fireball")){fireballNetherReturnCard();}
+            else if(group.equals("hurting-projectiles")){hurtingProjectileMatrix();}
+            else if(group.equals("arrow-trident")){arrowTridentMatrix(selectedCards);}
+            else if(group.equals("throwable-projectiles")){throwableProjectileMatrix(selectedCards);}
+            else if(group.equals("passenger-graph")){pigChickenGraphCard();}
+            else if(group.equals("vehicle-empty")){emptyVehicleMatrix(selectedCards);}
+            else if(group.equals("vehicle-chest")){chestVehicleMatrix(selectedCards);}
+            else if(group.equals("vehicle-minecart-chest")){chestMinecartMatrix(selectedCards);}
+            else if(group.equals("item-end-platform")){itemEndPlatformScopeCard();}
+            else if(group.equals("same-dimension-gateway")){pigEndGatewayCard();}
+            else if(group.equals("no-native-entry")){noNativeEntryMatrix(selectedCards);}
             else if(group.equals("selection-holes")){
                 cmd("gamemode creative "+USER);
                 int sequence=0;
@@ -147,6 +181,1303 @@ public final class Stage7RepairClientTest implements FabricClientGameTest {
             c.level.getBlockState(new BlockPos(100,49,0)).getBlock()).toString().equals(clientExpectedBlock)),
             "connected Java client cannot see final native End landing block");
         health(active);pass(active,"normal TCP Java client observed the final End block and remained usable");
+    }
+    void pigChickenGraphCard()throws Exception {
+        active="G0-pig-chicken-NETHER_ENTRY";
+        cmd("gamemode creative "+USER);
+        position(OW,8.5,65,5.5,180,0);
+        String pigTag="stage7_graph_pig", chickenTag="stage7_graph_chicken";
+        cmd("execute in "+OW+" run summon minecraft:pig 0.5 65 2.5 "
+            +"{Tags:[\"stage7_mob\",\""+pigTag+"\"],PersistenceRequired:1b}");
+        cmd("execute in "+OW+" run summon minecraft:chicken 0.5 65 2.5 "
+            +"{Tags:[\"stage7_mob\",\""+chickenTag+"\"],PersistenceRequired:1b}");
+        cmd("execute in "+OW+" run ride @e[tag="+chickenTag+",limit=1] mount @e[tag="+pigTag+",limit=1]");
+        JsonObject source=snapshot(active+"-source");
+        JsonObject pig=taggedMob(source,pigTag),chicken=taggedMob(source,chickenTag);
+        String pigUuid=pig.get("uuid").getAsString(),chickenUuid=chicken.get("uuid").getAsString();
+        require(pig.get("world").getAsString().equals(OW)&&chicken.get("world").getAsString().equals(OW),
+            "graph source members began outside Overworld");
+        require(chicken.get("vehicleUuid").getAsString().equals(pigUuid)
+            &&pig.getAsJsonArray("passengerUuids").size()==1
+            &&pig.getAsJsonArray("passengerUuids").get(0).getAsString().equals(chickenUuid),
+            "source chicken did not ride the exact pig UUID");
+        receipt.add(active+"-sourcePig",pig.deepCopy());receipt.add(active+"-sourceChicken",chicken.deepCopy());
+        cmd("execute in "+OW+" run data merge entity @e[tag="+pigTag+",limit=1] "
+            +"{Motion:[0.0d,0.0d,-0.8d]}");
+        JsonObject arrived=null, arrivedPig=null, arrivedChicken=null;
+        for(int i=0;i<180;i++) {
+            context.waitTick();JsonObject state=snapshot(active+"-wait");
+            JsonObject currentPig=taggedMob(state,pigTag),currentChicken=taggedMob(state,chickenTag);
+            if(currentPig.get("world").getAsString().equals(NETHER)
+                    &&currentChicken.get("world").getAsString().equals(NETHER)) {
+                arrived=state;arrivedPig=currentPig;arrivedChicken=currentChicken;break;
+            }
+        }
+        require(arrived!=null,"native pig/chicken graph Nether transfer missing");
+        require(arrivedPig.get("uuid").getAsString().equals(pigUuid)
+            &&arrivedChicken.get("uuid").getAsString().equals(chickenUuid)
+            &&!arrivedPig.get("object").equals(pig.get("object"))
+            &&!arrivedChicken.get("object").equals(chicken.get("object")),
+            "graph member UUID or native replacement identity changed");
+        require(arrivedChicken.get("vehicleUuid").getAsString().equals(pigUuid)
+            &&arrivedPig.getAsJsonArray("passengerUuids").size()==1
+            &&arrivedPig.getAsJsonArray("passengerUuids").get(0).getAsString().equals(chickenUuid),
+            "destination graph edge or passenger order changed");
+        for(String uuid:List.of(pigUuid,chickenUuid)) {
+            int count=0;
+            for(JsonElement element:arrived.getAsJsonArray("entities"))
+                if(element.getAsJsonObject().get("uuid").getAsString().equals(uuid))count++;
+            require(count==1,"graph UUID was duplicated or absent after source retirement: "+uuid);
+        }
+        receipt.add(active+"-arrivalPig",arrivedPig.deepCopy());
+        receipt.add(active+"-arrivalChicken",arrivedChicken.deepCopy());
+        position(NETHER,8.5,65,5.5,180,0);
+        JsonObject later=null,laterPig=null,laterChicken=null;
+        for(int i=0;i<100;i++) {
+            context.waitTicks(2);later=snapshot(active+"-later");
+            laterPig=taggedMob(later,pigTag);laterChicken=taggedMob(later,chickenTag);
+            if(laterPig.get("ticks").getAsInt()>arrivedPig.get("ticks").getAsInt()+20
+                    &&laterChicken.get("ticks").getAsInt()>arrivedChicken.get("ticks").getAsInt()+20)break;
+        }
+        require(laterPig.get("ticks").getAsInt()>arrivedPig.get("ticks").getAsInt()+20
+            &&laterChicken.get("ticks").getAsInt()>arrivedChicken.get("ticks").getAsInt()+20,
+            "destination graph members did not advance 20 native server ticks within 200 client ticks: pig="
+                +laterPig.get("ticks")+" chicken="+laterChicken.get("ticks"));
+        require(laterChicken.get("vehicleUuid").getAsString().equals(pigUuid)
+            &&laterPig.getAsJsonArray("passengerUuids").size()==1
+            &&laterPig.getAsJsonArray("passengerUuids").get(0).getAsString().equals(chickenUuid),
+            "graph edge did not persist after destination ticks");
+        require(context.computeOnClient(c->{boolean sawPig=false,sawChicken=false;
+            for(var entity:c.level.entitiesForRendering()) {
+                if(entity.getUUID().toString().equals(pigUuid))sawPig=true;
+                if(entity.getUUID().toString().equals(chickenUuid))sawChicken=true;
+            }
+            return sawPig&&sawChicken;
+        }),"connected Java client did not track both graph members");
+        health(active);pass(active,"native child-first replacement, two UUIDs, ordered pig/chicken edge, later ticks and client tracking");
+    }
+    void emptyVehicleMatrix(String selectedCards)throws Exception {
+        cmd("gamemode creative "+USER);
+        int exercised=0;
+        for(String route:List.of("NETHER_ENTRY","NETHER_RETURN"))
+            for(String type:List.of("acacia_boat","birch_boat","cherry_boat","dark_oak_boat",
+                    "jungle_boat","mangrove_boat","oak_boat","pale_oak_boat",
+                    "spruce_boat","bamboo_raft","minecart")) {
+                String card="V0-"+type+"-"+route;
+                if(!selectedCards.isBlank()&&!selectedCards.equals(card))continue;
+                emptyVehicleCase(type,route);exercised++;
+            }
+        require(exercised==(selectedCards.isBlank()?22:1),
+            "empty vehicle selection did not exercise planned cards: "+selectedCards+"/"+exercised);
+    }
+    void emptyVehicleCase(String type,String route)throws Exception {
+        active="V0-"+type+"-"+route;
+        String from=route.equals("NETHER_ENTRY")?OW:NETHER;
+        String to=route.equals("NETHER_ENTRY")?NETHER:OW;
+        position(from,8.5,65,5.5,180,0);
+        String tag="stage7_vehicle_"+type+"_"+route.toLowerCase(Locale.ROOT);
+        require(cmd("execute in "+from+" run execute if block 0 66 0 minecraft:nether_portal")
+            .contains("Test passed"),"empty vehicle source lacks exact three-wide portal");
+        String summon=cmd("execute in "+from+" run summon minecraft:"+type+" 0.5 65.2 3.5 "
+            +"{Tags:[\""+tag+"\"],NoGravity:1b,Motion:[0.0d,0.0d,0.0d]}");
+        require(summon.contains("Summoned")||summon.contains("summoned"),
+            "native empty vehicle summon failed: "+summon);
+        JsonObject source=null;
+        for(int i=0;i<30;i++) {
+            JsonObject state=snapshot(active+"-source-poll");
+            for(JsonElement element:state.getAsJsonArray("entities")) {
+                JsonObject entity=element.getAsJsonObject();
+                if(entity.has("tags")&&entity.get("tags").getAsString().contains(tag)) {
+                    source=taggedMob(state,tag);
+                    break;
+                }
+            }
+            if(source!=null)break;
+            context.waitTick();
+        }
+        require(source!=null,"native empty vehicle source absent after bounded admission: "+active);
+        String uuid=source.get("uuid").getAsString();
+        require(source.get("type").getAsString().equals("minecraft:"+type)
+            &&source.get("world").getAsString().equals(from)
+            &&source.get("z").getAsDouble()>3.0
+            &&source.getAsJsonArray("passengerUuids").size()==0
+            &&source.get("vehicleUuid").getAsString().equals("UNAVAILABLE"),
+            "empty vehicle source type/world/graph wrong: "+source);
+        receipt.add(active+"-source",source.deepCopy());
+        String moved=cmd("execute in "+from+" run tp @e[tag="+tag+",limit=1] 0.5 65.2 0.5");
+        require(moved.contains("Teleported")||moved.contains("teleported"),
+            "empty vehicle could not be placed in exact portal block: "+moved);
+        JsonObject arrival=null;
+        for(int i=0;i<180;i++) {
+            context.waitTick();
+            JsonObject seen=taggedMob(snapshot(active+"-wait"),tag);
+            if(seen.get("world").getAsString().equals(to)){arrival=seen;break;}
+        }
+        require(arrival!=null,"native empty vehicle transfer absent: "+active+" "+uuid);
+        require(arrival.get("uuid").getAsString().equals(uuid)
+            &&arrival.get("type").getAsString().equals("minecraft:"+type)
+            &&!arrival.get("object").equals(source.get("object"))
+            &&arrival.getAsJsonArray("passengerUuids").size()==0
+            &&arrival.get("vehicleUuid").getAsString().equals("UNAVAILABLE"),
+            "empty vehicle replacement identity or graph changed: "+arrival);
+        receipt.add(active+"-arrival",arrival.deepCopy());
+        JsonObject scoped=snapshot(active+"-scoped");int matches=0;
+        for(JsonElement element:scoped.getAsJsonArray("entities"))
+            if(element.getAsJsonObject().get("uuid").getAsString().equals(uuid))matches++;
+        require(matches==1,"empty vehicle source/destination UUID was lost or duplicated: "+matches);
+        position(to,8.5,65,5.5,180,0);
+        JsonObject later=null;
+        for(int i=0;i<100;i++) {
+            context.waitTicks(2);later=taggedMob(snapshot(active+"-later"),tag);
+            if(later.get("ticks").getAsInt()>arrival.get("ticks").getAsInt()+20)break;
+        }
+        require(later.get("ticks").getAsInt()>arrival.get("ticks").getAsInt()+20
+            &&later.get("world").getAsString().equals(to),
+            "empty vehicle did not continue native destination ticks");
+        require(context.computeOnClient(c->{for(var entity:c.level.entitiesForRendering())
+            if(entity.getUUID().toString().equals(uuid))return true;return false;}),
+            "connected Java client did not track empty vehicle");
+        health(active);pass(active,"three-wide portal; source retirement; one destination UUID/new object; empty graph, later ticks and client tracking");
+    }
+    void chestVehicleMatrix(String selectedCards)throws Exception {
+        cmd("gamemode creative "+USER);
+        int exercised=0;
+        for(String route:List.of("NETHER_ENTRY","NETHER_RETURN"))
+            for(String type:List.of("acacia_chest_boat","birch_chest_boat","cherry_chest_boat",
+                    "dark_oak_chest_boat","jungle_chest_boat","mangrove_chest_boat",
+                    "oak_chest_boat","pale_oak_chest_boat","spruce_chest_boat","bamboo_chest_raft"))
+                for(String storage:(type.equals("oak_chest_boat")||type.equals("bamboo_chest_raft"))
+                        ?List.of("items","loot"):List.of("items")) {
+                    String card="V1-"+type+"-"+storage+"-"+route;
+                    if(!selectedCards.isBlank()&&!selectedCards.equals(card))continue;
+                    chestVehicleCase(type,storage,route);exercised++;
+                }
+        require(exercised==(selectedCards.isBlank()?24:1),
+            "chest vehicle selection did not exercise planned cards: "+selectedCards+"/"+exercised);
+    }
+    void requireChestStorage(JsonObject entity,String storage) {
+        JsonArray items=entity.getAsJsonArray("vehicleItems");
+        require(items!=null&&entity.has("vehicleLootTable")&&entity.has("vehicleLootSeed")
+            &&entity.has("vehicleSlotCount")&&entity.get("vehicleSlotCount").getAsInt()==27,
+            "chest vehicle observer omitted raw storage: "+entity);
+        if(storage.equals("items")) {
+            require(entity.get("vehicleLootTable").getAsString().equals("UNAVAILABLE")
+                &&items.size()==2
+                &&items.get(0).getAsJsonObject().get("slot").getAsInt()==0
+                &&items.get(0).getAsJsonObject().get("item").getAsString().equals("minecraft:diamond")
+                &&items.get(0).getAsJsonObject().get("count").getAsInt()==7
+                &&items.get(1).getAsJsonObject().get("slot").getAsInt()==26
+                &&items.get(1).getAsJsonObject().get("item").getAsString().equals("minecraft:sugar_cane")
+                &&items.get(1).getAsJsonObject().get("count").getAsInt()==3,
+                "chest vehicle slot contents changed: "+entity);
+        } else {
+            require(storage.equals("loot")&&items.size()==0
+                &&entity.get("vehicleLootTable").getAsString().equals("minecraft:chests/simple_dungeon")
+                &&entity.get("vehicleLootSeed").getAsLong()==123456789L,
+                "latent chest vehicle loot table or seed changed: "+entity);
+        }
+    }
+    int looseVehicleItems(JsonObject state,String item) {
+        int count=0;
+        for(JsonElement element:state.getAsJsonArray("entities")) {
+            JsonObject entity=element.getAsJsonObject();
+            if(entity.get("type").getAsString().equals("minecraft:item")
+                    &&entity.has("item")&&entity.get("item").getAsString().equals(item))
+                count+=entity.get("count").getAsInt();
+        }
+        return count;
+    }
+    void chestVehicleCase(String type,String storage,String route)throws Exception {
+        active="V1-"+type+"-"+storage+"-"+route;
+        String from=route.equals("NETHER_ENTRY")?OW:NETHER;
+        String to=route.equals("NETHER_ENTRY")?NETHER:OW;
+        position(from,8.5,65,5.5,180,0);
+        String tag="stage7_vehicle_"+type+"_"+storage+"_"+route.toLowerCase(Locale.ROOT);
+        require(cmd("execute in "+from+" run execute if block 0 66 0 minecraft:nether_portal")
+            .contains("Test passed"),"chest vehicle source lacks exact three-wide portal");
+        String extra=storage.equals("loot")
+            ?",LootTable:\"minecraft:chests/simple_dungeon\",LootTableSeed:123456789L":"";
+        String summon=cmd("execute in "+from+" run summon minecraft:"+type+" 0.5 65.2 3.5 "
+            +"{Tags:[\""+tag+"\"],NoGravity:1b,Motion:[0.0d,0.0d,0.0d]"+extra+"}");
+        require(summon.contains("Summoned")||summon.contains("summoned"),
+            "native chest vehicle summon failed: "+summon);
+        JsonObject admitted=null;
+        for(int i=0;i<30;i++) {
+            JsonObject state=snapshot(active+"-source-poll");
+            for(JsonElement element:state.getAsJsonArray("entities")) {
+                JsonObject entity=element.getAsJsonObject();
+                if(entity.has("tags")&&entity.get("tags").getAsString().contains(tag)) {
+                    admitted=taggedMob(state,tag);break;
+                }
+            }
+            if(admitted!=null)break;
+            context.waitTick();
+        }
+        require(admitted!=null,"native chest vehicle source absent after bounded admission: "+active);
+        if(storage.equals("items")) {
+            cmd("execute in "+from+" run item replace entity @e[tag="+tag+",limit=1] container.0 with minecraft:diamond 7");
+            cmd("execute in "+from+" run item replace entity @e[tag="+tag+",limit=1] container.26 with minecraft:sugar_cane 3");
+        }
+        JsonObject sourceState=snapshot(active+"-source");
+        JsonObject source=taggedMob(sourceState,tag);
+        String uuid=source.get("uuid").getAsString();
+        require(source.get("type").getAsString().equals("minecraft:"+type)
+            &&source.get("world").getAsString().equals(from)
+            &&source.get("z").getAsDouble()>3.0
+            &&source.getAsJsonArray("passengerUuids").size()==0
+            &&source.get("vehicleUuid").getAsString().equals("UNAVAILABLE"),
+            "chest vehicle source type/world/graph wrong: "+source);
+        requireChestStorage(source,storage);
+        int diamonds=looseVehicleItems(sourceState,"minecraft:diamond");
+        int cane=looseVehicleItems(sourceState,"minecraft:sugar_cane");
+        receipt.add(active+"-source",source.deepCopy());
+        String moved=cmd("execute in "+from+" run tp @e[tag="+tag+",limit=1] 0.5 65.2 0.5");
+        require(moved.contains("Teleported")||moved.contains("teleported"),
+            "chest vehicle could not be placed in exact portal block: "+moved);
+        JsonObject arrival=null,arrivalState=null;
+        for(int i=0;i<180;i++) {
+            context.waitTick();
+            JsonObject seenState=snapshot(active+"-wait");
+            JsonObject seen=taggedMob(seenState,tag);
+            if(seen.get("world").getAsString().equals(to)){
+                arrival=seen;arrivalState=seenState;break;
+            }
+        }
+        require(arrival!=null,"native chest vehicle transfer absent: "+active+" "+uuid);
+        require(arrival.get("uuid").getAsString().equals(uuid)
+            &&arrival.get("type").getAsString().equals("minecraft:"+type)
+            &&!arrival.get("object").equals(source.get("object"))
+            &&arrival.getAsJsonArray("passengerUuids").size()==0
+            &&arrival.get("vehicleUuid").getAsString().equals("UNAVAILABLE"),
+            "chest vehicle replacement identity or graph changed: "+arrival);
+        requireChestStorage(arrival,storage);
+        int arrivalDiamonds=looseVehicleItems(arrivalState,"minecraft:diamond");
+        int arrivalCane=looseVehicleItems(arrivalState,"minecraft:sugar_cane");
+        require(arrivalDiamonds==diamonds&&arrivalCane==cane,
+            "chest vehicle transfer dropped or duplicated stored items");
+        receipt.add(active+"-arrival",arrival.deepCopy());
+        JsonObject scoped=snapshot(active+"-scoped");int matches=0;
+        for(JsonElement element:scoped.getAsJsonArray("entities"))
+            if(element.getAsJsonObject().get("uuid").getAsString().equals(uuid))matches++;
+        require(matches==1,"chest vehicle source/destination UUID was lost or duplicated: "+matches);
+        position(to,8.5,65,5.5,180,0);
+        JsonObject later=null,laterState=null;
+        for(int i=0;i<100;i++) {
+            context.waitTicks(2);laterState=snapshot(active+"-later");
+            later=taggedMob(laterState,tag);
+            if(later.get("ticks").getAsInt()>arrival.get("ticks").getAsInt()+20)break;
+        }
+        require(later.get("ticks").getAsInt()>arrival.get("ticks").getAsInt()+20
+            &&later.get("world").getAsString().equals(to),
+            "chest vehicle did not continue native destination ticks");
+        requireChestStorage(later,storage);
+        int laterDiamonds=looseVehicleItems(laterState,"minecraft:diamond");
+        int laterCane=looseVehicleItems(laterState,"minecraft:sugar_cane");
+        require(laterDiamonds==diamonds&&laterCane==cane,
+            "chest vehicle later ticks dropped or duplicated stored items");
+        require(context.computeOnClient(c->{for(var entity:c.level.entitiesForRendering())
+            if(entity.getUUID().toString().equals(uuid))return true;return false;}),
+            "connected Java client did not track chest vehicle");
+        receipt.add(active+"-later",later.deepCopy());
+        JsonObject loose=new JsonObject();
+        loose.addProperty("sourceDiamonds",diamonds);loose.addProperty("arrivalDiamonds",arrivalDiamonds);
+        loose.addProperty("laterDiamonds",laterDiamonds);loose.addProperty("sourceSugarCane",cane);
+        loose.addProperty("arrivalSugarCane",arrivalCane);loose.addProperty("laterSugarCane",laterCane);
+        receipt.add(active+"-looseItems",loose);
+        health(active);pass(active,"three-wide portal; native inventory or latent loot persistence; no loose item duplication; one replacement UUID/new object; empty graph, later ticks and client tracking");
+    }
+    void chestMinecartMatrix(String selectedCards)throws Exception {
+        cmd("gamemode creative "+USER);
+        int exercised=0;
+        for(String route:List.of("NETHER_ENTRY","NETHER_RETURN"))
+            for(String storage:List.of("items","loot")) {
+                String card="V2-chest_minecart-"+storage+"-"+route;
+                if(!selectedCards.isBlank()&&!selectedCards.equals(card))continue;
+                chestMinecartCase(storage,route);exercised++;
+            }
+        require(exercised==(selectedCards.isBlank()?4:1),
+            "chest minecart selection did not exercise planned cards: "+selectedCards+"/"+exercised);
+    }
+    void requireMinecartChestStorage(JsonObject entity,String storage) {
+        JsonArray items=entity.getAsJsonArray("vehicleItems");
+        require(items!=null&&entity.has("vehicleLootTable")&&entity.has("vehicleLootSeed")
+            &&entity.has("vehicleSlotCount")&&entity.get("vehicleSlotCount").getAsInt()==27,
+            "chest minecart observer omitted raw 27-slot storage: "+entity);
+        if(storage.equals("items")) {
+            require(entity.get("vehicleLootTable").getAsString().equals("UNAVAILABLE")
+                &&items.size()==2
+                &&items.get(0).getAsJsonObject().get("slot").getAsInt()==0
+                &&items.get(0).getAsJsonObject().get("item").getAsString().equals("minecraft:diamond")
+                &&items.get(0).getAsJsonObject().get("count").getAsInt()==7
+                &&items.get(1).getAsJsonObject().get("slot").getAsInt()==26
+                &&items.get(1).getAsJsonObject().get("item").getAsString().equals("minecraft:iron_ingot")
+                &&items.get(1).getAsJsonObject().get("count").getAsInt()==13,
+                "chest minecart slot contents changed: "+entity);
+        } else {
+            require(storage.equals("loot")&&items.size()==0
+                &&entity.get("vehicleLootTable").getAsString().equals("minecraft:chests/simple_dungeon")
+                &&entity.get("vehicleLootSeed").getAsLong()==123456789L,
+                "latent chest minecart loot table or seed changed: "+entity);
+        }
+    }
+    void chestMinecartCase(String storage,String route)throws Exception {
+        active="V2-chest_minecart-"+storage+"-"+route;
+        String from=route.equals("NETHER_ENTRY")?OW:NETHER;
+        String to=route.equals("NETHER_ENTRY")?NETHER:OW;
+        position(from,8.5,65,5.5,180,0);
+        String tag="stage7_vehicle_chest_minecart_"+storage+"_"+route.toLowerCase(Locale.ROOT);
+        require(cmd("execute in "+from+" run execute if block 0 66 0 minecraft:nether_portal")
+            .contains("Test passed"),"chest minecart source lacks exact three-wide portal");
+        String extra=storage.equals("loot")
+            ?",LootTable:\"minecraft:chests/simple_dungeon\",LootTableSeed:123456789L":"";
+        String summon=cmd("execute in "+from+" run summon minecraft:chest_minecart 0.5 65.2 3.5 "
+            +"{Tags:[\""+tag+"\"],NoGravity:1b,Motion:[0.0d,0.0d,0.0d]"+extra+"}");
+        require(summon.contains("Summoned")||summon.contains("summoned"),
+            "native chest minecart summon failed: "+summon);
+        JsonObject admitted=null;
+        for(int i=0;i<30;i++) {
+            JsonObject state=snapshot(active+"-source-poll");
+            for(JsonElement element:state.getAsJsonArray("entities")) {
+                JsonObject entity=element.getAsJsonObject();
+                if(entity.has("tags")&&entity.get("tags").getAsString().contains(tag)) {
+                    admitted=taggedMob(state,tag);break;
+                }
+            }
+            if(admitted!=null)break;
+            context.waitTick();
+        }
+        require(admitted!=null,"native chest minecart source absent after bounded admission: "+active);
+        if(storage.equals("items")) {
+            cmd("execute in "+from+" run item replace entity @e[tag="+tag+",limit=1] container.0 with minecraft:diamond 7");
+            cmd("execute in "+from+" run item replace entity @e[tag="+tag+",limit=1] container.26 with minecraft:iron_ingot 13");
+        }
+        JsonObject sourceState=snapshot(active+"-source");
+        JsonObject source=taggedMob(sourceState,tag);
+        String uuid=source.get("uuid").getAsString();
+        require(source.get("type").getAsString().equals("minecraft:chest_minecart")
+            &&source.get("world").getAsString().equals(from)
+            &&source.get("z").getAsDouble()>3.0
+            &&source.getAsJsonArray("passengerUuids").size()==0
+            &&source.get("vehicleUuid").getAsString().equals("UNAVAILABLE"),
+            "chest minecart source type/world/graph wrong: "+source);
+        requireMinecartChestStorage(source,storage);
+        int diamonds=looseVehicleItems(sourceState,"minecraft:diamond");
+        int iron=looseVehicleItems(sourceState,"minecraft:iron_ingot");
+        receipt.add(active+"-source",source.deepCopy());
+        String moved=cmd("execute in "+from+" run tp @e[tag="+tag+",limit=1] 0.5 65.2 0.5");
+        require(moved.contains("Teleported")||moved.contains("teleported"),
+            "chest minecart could not be placed in exact portal block: "+moved);
+        JsonObject arrival=null,arrivalState=null;
+        for(int i=0;i<180;i++) {
+            context.waitTick();
+            JsonObject seenState=snapshot(active+"-wait");
+            JsonObject seen=taggedMob(seenState,tag);
+            if(seen.get("world").getAsString().equals(to)){
+                arrival=seen;arrivalState=seenState;break;
+            }
+        }
+        require(arrival!=null,"native chest minecart transfer absent: "+active+" "+uuid);
+        require(arrival.get("uuid").getAsString().equals(uuid)
+            &&arrival.get("type").getAsString().equals("minecraft:chest_minecart")
+            &&!arrival.get("object").equals(source.get("object"))
+            &&arrival.getAsJsonArray("passengerUuids").size()==0
+            &&arrival.get("vehicleUuid").getAsString().equals("UNAVAILABLE"),
+            "chest minecart replacement identity or graph changed: "+arrival);
+        requireMinecartChestStorage(arrival,storage);
+        int arrivalDiamonds=looseVehicleItems(arrivalState,"minecraft:diamond");
+        int arrivalIron=looseVehicleItems(arrivalState,"minecraft:iron_ingot");
+        require(arrivalDiamonds==diamonds&&arrivalIron==iron,
+            "chest minecart transfer dropped or duplicated stored items");
+        receipt.add(active+"-arrival",arrival.deepCopy());
+        JsonObject scoped=snapshot(active+"-scoped");int matches=0;
+        for(JsonElement element:scoped.getAsJsonArray("entities"))
+            if(element.getAsJsonObject().get("uuid").getAsString().equals(uuid))matches++;
+        require(matches==1,"chest minecart source/destination UUID was lost or duplicated: "+matches);
+        position(to,8.5,65,5.5,180,0);
+        JsonObject later=null,laterState=null;
+        for(int i=0;i<100;i++) {
+            context.waitTicks(2);laterState=snapshot(active+"-later");
+            later=taggedMob(laterState,tag);
+            if(later.get("ticks").getAsInt()>arrival.get("ticks").getAsInt()+20)break;
+        }
+        require(later.get("ticks").getAsInt()>arrival.get("ticks").getAsInt()+20
+            &&later.get("world").getAsString().equals(to),
+            "chest minecart did not continue native destination ticks");
+        requireMinecartChestStorage(later,storage);
+        int laterDiamonds=looseVehicleItems(laterState,"minecraft:diamond");
+        int laterIron=looseVehicleItems(laterState,"minecraft:iron_ingot");
+        require(laterDiamonds==diamonds&&laterIron==iron,
+            "chest minecart later ticks dropped or duplicated stored items");
+        require(context.computeOnClient(c->{for(var entity:c.level.entitiesForRendering())
+            if(entity.getUUID().toString().equals(uuid))return true;return false;}),
+            "connected Java client did not track chest minecart");
+        receipt.add(active+"-later",later.deepCopy());
+        JsonObject loose=new JsonObject();
+        loose.addProperty("sourceDiamonds",diamonds);loose.addProperty("arrivalDiamonds",arrivalDiamonds);
+        loose.addProperty("laterDiamonds",laterDiamonds);loose.addProperty("sourceIron",iron);
+        loose.addProperty("arrivalIron",arrivalIron);loose.addProperty("laterIron",laterIron);
+        receipt.add(active+"-looseItems",loose);
+        health(active);pass(active,"three-wide portal; native minecart inventory or latent loot persistence; no loose item duplication; one replacement UUID/new object; empty graph, later ticks and client tracking");
+    }
+    void pigEndGatewayCard()throws Exception {
+        active="G1-pig-END_GATEWAY";
+        cmd("gamemode creative "+USER);
+        for(String command:List.of("forceload add 0 0 16 16",
+                "forceload add 160 160 160 160",
+                "fill 8 64 4 16 64 16 minecraft:end_stone",
+                "fill 8 65 4 16 73 16 minecraft:air",
+                "fill 158 64 158 162 64 162 minecraft:end_stone",
+                "fill 158 65 158 162 73 162 minecraft:air",
+                "setblock 12 66 8 minecraft:end_gateway"))
+            cmd("execute in "+END+" run "+command);
+        String configured=cmd("execute in "+END+" run data merge block 12 66 8 "
+            +"{exit_portal:[I;160,65,160],ExactTeleport:1b,Age:200L}");
+        require(configured.contains("Modified")||configured.contains("modified"),
+            "exact End gateway exit could not be configured: "+configured);
+        require(cmd("execute in "+END+" run execute if block 12 66 8 minecraft:end_gateway")
+            .contains("Test passed"),"exact source End gateway block absent");
+        position(END,12.5,65,12.5,180,0);
+        String tag="stage7_gateway_pig";
+        cmd("tick freeze");
+        JsonObject source;
+        try {
+            String summoned=cmd("execute in "+END+" run summon minecraft:pig 12.5 66 8.5 "
+                +"{Tags:[\""+tag+"\"],NoAI:1b,NoGravity:1b,Invulnerable:1b,PersistenceRequired:1b}");
+            require(summoned.contains("Summoned")||summoned.contains("summoned"),
+                "exact End gateway pig summon failed: "+summoned);
+            source=taggedMob(snapshot(active+"-source"),tag);
+            require(source.get("type").getAsString().equals("minecraft:pig")
+                &&source.get("world").getAsString().equals(END)
+                &&source.get("x").getAsDouble()==12.5
+                &&source.get("y").getAsDouble()==66.0
+                &&source.get("z").getAsDouble()==8.5
+                &&!source.get("removed").getAsBoolean(),
+                "gateway source pig identity or portal position wrong");
+            receipt.add(active+"-source",source.deepCopy());
+        } finally { cmd("tick unfreeze"); }
+        String uuid=source.get("uuid").getAsString();
+        JsonObject arrivalState=null,arrival=null;
+        for(int i=0;i<120;i++) {
+            context.waitTick();
+            JsonObject state=snapshot(active+"-wait-"+i);
+            JsonObject pig=taggedMob(state,tag);
+            if(pig.get("world").getAsString().equals(END)
+                    &&Math.abs(pig.get("x").getAsDouble()-160.5)<1
+                    &&Math.abs(pig.get("z").getAsDouble()-160.5)<1) {
+                arrivalState=state;arrival=pig;break;
+            }
+        }
+        require(arrival!=null,"native pig same-dimension End gateway move missing");
+        require(arrival.get("uuid").getAsString().equals(uuid)
+            &&arrival.get("object").equals(source.get("object"))
+            &&arrival.get("nativeId").equals(source.get("nativeId"))
+            &&arrival.get("portalCooldown").getAsInt()>0,
+            "gateway native same-object identity or cooldown changed");
+        int count=0;
+        for(JsonElement element:arrivalState.getAsJsonArray("entities"))
+            if(element.getAsJsonObject().get("uuid").getAsString().equals(uuid))count++;
+        require(count==1,"gateway pig UUID duplicated or absent");
+        require(arrival.get("ownershipDiagnostic").getAsString().contains("x=10, z=10")
+            &&arrival.get("ownershipDiagnostic").getAsString().contains("state=OWNED"),
+            "gateway same-object ownership route did not move to destination chunk: "
+                +arrival.get("ownershipDiagnostic"));
+        String vacancy=cmd("execute in "+END
+            +" positioned 12 66 8 unless entity @e[tag="+tag+",distance=..4]");
+        require(vacancy.contains("Test passed"),"gateway old source location remains addressable: "+vacancy);
+        receipt.addProperty(active+"-oldVacancy",true);
+        JsonObject contact=null,ticket=null;
+        for(JsonElement element:arrivalState.getAsJsonArray("gatewayContactEvents")) {
+            JsonObject event=element.getAsJsonObject();
+            if(event.get("uuid").getAsString().equals(uuid)
+                    &&event.get("world").getAsString().equals(END)
+                    &&event.get("x").getAsInt()==12&&event.get("y").getAsInt()==66
+                    &&event.get("z").getAsInt()==8
+                    &&event.get("ownerWorld").getAsString().equals(END))contact=event;
+        }
+        for(JsonElement element:arrivalState.getAsJsonArray("gatewayTicketEvents")) {
+            JsonObject event=element.getAsJsonObject();
+            if(event.get("uuid").getAsString().equals(uuid)
+                    &&event.get("world").getAsString().equals(END)
+                    &&event.get("ticketType").getAsString().equals("minecraft:portal")
+                    &&event.get("chunkX").getAsInt()==10&&event.get("chunkZ").getAsInt()==10
+                    &&event.get("radius").getAsInt()==3
+                    &&event.get("ownerWorld").getAsString().equals(END))ticket=event;
+        }
+        require(contact!=null,"native gateway source contact lacked exact End owner witness");
+        require(ticket!=null,"native gateway callback lacked exact destination PORTAL ticket witness");
+        receipt.add(active+"-gatewayContact",contact.deepCopy());
+        receipt.add(active+"-gatewayTicket",ticket.deepCopy());
+        receipt.add(active+"-arrival",arrival.deepCopy());
+        position(END,160.5,65,163.5,180,0);
+        JsonObject laterState=null,later=null;
+        for(int i=0;i<100;i++) {
+            context.waitTicks(2);
+            laterState=snapshot(active+"-later-poll");
+            later=taggedMob(laterState,tag);
+            if(later.get("ticks").getAsInt()>arrival.get("ticks").getAsInt()+20)break;
+        }
+        require(later.get("ticks").getAsInt()>arrival.get("ticks").getAsInt()+20
+            &&later.get("uuid").equals(source.get("uuid"))
+            &&later.get("object").equals(source.get("object"))
+            &&later.get("nativeId").equals(source.get("nativeId"))
+            &&later.get("portalCooldown").getAsInt()>0,
+            "gateway pig did not retain one native incarnation and cooldown for 20 later ticks");
+        JsonObject tracking=null;
+        for(JsonElement element:laterState.getAsJsonArray("gatewayTrackingEvents")) {
+            JsonObject event=element.getAsJsonObject();
+            if(event.get("uuid").getAsString().equals(uuid)
+                    &&event.get("phase").getAsString().equals("TRACKING_UPDATE_RETURN")
+                    &&event.get("chunkX").getAsInt()==10&&event.get("chunkZ").getAsInt()==10
+                    &&event.get("ownerWorld").getAsString().equals(END))tracking=event;
+        }
+        require(tracking!=null,"gateway destination tracking lacked exact End owner witness");
+        receipt.add(active+"-destinationTracking",tracking.deepCopy());
+        require(context.computeOnClient(c->{for(var entity:c.level.entitiesForRendering())
+            if(entity.getUUID().toString().equals(uuid))return true;return false;}),
+            "connected Java client did not track same-object gateway pig at destination");
+        receipt.addProperty(active+"-clientTracking",true);
+        receipt.add(active+"-later",later.deepCopy());
+        health(active);
+        pass(active,"same object/native ID/UUID across chunks, exact native portal ticket, "
+            +"source/destination/tracking owner witnesses, cooldown and later client tracking");
+    }
+    void itemEndPlatformScopeCard()throws Exception {
+        active="I0-item-END_ENTRY";
+        cmd("gamemode creative "+USER);
+        position(OW,8.5,65,14.5,180,0);
+        for(String command:List.of("fill 0 64 0 15 64 15 minecraft:obsidian",
+                "fill 0 65 0 15 80 15 minecraft:air",
+                "setblock 8 65 8 minecraft:end_portal"))
+            cmd("execute in "+OW+" run "+command);
+        require(cmd("execute in "+OW+" run execute if block 8 65 8 minecraft:end_portal")
+            .contains("Test passed"),"isolated ItemEntity End portal block absent");
+        String tag="stage7_item_end_platform_scope";
+        String summon=cmd("execute in "+OW+" run summon minecraft:item 8.5 65.25 10.5 "
+            +"{Tags:[\""+tag+"\"],Item:{id:\"minecraft:diamond\",count:1},PickupDelay:32767}");
+        require(summon.contains("Summoned")||summon.contains("summoned"),
+            "isolated native ItemEntity summon failed: "+summon);
+        JsonObject sourceState=snapshot(active+"-source");
+        JsonObject source=taggedMob(sourceState,tag);
+        require(source.get("type").getAsString().equals("minecraft:item")
+            &&source.get("world").getAsString().equals(OW)
+            &&!source.get("removed").getAsBoolean(),"isolated item source identity wrong");
+        receipt.add(active+"-source",source.deepCopy());
+        String moved=cmd("execute in "+OW+" run tp @e[tag="+tag+"] 8.5 65.25 8.5");
+        require(moved.contains("Teleported")||moved.contains("teleported"),
+            "isolated ItemEntity could not enter exact End portal block: "+moved);
+        JsonObject arrival=null;
+        for(int i=0;i<160;i++) {
+            context.waitTick();
+            JsonObject state=snapshot(active+"-wait-"+i);
+            for(JsonElement element:state.getAsJsonArray("entities")) {
+                JsonObject entity=element.getAsJsonObject();
+                if(entity.get("uuid").equals(source.get("uuid"))
+                        &&entity.get("world").getAsString().equals(END)) {
+                    arrival=entity;break;
+                }
+            }
+            if(arrival!=null)break;
+        }
+        require(arrival!=null,"isolated ItemEntity never arrived after End entry");
+        receipt.add(active+"-arrival",arrival.deepCopy());
+        require(!arrival.get("object").equals(source.get("object"))
+            &&arrival.get("nativeId").getAsInt()!=source.get("nativeId").getAsInt(),
+            "isolated ItemEntity lacked native destination replacement");
+        JsonObject settledState=snapshot(active+"-settled");
+        JsonObject later=taggedMob(settledState,tag);
+        require(later.get("uuid").equals(source.get("uuid"))
+            &&later.get("world").getAsString().equals(END)
+            &&later.get("object").equals(arrival.get("object"))
+            &&later.get("nativeId").equals(arrival.get("nativeId")),
+            "isolated ItemEntity did not retain one destination incarnation");
+        receipt.add(active+"-later",later.deepCopy());
+        health(active);
+        pass(active,"native ItemEntity End entry created one destination replacement and retained identity");
+    }
+    void noNativeEntryMatrix(String selectedCards)throws Exception {
+        cmd("gamemode creative "+USER);
+        require(cmd("gamerule minecraft:mob_griefing false").contains("false"),
+            "negative matrix could not disable boss block damage in the isolated scene");
+        int exercised=0;
+        for(String route:List.of("NETHER_ENTRY","NETHER_RETURN","END_ENTRY","END_EXIT","END_GATEWAY"))
+            for(String type:List.of("block_display","ender_dragon","glow_item_frame","interaction",
+                    "item_display","item_frame","marker","painting","text_display","fishing_bobber","wither")) {
+                String card="N0-"+type+"-"+route;
+                if(!selectedCards.isBlank()&&!selectedCards.equals(card))continue;
+                noNativeEntryCase(type,route);
+                exercised++;
+            }
+        require(exercised==(selectedCards.isBlank()?55:1),
+            "no-entry selection did not exercise its exact planned card: "+selectedCards+"/"+exercised);
+    }
+    void noNativeEntryCase(String type,String route)throws Exception {
+        active="N0-"+type+"-"+route;
+        String sourceWorld=switch(route) {
+            case "NETHER_ENTRY","END_ENTRY" -> OW;
+            case "NETHER_RETURN" -> NETHER;
+            case "END_EXIT","END_GATEWAY" -> END;
+            default -> throw new IllegalArgumentException(route);
+        };
+        String destinationWorld=switch(route) {
+            case "NETHER_ENTRY" -> NETHER;
+            case "NETHER_RETURN","END_EXIT" -> OW;
+            case "END_ENTRY","END_GATEWAY" -> END;
+            default -> throw new IllegalArgumentException(route);
+        };
+        boolean nether=route.startsWith("NETHER"),gateway=route.equals("END_GATEWAY");
+        int portalX=nether?0:gateway?12:8,portalY=nether||gateway?66:65,portalZ=nether?0:8;
+        String block=nether?"minecraft:nether_portal":gateway?"minecraft:end_gateway":"minecraft:end_portal";
+        if(!nether) {
+            position(sourceWorld,8.5,65,14.5,180,0);
+            for(String c:List.of("fill 0 64 0 15 64 15 minecraft:obsidian",
+                    "fill 0 65 0 15 80 15 minecraft:air"))
+                cmd("execute in "+sourceWorld+" run "+c);
+        }
+        cmd("execute in "+sourceWorld+" run setblock "+portalX+" "+portalY+" "+portalZ+" "+block);
+        if(gateway) {
+            String response=cmd("execute in "+END+" run data merge block 12 66 8 "
+                +"{exit_portal:[I;14,65,14],ExactTeleport:1b,Age:200L}");
+            require(response.contains("Modified")||response.contains("modified"),
+                "End gateway exact far exit could not be configured: "+response);
+            require(cmd("execute in "+END+" run data get block 12 66 8").contains("exit_portal"),
+                "End gateway lost its exact far exit");
+        }
+        require(cmd("execute in "+sourceWorld+" run execute if block "+portalX+" "+portalY+" "+portalZ+" "+block)
+            .contains("Test passed"),"negative fixture lacks exact source portal block "+active);
+        if(nether)position(sourceWorld,8.5,65,5.5,180,0);
+        if(type.equals("painting"))
+            cmd("execute in "+sourceWorld+" run setblock "+portalX+" "+portalY+" "+(portalZ-1)+" minecraft:stone");
+        if(type.equals("fishing_bobber")) {
+            if(nether)cmd("execute in "+sourceWorld+" run setblock "+portalX+" "+portalY+" "+(portalZ-1)+" minecraft:stone");
+            else {
+                cmd("execute in "+sourceWorld+" run setblock "+portalX+" "+portalY+" "+(portalZ-1)+" minecraft:stone");
+                if(gateway)cmd("execute in "+sourceWorld+" run setblock "+portalX+" "+(portalY-1)+" "+portalZ+" minecraft:stone");
+            }
+            cmd("item replace entity "+USER+" weapon.mainhand with minecraft:fishing_rod");
+            if(nether)position(sourceWorld,portalX+0.5,65,portalZ+3.5,180,0);
+            else position(sourceWorld,portalX+0.5,65,portalZ+2.5,180,gateway?0:35);
+        }
+        String tag="stage7_noentry_"+type+"_"+route.toLowerCase(Locale.ROOT);
+        String nbt="{Tags:[\""+tag+"\"],NoGravity:1b";
+        if(type.endsWith("_display"))nbt+=",width:0.9f,height:1.0f";
+        if(type.equals("interaction"))nbt+=",width:0.9f,height:1.0f";
+        if(type.equals("item_frame")||type.equals("glow_item_frame"))
+            nbt+=",Facing:3b,Fixed:1b";
+        if(type.equals("painting"))nbt+=",facing:0,variant:\"minecraft:kebab\"";
+        if(type.equals("ender_dragon"))
+            nbt+=",NoAI:1b,DragonPhase:10,Invulnerable:1b,Silent:1b";
+        if(type.equals("wither"))
+            nbt+=",NoAI:1b,Invul:0,Invulnerable:1b,Silent:1b,PersistenceRequired:1b";
+        String playerUuid=null;
+        if(type.equals("fishing_bobber")) {
+            JsonArray players=probe().getAsJsonArray("players");
+            require(players.size()==1,"no-entry fishing owner fixture requires one connected player");
+            playerUuid=players.get(0).getAsJsonObject().get("uuid").getAsString();
+        }
+        nbt+="}";
+        JsonObject sourceState=null;
+        if(type.equals("fishing_bobber")) {
+            require(context.computeOnClient(c->c.gameMode.useItem(c.player,
+                net.minecraft.world.InteractionHand.MAIN_HAND).consumesAction()),
+                "connected Java client fishing-rod cast did not consume an action");
+            JsonObject hook=null;
+            for(int i=0;i<20;i++) {
+                context.waitTick();
+                JsonObject state=probe();
+                for(JsonElement element:state.getAsJsonArray("entities")) {
+                    JsonObject candidate=element.getAsJsonObject();
+                    if(candidate.get("type").getAsString().equals("minecraft:fishing_bobber")
+                            &&candidate.get("world").getAsString().equals(sourceWorld)
+                            &&candidate.get("projectileOwnerUuid").getAsString().equals(playerUuid)) {
+                        hook=candidate;break;
+                    }
+                }
+                if(hook!=null)break;
+            }
+            require(hook!=null,"connected client cast did not create its native owned bobber");
+            String tagged=cmd("execute in "+sourceWorld+" run tag @e[type=minecraft:fishing_bobber,limit=1] add "+tag);
+            require(tagged.contains("Added")||tagged.contains("added"),"native client-cast bobber could not be tagged");
+            for(int i=0;i<45;i++) {
+                context.waitTick();
+                JsonObject state=probe();
+                JsonObject current=taggedMob(state,tag);
+                if(Math.floor(current.get("x").getAsDouble())==portalX
+                        &&Math.floor(current.get("y").getAsDouble())==portalY
+                        &&Math.floor(current.get("z").getAsDouble())==portalZ) {
+                    sourceState=snapshot(active+"-source");break;
+                }
+            }
+            require(sourceState!=null,"native client-cast bobber never reached the exact portal block");
+        } else {
+            double spawnY=portalY+0.25;
+            String summon="execute in "+sourceWorld+" run summon minecraft:"+type+" "
+                +(portalX+0.5)+" "+spawnY+" "+(portalZ+0.5)+" "+nbt;
+            String summonResult=cmd(summon);
+            require(summonResult.contains("Summoned")||summonResult.contains("summoned"),
+                "native no-entry summon failed: "+summonResult);
+            sourceState=snapshot(active+"-source");
+        }
+        JsonObject source=taggedMob(sourceState,tag);
+        String uuid=source.get("uuid").getAsString();
+        require(source.get("type").getAsString().equals("minecraft:"+type)
+            &&source.get("world").getAsString().equals(sourceWorld)
+            &&!source.get("removed").getAsBoolean(),"no-entry source identity or world wrong");
+        require(Math.floor(source.get("x").getAsDouble())==portalX
+            &&Math.floor(source.get("y").getAsDouble())==portalY
+            &&Math.floor(source.get("z").getAsDouble())==portalZ,
+            "no-entry source not inside exact portal block: "+active+" "+source);
+        require(!source.get("portalProcessPresent").getAsBoolean(),
+            "source already has a portal process before native dwell");
+        if(type.equals("fishing_bobber"))
+            require(source.get("projectileOwnerUuid").getAsString().equals(playerUuid),
+                "fishing bobber does not have the exact same-world player owner");
+        receipt.add(active+"-source",source.deepCopy());
+        JsonObject applicability=new JsonObject();
+        applicability.addProperty("sourceWorld",sourceWorld);
+        applicability.addProperty("destinationWorld",destinationWorld);
+        applicability.addProperty("portalBlock",block);
+        applicability.addProperty("portalX",portalX);
+        applicability.addProperty("portalY",portalY);
+        applicability.addProperty("portalZ",portalZ);
+        applicability.addProperty("sourceProofKind",
+            type.equals("ender_dragon")||type.equals("wither")||type.equals("fishing_bobber")
+                ?"unconditional_canUsePortal_false":"tick_override_skips_portal_processing");
+        applicability.addProperty("sourceJarSha256",
+            "055D5A99D49917A03F68007A1AC2F1D0CBD84E28A16D953C6FFC943CE3E15E1E");
+        applicability.addProperty("mappedBinarySha256",
+            "BA0569DEEC34D82FB3B31BC71F2400EE735E5711D4C4F54CE5ED9A789EA52892");
+        receipt.add(active+"-applicability",applicability);
+        context.waitTicks(type.equals("painting")?105:35);
+        JsonObject settledState=snapshot(active+"-settled");
+        JsonObject settled=taggedMob(settledState,tag);
+        int count=0;
+        for(JsonElement element:settledState.getAsJsonArray("entities"))
+            if(element.getAsJsonObject().get("uuid").getAsString().equals(uuid))count++;
+        require(count==1,"negative fixture source UUID became absent or duplicated: "+active);
+        require(settled.get("world").getAsString().equals(sourceWorld)
+            &&settled.get("object").getAsString().equals(source.get("object").getAsString())
+            &&settled.get("nativeId").getAsInt()==source.get("nativeId").getAsInt()
+            &&!settled.get("removed").getAsBoolean(),
+            "negative fixture source native instance did not remain unchanged: "+active);
+        require(!settled.get("portalProcessPresent").getAsBoolean(),
+            "negative fixture created a stuck portal session: "+active);
+        require(settled.get("vehicleUuid").equals(source.get("vehicleUuid"))
+            &&settled.get("passengerUuids").equals(source.get("passengerUuids")),
+            "negative fixture graph changed: "+active);
+        boolean contact=false;
+        for(JsonElement element:settledState.getAsJsonArray("noEntryContactEvents")) {
+            JsonObject event=element.getAsJsonObject();
+            if(event.get("uuid").getAsString().equals(uuid)
+                    &&event.get("type").getAsString().equals("minecraft:"+type)
+                    &&event.get("world").getAsString().equals(sourceWorld)
+                    &&event.get("block").getAsString().equals(block)
+                    &&event.get("x").getAsInt()==portalX
+                    &&event.get("y").getAsInt()==portalY
+                    &&event.get("z").getAsInt()==portalZ)contact=true;
+        }
+        // The dragon's native canUsePortal(false) proof is unconditional. Its
+        // boss tick does not deliver this stable fixture to entityInside.
+        boolean sourceGuard=type.equals("wither")||type.equals("fishing_bobber");
+        require(contact==sourceGuard,"native portal contact contradicted the source-proven route: "+active+"/"+contact);
+        require(cmd("execute in "+sourceWorld+" run execute if block "+portalX+" "+portalY+" "+portalZ+" "+block)
+            .contains("Test passed"),"source portal block did not survive negative dwell: "+active);
+        receipt.add(active+"-settledState",settledState.deepCopy());
+        receipt.add(active+"-settled",settled.deepCopy());
+        health(active);
+        pass(active,"source UUID/object/native id unchanged, worldwide destination absent, "
+            +"portalProcess null, graph unchanged, native contact="+contact+", source proof applicable");
+        if(type.equals("wither")) {
+            // /kill drops a Nether Star. Remove the boss from this card's
+            // portal before cleanup so that drop cannot start another route.
+            String moved=cmd("execute in "+sourceWorld+" run tp @e[tag="+tag+"] 8.5 65 14.5");
+            require(moved.contains("Teleported")||moved.contains("teleported"),
+                "negative Wither could not be moved clear of portal for cleanup: "+moved);
+        }
+        cmd("execute in "+sourceWorld+" run kill @e[tag="+tag+"]");
+    }
+    void fireballNetherReturnCard()throws Exception {
+        active="P0-fireball-nether-return";
+        cmd("gamemode creative "+USER);
+        position(OW,8.5,65,5.5,180,0);
+        cmd("execute in "+OW+" run fill -1 65 -10 1 68 -10 minecraft:glass");
+        require(cmd("execute in "+OW+" run execute if block 0 66 -10 minecraft:glass").contains("Test passed"),
+            "fireball destination impact wall was not built");
+        String tag="stage7_projectile_fireball_return";
+        cmd("execute in "+NETHER+" run summon minecraft:fireball 0.5 66 3.5 "
+            +"{Tags:[\""+tag+"\"],Motion:[0.0d,0.0d,-0.4d]}");
+        JsonObject source=taggedProjectile(snapshot(active+"-source"),tag,NETHER);
+        String uuid=source.get("uuid").getAsString();
+        require(source.get("type").getAsString().equals("minecraft:fireball"),"wrong projectile fixture type");
+        JsonObject arrival=null;
+        for(int i=0;i<220;i++) {
+            context.waitTick();
+            JsonObject state=snapshot(active+"-wait");
+            arrival=projectileEvent(state,uuid,OW,"TRACKING_ADD_RETURN");
+            if(arrival!=null)break;
+        }
+        require(arrival!=null,"native fireball did not reach Overworld tracking");
+        require(!arrival.get("object").equals(source.get("object")),"fireball did not replace native incarnation");
+        JsonObject settled=snapshot(active+"-settled");
+        int sourceCount=0,destinationCount=0,destinationAdds=0,sourceRemoves=0;
+        JsonObject liveDestination=null;
+        for(var element:settled.getAsJsonArray("entities")) {
+            JsonObject entity=element.getAsJsonObject();
+            if(!entity.get("uuid").getAsString().equals(uuid))continue;
+            if(entity.get("world").getAsString().equals(NETHER))sourceCount++;
+            if(entity.get("world").getAsString().equals(OW)) {destinationCount++;liveDestination=entity;}
+        }
+        for(var element:settled.getAsJsonArray("projectileEvents")) {
+            JsonObject event=element.getAsJsonObject();
+            if(event.get("uuid").getAsString().equals(uuid)
+                    &&event.get("world").getAsString().equals(OW)
+                    &&event.get("phase").getAsString().equals("TRACKING_ADD_RETURN"))destinationAdds++;
+            if(event.get("uuid").getAsString().equals(uuid)
+                    &&event.get("world").getAsString().equals(NETHER)
+                    &&event.get("phase").getAsString().equals("TRACKING_REMOVE_RETURN"))sourceRemoves++;
+        }
+        require(sourceCount==0&&destinationCount==1&&destinationAdds==1&&sourceRemoves==1,
+            "fireball source/destination tracker accounting failed: "+sourceCount+"/"+destinationCount+"/"+destinationAdds+"/"+sourceRemoves);
+        require(liveDestination.get("ticks").getAsInt()>arrival.get("ticks").getAsInt()
+                &&liveDestination.get("z").getAsDouble()<arrival.get("z").getAsDouble(),
+            "destination fireball did not continue its native movement tick");
+        boolean clientTracked=false;
+        for(int i=0;i<16;i++) {
+            clientTracked=context.computeOnClient(c->{
+                for(var entity:c.level.entitiesForRendering())if(entity.getUUID().toString().equals(uuid))return true;
+                return false;
+            });
+            if(clientTracked)break;
+            context.waitTick();
+        }
+        require(clientTracked,"Java client did not track destination fireball before impact");
+        JsonObject impact=null;
+        for(int i=0;i<100;i++) {
+            context.waitTick();
+            JsonObject state=snapshot(active+"-impact-wait");
+            impact=projectileEvent(state,uuid,OW,"TRACKING_REMOVE_RETURN");
+            if(impact!=null)break;
+        }
+        require(impact!=null,"destination fireball did not reach native impact/removal");
+        require(cmd("execute in "+OW+" run execute if block 0 66 -10 minecraft:air").contains("Test passed"),
+            "destination LargeFireball impact did not explode the glass witness");
+        receipt.add(active+"-source",source.deepCopy());
+        receipt.add(active+"-arrival",arrival.deepCopy());
+        receipt.add(active+"-impact",impact.deepCopy());
+        health(active);
+        pass(active,"native Nether contact, exact replacement/tracking, later movement and destination explosion; UUID="+uuid);
+    }
+    JsonObject taggedProjectile(JsonObject state,String tag,String world) {
+        JsonObject found=null;
+        for(var element:state.getAsJsonArray("entities")) {
+            JsonObject entity=element.getAsJsonObject();
+            if(entity.get("world").getAsString().equals(world)
+                    &&entity.get("tags").getAsString().contains(tag)) {
+                require(found==null,"duplicate projectile fixture tag "+tag);
+                found=entity;
+            }
+        }
+        require(found!=null,"tagged projectile source absent: "+tag);
+        return found;
+    }
+    JsonObject projectileEvent(JsonObject state,String uuid,String world,String phase) {
+        JsonObject found=null;
+        for(var element:state.getAsJsonArray("projectileEvents")) {
+            JsonObject event=element.getAsJsonObject();
+            if(event.get("uuid").getAsString().equals(uuid)
+                    &&event.get("world").getAsString().equals(world)
+                    &&event.get("phase").getAsString().equals(phase)) {
+                require(found==null,"duplicate projectile event "+uuid+" "+phase);
+                found=event;
+            }
+        }
+        return found;
+    }
+    void hurtingProjectileMatrix()throws Exception {
+        cmd("gamemode creative "+USER);
+        int sequence=0;
+        for(String type:List.of("fireball","small_fireball","dragon_fireball","wither_skull",
+                "wind_charge","breeze_wind_charge"))
+            for(String from:List.of(OW,NETHER))
+                hurtingProjectileCase(type,from,sequence++);
+    }
+    void hurtingProjectileCase(String type,String from,int sequence)throws Exception {
+        String to=from.equals(OW)?NETHER:OW;
+        String route=from.equals(OW)?"NETHER_ENTRY":"NETHER_RETURN";
+        active="P1-"+type+"-"+route;
+        position(to,8.5,65,5.5,180,0);
+        cmd("execute in "+to+" run fill -1 65 -10 1 68 -10 minecraft:glass");
+        require(cmd("execute in "+to+" run execute if block 0 66 -10 minecraft:glass").contains("Test passed"),
+            "projectile impact wall missing: "+active);
+        if(type.equals("small_fireball")) {
+            cmd("execute in "+to+" run setblock 0 65 -9 minecraft:netherrack");
+            cmd("execute in "+to+" run setblock 0 66 -9 minecraft:air");
+            require(cmd("execute in "+to+" run execute if block 0 66 -9 minecraft:air").contains("Test passed"),
+                "small fireball fire witness was already lit");
+        }
+        if(type.equals("wind_charge")||type.equals("breeze_wind_charge")) {
+            cmd("execute in "+to+" run setblock 1 66 -9 minecraft:air");
+            cmd("execute in "+to+" run setblock 1 66 -9 minecraft:lever[face=wall,facing=south,powered=false]");
+            require(cmd("execute in "+to+" run execute if block 1 66 -9 minecraft:lever[powered=false]").contains("Test passed"),
+                "wind charge lever witness was not initially unpowered");
+        }
+        if(type.equals("dragon_fireball"))
+            require(!cmd("execute in "+to+" run execute if entity @e[type=minecraft:area_effect_cloud,x=0,y=66,z=-9,distance=..4]")
+                .contains("Test passed"),"dragon breath witness was present before fireball impact");
+        String tag="stage7_projectile_"+sequence;
+        cmd("execute in "+from+" run summon minecraft:"+type+" 0.5 66 3.5 "
+            +"{Tags:[\""+tag+"\"],Motion:[0.0d,0.0d,-0.4d]}");
+        JsonObject source=taggedProjectile(snapshot(active+"-source"),tag,from);
+        require(source.get("type").getAsString().equals("minecraft:"+type),"projectile source type mismatch");
+        String uuid=source.get("uuid").getAsString();
+        JsonObject arrival=null;
+        for(int tick=0;tick<220;tick++) {
+            context.waitTick();
+            arrival=projectileEvent(snapshot(active+"-wait"),uuid,to,"TRACKING_ADD_RETURN");
+            if(arrival!=null)break;
+        }
+        require(arrival!=null,"native projectile portal transfer absent: "+active);
+        require(arrival.get("uuid").getAsString().equals(uuid)
+                &&!arrival.get("object").equals(source.get("object")),
+            "projectile native replacement identity mismatch: "+active);
+        JsonObject later=snapshot(active+"-after-arrival");
+        int sourceCount=0,destinationCount=0,sourceRetires=0,destinationAdds=0;
+        for(var element:later.getAsJsonArray("entities")) {
+            JsonObject entity=element.getAsJsonObject();
+            if(!entity.get("uuid").getAsString().equals(uuid))continue;
+            if(entity.get("world").getAsString().equals(from))sourceCount++;
+            if(entity.get("world").getAsString().equals(to))destinationCount++;
+        }
+        for(var element:later.getAsJsonArray("projectileEvents")) {
+            JsonObject event=element.getAsJsonObject();
+            if(!event.get("uuid").getAsString().equals(uuid))continue;
+            if(event.get("world").getAsString().equals(from)
+                    &&event.get("phase").getAsString().equals("TRACKING_REMOVE_RETURN"))sourceRetires++;
+            if(event.get("world").getAsString().equals(to)
+                    &&event.get("phase").getAsString().equals("TRACKING_ADD_RETURN"))destinationAdds++;
+        }
+        require(sourceCount==0&&destinationCount<=1&&sourceRetires==1&&destinationAdds==1,
+            "projectile exact source/destination accounting failed: "+active+" "
+                +sourceCount+"/"+destinationCount+"/"+sourceRetires+"/"+destinationAdds);
+        boolean clientTracked=false;
+        for(int tick=0;tick<16;tick++) {
+            clientTracked=context.computeOnClient(c->{
+                for(var entity:c.level.entitiesForRendering())if(entity.getUUID().toString().equals(uuid))return true;
+                return false;
+            });
+            if(clientTracked)break;
+            context.waitTick();
+        }
+        require(clientTracked,"client did not track destination projectile before impact: "+active);
+        JsonObject impact=null,postArrival=null;
+        for(int tick=0;tick<100;tick++) {
+            context.waitTick();
+            JsonObject state=snapshot(active+"-impact-wait");
+            for(var element:state.getAsJsonArray("entities")) {
+                JsonObject entity=element.getAsJsonObject();
+                if(entity.get("uuid").getAsString().equals(uuid)
+                        &&entity.get("world").getAsString().equals(to)
+                        &&entity.get("ticks").getAsInt()>arrival.get("ticks").getAsInt()
+                        &&entity.get("z").getAsDouble()<arrival.get("z").getAsDouble())
+                    postArrival=entity;
+            }
+            impact=projectileEvent(state,uuid,to,"TRACKING_REMOVE_RETURN");
+            if(impact!=null)break;
+        }
+        require(impact!=null,"projectile native destination impact/removal absent: "+active);
+        String nativeEffect;
+        if(type.equals("fireball")||type.equals("wither_skull")) {
+            require(postArrival!=null,"destination projectile had no later movement tick: "+active);
+            nativeEffect=cmd("execute in "+to+" run execute if block 0 66 -10 minecraft:air");
+            require(nativeEffect.contains("Test passed"),"native impact explosion did not destroy glass: "+active);
+        } else if(type.equals("small_fireball")) {
+            require(postArrival!=null,"destination small fireball had no later movement tick: "+active);
+            nativeEffect=cmd("execute in "+to+" run execute if block 0 66 -9 minecraft:fire");
+            require(nativeEffect.contains("Test passed"),"native small fireball did not ignite netherrack witness: "+active);
+        } else if(type.equals("dragon_fireball")) {
+            require(postArrival!=null,"destination dragon fireball had no later movement tick: "+active);
+            nativeEffect=cmd("execute in "+to+" run execute if entity @e[type=minecraft:area_effect_cloud,x=0,y=66,z=-9,distance=..4]");
+            require(nativeEffect.contains("Test passed"),"native dragon breath area cloud missing: "+active);
+        } else {
+            nativeEffect=cmd("execute in "+to+" run execute if block 1 66 -9 minecraft:lever[powered=true]");
+            require(nativeEffect.contains("Test passed"),"native wind burst did not toggle lever: "+active);
+        }
+        receipt.add(active+"-source",source.deepCopy());
+        receipt.add(active+"-arrival",arrival.deepCopy());
+        receipt.add(active+"-impact",impact.deepCopy());
+        if(postArrival!=null)receipt.add(active+"-continued",postArrival.deepCopy());
+        receipt.addProperty(active+"-effectWitness",nativeEffect);
+        health(active);
+        pass(active,"native portal contact, exact replacement, client tracking, later native effect; UUID="+uuid);
+    }
+    void arrowTridentMatrix(String selectedCards)throws Exception {
+        cmd("gamemode creative "+USER);
+        if(!selectedCards.isBlank()) {
+            String type=selectedCards.substring(3,selectedCards.lastIndexOf('-'));
+            String route=selectedCards.substring(selectedCards.lastIndexOf('-')+1);
+            arrowTridentCase(type,route.equals("NETHER_RETURN")?NETHER:OW,0);
+            return;
+        }
+        int sequence=0;
+        for(String type:List.of("arrow","spectral_arrow","trident"))
+            for(String from:List.of(OW,NETHER))
+                arrowTridentCase(type,from,sequence++);
+    }
+    void arrowTridentCase(String type,String from,int sequence)throws Exception {
+        String to=from.equals(OW)?NETHER:OW;
+        String route=from.equals(OW)?"NETHER_ENTRY":"NETHER_RETURN";
+        active="P2-"+type+"-"+route;
+        position(from,8.5,65,5.5,180,0);
+        String ownerUuid=player().get("uuid").getAsString();
+        UUID owner=UUID.fromString(ownerUuid);
+        long high=owner.getMostSignificantBits(),low=owner.getLeastSignificantBits();
+        String ownerTag="[I;"+(int)(high>>>32)+","+(int)high+","+(int)(low>>>32)+","+(int)low+"]";
+        cmd("execute in "+to+" run fill -1 65 -10 1 68 -10 minecraft:glass");
+        require(cmd("execute in "+to+" run execute if block 0 66 -10 minecraft:glass").contains("Test passed"),
+            "arrow/trident destination impact wall missing: "+active);
+        String tag="stage7_projectile_arrow_"+sequence;
+        String item=type.equals("trident")
+            ?",item:{id:\"minecraft:trident\",count:1,components:{\"minecraft:enchantments\":{\"minecraft:loyalty\":1}}}"
+            :"";
+        cmd("execute in "+from+" run summon minecraft:"+type+" 0.5 66 3.5 "
+            +"{Tags:[\""+tag+"\"],NoGravity:1b,Motion:[0.0d,0.0d,-0.4d],Owner:"+ownerTag+",pickup:1b"+item+"}");
+        JsonObject source=taggedProjectile(snapshot(active+"-source"),tag,from);
+        require(source.get("type").getAsString().equals("minecraft:"+type),"arrow/trident source type mismatch");
+        require(source.get("projectileOwnerUuid").getAsString().equals(ownerUuid),
+            "source arrow/trident did not resolve its native player owner");
+        String uuid=source.get("uuid").getAsString();
+        cmd("execute in "+to+" run tp "+USER+" 8.5 65 5.5 180 0");
+        context.waitFor(c->c.player!=null&&c.level!=null&&c.gui.screen()==null
+            &&c.level.dimension().identifier().toString().equals(to),1200);
+        JsonObject arrival=null;
+        for(int tick=0;tick<220;tick++) {
+            context.waitTick();
+            arrival=projectileEvent(snapshot(active+"-wait"),uuid,to,"TRACKING_ADD_RETURN");
+            if(arrival!=null)break;
+        }
+        require(arrival!=null,"native arrow/trident portal transfer absent: "+active);
+        require(!arrival.get("object").equals(source.get("object")),
+            "arrow/trident native replacement identity mismatch: "+active);
+        require(arrival.get("projectileOwnerUuid").getAsString().equals(ownerUuid),
+            "destination arrow/trident did not preserve native owner UUID: "+active);
+        JsonObject settled=snapshot(active+"-arrival");
+        int sourceCount=0,destinationCount=0,sourceRetires=0,destinationAdds=0;
+        for(var element:settled.getAsJsonArray("entities")) {
+            JsonObject entity=element.getAsJsonObject();
+            if(!entity.get("uuid").getAsString().equals(uuid))continue;
+            if(entity.get("world").getAsString().equals(from))sourceCount++;
+            if(entity.get("world").getAsString().equals(to))destinationCount++;
+        }
+        for(var element:settled.getAsJsonArray("projectileEvents")) {
+            JsonObject event=element.getAsJsonObject();
+            if(!event.get("uuid").getAsString().equals(uuid))continue;
+            if(event.get("world").getAsString().equals(from)
+                    &&event.get("phase").getAsString().equals("TRACKING_REMOVE_RETURN"))sourceRetires++;
+            if(event.get("world").getAsString().equals(to)
+                    &&event.get("phase").getAsString().equals("TRACKING_ADD_RETURN"))destinationAdds++;
+        }
+        require(sourceCount==0&&destinationCount==1&&sourceRetires==1&&destinationAdds==1,
+            "arrow/trident exact source/destination accounting failed: "+active+" "
+                +sourceCount+"/"+destinationCount+"/"+sourceRetires+"/"+destinationAdds);
+        boolean clientTracked=false;
+        for(int tick=0;tick<16;tick++) {
+            clientTracked=context.computeOnClient(c->{
+                for(var entity:c.level.entitiesForRendering())if(entity.getUUID().toString().equals(uuid))return true;
+                return false;
+            });
+            if(clientTracked)break;
+            context.waitTick();
+        }
+        require(clientTracked,"Java client did not track destination arrow/trident: "+active);
+        JsonObject continued=null;
+        for(int tick=0;tick<100;tick++) {
+            context.waitTick();
+            JsonObject state=snapshot(active+"-continued");
+            for(var element:state.getAsJsonArray("entities")) {
+                JsonObject entity=element.getAsJsonObject();
+                if(entity.get("uuid").getAsString().equals(uuid)
+                        &&entity.get("world").getAsString().equals(to)
+                        &&entity.get("ticks").getAsInt()>arrival.get("ticks").getAsInt()
+                        &&entity.get("z").getAsDouble()<arrival.get("z").getAsDouble()) {
+                    continued=entity;break;
+                }
+            }
+            if(continued!=null)break;
+        }
+        require(continued!=null,"destination arrow/trident did not continue native movement: "+active);
+        JsonObject impactState=null;
+        String impactWitness=null;
+        for(int tick=0;tick<130;tick++) {
+            context.waitTick();
+            JsonObject state=snapshot(active+"-impact-wait");
+            for(var element:state.getAsJsonArray("entities")) {
+                JsonObject entity=element.getAsJsonObject();
+                if(!entity.get("uuid").getAsString().equals(uuid)
+                        ||!entity.get("world").getAsString().equals(to))continue;
+                require(entity.get("projectileOwnerUuid").getAsString().equals(ownerUuid),
+                    "live destination arrow/trident lost its native owner UUID: "+active);
+                if(type.equals("trident")) {
+                    if(entity.get("noPhysics").getAsBoolean()
+                            &&entity.get("motionZ").getAsDouble()>0.02
+                            &&entity.get("z").getAsDouble()>-9.0) {
+                        impactState=entity;
+                        impactWitness="loyalty trident returned through the impact wall toward its owner";
+                    }
+                } else if(entity.get("z").getAsDouble()<-8.5
+                        &&Math.abs(entity.get("motionZ").getAsDouble())<0.01) {
+                    String check=cmd("execute in "+to+" run execute if data entity @e[tag="+tag+",limit=1] {inGround:1b}");
+                    if(check.contains("Test passed")) {
+                        impactState=entity;
+                        impactWitness=check;
+                    }
+                }
+            }
+            if(impactState!=null)break;
+        }
+        require(impactState!=null,"native arrow impact or trident loyalty return missing: "+active);
+        receipt.add(active+"-source",source.deepCopy());
+        receipt.add(active+"-arrival",arrival.deepCopy());
+        receipt.add(active+"-continued",continued.deepCopy());
+        receipt.add(active+"-impact",impactState.deepCopy());
+        receipt.addProperty(active+"-impactWitness",impactWitness);
+        health(active);
+        pass(active,"native portal contact, owner-preserving replacement, client tracking and impact or loyalty effect; UUID="+uuid);
+    }
+    void throwableProjectileMatrix(String selectedCards)throws Exception {
+        cmd("gamemode creative "+USER);
+        if(selectedCards.equals("P3-experience_bottle-NETHER_RETURN")) {
+            throwableProjectileCase("experience_bottle",NETHER,0);
+            return;
+        }
+        int sequence=0;
+        for(String type:List.of("egg","snowball","splash_potion","lingering_potion","experience_bottle"))
+            for(String from:List.of(OW,NETHER))
+                throwableProjectileCase(type,from,sequence++);
+    }
+    void throwableProjectileCase(String type,String from,int sequence)throws Exception {
+        String to=from.equals(OW)?NETHER:OW;
+        String route=from.equals(OW)?"NETHER_ENTRY":"NETHER_RETURN";
+        active="P3-"+type+"-"+route;
+        position(to,8.5,65,5.5,180,0);
+        cmd("execute in "+to+" run fill -1 65 -10 1 68 -10 minecraft:glass");
+        require(cmd("execute in "+to+" run execute if block 0 66 -10 minecraft:glass").contains("Test passed"),
+            "throwable destination impact wall missing: "+active);
+        String targetTag="stage7_mob_throwable_"+sequence;
+        JsonObject targetBefore=null;
+        if(type.equals("snowball")||type.equals("splash_potion")) {
+            String target=type.equals("snowball")?"blaze":"pig";
+            String x=type.equals("snowball")?"0.5":"1.5";
+            cmd("execute in "+to+" run summon minecraft:"+target+" "+x+" 65 -9 "
+                +"{Tags:[\"stage7_mob\",\""+targetTag+"\"],NoAI:1b,NoGravity:1b}");
+            targetBefore=taggedProjectile(snapshot(active+"-target-before"),targetTag,to);
+            require(targetBefore.get("health").getAsFloat()>3.0F,"throwable target not healthy before impact");
+            require(!targetBefore.get("poisoned").getAsBoolean(),"throwable target already poisoned");
+        }
+        if(type.equals("lingering_potion"))
+            require(!cmd("execute in "+to+" run execute if entity @e[type=minecraft:area_effect_cloud,x=0,y=66,z=-9,distance=..4]")
+                .contains("Test passed"),"lingering cloud present before projectile impact");
+        if(type.equals("experience_bottle"))
+            require(!cmd("execute in "+to+" run execute if entity @e[type=minecraft:experience_orb,x=0,y=66,z=-9,distance=..4]")
+                .contains("Test passed"),"XP orb present before projectile impact");
+        String tag="stage7_projectile_throwable_"+sequence;
+        String item=type.equals("splash_potion")||type.equals("lingering_potion")
+            ?",Item:{id:\"minecraft:"+type+"\",count:1,components:{\"minecraft:potion_contents\":{potion:\"minecraft:poison\"}}}"
+            :"";
+        cmd("execute in "+from+" run summon minecraft:"+type+" 0.5 66 3.5 "
+            +"{Tags:[\""+tag+"\"],NoGravity:1b,Motion:[0.0d,0.0d,-0.4d]"+item+"}");
+        JsonObject source=taggedProjectile(snapshot(active+"-source"),tag,from);
+        require(source.get("type").getAsString().equals("minecraft:"+type),"throwable source type mismatch");
+        String uuid=source.get("uuid").getAsString();
+        JsonObject arrival=null;
+        for(int tick=0;tick<220;tick++) {
+            context.waitTick();
+            arrival=projectileEvent(snapshot(active+"-wait"),uuid,to,"TRACKING_ADD_RETURN");
+            if(arrival!=null)break;
+        }
+        require(arrival!=null,"native throwable portal transfer absent: "+active);
+        require(!arrival.get("object").equals(source.get("object")),
+            "throwable native replacement identity mismatch: "+active);
+        JsonObject settled=snapshot(active+"-arrival");
+        int sourceCount=0,destinationCount=0,sourceRetires=0,destinationAdds=0;
+        for(var element:settled.getAsJsonArray("entities")) {
+            JsonObject entity=element.getAsJsonObject();
+            if(!entity.get("uuid").getAsString().equals(uuid))continue;
+            if(entity.get("world").getAsString().equals(from))sourceCount++;
+            if(entity.get("world").getAsString().equals(to))destinationCount++;
+        }
+        for(var element:settled.getAsJsonArray("projectileEvents")) {
+            JsonObject event=element.getAsJsonObject();
+            if(!event.get("uuid").getAsString().equals(uuid))continue;
+            if(event.get("world").getAsString().equals(from)
+                    &&event.get("phase").getAsString().equals("TRACKING_REMOVE_RETURN"))sourceRetires++;
+            if(event.get("world").getAsString().equals(to)
+                    &&event.get("phase").getAsString().equals("TRACKING_ADD_RETURN"))destinationAdds++;
+        }
+        require(sourceCount==0&&destinationCount==1&&sourceRetires==1&&destinationAdds==1,
+            "throwable exact source/destination accounting failed: "+active+" "
+                +sourceCount+"/"+destinationCount+"/"+sourceRetires+"/"+destinationAdds);
+        boolean clientTracked=false;
+        for(int tick=0;tick<16;tick++) {
+            clientTracked=context.computeOnClient(c->{
+                for(var entity:c.level.entitiesForRendering())if(entity.getUUID().toString().equals(uuid))return true;
+                return false;
+            });
+            if(clientTracked)break;
+            context.waitTick();
+        }
+        require(clientTracked,"Java client did not track destination throwable: "+active);
+        JsonObject impact=null,continued=null;
+        for(int tick=0;tick<100;tick++) {
+            context.waitTick();
+            JsonObject state=snapshot(active+"-impact-wait");
+            for(var element:state.getAsJsonArray("entities")) {
+                JsonObject entity=element.getAsJsonObject();
+                if(entity.get("uuid").getAsString().equals(uuid)
+                        &&entity.get("world").getAsString().equals(to)
+                        &&entity.get("ticks").getAsInt()>arrival.get("ticks").getAsInt()
+                        &&entity.get("z").getAsDouble()<arrival.get("z").getAsDouble())continued=entity;
+            }
+            impact=projectileEvent(state,uuid,to,"TRACKING_REMOVE_RETURN");
+            if(impact!=null)break;
+        }
+        require(impact!=null&&continued!=null,"throwable impact or destination continuation absent: "+active);
+        JsonObject effectState=snapshot(active+"-effect");
+        String effectWitness;
+        if(type.equals("egg")||type.equals("snowball")) {
+            JsonObject event=null;
+            for(var element:effectState.getAsJsonArray("projectileImpactEvents")) {
+                JsonObject seen=element.getAsJsonObject();
+                if(seen.get("uuid").getAsString().equals(uuid)
+                        &&seen.get("world").getAsString().equals(to)
+                        &&seen.get("eventByte").getAsInt()==3)event=seen;
+            }
+            require(event!=null,"vanilla byte-3 projectile impact event absent: "+active);
+            receipt.add(active+"-nativeEvent",event.deepCopy());
+            effectWitness="byte-3 native impact event for exact projectile UUID";
+            if(type.equals("snowball")) {
+                JsonObject after=taggedProjectile(effectState,targetTag,to);
+                require(after.get("health").getAsFloat()<targetBefore.get("health").getAsFloat()-2.5F,
+                    "native snowball did not inflict three damage on Blaze: "+active);
+                receipt.add(active+"-targetAfter",after.deepCopy());
+            }
+        } else if(type.equals("splash_potion")) {
+            JsonObject after=taggedProjectile(effectState,targetTag,to);
+            require(after.get("poisoned").getAsBoolean(),"native splash potion did not poison target: "+active);
+            receipt.add(active+"-targetAfter",after.deepCopy());
+            effectWitness="poison effect on isolated target after potion impact";
+        } else if(type.equals("lingering_potion")) {
+            effectWitness=cmd("execute in "+to+" run execute if entity @e[type=minecraft:area_effect_cloud,x=0,y=66,z=-9,distance=..4]");
+            require(effectWitness.contains("Test passed"),"native lingering potion area cloud absent: "+active);
+        } else {
+            effectWitness=cmd("execute in "+to+" run execute if entity @e[type=minecraft:experience_orb,x=0,y=66,z=-9,distance=..4]");
+            require(effectWitness.contains("Test passed"),"native experience bottle XP orbs absent: "+active);
+        }
+        receipt.add(active+"-source",source.deepCopy());
+        receipt.add(active+"-arrival",arrival.deepCopy());
+        receipt.add(active+"-continued",continued.deepCopy());
+        receipt.add(active+"-impact",impact.deepCopy());
+        receipt.addProperty(active+"-effectWitness",effectWitness);
+        health(active);
+        pass(active,"native portal contact, replacement, client tracking and type-specific impact effect; UUID="+uuid);
     }
     void bedAnchorFirstCards()throws Exception {
         active="R0-respawn-scene";
@@ -699,8 +2030,28 @@ public final class Stage7RepairClientTest implements FabricClientGameTest {
         return before.get("world").equals(after.get("world"))&&dx*dx+dz*dz>.25;
     }
     static void require(boolean ok,String message){if(!ok)throw new AssertionError(message);}
+    Socket openRconSocket()throws IOException {
+        InetSocketAddress address=new InetSocketAddress("127.0.0.1",Integer.getInteger("phoenium.repair.rconPort"));
+        for(int attempt=1;attempt<=8;attempt++){
+            Socket socket=new Socket();
+            try {socket.connect(address,1500);return socket;}
+            catch(BindException transientBind){
+                socket.close();
+                if(attempt==8)throw transientBind;
+                // Connect failed before authentication or a command write. Retrying
+                // this fresh socket cannot duplicate any RCON side effect.
+                System.out.println("STAGE7_RCON_CONNECT_RETRY attempt="+attempt+" cause="+transientBind);
+                try {Thread.sleep(25L*attempt);}
+                catch(InterruptedException interrupted){
+                    Thread.currentThread().interrupt();
+                    throw new IOException("interrupted before RCON command was sent",interrupted);
+                }
+            }catch(IOException failure){socket.close();throw failure;}
+        }
+        throw new IOException("unreachable RCON connect retry state");
+    }
     String cmd(String command)throws IOException {
-        try(Socket socket=new Socket()){socket.connect(new InetSocketAddress("127.0.0.1",Integer.getInteger("phoenium.repair.rconPort")),1500);socket.setSoTimeout(15000);
+        try(Socket socket=openRconSocket()){socket.setSoTimeout(15000);
             DataInputStream in=new DataInputStream(new BufferedInputStream(socket.getInputStream()));OutputStream out=socket.getOutputStream();
             write(out,1,3,"phoenium-stage7-local-test");read(in);write(out,2,2,command);
             Packet first=read(in);require(first.id()==2,"wrong RCON command response");

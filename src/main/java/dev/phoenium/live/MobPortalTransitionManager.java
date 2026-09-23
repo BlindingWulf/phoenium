@@ -16,12 +16,13 @@ import net.minecraft.world.level.block.Portal;
 import net.minecraft.world.level.portal.TeleportTransition;
 import org.slf4j.LoggerFactory;
 
-/** Exact passenger-free vanilla mob tick families retained before portal lookup. */
+/** Exact vanilla mob tick families retained before portal lookup. */
 public final class MobPortalTransitionManager implements AutoCloseable {
     private final NativePortalTransfer.Authority authority;
     private final ObjectOwnershipRegistry objects;
     private final CrossDimensionReplacementBoundary replacements = new CrossDimensionReplacementBoundary();
     private final Map<IdentityKey, Entry> active = new java.util.concurrent.ConcurrentHashMap<>();
+    private final Map<IdentityKey, Entry> graphPending = new java.util.concurrent.ConcurrentHashMap<>();
     private final ThreadLocal<Mob> ticking = new ThreadLocal<>();
     private volatile boolean closed;
     public MobPortalTransitionManager(NativePortalTransfer.Authority authority, ObjectOwnershipRegistry objects) {
@@ -103,20 +104,56 @@ public final class MobPortalTransitionManager implements AutoCloseable {
         if (!(portal instanceof NetherPortalBlock) && !(portal instanceof EndPortalBlock)) {
             selection(mob, null, false, "PORTAL_FAMILY_NOT_BOUND"); return false;
         }
-        if (mob.isPassenger() || mob.isVehicle()) {
+        if (mob.isPassenger()) {
             selection(mob, null, false, "PASSENGER_GRAPH_NOT_BOUND");
-            throw new IllegalStateException("mob portal passenger graph is outside this continuation");
+            throw new IllegalStateException("mob passenger portal entry is not a native root");
         }
         if(active.containsKey(key(mob)))throw new IllegalStateException("mob portal was captured twice");
+        PortalPassengerGraphSnapshot graph = mob.isVehicle()
+            ? PortalPassengerGraphSnapshot.capture(mob, objects) : null;
+        if (graph != null)
+            for (Entity node : graph.preorder())
+                if (node instanceof net.minecraft.server.level.ServerPlayer)
+                    throw new IllegalStateException("player passenger requires session convergence before graph reattachment");
         ObjectOwnership binding = objects.current(mob.getUUID().toString()).orElseThrow();
         objects.requireCurrentOwner(binding.objectId(), binding.objectEpoch(), OwnershipContext.current().orElseThrow().region());
         var token = replacements.begin(new CrossDimensionReplacementBoundary.SourceIdentity(binding.objectId(),
             ((FullEntityFacts.Access) mob).phoenium$entityIncarnation(), binding.incarnation()));
         Entry entry = new Entry(mob, level, processor, null, binding, token, profile);
+        if (graph != null) {
+            entry.graph = graph;
+            entry.graphTokens.put(mob, token);
+            try {
+                for (Entity node : graph.preorder()) {
+                    if (node == mob) continue;
+                    var member = graph.member(node);
+                    var childToken = replacements.begin(new CrossDimensionReplacementBoundary.SourceIdentity(
+                        member.uuid().toString(), member.nativeIncarnation(), member.binding().incarnation()));
+                    entry.graphTokens.put(node, childToken);
+                    NativePortalTransfer.retained(node, member.binding(), childToken, null, "CAPTURED_GRAPH_PASSENGER");
+                }
+            } catch (RuntimeException | Error failure) {
+                for (var childToken : entry.graphTokens.values()) replacements.cancel(childToken);
+                throw failure;
+            }
+        }
         entry.destinationPending = true;
         if (active.putIfAbsent(key(mob), entry) != null) {
-            replacements.cancel(token);
+            for (var memberToken : entry.graphTokens.values()) replacements.cancel(memberToken);
+            if (graph == null) replacements.cancel(token);
             throw new IllegalStateException("mob portal was captured twice");
+        }
+        if (graph != null) {
+            try {
+                for (Entity member : graph.preorder())
+                    if (graphPending.putIfAbsent(key(member), entry) != null)
+                        throw new IllegalStateException("passenger graph member already has a retained transfer");
+            } catch (RuntimeException | Error failure) {
+                releaseGraphMembers(entry);
+                active.remove(key(mob), entry);
+                for (var memberToken : entry.graphTokens.values()) replacements.cancel(memberToken);
+                throw failure;
+            }
         }
         NativePortalTransfer.retained(mob, binding, token, null, "CAPTURED");
         selection(mob, entry, true, "REVIEWED_NATIVE_CALLER");
@@ -140,6 +177,12 @@ public final class MobPortalTransitionManager implements AutoCloseable {
         } catch (Throwable ignored) { /* Never replace the native failure with diagnostic work. */ }
     }
     public boolean suspended(Mob mob) { return active.containsKey(key(mob)); }
+    /** Called only at the native ServerLevel root/passenger tick boundary. */
+    public boolean graphTickSuspended(Entity entity, boolean passenger) {
+        Entry entry = graphPending.get(key(entity));
+        return entry != null && entry.retained && !entry.consumed
+            && active.get(key(entry.mob)) == entry && (entry.mob != entity) == passenger;
+    }
     public boolean complete(Mob mob) {
         Entry entry = active.get(key(mob)); if (entry == null || ticking.get() != mob) return false;
         entry.retained = true; return true;
@@ -176,7 +219,7 @@ public final class MobPortalTransitionManager implements AutoCloseable {
                         || entry.mob.canTeleport(entry.level, entry.transition.newLevel()));
                 if (permitted && entry.level.dimension() == entry.transition.newLevel().dimension())
                     throw new IllegalStateException("vanilla Nether portal produced a same-dimension mob transition");
-                if (permitted) {
+                if (permitted && entry.graph == null) {
                     if (entry.visibilityReady == null)
                         entry.visibilityReady = authority.demandDestinationEntityVisibility(entry.mob, entry.transition);
                     if (!entry.visibilityReady.getAsBoolean()) {
@@ -185,10 +228,28 @@ public final class MobPortalTransitionManager implements AutoCloseable {
                         continue;
                     }
                 }
-                var transfer = permitted ? new NativePortalTransfer(authority, objects, replacements, entry.token,
-                    entry.mob, entry.binding, entry.transition, () -> active.get(key(entry.mob)) == entry
-                        && entry.visibilityReady.getAsBoolean()) : null;
-                Entity result = transfer == null ? null : transfer.run();
+                NativePortalTransfer transfer = null;
+                NativePortalGraphTransferPlan graphPlan = null;
+                if (permitted && entry.graph != null) {
+                    if (entry.graphPlan == null)
+                        entry.graphPlan = new NativePortalGraphTransferPlan(authority, objects, replacements,
+                            entry.graph, entry.graphTokens, entry.transition,
+                            () -> active.get(key(entry.mob)) == entry && authority.running()
+                                && entry.graphPlan != null && entry.graphPlan.visibilityCurrent());
+                    graphPlan = entry.graphPlan;
+                    if (!graphPlan.ready()) {
+                        if (++entry.visibilityWaits > 200)
+                            throw new IllegalStateException("mob graph destination visibility deadline");
+                        continue;
+                    }
+                    authority.execute(entry.binding.routingKey(), RegionalServiceKind.ENTITY_PORTAL_SOURCE,
+                        () -> entry.graph.validateIntact(objects));
+                } else if (permitted) {
+                    transfer = new NativePortalTransfer(authority, objects, replacements, entry.token,
+                        entry.mob, entry.binding, entry.transition, () -> active.get(key(entry.mob)) == entry
+                            && entry.visibilityReady.getAsBoolean());
+                }
+                Entity result = graphPlan != null ? graphPlan.invoke() : transfer == null ? null : transfer.run();
                 var suffix = result == null
                     ? replacements.authorizeUnchangedSourceContinuation(entry.token, entry.token.source())
                     : replacements.authorizeReplacementContinuation(entry.token);
@@ -212,9 +273,12 @@ public final class MobPortalTransitionManager implements AutoCloseable {
                         ((MobPortalNativeAccess.VillagerSuffix) entry.mob).phoenium$resumeMobVillagerTickSuffix();
                 });
                 replacements.settle(suffix);
-                if (transfer != null) transfer.settled();
+                if (graphPlan != null) {
+                    graphPlan.settleChildren();
+                    graphPlan.settleRoot(result);
+                } else if (transfer != null) transfer.settled();
                 else NativePortalTransfer.retained(entry.mob, entry.binding, entry.token, null, "SETTLED_NATIVE_NO_TRANSFER");
-                active.remove(key(entry.mob), entry); settled++;
+                active.remove(key(entry.mob), entry); releaseGraphMembers(entry); settled++;
             } catch (RuntimeException | Error failure) { cancel(entry,"FAILED:"+failure.getClass().getSimpleName()); throw failure; }
             finally { entry.advancing = false; }
         }
@@ -251,7 +315,19 @@ public final class MobPortalTransitionManager implements AutoCloseable {
     private void cancel(Entry entry) { cancel(entry,"UNRETAINED_PREFIX"); }
     private void cancel(Entry entry,String reason) {
         NativePortalTransfer.retained(entry.mob,entry.binding,entry.token,entry.transition == null ? null : entry.transition.newLevel(),reason);
+        if (entry.graphPlan != null) entry.graphPlan.cancelUnsettled();
+        else for (var member : entry.graphTokens.entrySet()) {
+            if (member.getKey() == entry.mob) continue;
+            if (replacements.cancel(member.getValue()))
+                NativePortalTransfer.retained(member.getKey(), entry.graph.member(member.getKey()).binding(),
+                    member.getValue(), entry.transition == null ? null : entry.transition.newLevel(), reason);
+        }
         replacements.cancel(entry.token); active.remove(key(entry.mob), entry);
+        releaseGraphMembers(entry);
+    }
+    private void releaseGraphMembers(Entry entry) {
+        if (entry.graph == null) return;
+        for (Entity member : entry.graph.preorder()) graphPending.remove(key(member), entry);
     }
     public int pendingCount() { return active.size(); }
     @Override public void close() {
@@ -260,12 +336,12 @@ public final class MobPortalTransitionManager implements AutoCloseable {
         for(Entry entry:entries) cancel(entry,"SHUTDOWN");
         replacements.close(); ticking.remove();
     }
-    private static IdentityKey key(Mob mob) { return new IdentityKey(mob); }
+    private static IdentityKey key(Entity entity) { return new IdentityKey(entity); }
     private static final class IdentityKey {
-        final Mob mob;
-        IdentityKey(Mob mob) { this.mob=Objects.requireNonNull(mob); }
-        @Override public int hashCode() { return System.identityHashCode(mob); }
-        @Override public boolean equals(Object other) { return other instanceof IdentityKey key && mob == key.mob; }
+        final Entity entity;
+        IdentityKey(Entity entity) { this.entity=Objects.requireNonNull(entity); }
+        @Override public int hashCode() { return System.identityHashCode(entity); }
+        @Override public boolean equals(Object other) { return other instanceof IdentityKey key && entity == key.entity; }
     }
     private static final class Entry {
         final Mob mob; final ServerLevel level; final PortalProcessor processor;
@@ -275,6 +351,9 @@ public final class MobPortalTransitionManager implements AutoCloseable {
         final float yRot,xRot;final net.minecraft.world.entity.Pose pose;
         final CrossDimensionReplacementBoundary.Token token;
         final NativeProfile profile;
+        PortalPassengerGraphSnapshot graph;
+        final IdentityHashMap<Entity, CrossDimensionReplacementBoundary.Token> graphTokens = new IdentityHashMap<>();
+        NativePortalGraphTransferPlan graphPlan;
         volatile boolean retained, consumed, destinationPending, advancing;
         int visibilityWaits;
         java.util.function.BooleanSupplier visibilityReady;

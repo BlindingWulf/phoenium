@@ -5,3 +5,4 @@ logs/
 # Local native-bytecode audits and deterministic run receipts; preserve outside release source.
 /.audit/
 .stage2-server*/
+__pycache__/

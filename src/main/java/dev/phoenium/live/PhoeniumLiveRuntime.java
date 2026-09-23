@@ -106,7 +106,14 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
     private final PearlPortalTransitionManager pearlPortalTransitions;
     private final ItemPortalTransitionManager itemPortalTransitions;
     private final MobPortalTransitionManager mobPortalTransitions;
+    private final HurtingProjectilePortalTransitionManager hurtingProjectilePortalTransitions;
+    private final ShulkerBulletPortalTransitionManager shulkerBulletPortalTransitions;
+    private final ThrowableProjectilePortalTransitionManager throwableProjectilePortalTransitions;
+    private final ArrowPortalTransitionManager arrowPortalTransitions;
     private final FallingBlockPortalTransitionManager fallingBlockPortalTransitions;
+    private final TntPortalTransitionManager tntPortalTransitions;
+    private final BoatPortalTransitionManager boatPortalTransitions;
+    private final MinecartPortalTransitionManager minecartPortalTransitions;
     private final ArmorStandPortalTransitionManager armorStandPortalTransitions;
     private final PlayerDimensionTransitionManager playerDimensionTransitions;
     private final PearlPlayerHitHandoff pearlPlayerHits;
@@ -341,7 +348,14 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
         this.pearlPortalTransitions = new PearlPortalTransitionManager(portalAuthority, objects);
         this.itemPortalTransitions = new ItemPortalTransitionManager(portalAuthority, objects);
         this.mobPortalTransitions = new MobPortalTransitionManager(portalAuthority, objects);
+        this.hurtingProjectilePortalTransitions = new HurtingProjectilePortalTransitionManager(portalAuthority, objects);
+        this.shulkerBulletPortalTransitions = new ShulkerBulletPortalTransitionManager(portalAuthority, objects);
+        this.throwableProjectilePortalTransitions = new ThrowableProjectilePortalTransitionManager(portalAuthority, objects);
+        this.arrowPortalTransitions = new ArrowPortalTransitionManager(portalAuthority, objects);
         this.fallingBlockPortalTransitions = new FallingBlockPortalTransitionManager(portalAuthority, objects);
+        this.tntPortalTransitions = new TntPortalTransitionManager(portalAuthority, objects);
+        this.boatPortalTransitions = new BoatPortalTransitionManager(portalAuthority, objects);
+        this.minecartPortalTransitions = new MinecartPortalTransitionManager(portalAuthority, objects);
         this.armorStandPortalTransitions = new ArmorStandPortalTransitionManager(portalAuthority, objects);
         this.playerDimensionTransitions = new PlayerDimensionTransitionManager(
             new PlayerDimensionTransitionManager.Authority() {
@@ -560,7 +574,14 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
                 // for movement first observed during this tick's entity body.
                 entityIndexLifecycle.advancePendingRelocations(runtimes);
                 mobPortalTransitions.advance();
+                hurtingProjectilePortalTransitions.advance();
+                shulkerBulletPortalTransitions.advance();
+                throwableProjectilePortalTransitions.advance();
+                arrowPortalTransitions.advance();
                 fallingBlockPortalTransitions.advance();
+                tntPortalTransitions.advance();
+                boatPortalTransitions.advance();
+                minecartPortalTransitions.advance();
                 armorStandPortalTransitions.advance();
                 itemPortalTransitions.advance();
                 pearlPortalTransitions.advance();
@@ -604,7 +625,14 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
                 // retain their bounded fact for the next tick instead of waiting on one another.
                 entityIndexLifecycle.advancePendingRelocations(runtimes);
                 mobPortalTransitions.advance();
+                hurtingProjectilePortalTransitions.advance();
+                shulkerBulletPortalTransitions.advance();
+                throwableProjectilePortalTransitions.advance();
+                arrowPortalTransitions.advance();
                 fallingBlockPortalTransitions.advance();
+                tntPortalTransitions.advance();
+                boatPortalTransitions.advance();
+                minecartPortalTransitions.advance();
                 armorStandPortalTransitions.advance();
                 itemPortalTransitions.advance();
                 pearlPortalTransitions.advance();
@@ -776,7 +804,14 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
             failures.run(pearlPortalTransitions::close);
             failures.run(itemPortalTransitions::close);
             failures.run(mobPortalTransitions::close);
+            failures.run(hurtingProjectilePortalTransitions::close);
+            failures.run(shulkerBulletPortalTransitions::close);
+            failures.run(throwableProjectilePortalTransitions::close);
+            failures.run(arrowPortalTransitions::close);
             failures.run(fallingBlockPortalTransitions::close);
+            failures.run(tntPortalTransitions::close);
+            failures.run(boatPortalTransitions::close);
+            failures.run(minecartPortalTransitions::close);
             failures.run(armorStandPortalTransitions::close);
             failures.run(pearlPlayerHits::close);
             failures.run(() -> { if (scheduler != null) { scheduler.quiesce(); scheduler.stop(); } });
@@ -2042,6 +2077,73 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
         requireRegionalServiceLifetime();
         return dev.phoenium.chunk.FreshPassengerAdmission.naturalSpawnScope(level, freshPassengerPublisher(level));
     }
+    /**
+     * SummonCommand reaches tryAddFreshEntityWithPassengers on the owner-free
+     * server thread. Its native duplicate check has completed before the graph
+     * insertion hook runs. Stage graph facts and object identities only in
+     * that coordinator context; an owner callback uses the existing stricter
+     * natural-spawn publisher instead.
+     */
+    public dev.phoenium.chunk.FreshPassengerAdmission.Publisher commandSpawnPassengerPublisher(ServerLevel level) {
+        requireRegionalServiceLifetime();
+        if (OwnershipContext.current().isPresent()) return freshPassengerPublisher(level);
+        if (!level.getServer().isSameThread())
+            throw new IllegalStateException("command passenger admission requires the owner-free server thread");
+        WorldId world = worldId(level);
+        return new dev.phoenium.chunk.FreshPassengerAdmission.Publisher() {
+            private RegionRoute baseline;
+
+            private void requireCoordinator() {
+                if (!isRunning() || regionalDispatcher == null || OwnershipContext.current().isPresent()
+                        || !level.getServer().isSameThread())
+                    throw new IllegalStateException("command passenger admission lost owner-free coordinator authority");
+            }
+
+            private void requirePublishedOwner(ObjectOwnership binding) {
+                if (!isRunning() || regionalDispatcher == null || binding == null
+                        || OwnershipContext.current().isEmpty())
+                    throw new IllegalStateException("command passenger admission lost source owner authority");
+                sameClosure(route(binding.routingKey()));
+                regionalDispatcher.requireCurrentOwner(binding.routingKey());
+            }
+
+            private RegionRoute route(RoutingKey key) {
+                return directory.resolve(key).orElseThrow(
+                    () -> new IllegalStateException("command passenger route became unresolved " + key));
+            }
+
+            private void sameClosure(RegionRoute route) {
+                baseline = dev.phoenium.chunk.CommandPassengerAdmission.requireCommonRoute(baseline, route);
+            }
+
+            @Override public void requireOwners(java.util.Set<net.minecraft.world.level.ChunkPos> positions) {
+                if (positions.isEmpty()) throw new IllegalStateException("empty command passenger graph");
+                if (OwnershipContext.current().isPresent()) {
+                    if (!isRunning() || regionalDispatcher == null)
+                        throw new IllegalStateException("command passenger owner validation outside live runtime");
+                    var keys = positions.stream().map(position -> new RoutingKey(world, position.x(), position.z()))
+                        .collect(java.util.stream.Collectors.toSet());
+                    regionalDispatcher.requireCurrentClosure(keys);
+                } else requireCoordinator();
+                for (var position : positions) sameClosure(route(new RoutingKey(world, position.x(), position.z())));
+            }
+
+            @Override public ObjectOwnership publish(Entity entity) {
+                requireCoordinator();
+                RoutingKey key = new RoutingKey(world, entity.chunkPosition().x(), entity.chunkPosition().z());
+                sameClosure(route(key));
+                return objects.admit(entity.getUUID().toString(), OwnedObjectKind.ENTITY, key);
+            }
+
+            @Override public ObjectOwnership current(String uuid) {
+                if (OwnershipContext.current().isEmpty()) requireCoordinator();
+                ObjectOwnership binding = objects.current(uuid).orElse(null);
+                if (OwnershipContext.current().isPresent()) requirePublishedOwner(binding);
+                return binding;
+            }
+            @Override public void retire(ObjectOwnership identity) { objects.retirePublication(identity); }
+        };
+    }
     private dev.phoenium.chunk.FreshPassengerAdmission.Publisher freshPassengerPublisher(ServerLevel level) {
         WorldId world = worldId(level);
         return new dev.phoenium.chunk.FreshPassengerAdmission.Publisher() {
@@ -2356,7 +2458,14 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
         if (!isRunning() || !(entity.level() instanceof ServerLevel level)) return;
         if (NativePortalTransfer.expectedRemoval(entity, reason)) return;
         if (mobPortalTransitions.onRemoval(entity, reason)) return;
+        if (hurtingProjectilePortalTransitions.onRemoval(entity, reason)) return;
+        if (shulkerBulletPortalTransitions.onRemoval(entity, reason)) return;
+        if (throwableProjectilePortalTransitions.onRemoval(entity, reason)) return;
+        if (arrowPortalTransitions.onRemoval(entity, reason)) return;
         if (fallingBlockPortalTransitions.onRemoval(entity, reason)) return;
+        if (tntPortalTransitions.onRemoval(entity, reason)) return;
+        if (boatPortalTransitions.onRemoval(entity, reason)) return;
+        if (minecartPortalTransitions.onRemoval(entity, reason)) return;
         if (armorStandPortalTransitions.onRemoval(entity, reason)) return;
         if (itemPortalTransitions.onRemoval(entity, reason)) return;
         if (entity instanceof ServerPlayer player && playerDimensionTransitions.onRemoval(player, reason)) return;
@@ -2383,12 +2492,115 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
         return mobPortalTransitions.suspendDestination(mob, processor);
     }
     public boolean mobPortalSuspended(net.minecraft.world.entity.Mob mob) { return mobPortalTransitions.suspended(mob); }
+    public boolean mobPortalGraphTickSuspended(Entity entity, boolean passenger) {
+        return mobPortalTransitions.graphTickSuspended(entity, passenger)
+            || boatPortalTransitions.graphTickSuspended(entity, passenger);
+    }
     public boolean completeMobPortalTick(net.minecraft.world.entity.Mob mob) { return mobPortalTransitions.complete(mob); }
     public void finishMobPortalTick(net.minecraft.world.entity.Mob mob) { mobPortalTransitions.finish(mob); }
+    public void beginHurtingProjectilePortalTick(net.minecraft.world.entity.projectile.hurtingprojectile.AbstractHurtingProjectile projectile) {
+        hurtingProjectilePortalTransitions.begin(projectile);
+    }
+    public void retainHurtingProjectileHitResult(
+            net.minecraft.world.entity.projectile.hurtingprojectile.AbstractHurtingProjectile projectile,
+            net.minecraft.world.phys.HitResult result) {
+        hurtingProjectilePortalTransitions.hitResult(projectile, result);
+    }
+    public boolean suspendHurtingProjectilePortalDestination(
+            net.minecraft.world.entity.projectile.hurtingprojectile.AbstractHurtingProjectile projectile,
+            PortalProcessor processor) {
+        return hurtingProjectilePortalTransitions.suspendDestination(projectile, processor);
+    }
+    public boolean hurtingProjectilePortalSuspended(
+            net.minecraft.world.entity.projectile.hurtingprojectile.AbstractHurtingProjectile projectile) {
+        return hurtingProjectilePortalTransitions.suspended(projectile);
+    }
+    public boolean completeHurtingProjectilePortalTick(
+            net.minecraft.world.entity.projectile.hurtingprojectile.AbstractHurtingProjectile projectile) {
+        return hurtingProjectilePortalTransitions.complete(projectile);
+    }
+    public void finishHurtingProjectilePortalTick(
+            net.minecraft.world.entity.projectile.hurtingprojectile.AbstractHurtingProjectile projectile) {
+        hurtingProjectilePortalTransitions.finish(projectile);
+    }
+    public void beginShulkerBulletPortalTick(net.minecraft.world.entity.projectile.ShulkerBullet bullet) {
+        shulkerBulletPortalTransitions.begin(bullet);
+    }
+    public void retainShulkerBulletDirectLocals(net.minecraft.world.entity.projectile.ShulkerBullet bullet,
+            Entity target, net.minecraft.world.phys.HitResult hit, net.minecraft.world.phys.Vec3 movement) {
+        shulkerBulletPortalTransitions.directLocals(bullet, target, hit, movement);
+    }
+    public boolean suspendShulkerBulletPortalDestination(
+            net.minecraft.world.entity.projectile.ShulkerBullet bullet, PortalProcessor processor) {
+        return shulkerBulletPortalTransitions.suspendDestination(bullet, processor);
+    }
+    public boolean shulkerBulletPortalSuspended(net.minecraft.world.entity.projectile.ShulkerBullet bullet) {
+        return shulkerBulletPortalTransitions.suspended(bullet);
+    }
+    public boolean completeShulkerBulletPortalTick(net.minecraft.world.entity.projectile.ShulkerBullet bullet) {
+        return shulkerBulletPortalTransitions.complete(bullet);
+    }
+    public void finishShulkerBulletPortalTick(net.minecraft.world.entity.projectile.ShulkerBullet bullet) {
+        shulkerBulletPortalTransitions.finish(bullet);
+    }
+    public void beginThrowableProjectilePortalTick(
+            net.minecraft.world.entity.projectile.ThrowableProjectile projectile) {
+        throwableProjectilePortalTransitions.begin(projectile);
+    }
+    public void retainThrowableProjectileHitResult(
+            net.minecraft.world.entity.projectile.ThrowableProjectile projectile,
+            net.minecraft.world.phys.HitResult result) {
+        throwableProjectilePortalTransitions.hitResult(projectile, result);
+    }
+    public boolean suspendThrowableProjectilePortalDestination(
+            net.minecraft.world.entity.projectile.ThrowableProjectile projectile,
+            PortalProcessor processor) {
+        return throwableProjectilePortalTransitions.suspendDestination(projectile, processor);
+    }
+    public boolean throwableProjectilePortalSuspended(
+            net.minecraft.world.entity.projectile.ThrowableProjectile projectile) {
+        return throwableProjectilePortalTransitions.suspended(projectile);
+    }
+    public boolean completeThrowableProjectilePortalTick(
+            net.minecraft.world.entity.projectile.ThrowableProjectile projectile) {
+        return throwableProjectilePortalTransitions.complete(projectile);
+    }
+    public void finishThrowableProjectilePortalTick(
+            net.minecraft.world.entity.projectile.ThrowableProjectile projectile) {
+        throwableProjectilePortalTransitions.finish(projectile);
+    }
+    public void beginArrowPortalTick(net.minecraft.world.entity.projectile.arrow.AbstractArrow arrow) {
+        arrowPortalTransitions.begin(arrow);
+    }
+    public void retainArrowPortalStep(net.minecraft.world.entity.projectile.arrow.AbstractArrow arrow,
+            net.minecraft.world.phys.BlockHitResult blockHit,
+            java.util.List<net.minecraft.world.phys.EntityHitResult> entityHits) {
+        arrowPortalTransitions.hitResult(arrow, blockHit, entityHits);
+    }
+    public boolean suspendArrowPortalDestination(net.minecraft.world.entity.projectile.arrow.AbstractArrow arrow,
+            PortalProcessor processor) {
+        return arrowPortalTransitions.suspendDestination(arrow, processor);
+    }
+    public boolean arrowPortalSuspended(net.minecraft.world.entity.projectile.arrow.AbstractArrow arrow) {
+        return arrowPortalTransitions.suspended(arrow);
+    }
+    public boolean completeArrowPortalTick(net.minecraft.world.entity.projectile.arrow.AbstractArrow arrow) {
+        return arrowPortalTransitions.complete(arrow);
+    }
+    public void finishArrowPortalTick(net.minecraft.world.entity.projectile.arrow.AbstractArrow arrow) {
+        arrowPortalTransitions.finish(arrow);
+    }
     /** Called after executeAndDrain returned, before the next entity consumes native RNG. */
     public void advanceMobPortalAfterEntityCallback() {
         mobPortalTransitions.advance();
+        hurtingProjectilePortalTransitions.advance();
+        shulkerBulletPortalTransitions.advance();
+        throwableProjectilePortalTransitions.advance();
+        arrowPortalTransitions.advance();
         fallingBlockPortalTransitions.advance();
+        tntPortalTransitions.advance();
+        boatPortalTransitions.advance();
+        minecartPortalTransitions.advance();
         armorStandPortalTransitions.advance();
     }
 
@@ -2408,6 +2620,57 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
     }
     public void finishFallingBlockPortalTick(net.minecraft.world.entity.item.FallingBlockEntity block) {
         fallingBlockPortalTransitions.finish(block);
+    }
+
+    public void beginTntPortalTick(net.minecraft.world.entity.item.PrimedTnt tnt) {
+        tntPortalTransitions.begin(tnt);
+    }
+    public boolean tntPortalSuspended(net.minecraft.world.entity.item.PrimedTnt tnt) {
+        return tntPortalTransitions.suspended(tnt);
+    }
+    public boolean suspendTntPortalDestination(net.minecraft.world.entity.item.PrimedTnt tnt,
+            net.minecraft.world.entity.PortalProcessor processor) {
+        return tntPortalTransitions.suspendDestination(tnt, processor);
+    }
+    public boolean completeTntPortalTick(net.minecraft.world.entity.item.PrimedTnt tnt) {
+        return tntPortalTransitions.complete(tnt);
+    }
+    public void finishTntPortalTick(net.minecraft.world.entity.item.PrimedTnt tnt) {
+        tntPortalTransitions.finish(tnt);
+    }
+
+    public void beginBoatPortalTick(net.minecraft.world.entity.vehicle.boat.AbstractBoat boat) {
+        boatPortalTransitions.begin(boat);
+    }
+    public boolean boatPortalSuspended(net.minecraft.world.entity.vehicle.boat.AbstractBoat boat) {
+        return boatPortalTransitions.suspended(boat);
+    }
+    public boolean suspendBoatPortalDestination(net.minecraft.world.entity.vehicle.boat.AbstractBoat boat,
+            net.minecraft.world.entity.PortalProcessor processor) {
+        return boatPortalTransitions.suspendDestination(boat, processor);
+    }
+    public boolean completeBoatPortalTick(net.minecraft.world.entity.vehicle.boat.AbstractBoat boat) {
+        return boatPortalTransitions.complete(boat);
+    }
+    public void finishBoatPortalTick(net.minecraft.world.entity.vehicle.boat.AbstractBoat boat) {
+        boatPortalTransitions.finish(boat);
+    }
+
+    public void beginMinecartPortalTick(net.minecraft.world.entity.vehicle.minecart.AbstractMinecart cart) {
+        minecartPortalTransitions.begin(cart);
+    }
+    public boolean minecartPortalSuspended(net.minecraft.world.entity.vehicle.minecart.AbstractMinecart cart) {
+        return minecartPortalTransitions.suspended(cart);
+    }
+    public boolean suspendMinecartPortalDestination(net.minecraft.world.entity.vehicle.minecart.AbstractMinecart cart,
+            net.minecraft.world.entity.PortalProcessor processor) {
+        return minecartPortalTransitions.suspendDestination(cart, processor);
+    }
+    public boolean completeMinecartPortalTick(net.minecraft.world.entity.vehicle.minecart.AbstractMinecart cart) {
+        return minecartPortalTransitions.complete(cart);
+    }
+    public void finishMinecartPortalTick(net.minecraft.world.entity.vehicle.minecart.AbstractMinecart cart) {
+        minecartPortalTransitions.finish(cart);
     }
 
     public void beginArmorStandPortalTick(net.minecraft.world.entity.LivingEntity stand) {
@@ -2486,7 +2749,14 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
         pearlPortalTransitions.worldClosing(level);
         itemPortalTransitions.worldClosing(level);
         mobPortalTransitions.worldClosing(level);
+        hurtingProjectilePortalTransitions.worldClosing(level);
+        shulkerBulletPortalTransitions.worldClosing(level);
+        throwableProjectilePortalTransitions.worldClosing(level);
+        arrowPortalTransitions.worldClosing(level);
         fallingBlockPortalTransitions.worldClosing(level);
+        tntPortalTransitions.worldClosing(level);
+        boatPortalTransitions.worldClosing(level);
+        minecartPortalTransitions.worldClosing(level);
         armorStandPortalTransitions.worldClosing(level);
         pearlPlayerHits.worldClosing(level);
     }

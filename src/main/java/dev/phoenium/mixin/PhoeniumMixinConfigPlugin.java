@@ -74,6 +74,8 @@ public final class PhoeniumMixinConfigPlugin implements IMixinConfigPlugin {
             dev.phoenium.live.MobPortalNativeSuffixes.install(targetClass);
         if (mixinClassName.equals("dev.phoenium.mixin.FallingBlockPortalTickMixin"))
             dev.phoenium.live.FallingBlockPortalNativeSuffix.install(targetClass);
+        if (mixinClassName.equals("dev.phoenium.mixin.TntPortalTickMixin"))
+            dev.phoenium.live.TntPortalNativeSuffix.install(targetClass);
         if (mixinClassName.equals("dev.phoenium.mixin.SkeletonPortalCallerShapeMixin"))
             dev.phoenium.live.SkeletonPortalCallerShape.verify(targetClass);
         if (mixinClassName.equals("dev.phoenium.mixin.VaultTickContinuationMixin")

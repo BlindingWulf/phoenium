@@ -9,6 +9,26 @@ public final class FullRegistrationTestTransform {
         ClassNode node = new ClassNode(); new ClassReader(bytes).accept(node, ClassReader.EXPAND_FRAMES);
         MobPortalTestTransform.install(node);
         FallingBlockPortalTestTransform.install(node);
+        BoatPortalTestTransform.install(node);
+        if (name.equals(BoatPortalTestTransform.TARGET)) {
+            ClassWriter boatWriter = new ClassWriter(ClassWriter.COMPUTE_MAXS);
+            node.accept(boatWriter); return boatWriter.toByteArray();
+        }
+        if (name.equals(NativeMinecartTestTransform.CART)) {
+            NativeMinecartTestTransform.install(node);
+            ClassWriter minecartWriter = new ClassWriter(ClassWriter.COMPUTE_MAXS);
+            node.accept(minecartWriter); return minecartWriter.toByteArray();
+        }
+        if (name.equals(NativeMinecartChestTestTransform.CART)) {
+            NativeMinecartChestTestTransform.install(node);
+            ClassWriter chestWriter = new ClassWriter(ClassWriter.COMPUTE_MAXS);
+            node.accept(chestWriter); return chestWriter.toByteArray();
+        }
+        if (name.equals("net/minecraft/world/entity/projectile/ShulkerBullet")) {
+            NativeShulkerBulletTestTransform.install(node);
+            ClassWriter bulletWriter = new ClassWriter(ClassWriter.COMPUTE_MAXS);
+            node.accept(bulletWriter); return bulletWriter.toByteArray();
+        }
         if (name.equals(dev.phoenium.live.MobPortalNativeSuffixes.CUBE)
                 || name.equals(dev.phoenium.live.MobPortalNativeSuffixes.HORSE)
                 || name.equals(dev.phoenium.live.MobPortalNativeSuffixes.VILLAGER)) {
@@ -26,6 +46,7 @@ public final class FullRegistrationTestTransform {
         FullFinishingQueryTestTransform.install(node);
         FullFinishingServicesTestTransform.install(node);
         NativePortalTestTransform.install(node);
+        NativePortalGraphTestTransform.install(node);
         FullSavedContextTestTransform.install(node);
         FullStructureTestTransform.install(node);
         FullEntityPredicateTestTransform.install(node);
@@ -224,7 +245,9 @@ public final class FullRegistrationTestTransform {
             }
             if (winning != 1 || adjacent != 1) throw new AssertionError("test hook selectors changed");
         }
-        ClassWriter writer = new ClassWriter(ClassWriter.COMPUTE_MAXS); node.accept(writer); return writer.toByteArray();
+        int flags = name.equals("net/minecraft/server/level/ServerLevel")
+            ? ClassWriter.COMPUTE_FRAMES | ClassWriter.COMPUTE_MAXS : ClassWriter.COMPUTE_MAXS;
+        ClassWriter writer = new ClassWriter(flags); node.accept(writer); return writer.toByteArray();
     }
     private static InsnList clockCall(String owner, String operation) {
         InsnList result = new InsnList(); result.add(new VarInsnNode(Opcodes.ALOAD, 0));

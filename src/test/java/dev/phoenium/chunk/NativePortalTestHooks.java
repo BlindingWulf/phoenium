@@ -15,10 +15,16 @@ public final class NativePortalTestHooks {
     static Consumer<Entity> base = entity -> { }, suffix = entity -> { };
     static Consumer<Entity> ticket = entity -> entity.placePortalTicket(BlockPos.containing(entity.position()));
     static Consumer<Entity> projectile = entity -> { }, pearl = entity -> { };
+    static Consumer<Entity> hurting = entity -> { };
+    static Consumer<Entity> windCharge = entity -> { };
     static java.util.function.BiConsumer<Entity,net.minecraft.world.phys.HitResult> hit = (entity,result) -> { };
     public static void baseSuffix(Entity entity) { base.accept(entity); }
     public static void itemSuffix(ItemEntity entity) { suffix.accept(entity); }
     public static void projectileSuffix(Entity entity) { projectile.accept(entity); }
+    public static void hurtingProjectileSuffix(Entity entity,net.minecraft.world.phys.HitResult result) {
+        hurting.accept(entity);
+    }
+    public static void windChargeSuffix(Entity entity) { windCharge.accept(entity); }
     public static void throwableSuffix(Entity entity,net.minecraft.world.phys.HitResult result) { hit.accept(entity,result); }
     public static void pearlSuffix(Entity entity,int x,int z,Entity owner) { pearl.accept(entity); }
     public static void stopRiding(Entity entity) { NativePortalTransfer.sourceEffect(entity,"STOP_RIDING",entity::stopRiding); }

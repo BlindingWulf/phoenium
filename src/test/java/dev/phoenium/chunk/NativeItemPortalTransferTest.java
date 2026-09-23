@@ -193,6 +193,8 @@ class NativeItemPortalTransferTest {
         final RegionDirectory directory = new RegionDirectory();
         final Map<RegionId,RegionRuntime> runtimes = new LinkedHashMap<>();
         final FailureBarrier barrier = new FailureBarrier();
+        final RegionScheduler scheduler;
+        final OwnerGateway gateway;
         final RegionalServiceDispatcher dispatcher;
         final ObjectOwnershipRegistry objects = new ObjectOwnershipRegistry(directory);
         final EntityIndexLifecycleAdapter identities = new EntityIndexLifecycleAdapter(objects,directory,new dev.phoenium.interaction.InteractionTargetIndex());
@@ -218,6 +220,7 @@ class NativeItemPortalTransferTest {
         java.util.function.Function<net.minecraft.core.BlockPos,net.minecraft.world.level.block.state.BlockState> blockRead =
             pos -> net.minecraft.world.level.block.Blocks.AIR.defaultBlockState();
         final Map<net.minecraft.core.BlockPos,net.minecraft.world.level.block.state.BlockState> blockStates=new HashMap<>();
+        final Map<net.minecraft.core.BlockPos,net.minecraft.world.level.block.entity.BlockEntity> blockEntities=new HashMap<>();
         int blockWrites,blockDestroys;
         java.util.function.BiConsumer<ServerLevel,net.minecraft.server.level.ServerPlayer> playerRemove = (level,player)->{};
         java.util.function.BiConsumer<ServerLevel,net.minecraft.server.level.ServerPlayer> playerInsert = (level,player)->{};
@@ -235,8 +238,9 @@ class NativeItemPortalTransferTest {
             }
             var generation = new TopologyGeneration(1);
             directory.publish(generation,Map.of(from,new RegionRoute(ar,generation,new OwnerEpoch(0)),to,new RegionRoute(br,generation,new OwnerEpoch(0))));
-            var scheduler = new RegionScheduler(runtimes,directory,barrier);
-            dispatcher = new RegionalServiceDispatcher("native-item-portal",1,directory,runtimes,new OwnerGateway(directory,runtimes,scheduler),scheduler);
+            scheduler = new RegionScheduler(runtimes,directory,barrier);
+            gateway = new OwnerGateway(directory,runtimes,scheduler);
+            dispatcher = new RegionalServiceDispatcher("native-item-portal",1,directory,runtimes,gateway,scheduler);
             overworld = world(Level.OVERWORLD,from); nether = world(destinationDimension,to);
             authority = new NativePortalTransfer.Authority() {
                 public boolean running() { return running; }
@@ -339,6 +343,7 @@ class NativeItemPortalTransferTest {
                         : dimension == Level.END ? net.minecraft.world.level.dimension.BuiltinDimensionTypes.END
                         : net.minecraft.world.level.dimension.BuiltinDimensionTypes.NETHER).value()),
                 new Answer(Level.class.getMethod("getBlockState",net.minecraft.core.BlockPos.class), args -> blockRead.apply((net.minecraft.core.BlockPos)args[0])),
+                new Answer(Level.class.getMethod("getBlockEntity",net.minecraft.core.BlockPos.class), args -> blockEntities.get(args[0])),
                 new Answer(Level.class.getMethod("setBlock",net.minecraft.core.BlockPos.class,net.minecraft.world.level.block.state.BlockState.class,int.class), args -> {
                     owner(key);blockWrites++;blockStates.put(((net.minecraft.core.BlockPos)args[0]).immutable(),
                         (net.minecraft.world.level.block.state.BlockState)args[1]);return true;

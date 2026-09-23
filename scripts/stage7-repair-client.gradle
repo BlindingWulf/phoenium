@@ -10,7 +10,7 @@ allprojects {
         }
         tasks.named('runClientGameTest') {
             systemProperty 'phoenium.test.mode', 'stage7-repair'
-            ['evidence','address','rconPort','sha256','restart','group'].each { name ->
+            ['evidence','address','rconPort','sha256','restart','group','cards'].each { name ->
                 systemProperty 'phoenium.repair.' + name, project.findProperty('repair' + name.capitalize()) ?: ''
             }
             systemProperty 'java.net.useSystemProxies', 'false'

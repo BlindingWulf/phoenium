@@ -157,6 +157,59 @@ final class FreshPassengerAdmissionTest {
             }
         }
     }
+    @Test void commandInsertionReservesPassengerBeforeRootFirstNativeTracking() throws Exception {
+        try (var f = new FullServiceOperationFixture()) {
+            var world = f.world(); var root = entity(world, 23); var child = entity(world, 24); attach(root, child);
+            var publisher = new Publisher(); var inserted = new ArrayList<Entity>(); var manager = new Object();
+            CommandPassengerAdmission.insert(world, root, publisher, () -> nativeInsert(root, entity -> {
+                inserted.add(entity);
+                FullEntityFacts.stored(entity, manager);
+                FullEntityFacts.passengerTrackingStarted(entity);
+                var candidate = f.service.entityFacts.trackingCandidate(world, entity);
+                var passengers = f.service.entityFacts.trackingPassengers(candidate);
+                if (entity == root) {
+                    assertEquals(List.of(child), passengers.stream().map(FullEntityFacts.Candidate::alias).toList());
+                    assertFalse(f.service.entityFacts.hasStorage(child),
+                        "root native tracking must precede child insertion");
+                    assertNotNull(((FullEntityFacts.Access) child).phoenium$referenceFact(),
+                        "command admission must stage the child before root tracking");
+                }
+                FullEntityFacts.passengerTrackingCompleted(entity);
+            }));
+            assertEquals(List.of(root, child), inserted);
+            assertEquals(2, publisher.objects.liveCount());
+            assertTrue(f.service.entityFacts.hasStorage(root));
+            assertTrue(f.service.entityFacts.hasStorage(child));
+        }
+    }
+    @Test void commandGraphRouteMustRemainInOneOwnerAndTopologyEpoch() {
+        var world = new WorldId("command-graph-test");
+        var generation = new TopologyGeneration(7);
+        var baseline = new RegionRoute(new RegionId(world, "first"), generation, new OwnerEpoch(3));
+        assertEquals(baseline, CommandPassengerAdmission.requireCommonRoute(null, baseline));
+        assertEquals(baseline, CommandPassengerAdmission.requireCommonRoute(baseline,
+            new RegionRoute(new RegionId(world, "first"), generation, new OwnerEpoch(3))));
+        assertThrows(IllegalStateException.class, () -> CommandPassengerAdmission.requireCommonRoute(baseline,
+            new RegionRoute(new RegionId(world, "other"), generation, new OwnerEpoch(3))));
+        assertThrows(IllegalStateException.class, () -> CommandPassengerAdmission.requireCommonRoute(baseline,
+            new RegionRoute(new RegionId(world, "first"), new TopologyGeneration(8), new OwnerEpoch(3))));
+        assertThrows(IllegalStateException.class, () -> CommandPassengerAdmission.requireCommonRoute(baseline,
+            new RegionRoute(new RegionId(world, "first"), generation, new OwnerEpoch(4))));
+    }
+    @Test void nativeDuplicatePassengerUuidRefusesBeforeCommandGraphInsertion() throws Exception {
+        try (var f = new FullServiceOperationFixture()) {
+            var world = f.world(); var root = entity(world, 25); var child = entity(world, 26); attach(root, child);
+            var manager = stub(PersistentEntitySectionManager.class, List.of());
+            set(manager, PersistentEntitySectionManager.class, "knownUuids", new HashSet<>(List.of(child.getUUID())));
+            set(world, ServerLevel.class, "entityManager", manager);
+            assertFalse(world.tryAddFreshEntityWithPassengers(root),
+                "native duplicate-UUID guard must refuse before the wrapped insertion call");
+            assertNull(((FullEntityFacts.Access) root).phoenium$referenceFact());
+            assertNull(((FullEntityFacts.Access) child).phoenium$referenceFact());
+            assertFalse(f.service.entityFacts.hasRoute(root));
+            assertFalse(f.service.entityFacts.hasRoute(child));
+        }
+    }
     @Test void staleNativeIncarnationFailsClosed() throws Exception { invalidation((root, child, pub) -> set(child, Entity.class, "phoenium$incarnation", 99999L)); }
     @Test void detachedPassengerFailsClosedEvenWhenRelationPublicationIsUpdated() throws Exception {
         invalidation((root, child, pub) -> { attach(root); set(child, Entity.class, "vehicle", null); FullEntityFacts.passengersChanged(root); });

@@ -54,6 +54,13 @@ SOURCE_PROVEN_THROWABLE_NETHER = {
     "minecraft:egg", "minecraft:snowball", "minecraft:splash_potion",
     "minecraft:lingering_potion", "minecraft:experience_bottle",
 }
+SOURCE_PROVEN_ARROW_NETHER = {
+    "minecraft:arrow": "net.minecraft.world.entity.projectile.arrow.Arrow",
+    "minecraft:spectral_arrow": "net.minecraft.world.entity.projectile.arrow.SpectralArrow",
+    "minecraft:trident": "net.minecraft.world.entity.projectile.arrow.ThrownTrident",
+}
+SOURCE_PROVEN_SHULKER_NETHER = {"minecraft:shulker_bullet"}
+SOURCE_PROVEN_MINECART_NETHER = {"minecraft:minecart", "minecraft:chest_minecart"}
 
 
 def sha(data: bytes) -> str:
@@ -285,7 +292,8 @@ def build_inventory(source_path: pathlib.Path, binary_path: pathlib.Path, javap:
             raise ValueError("portal implementation inventory differs from pinned three implementations")
         materials = falling_materials(sources)
         transfer_factories = {}
-        for entity_id in sorted(SOURCE_PROVEN_HURTING_NETHER | SOURCE_PROVEN_THROWABLE_NETHER):
+        for entity_id in sorted(SOURCE_PROVEN_HURTING_NETHER | SOURCE_PROVEN_THROWABLE_NETHER
+                                | set(SOURCE_PROVEN_ARROW_NETHER) | SOURCE_PROVEN_SHULKER_NETHER):
             constant = entity_id.removeprefix("minecraft:").upper()
             concrete_simple = types[entity_id].rsplit(".", 1)[-1]
             declaration = re.search(r"public static final EntityType<" + re.escape(concrete_simple)
@@ -378,6 +386,7 @@ def build_census(inventory: dict, frozen: dict) -> dict:
         no_entry = entity_type in ALWAYS_NO_ENTRY or entity_type in NO_TICK_ENTRY
         expected = "NO_NATIVE_ENTRY_PATH" if no_entry else None
         source_proof = None
+        native_control = None
         if entity_type in ALWAYS_NO_ENTRY:
             method_ref = profile["methodReferences"]["canUsePortal"]
             if not method_ref["method"]["unconditionalReturnFalse"]:
@@ -411,6 +420,20 @@ def build_census(inventory: dict, frozen: dict) -> dict:
                             "eligibilityPredicate": "declaring tick does not call super.tick, baseTick, or handlePortal; no direct portal call in class",
                             "applicabilityDemonstrated": True,
                             "artifact": "NATIVE_NO_ENTRY_SOURCE_PROOFS.json"}
+            if entity_type == "minecraft:leash_knot":
+                # A surviving knot must occupy a fence block. Its entire native
+                # hitbox lies inside that block, and no portal block is a fence;
+                # the independently pinned geometry/tag proof closes the
+                # otherwise unconstructible stable-contact fixture.
+                source_proof["kind"] = "stable_fence_occupancy_excludes_portal_contact"
+                source_proof["artifact"] = "LEASH_KNOT_STABLE_NO_ENTRY_SOURCE_PROOF.json"
+                source_proof["artifactSha256"] = (
+                    "1412E119E1479551C76B574E01D6C90ECDCF750D3E5A7312D9BAA9EB1D3FF43C")
+                source_proof["eligibilityPredicate"] = (
+                    "A stable native leash knot requires a fence at its own block; "
+                    "its 0.375 x 0.5 bounding box is contained within that block, "
+                    "which cannot simultaneously be a Nether, End, or gateway portal; "
+                    "its inherited tick skips portal processing")
         conditional_key = None
         condition = None
         if entity_type == "minecraft:creaking" and variant == "heart_bound":
@@ -442,6 +465,49 @@ def build_census(inventory: dict, frozen: dict) -> dict:
                             "eligibilityPredicate": condition,
                             "applicabilityDemonstrated": False,
                             "artifact": "NATIVE_CONDITIONAL_REFUSAL_SOURCE_PROOFS.json"}
+        if graph == "mob riding mob" and route == "NETHER_ENTRY":
+            # This frozen shape is exercised by the exact installed pig + chicken fixture.
+            # Passenger canUsePortal is intentionally irrelevant: native recursion invokes
+            # chicken.teleport(transitionAsPassenger) directly after root ejection.
+            pig = type_rows["minecraft:pig"]
+            chicken = type_rows["minecraft:chicken"]
+            if (pig["concreteClass"] != "net.minecraft.world.entity.animal.pig.Pig"
+                    or chicken["concreteClass"] != "net.minecraft.world.entity.animal.chicken.Chicken"
+                    or pig["declaringMethods"]["tick"] != "net.minecraft.world.entity.Mob"
+                    or pig["declaringMethods"]["canUsePortal"] != "net.minecraft.world.entity.LivingEntity"
+                    or pig["declaringMethods"]["canTeleport"] != "net.minecraft.world.entity.Entity"
+                    or pig["declaringMethods"]["teleport"] != "net.minecraft.world.entity.Entity"
+                    or chicken["declaringMethods"]["teleport"] != "net.minecraft.world.entity.Entity"):
+                raise ValueError("pinned pig/chicken graph caller or eligibility changed")
+            profile = pig
+            override = pig["eligibilityOverrideOwner"]
+            expected = "TRANSFER"
+            handle = pig["methodReferences"]["handlePortal"]
+            eligibility = pig["methodReferences"]["canUsePortal"]
+            source_proof = {"kind": "conditional_pig_chicken_graph_nether_transfer",
+                            "sourceJarSha256": inventory["sourceJarSha256"],
+                            "mappedBinarySha256": inventory["mappedBinarySha256"],
+                            "nativeOutcome": expected,
+                            "reference": {"file": handle["file"], "method": "handlePortal",
+                                          "line": handle["method"]["line"],
+                                          "sourceMethodSha256": handle["method"]["sourceSha256"],
+                                          "classBytecodeSha256": handle["classBytecodeSha256"]},
+                            "rootEligibilityReference": {"file": eligibility["file"],
+                                                         "method": "canUsePortal",
+                                                         "line": eligibility["method"]["line"],
+                                                         "sourceMethodSha256": eligibility["method"]["sourceSha256"],
+                                                         "classBytecodeSha256": eligibility["classBytecodeSha256"]},
+                            "rootCallerProfile": pig["callerProfile"],
+                            "passengerTeleportReference": chicken["methodReferences"]["teleport"],
+                            "registrationReference": "EntityTypes.java:271-278 Chicken::new; 718-720 Pig::new",
+                            "portalReference": "NetherPortalBlock.java:132-143,225-228 supplies absolute Nether XYZ",
+                            "graphReference": "Entity.java:3069-3102 copies/ejects, teleports chicken, creates pig, reattaches child",
+                            "eligibilityPredicate": "alive awake pig root, chicken passenger, cooldown elapsed, "
+                                                    "valid Overworld Nether portal and enabled Nether destination; "
+                                                    "pig canUsePortal(false) and canTeleport inherited; both registered "
+                                                    "factories create in destination; child teleport is native recursion",
+                            "applicabilityDemonstrated": False,
+                            "artifact": "NATIVE_CONDITIONAL_TRANSFER_SOURCE_PROOFS.json"}
         if entity_type in SOURCE_PROVEN_HURTING_NETHER and route in ("NETHER_ENTRY", "NETHER_RETURN") and variant is None:
             assert profile is not None
             methods = profile["declaringMethods"]
@@ -510,6 +576,269 @@ def build_census(inventory: dict, frozen: dict) -> dict:
                                                     "remains independently observable",
                             "applicabilityDemonstrated": False,
                             "artifact": "NATIVE_CONDITIONAL_TRANSFER_SOURCE_PROOFS.json"}
+        if entity_type in SOURCE_PROVEN_ARROW_NETHER and route in ("NETHER_ENTRY", "NETHER_RETURN") and variant is None:
+            assert profile is not None
+            methods = profile["declaringMethods"]
+            direct_step = [site for site in inventory["handlePortalDirectCallSites"]
+                           if site["file"] == "net/minecraft/world/entity/projectile/arrow/AbstractArrow.java"
+                           and "handlePortal(" in site["source"]]
+            if (methods["tick"] != SOURCE_PROVEN_ARROW_NETHER[entity_type]
+                    or methods["canUsePortal"] != "net.minecraft.world.entity.Entity"
+                    or methods["canTeleport"] != "net.minecraft.world.entity.Entity"
+                    or methods["teleport"] != "net.minecraft.world.entity.Entity"
+                    or "net.minecraft.world.entity.projectile.arrow.AbstractArrow" not in profile["hierarchy"]
+                    or len(direct_step) != 1):
+                raise ValueError(f"native arrow transfer caller/eligibility changed: {entity_type}")
+            expected = "TRANSFER"
+            handle = profile["methodReferences"]["handlePortal"]
+            tick = profile["methodReferences"]["tick"]
+            source_proof = {"kind": "conditional_arrow_projectile_nether_transfer",
+                            "sourceJarSha256": inventory["sourceJarSha256"],
+                            "mappedBinarySha256": inventory["mappedBinarySha256"],
+                            "nativeOutcome": expected,
+                            "reference": {"file": handle["file"], "method": "handlePortal",
+                                          "line": handle["method"]["line"],
+                                          "sourceMethodSha256": handle["method"]["sourceSha256"],
+                                          "classBytecodeSha256": handle["classBytecodeSha256"]},
+                            "directEntryReference": direct_step[0],
+                            "tickReference": {"file": tick["file"], "method": "tick",
+                                              "line": tick["method"]["line"],
+                                              "sourceMethodSha256": tick["method"]["sourceSha256"],
+                                              "classBytecodeSha256": tick["classBytecodeSha256"]},
+                            "registrationReference": inventory["nativeNetherTransferFactories"][entity_type],
+                            "portalReference": "NetherPortalBlock.entityInside/getPortalDestination, pinned source lines 112-143",
+                            "creationReference": "Entity.teleportCrossDimension/EntityType.create, pinned source lines 3069-3093 and 296-305",
+                            "eligibilityPredicate": "alive standalone exact arrow projectile in flight with no cooldown; "
+                                                    "AbstractArrow.stepMoveAndHit calls handlePortal after contact; "
+                                                    "Entity.canUsePortal(false), canTeleport, and teleport inherited; "
+                                                    "registered constructor available in enabled Nether destination",
+                            "applicabilityDemonstrated": False,
+                            "artifact": "NATIVE_CONDITIONAL_TRANSFER_SOURCE_PROOFS.json"}
+        if entity_type in SOURCE_PROVEN_SHULKER_NETHER and route in ("NETHER_ENTRY", "NETHER_RETURN") and variant is None:
+            assert profile is not None
+            methods = profile["declaringMethods"]
+            tick = profile["methodReferences"]["tick"]
+            direct = [call for call in inventory["handlePortalDirectCallSites"]
+                      if call["file"] == tick["file"] and "this.handlePortal(" in call["source"]]
+            if (profile["concreteClass"] != "net.minecraft.world.entity.projectile.ShulkerBullet"
+                    or methods["tick"] != profile["concreteClass"]
+                    or methods["baseTick"] != "net.minecraft.world.entity.Entity"
+                    or methods["handlePortal"] != "net.minecraft.world.entity.Entity"
+                    or methods["canUsePortal"] != "net.minecraft.world.entity.Entity"
+                    or methods["canTeleport"] != "net.minecraft.world.entity.Entity"
+                    or methods["teleport"] != "net.minecraft.world.entity.Entity"
+                    or len(direct) != 1 or "super.tick(" not in tick["method"]["directCalls"]):
+                raise ValueError("native Shulker Bullet caller or eligibility changed")
+            expected = "TRANSFER"
+            handle = profile["methodReferences"]["handlePortal"]
+            source_proof = {"kind": "conditional_shulker_bullet_nether_transfer",
+                            "sourceJarSha256": inventory["sourceJarSha256"],
+                            "mappedBinarySha256": inventory["mappedBinarySha256"],
+                            "nativeOutcome": expected,
+                            "reference": {"file": handle["file"], "method": "handlePortal",
+                                          "line": handle["method"]["line"],
+                                          "sourceMethodSha256": handle["method"]["sourceSha256"],
+                                          "classBytecodeSha256": handle["classBytecodeSha256"]},
+                            "directEntryReference": direct[0],
+                            "tickReference": {"file": tick["file"], "method": "tick",
+                                              "line": tick["method"]["line"],
+                                              "sourceMethodSha256": tick["method"]["sourceSha256"],
+                                              "classBytecodeSha256": tick["classBytecodeSha256"],
+                                              "lexicalSuffixSha256": tick["method"]["lexicalSuffixSha256"]},
+                            "registrationReference": inventory["nativeNetherTransferFactories"][entity_type],
+                            "portalReference": "NetherPortalBlock.entityInside/getPortalDestination, pinned source lines 112-143",
+                            "creationReference": "Entity.teleportCrossDimension/EntityType.create, pinned source lines 3069-3093 and 296-305",
+                            "eligibilityPredicate": "alive standalone Shulker Bullet with no cooldown, clear portal contact "
+                                                    "and enabled Nether destination; ShulkerBullet.tick calls "
+                                                    "Entity.baseTick and then handlePortal directly; Entity.canUsePortal(false), "
+                                                    "canTeleport and teleport inherited; registered constructor available",
+                            "applicabilityDemonstrated": False,
+                            "artifact": "NATIVE_CONDITIONAL_TRANSFER_SOURCE_PROOFS.json"}
+        if (profile is not None and entity_type not in ALWAYS_NO_ENTRY and variant is None
+                and route in ("NETHER_ENTRY", "NETHER_RETURN") and expected is None):
+            # This is deliberately narrower than the whole Mob hierarchy. A subtype
+            # that overrides tick/baseTick or portal eligibility needs its own
+            # source proof and continuation audit, even if it happens to transfer.
+            methods = profile["declaringMethods"]
+            mob = "net.minecraft.world.entity.Mob"
+            living = "net.minecraft.world.entity.LivingEntity"
+            entity = "net.minecraft.world.entity.Entity"
+            if (methods["tick"] == mob and methods["baseTick"] == mob
+                    and methods["handlePortal"] == entity
+                    and methods["canUsePortal"] == living
+                    and methods["canTeleport"] == entity
+                    and methods["teleport"] == entity
+                    and mob in profile["hierarchy"]):
+                tick = profile["methodReferences"]["tick"]
+                base_tick = profile["methodReferences"]["baseTick"]
+                eligibility = profile["methodReferences"]["canUsePortal"]
+                handle = profile["methodReferences"]["handlePortal"]
+                if ("super.tick(" not in tick["method"]["directCalls"]
+                        or "super.baseTick(" not in base_tick["method"]["directCalls"]
+                        or entity_type not in inventory["registeredTypeIds"]):
+                    raise ValueError(f"inherited mob Nether caller chain changed: {entity_type}")
+                expected = "TRANSFER"
+                source_proof = {
+                    "kind": "conditional_inherited_mob_nether_transfer",
+                    "sourceJarSha256": inventory["sourceJarSha256"],
+                    "mappedBinarySha256": inventory["mappedBinarySha256"],
+                    "nativeOutcome": expected,
+                    "registeredTypeId": entity_type,
+                    "concreteClass": profile["concreteClass"],
+                    "reference": {"file": handle["file"], "method": "handlePortal",
+                                  "line": handle["method"]["line"],
+                                  "sourceMethodSha256": handle["method"]["sourceSha256"],
+                                  "classBytecodeSha256": handle["classBytecodeSha256"]},
+                    "tickReference": tick,
+                    "baseTickReference": base_tick,
+                    "eligibilityReference": eligibility,
+                    "inheritedChainReference": "Mob.java:341-346 -> LivingEntity.java:2739-2741 -> "
+                                               "Entity.java:515-532; Mob.java:281-283 -> "
+                                               "LivingEntity.java:412-422 -> Entity.java:519-532",
+                    "portalReference": "NetherPortalBlock.java:112-143,225-228; nonplayer transition time is zero",
+                    "creationReference": "Entity.java:3069-3093 and EntityType.java:296-305",
+                    "eligibilityPredicate": "alive awake standalone exact registered mob, cooldown elapsed, "
+                                            "valid Nether portal and enabled destination; non-Peaceful world "
+                                            "if the type requires it; Mob.tick calls LivingEntity.tick, "
+                                            "Mob.baseTick calls Entity.baseTick and handlePortal; "
+                                            "LivingEntity.canUsePortal and Entity.canTeleport permit this state; "
+                                            "destination factory creates the concrete type",
+                    "applicabilityDemonstrated": False,
+                    "artifact": "NATIVE_CONDITIONAL_TRANSFER_SOURCE_PROOFS.json",
+                }
+        if (entity_type in SOURCE_PROVEN_MINECART_NETHER and variant is None
+                and graph == "standalone" and route in ("NETHER_ENTRY", "NETHER_RETURN")):
+            assert profile is not None
+            methods = profile["declaringMethods"]
+            entity = "net.minecraft.world.entity.Entity"
+            minecart = "net.minecraft.world.entity.vehicle.minecart.Minecart"
+            minecart_chest = "net.minecraft.world.entity.vehicle.minecart.MinecartChest"
+            abstract = "net.minecraft.world.entity.vehicle.minecart.AbstractMinecart"
+            container = "net.minecraft.world.entity.vehicle.minecart.AbstractMinecartContainer"
+            plain = entity_type == "minecraft:minecart"
+            inherited = type_rows["minecraft:chest_minecart"]
+            tick = profile["methodReferences"]["tick"]
+            abstract_tick = inherited["methodReferences"]["tick"]
+            direct = [call for call in inventory["handlePortalDirectCallSites"]
+                      if call["file"] == abstract_tick["file"] and "this.handlePortal(" in call["source"]]
+            if (methods["tick"] != (minecart if plain else abstract)
+                    or methods["baseTick"] != entity
+                    or not all(methods[name] == entity for name in
+                               ("handlePortal", "canUsePortal", "canTeleport", "teleport"))
+                    or abstract not in profile["hierarchy"]
+                    or profile["concreteClass"] != (minecart if plain else minecart_chest)
+                    or not plain and container not in profile["hierarchy"]
+                    or inherited["declaringMethods"]["tick"] != abstract
+                    or plain and "super.tick(" not in tick["method"]["directCalls"]
+                    or "this.handlePortal(" not in abstract_tick["method"]["directCalls"]
+                    or len(direct) != 1):
+                raise ValueError(f"pinned exact minecart portal caller changed: {entity_type}")
+            handle = profile["methodReferences"]["handlePortal"]
+            expected = "TRANSFER"
+            source_proof = {
+                "kind": ("conditional_empty_plain_minecart_nether_transfer" if plain
+                         else "conditional_chest_minecart_nether_transfer"),
+                "sourceJarSha256": inventory["sourceJarSha256"],
+                "mappedBinarySha256": inventory["mappedBinarySha256"],
+                "nativeOutcome": expected,
+                "registeredTypeId": entity_type,
+                "concreteClass": profile["concreteClass"],
+                "reference": {"file": handle["file"], "method": "handlePortal",
+                              "line": handle["method"]["line"],
+                              "sourceMethodSha256": handle["method"]["sourceSha256"],
+                              "classBytecodeSha256": handle["classBytecodeSha256"]},
+                "directEntryReference": direct[0],
+                "outerTickReference": tick,
+                "abstractTickReference": abstract_tick,
+                "registrationReference": (
+                    "EntityTypes.java:639-642 MINECART Minecart::new" if plain else
+                    "EntityTypes.java:267-270 CHEST_MINECART MinecartChest::new")
+                    + "; pinned source JAR SHA binds this constructor",
+                "portalReference": "NetherPortalBlock.java:112-143,225-228; nonplayer transition time is zero",
+                "eligibilityPredicate": (
+                    "alive empty standalone exact plain minecart" if plain else
+                    "alive standalone exact chest minecart with stable inventory or latent loot table")
+                    + ", no cooldown, valid Nether portal and enabled destination; "
+                    + ("Minecart.tick invokes " if plain else "MinecartChest inherits ")
+                    + "AbstractMinecart.tick, whose direct handlePortal call enters "
+                    "Entity.handlePortal; inherited Entity.canUsePortal and canTeleport "
+                    "permit this state; registered factory creates the concrete destination type",
+                "applicabilityDemonstrated": False,
+                "artifact": "NATIVE_CONDITIONAL_TRANSFER_SOURCE_PROOFS.json",
+            }
+        if (profile is not None and variant is None and graph == "standalone"
+                and route in ("NETHER_ENTRY", "NETHER_RETURN") and expected is None):
+            methods = profile["declaringMethods"]
+            boat = "net.minecraft.world.entity.vehicle.boat.AbstractBoat"
+            entity = "net.minecraft.world.entity.Entity"
+            if (methods["tick"] == boat and methods["baseTick"] == entity
+                    and all(methods[name] == entity for name in
+                            ("handlePortal", "canUsePortal", "canTeleport", "teleport"))
+                    and boat in profile["hierarchy"]):
+                tick = profile["methodReferences"]["tick"]
+                handle = profile["methodReferences"]["handlePortal"]
+                if (entity_type not in inventory["registeredTypeIds"]
+                        or "super.tick(" not in tick["method"]["directCalls"]
+                        or tick["method"]["lexicalSuffixBytes"] == 0):
+                    raise ValueError(f"pinned empty boat portal caller changed: {entity_type}")
+                expected = "TRANSFER"
+                source_proof = {
+                    "kind": "conditional_empty_boat_nether_transfer",
+                    "sourceJarSha256": inventory["sourceJarSha256"],
+                    "mappedBinarySha256": inventory["mappedBinarySha256"],
+                    "nativeOutcome": expected,
+                    "registeredTypeId": entity_type,
+                    "concreteClass": profile["concreteClass"],
+                    "reference": {"file": handle["file"], "method": "handlePortal",
+                                  "line": handle["method"]["line"],
+                                  "sourceMethodSha256": handle["method"]["sourceSha256"],
+                                  "classBytecodeSha256": handle["classBytecodeSha256"]},
+                    "tickReference": tick,
+                    "nativeContinuation": "AbstractBoat.java:206-288; suffix after super.tick "
+                                          "has lexical SHA " + tick["method"]["lexicalSuffixSha256"],
+                    "portalReference": "NetherPortalBlock.java:112-143,225-228; nonplayer transition time is zero",
+                    "creationReference": "Entity.java:3069-3093 and EntityType.java:296-305; "
+                                         "EntityTypes.java boat/raft registered factory",
+                    "eligibilityPredicate": "alive empty standalone registered boat/raft, no cooldown, "
+                                            "valid at least three-wide Nether portal and enabled destination; "
+                                            "AbstractBoat.tick invokes Entity.tick/baseTick/handlePortal; "
+                                            "Entity.canUsePortal and canTeleport permit this state; "
+                                            "destination factory creates the concrete type",
+                    "applicabilityDemonstrated": False,
+                    "artifact": "NATIVE_CONDITIONAL_TRANSFER_SOURCE_PROOFS.json",
+                }
+        if entity_type == "minecraft:pig" and variant is None and route == "END_GATEWAY":
+            gateway = next(portal for portal in inventory["portalImplementations"]
+                           if portal["class"] == "net.minecraft.world.level.block.EndGatewayBlock")
+            if (profile["declaringMethods"]["canUsePortal"] != "net.minecraft.world.entity.LivingEntity"
+                    or profile["declaringMethods"]["teleport"] != "net.minecraft.world.entity.Entity"
+                    or gateway["entryMethod"]["line"] != 95
+                    or gateway["destinationMethod"]["line"] != 108):
+                raise ValueError("pinned pig gateway eligibility or portal implementation changed")
+            expected = "SAME_DIMENSION_TRANSFER"
+            source_proof = {
+                "kind": "native_control_pig_end_gateway_same_dimension",
+                "sourceJarSha256": inventory["sourceJarSha256"],
+                "mappedBinarySha256": inventory["mappedBinarySha256"],
+                "nativeOutcome": expected,
+                "reference": {"file": gateway["sourceFile"], "method": "entityInside",
+                              "line": gateway["entryMethod"]["line"],
+                              "sourceMethodSha256": gateway["entryMethod"]["sourceSha256"],
+                              "classBytecodeSha256": gateway["classBytecodeSha256"]},
+                "destinationReference": gateway["destinationMethod"],
+                "eligibilityPredicate": "alive standalone pig contacts an uncooling End gateway "
+                                        "with configured far exit; native same-dimension teleport "
+                                        "keeps UUID and sets cooldown",
+                "applicabilityDemonstrated": True,
+                "artifact": "native-gateway-control-001/result.json",
+            }
+            native_control = {
+                "sourceJarSha256": inventory["sourceJarSha256"],
+                "mappedBinarySha256": inventory["mappedBinarySha256"],
+                "observedOutcome": expected,
+                "path": "native-gateway-control-001/result.json",
+                "sha256": "F1F7335B599CDCA7E9AC6DE36B93D744BAE4B2A6F14922994E47ED893095865F",
+            }
         predicates = ["alive at contact", "not a passenger unless type override permits",
                       "portal processor ready; cooldown elapsed", "valid portal geometry and destination world",
                       "source and destination owner context valid"]
@@ -525,6 +854,9 @@ def build_census(inventory: dict, frozen: dict) -> dict:
             predicates.append("gateway block entity exists, is not cooling down, and supplies an exit position")
         semantic_assertions = (["No destination identity or leaked portal session; preserve the native source and passenger graph state."]
                                if expected in ("REFUSAL", "NO_NATIVE_ENTRY_PATH") else
+                               ["Move the same native entity to the gateway exit under its destination owner; "
+                                "vacate its old location without duplicating its UUID or tracker."]
+                               if expected == "SAME_DIMENSION_TRANSFER" else
                                ["After eligible transfer, retire source and publish one destination incarnation under destination owner."])
         if entity_type == "minecraft:falling_block":
             semantic_assertions += ["Preserve carried block state and native landing, drop, and damage behavior."]
@@ -541,7 +873,8 @@ def build_census(inventory: dict, frozen: dict) -> dict:
         if route == "END_GATEWAY":
             semantic_assertions += ["Prove same-dimension gateway coordinates, portal ticket, and cooldown behavior."]
         required_assertions = (["source_unchanged", "destination_absent", "portal_session_absent", "graph_unchanged"]
-                               if expected in ("REFUSAL", "NO_NATIVE_ENTRY_PATH") else [])
+                               if expected in ("REFUSAL", "NO_NATIVE_ENTRY_PATH")
+                               and entity_type != "minecraft:leash_knot" else [])
         rows.append({"id": v2_id, "legacyCaseId": legacy, "entityType": entity_type,
                      "variant": variant, "route": route, "graph": graph,
                      "sourceDimension": source_dim, "destinationDimension": destination_dim,
@@ -551,7 +884,7 @@ def build_census(inventory: dict, frozen: dict) -> dict:
                      "sourceReference": {"portalFile": portal_file, "entryMethod": entry_method,
                                          "destinationMethod": destination_method,
                                          "callerMethods": profile["methodReferences"] if profile else None},
-                     "sourceProof": source_proof, "nativeControlReceipt": None,
+                     "sourceProof": source_proof, "nativeControlReceipt": native_control,
                      "expectedNativeOutcome": expected, "observedPhoeniumResult": None,
                      "fixture": ({"contactImpossible": True, "reason": "No native portal entry path"} if no_entry else
                                  {"contactImpossible": False, "statePredicate": condition, "constructed": False}

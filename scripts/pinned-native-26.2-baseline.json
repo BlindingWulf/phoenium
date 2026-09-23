@@ -23091,6 +23091,12 @@
     }
   },
   "nativeNetherTransferFactories": {
+    "minecraft:arrow": {
+      "file": "net/minecraft/world/entity/EntityTypes.java",
+      "line": 181,
+      "registeredConstructor": "Arrow::new",
+      "declarationSha256": "0A15DB7E133D2CFAB0A6EA8C2EF16F6EE3A283CED30033C06A268D821C7FF9F2"
+    },
     "minecraft:breeze_wind_charge": {
       "file": "net/minecraft/world/entity/EntityTypes.java",
       "line": 232,
@@ -23127,6 +23133,12 @@
       "registeredConstructor": "ThrownLingeringPotion::new",
       "declarationSha256": "F622E430740451FFBCE0CEB536263DF33562278EF9BA5961BF70C8DF1C2ED6AE"
     },
+    "minecraft:shulker_bullet": {
+      "file": "net/minecraft/world/entity/EntityTypes.java",
+      "line": 795,
+      "registeredConstructor": "ShulkerBullet::new",
+      "declarationSha256": "21D53EF392ADD50CF3D8F50B9C686E9273EBE89D3E5E99C8E7BA0509443E4A2B"
+    },
     "minecraft:small_fireball": {
       "file": "net/minecraft/world/entity/EntityTypes.java",
       "line": 829,
@@ -23139,11 +23151,23 @@
       "registeredConstructor": "Snowball::new",
       "declarationSha256": "BCCF55A92945316B357E0925A2EB461F416FDD7DE7E26750DD47D360A2A3783D"
     },
+    "minecraft:spectral_arrow": {
+      "file": "net/minecraft/world/entity/EntityTypes.java",
+      "line": 854,
+      "registeredConstructor": "SpectralArrow::new",
+      "declarationSha256": "92445C1B0227BF42A34D39F0C3D3CFF4B2536653B97430E0EB6094E7F236892B"
+    },
     "minecraft:splash_potion": {
       "file": "net/minecraft/world/entity/EntityTypes.java",
       "line": 754,
       "registeredConstructor": "ThrownSplashPotion::new",
       "declarationSha256": "5741D9EBFBE5DDF97E23EBED96CFA58156F059347C36ACE18903509F7302C9CF"
+    },
+    "minecraft:trident": {
+      "file": "net/minecraft/world/entity/EntityTypes.java",
+      "line": 933,
+      "registeredConstructor": "ThrownTrident::new",
+      "declarationSha256": "B81E9253F17DBE24259B7AAB214AE478EDD3773182DCAE4DC4C427BF45DFD138"
     },
     "minecraft:wind_charge": {
       "file": "net/minecraft/world/entity/EntityTypes.java",

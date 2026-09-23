@@ -1,0 +1,40 @@
+{
+  "schema": "stage7-pinned-tnt-direct-portal-profile-v1",
+  "minecraftVersion": "26.2",
+  "mappedSourceSha256": "055D5A99D49917A03F68007A1AC2F1D0CBD84E28A16D953C6FFC943CE3E15E1E",
+  "mappedBinarySha256": "BA0569DEEC34D82FB3B31BC71F2400EE735E5711D4C4F54CE5ED9A789EA52892",
+  "class": "net.minecraft.world.entity.item.PrimedTnt",
+  "firstInstalledRed": {
+    "auditNamespace": "storm-full-cfb5-w4-2",
+    "uuid": "b5536016-46c4-5639-9d81-f656b587142e",
+    "phase": "NATIVE_UNRETAINED",
+    "route": "NETHER_ENTRY",
+    "sourceWorld": "minecraft:overworld",
+    "destinationWorld": "minecraft:the_nether",
+    "nativePortalClassification": "UNRETAINED_ROOT",
+    "handlePortalCallDepth": 1,
+    "crash": "regional service producer reached foreign owner during ServerLevel.addDuringTeleport"
+  },
+  "tick": {
+    "sourceLines": [99, 122],
+    "directPortalCallSourceLine": 100,
+    "directPortalCallBytecodeOffset": 1,
+    "suffixStartBytecodeOffset": 4,
+    "semanticPrefix": ["ALOAD 0", "INVOKEVIRTUAL PrimedTnt.handlePortal()V"],
+    "liveLocalsAtCut": ["this"],
+    "suffixLocalSlot1": "fuse, first assigned after cut at bytecode offset 72",
+    "suffixHasBranches": true,
+    "suffixHasExceptionHandlers": false,
+    "canonicalAsmSuffixSha256": "4A6481C82FA4164611B669E0C507B59F5C277309A888E505B801CBB03E7F6151",
+    "asmReadMode": "ClassReader.EXPAND_FRAMES, matching the existing FallingBlock native binding test"
+  },
+  "teleportOverride": {
+    "sourceLines": [197, 203],
+    "nativeSuperTeleportBytecodeOffset": 2,
+    "returnedReplacementSetterBytecodeOffset": 20,
+    "setterArgumentBytecode": "ICONST_1",
+    "setter": "PrimedTnt.setUsedPortal(true) on returned replacement",
+    "ownerRequirement": "destination owner after Entity.teleport returns"
+  },
+  "retainedAdapterBoundary": "Suspend at Entity.handlePortal destination lookup, return from PrimedTnt.tick after the direct call, prepare and run native teleport owner-free, then resume the pinned tick suffix on the retired source under its source owner."
+}
