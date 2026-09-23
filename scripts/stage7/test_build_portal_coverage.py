@@ -255,7 +255,7 @@ class CoverageTests(unittest.TestCase):
         for material in ("sand", "gravel", "anvil"):
             name = f"F1-{material}-native-fall-end-entry"
             uuid = "12345678-1234-1234-1234-123456789abc"
-            state = f"Block{{minecraft:{material}}}"
+            state = f"Block{{minecraft:{material}}}" + ("[facing=north]" if material == "anvil" else "")
             source = {"uuid": uuid, "object": "source-1", "type": "minecraft:falling_block",
                       "world": "minecraft:overworld", "x": 0.5, "y": 72.96, "z": 0.5,
                       "fallingState": state}
@@ -283,6 +283,12 @@ class CoverageTests(unittest.TestCase):
                 rejected = {**cell, field: bad}
                 witness.receipt_data[name + "-source-cell"] = rejected
                 self.assertEqual(coverage.falling_source_cell_assertions(witness, material), set(), field)
+            if material == "anvil":
+                wrong_state = "Block{minecraft:anvil}[facing=south]"
+                witness.receipt_data[name + "-source"] = {**source, "fallingState": wrong_state}
+                witness.receipt_data[name + "-source-cell"] = {**cell, "sourceFallingState": wrong_state}
+                self.assertEqual(coverage.falling_source_cell_assertions(witness, material), set(),
+                                 "changed anvil orientation must not inherit the default-state proof")
             witness.receipt_data.pop(name + "-source-cell")
             self.assertEqual(coverage.falling_source_cell_assertions(witness, material), set())
 

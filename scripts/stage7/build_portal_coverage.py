@@ -916,7 +916,9 @@ def falling_source_cell_assertions(card: Card, material: str) -> set[str]:
     if not isinstance(source, dict) or not isinstance(cell, dict):
         return set()
     uuid = source.get("uuid")
-    state = "Block{minecraft:" + material + "}"
+    # The fixture's default anvil block state carries a facing property. Require
+    # the exact native value observed for its unqualified setblock command.
+    state = "Block{minecraft:" + material + "}" + ("[facing=north]" if material == "anvil" else "")
     if (not isinstance(uuid, str) or re.fullmatch(r"[0-9a-fA-F-]{36}", uuid) is None
             or source.get("type") != "minecraft:falling_block"
             or source.get("world") != "minecraft:overworld"
