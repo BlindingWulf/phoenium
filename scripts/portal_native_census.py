@@ -516,24 +516,29 @@ def build_census(inventory: dict, frozen: dict) -> dict:
                      if row["sourceProof"] and row["sourceProof"]["nativeOutcome"] == "NO_NATIVE_ENTRY_PATH"}
     conditional_proofs = {row["id"]: row["sourceProof"] for row in rows
                           if row["sourceProof"] and row["sourceProof"]["nativeOutcome"] == "REFUSAL"}
+    vocabulary = ["TRANSFER_VERIFIED", "NATIVE_REFUSAL_VERIFIED",
+                  "NO_NATIVE_ENTRY_PATH_VERIFIED", "ROUTE_NOT_APPLICABLE_VERIFIED",
+                  "SAME_DIMENSION_TRANSFER_VERIFIED"]
+    counts = {name: 0 for name in vocabulary}
+    counts["UNRESOLVED"] = len(rows)
     return {"schemaVersion": 2, "gameVersion": "Minecraft 26.2",
             "sourceJarSha256": inventory["sourceJarSha256"], "mappedBinarySha256": inventory["mappedBinarySha256"],
             "registeredTypeCount": inventory["registeredTypeCount"], "callerProfileCount": inventory["callerProfileCount"],
             "frozenCaseCount": len(ids), "frozenIdsSha256": ids_sha,
             "frozenIdMapping": mapping, "addedCaseCount": len(rows) - len(ids),
-            "dispositionVocabulary": ["TRANSFER_VERIFIED", "NATIVE_REFUSAL_VERIFIED",
-                                      "NO_NATIVE_ENTRY_PATH_VERIFIED", "ROUTE_NOT_APPLICABLE_VERIFIED",
-                                      "SAME_DIMENSION_TRANSFER_VERIFIED"],
+            "dispositionVocabulary": vocabulary, "dispositionCounts": counts,
             "nativeNoEntrySourceProofs": source_proofs,
             "nativeConditionalRefusalSourceProofs": conditional_proofs, "rows": rows}
 
 
 def write_report(path: pathlib.Path, census: dict, drift: dict) -> None:
     categories = collections.Counter(row["disposition"] or "UNRESOLVED" for row in census["rows"])
+    explicit_counts = {name: categories[name] for name in census["dispositionVocabulary"]}
+    explicit_counts["UNRESOLVED"] = categories["UNRESOLVED"]
     lines = ["# Pinned 26.2 portal behavior census v2", "",
              f"Registry: {census['registeredTypeCount']} types; caller fingerprints: {census['callerProfileCount']}.",
              f"Frozen IDs: {census['frozenCaseCount']} mapped exactly; added obligations: {census['addedCaseCount']}.",
-             f"Drift gate: {'PASS' if drift['pass'] else 'FAIL'}. Dispositions: {dict(categories)}.", "",
+             f"Drift gate: {'PASS' if drift['pass'] else 'FAIL'}. Dispositions: {explicit_counts}.", "",
              "The lexical suffix hashes detect changed source tails; they do not establish semantic equivalence.",
              "A null disposition is an open obligation. The source-derived no-entry expectation alone does not earn one.", "",
              "| Old ID | V2 ID | Native expectation | PHOENIUM observation | Disposition |",
