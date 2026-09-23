@@ -50,6 +50,10 @@ SOURCE_PROVEN_HURTING_NETHER = {
     "minecraft:fireball", "minecraft:small_fireball", "minecraft:dragon_fireball",
     "minecraft:wither_skull", "minecraft:wind_charge", "minecraft:breeze_wind_charge",
 }
+SOURCE_PROVEN_THROWABLE_NETHER = {
+    "minecraft:egg", "minecraft:snowball", "minecraft:splash_potion",
+    "minecraft:lingering_potion", "minecraft:experience_bottle",
+}
 
 
 def sha(data: bytes) -> str:
@@ -103,6 +107,7 @@ def source_method(source: str, method: str) -> dict | None:
             "lexicalSuffixBytes": len(suffix.encode()),
             "directCalls": sorted(set(re.findall(r"\b(?:this\.|super\.)?(?:handlePortal|baseTick|rideTick|tick)\s*\(", body))),
             "unconditionalReturnFalse": bool(re.fullmatch(r"\s*return\s+false\s*;\s*", body[body.find("{") + 1:body.rfind("}")])),
+            "unconditionalReturnTrue": bool(re.fullmatch(r"\s*return\s+true\s*;\s*", body[body.find("{") + 1:body.rfind("}")])),
         }
     return None
 
@@ -157,7 +162,7 @@ def falling_materials(sources: zipfile.ZipFile) -> list[dict]:
     colors = re.findall(r'^\s*([A-Z_]+)\(\d+,\s*"([a-z_]+)"', dye, re.M)
     assert len(colors) == 16, f"expected 16 pinned dye colors, got {len(colors)}"
     result = []
-    constructors = ("SandBlock", "ColoredFallingBlock", "AnvilBlock", "DragonEggBlock", "BrushableBlock", "ScaffoldingBlock", "PointedDripstoneBlock")
+    constructors = ("SandBlock", "ColoredFallingBlock", "AnvilBlock", "DragonEggBlock", "BrushableBlock", "ScaffoldingBlock", "PointedDripstoneBlock", "SulfurSpikeBlock")
     declarations = list(re.finditer(r"public static final Block\s+([A-Z0-9_]+)\s*=\s*register\(", blocks))
     for index, match in enumerate(declarations):
         end = declarations[index + 1].start() if index + 1 < len(declarations) else len(blocks)
@@ -171,9 +176,17 @@ def falling_materials(sources: zipfile.ZipFile) -> list[dict]:
             continue
         if ctor == "PointedDripstoneBlock" and name != "pointed_dripstone":
             continue
+        if ctor == "SulfurSpikeBlock":
+            assert name == "sulfur_spike"
+            speleothem = sources.read("net/minecraft/world/level/block/SpeleothemBlock.java").decode()
+            assert "FallingBlockEntity.fall(level, fallPos, fallState)" in speleothem
         result.append({"blockState": "minecraft:" + name, "nativeProducer": ctor,
                        "sourceReference": {"file": "net/minecraft/world/level/block/Blocks.java",
-                                           "line": blocks.count("\n", 0, match.start()) + 1}})
+                                           "line": blocks.count("\n", 0, match.start()) + 1},
+                       **({"nativeFallCall": {"file": "net/minecraft/world/level/block/SpeleothemBlock.java",
+                                               "line": speleothem.count("\n", 0,
+                                                   speleothem.index("FallingBlockEntity.fall(level, fallPos, fallState)")) + 1}}
+                          if ctor == "SulfurSpikeBlock" else {})})
     for _, color in colors:
         result.append({"blockState": f"minecraft:{color}_concrete_powder", "nativeProducer": "ConcretePowderBlock",
                        "sourceReference": {"file": "net/minecraft/world/level/block/Blocks.java", "line": 3682}})
@@ -182,7 +195,7 @@ def falling_materials(sources: zipfile.ZipFile) -> list[dict]:
     must = {"minecraft:sand", "minecraft:red_sand", "minecraft:gravel", "minecraft:anvil",
             "minecraft:chipped_anvil", "minecraft:damaged_anvil", "minecraft:dragon_egg",
             "minecraft:suspicious_sand", "minecraft:suspicious_gravel", "minecraft:scaffolding",
-            "minecraft:pointed_dripstone"}
+            "minecraft:pointed_dripstone", "minecraft:sulfur_spike"}
     assert must <= names, f"falling-state producer discovery missed {must - names}"
     assert len(names) == len(result), "duplicate falling block states"
     return result
@@ -270,7 +283,7 @@ def build_inventory(source_path: pathlib.Path, binary_path: pathlib.Path, javap:
             raise ValueError("portal implementation inventory differs from pinned three implementations")
         materials = falling_materials(sources)
         transfer_factories = {}
-        for entity_id in sorted(SOURCE_PROVEN_HURTING_NETHER):
+        for entity_id in sorted(SOURCE_PROVEN_HURTING_NETHER | SOURCE_PROVEN_THROWABLE_NETHER):
             constant = entity_id.removeprefix("minecraft:").upper()
             concrete_simple = types[entity_id].rsplit(".", 1)[-1]
             declaration = re.search(r"public static final EntityType<" + re.escape(concrete_simple)
@@ -330,7 +343,7 @@ def build_inventory(source_path: pathlib.Path, binary_path: pathlib.Path, javap:
                 "entityTypes": rows, "portalImplementations": portal_classes,
                 "fallingBlockStates": materials, "handlePortalDirectCallSites": handle_portal_calls,
                 "portalEligibilityPrimitives": eligibility_primitives,
-                "hurtingNetherTransferFactories": transfer_factories,
+                "nativeNetherTransferFactories": transfer_factories,
                 "scope": "Pinned vanilla 26.2 mapped source/binary and detectable registry/caller/portal drift; not arbitrary mod code."}
 
 
@@ -339,7 +352,7 @@ def drift_signature(inventory: dict) -> dict:
     return {key: inventory[key] for key in ("sourceJarSha256", "mappedBinarySha256", "registeredTypeCount",
                                             "registeredTypeIds", "callerProfileCount", "entityTypes",
                                             "portalImplementations", "fallingBlockStates", "handlePortalDirectCallSites",
-                                            "portalEligibilityPrimitives", "hurtingNetherTransferFactories")}
+                                            "portalEligibilityPrimitives", "nativeNetherTransferFactories")}
 
 
 def build_census(inventory: dict, frozen: dict) -> dict:
@@ -437,7 +450,7 @@ def build_census(inventory: dict, frozen: dict) -> dict:
                     not in profile["hierarchy"]):
                 raise ValueError(f"native transfer caller/eligibility changed: {entity_type}")
             expected = "TRANSFER"
-            factory = inventory["hurtingNetherTransferFactories"][entity_type]
+            factory = inventory["nativeNetherTransferFactories"][entity_type]
             handle = profile["methodReferences"]["handlePortal"]
             source_proof = {"kind": "conditional_hurting_projectile_nether_transfer",
                             "sourceJarSha256": inventory["sourceJarSha256"],
@@ -453,6 +466,46 @@ def build_census(inventory: dict, frozen: dict) -> dict:
                             "eligibilityPredicate": "alive standalone projectile, no cooldown, valid Nether portal and destination; "
                                                     "Entity.canUsePortal(false), Entity.canTeleport, and Entity.teleport inherited; "
                                                     "registered exact class constructor available in enabled destination",
+                            "applicabilityDemonstrated": False,
+                            "artifact": "NATIVE_CONDITIONAL_TRANSFER_SOURCE_PROOFS.json"}
+        if entity_type in SOURCE_PROVEN_THROWABLE_NETHER and route in ("NETHER_ENTRY", "NETHER_RETURN") and variant is None:
+            assert profile is not None
+            methods = profile["declaringMethods"]
+            if (methods["tick"] != "net.minecraft.world.entity.projectile.ThrowableProjectile"
+                    or methods["canUsePortal"] != "net.minecraft.world.entity.projectile.ThrowableProjectile"
+                    or not profile["methodReferences"]["canUsePortal"]["method"]["unconditionalReturnTrue"]
+                    or methods["canTeleport"] != "net.minecraft.world.entity.Entity"
+                    or methods["teleport"] != "net.minecraft.world.entity.Entity"
+                    or "net.minecraft.world.entity.projectile.ThrowableProjectile" not in profile["hierarchy"]):
+                raise ValueError(f"native throwable transfer caller/eligibility changed: {entity_type}")
+            expected = "TRANSFER"
+            handle = profile["methodReferences"]["handlePortal"]
+            eligibility = profile["methodReferences"]["canUsePortal"]
+            tick = profile["methodReferences"]["tick"]
+            source_proof = {"kind": "conditional_throwable_projectile_nether_transfer",
+                            "sourceJarSha256": inventory["sourceJarSha256"],
+                            "mappedBinarySha256": inventory["mappedBinarySha256"],
+                            "nativeOutcome": expected,
+                            "reference": {"file": handle["file"], "method": "handlePortal",
+                                          "line": handle["method"]["line"],
+                                          "sourceMethodSha256": handle["method"]["sourceSha256"],
+                                          "classBytecodeSha256": handle["classBytecodeSha256"]},
+                            "eligibilityReference": {"file": eligibility["file"], "method": "canUsePortal",
+                                                     "line": eligibility["method"]["line"],
+                                                     "sourceMethodSha256": eligibility["method"]["sourceSha256"],
+                                                     "classBytecodeSha256": eligibility["classBytecodeSha256"]},
+                            "tickReference": {"file": tick["file"], "method": "tick",
+                                              "line": tick["method"]["line"],
+                                              "sourceMethodSha256": tick["method"]["sourceSha256"],
+                                              "classBytecodeSha256": tick["classBytecodeSha256"]},
+                            "registrationReference": inventory["nativeNetherTransferFactories"][entity_type],
+                            "portalReference": "NetherPortalBlock.entityInside/getPortalDestination, pinned source lines 112-143",
+                            "creationReference": "Entity.teleportCrossDimension/EntityType.create, pinned source lines 3069-3093 and 296-305",
+                            "eligibilityPredicate": "alive standalone exact throwable, cooldown elapsed, valid Nether portal and "
+                                                    "destination; ThrowableProjectile.canUsePortal(false) returns true, "
+                                                    "Entity.canTeleport and Entity.teleport inherited, registered exact "
+                                                    "constructor available in enabled destination; native impact suffix "
+                                                    "remains independently observable",
                             "applicabilityDemonstrated": False,
                             "artifact": "NATIVE_CONDITIONAL_TRANSFER_SOURCE_PROOFS.json"}
         predicates = ["alive at contact", "not a passenger unless type override permits",
