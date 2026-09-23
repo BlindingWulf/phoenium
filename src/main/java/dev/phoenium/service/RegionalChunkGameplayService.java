@@ -3,6 +3,7 @@ package dev.phoenium.service;
 import dev.phoenium.chunk.FullEntityFacts;
 import dev.phoenium.chunk.FullFinishingScoreboard;
 import dev.phoenium.chunk.FullFinishingServices;
+import dev.phoenium.chunk.ResidentChunkSourceBinding;
 import dev.phoenium.core.WorldId;
 import dev.phoenium.mixin.RegionalChunkMapAccess;
 import dev.phoenium.mixin.RegionalServerChunkCacheAccess;
@@ -25,13 +26,17 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.core.QuartPos;
 import net.minecraft.server.level.*;
 import net.minecraft.server.network.ServerGamePacketListenerImpl;
+import net.minecraft.util.Mth;
 import net.minecraft.world.entity.*;
+import net.minecraft.world.entity.boss.enderdragon.EnderDragon;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.level.*;
 import net.minecraft.world.level.biome.MobSpawnSettings;
+import net.minecraft.world.level.chunk.status.ChunkStatus;
 import net.minecraft.world.level.chunk.LevelChunk;
 import net.minecraft.world.level.entity.EntityTickList;
 import net.minecraft.world.level.block.entity.TickingBlockEntity;
+import net.minecraft.world.level.levelgen.feature.EndPodiumFeature;
 import net.minecraft.world.phys.Vec3;
 
 /** Owner-free coordinator for ServerChunkCache's exact selected gameplay cohorts. Temporary spawn
@@ -303,36 +308,139 @@ public final class RegionalChunkGameplayService implements NaturalSpawnContinuat
         FullFinishingServices.requireWorld(level, FullFinishingServices.Kind.TRACKER);
         FullFinishingServices.requireServer(level.getServer(), FullFinishingServices.Kind.CONNECTIONS);
         forEachLiveEntityTickAlias(entities, entity -> {
-            FullEntityFacts.Candidate source = finishing.entityFacts.trackingCandidate(level, entity);
-            List<FullEntityFacts.Candidate> passengers = finishing.entityFacts.trackingPassengers(source);
-            FullEntityFacts.VehicleRelation vehicle = finishing.entityFacts.trackingVehicle(source);
-            RoutingKey key = key(source); LinkedHashSet<RoutingKey> footprint = new LinkedHashSet<>();
-            TopologyPlanner planner = new TopologyPlanner();
-            footprint.addAll(planner.requiredClosure(Set.of(key), 1));
-            passengers.forEach(passenger -> footprint.addAll(planner.requiredClosure(Set.of(key(passenger)), 1)));
-            if (vehicle.vehicle() != null) footprint.addAll(planner.requiredClosure(Set.of(key(vehicle.vehicle())), 1));
-            int entityRange = source.fact().type().clientTrackingRange() * 16;
-            for (var passenger : passengers)
-                entityRange = Math.max(entityRange, passenger.fact().type().clientTrackingRange() * 16);
-            int entityRecipientRadius = Math.min((level.getServer().getScaledTrackingDistance(entityRange) + 15) / 16 + 2,
-                ((RegionalChunkMapAccess) map).phoenium$getServerViewDistance() + 2);
-            PlayerCut currentPlayers = capturePlayers();
-            for (PlayerProjection player : currentPlayers.players)
-                if (Math.abs((long) player.key.x() - key.x()) <= entityRecipientRadius
-                        && Math.abs((long) player.key.z() - key.z()) <= entityRecipientRadius) footprint.add(player.key);
-            dispatcher.ensureClosure(Set.copyOf(footprint));
-            dispatcher.executeAndDrain(key, RegionalServiceKind.CHUNK_GAMEPLAY, ignored -> {
-                requireEntity(source, key);
-                if (!finishing.entityFacts.validTrackingPassengers(source, passengers))
-                    throw new IllegalStateException("entity tick passenger relation changed");
-                if (!finishing.entityFacts.validTrackingVehicle(vehicle))
-                    throw new IllegalStateException("entity tick vehicle relation changed");
-                output.accept(entity);
-            });
+            // A dragon lazily reads the native 24-node heightmap ring. Selection can change
+            // while the owner-free FULL inputs settle, so repeat its preflight before any
+            // native body or RNG draw. A persistently moving cut waits for the next tick.
+            int maximumAttempts = entity instanceof EnderDragon ? 3 : 1;
+            for (int attempt = 0; attempt < maximumAttempts; attempt++) {
+                if (attempt > 0 && entity.isRemoved()) break;
+                FullEntityFacts.Candidate source = finishing.entityFacts.trackingCandidate(level, entity);
+                List<FullEntityFacts.Candidate> passengers = finishing.entityFacts.trackingPassengers(source);
+                FullEntityFacts.VehicleRelation vehicle = finishing.entityFacts.trackingVehicle(source);
+                RoutingKey key = key(source); LinkedHashSet<RoutingKey> footprint = new LinkedHashSet<>();
+                TopologyPlanner planner = new TopologyPlanner();
+                footprint.addAll(planner.requiredClosure(Set.of(key), 1));
+                passengers.forEach(passenger -> footprint.addAll(planner.requiredClosure(Set.of(key(passenger)), 1)));
+                if (vehicle.vehicle() != null) footprint.addAll(planner.requiredClosure(Set.of(key(vehicle.vehicle())), 1));
+                int entityRange = source.fact().type().clientTrackingRange() * 16;
+                for (var passenger : passengers)
+                    entityRange = Math.max(entityRange, passenger.fact().type().clientTrackingRange() * 16);
+                int entityRecipientRadius = Math.min((level.getServer().getScaledTrackingDistance(entityRange) + 15) / 16 + 2,
+                    ((RegionalChunkMapAccess) map).phoenium$getServerViewDistance() + 2);
+                PlayerCut currentPlayers = capturePlayers();
+                for (PlayerProjection player : currentPlayers.players)
+                    if (Math.abs((long) player.key.x() - key.x()) <= entityRecipientRadius
+                            && Math.abs((long) player.key.z() - key.z()) <= entityRecipientRadius) footprint.add(player.key);
+                BlockPos fightOrigin = entity instanceof EnderDragon dragon ? dragon.getFightOrigin().immutable() : null;
+                List<ChunkPos> dragonInputs = fightOrigin == null ? List.of() : dragonHeightmapInputChunks(fightOrigin);
+                for (ChunkPos input : dragonInputs) footprint.add(new RoutingKey(world, input.x(), input.z()));
+                Set<RoutingKey> closure = Set.copyOf(footprint);
+                dispatcher.ensureClosure(closure);
+                DragonHeightmapCut dragonCut = fightOrigin == null ? null : prepareDragonHeightmapInputs(dragonInputs);
+                if (fightOrigin != null && dragonCut == null) continue;
+                boolean[] stale = {false};
+                dispatcher.executeAndDrain(key, RegionalServiceKind.CHUNK_GAMEPLAY, ignored -> {
+                    if (dragonCut != null && (!((EnderDragon) entity).getFightOrigin().equals(fightOrigin)
+                            || !dragonInputRoutesCurrent(key, closure) || !dragonCut.current())) {
+                        stale[0] = true;
+                        return;
+                    }
+                    requireEntity(source, key);
+                    if (!finishing.entityFacts.validTrackingPassengers(source, passengers))
+                        throw new IllegalStateException("entity tick passenger relation changed");
+                    if (!finishing.entityFacts.validTrackingVehicle(vehicle))
+                        throw new IllegalStateException("entity tick vehicle relation changed");
+                    output.accept(entity);
+                });
+                if (!stale[0]) break;
+            }
             // The enclosing native owner callback has returned. Finish this finite
             // portal operation before the next entity tick/RNG draw in native order.
             dev.phoenium.Phoenium.liveRuntime().advanceMobPortalAfterEntityCallback();
         });
+    }
+
+    /** Pinned 26.2 EnderDragon.findClosestNode initializes 12 radius-60, 8 radius-40,
+     * and 4 radius-20 heightmap nodes around absolute zero. Dragon phases also query
+     * EndPodiumFeature.getLocation(fightOrigin). The list is fixed before admission. */
+    static List<ChunkPos> dragonHeightmapInputChunks(BlockPos fightOrigin) {
+        var inputs = new LinkedHashSet<ChunkPos>();
+        for (int i = 0; i < 24; i++) {
+            int multiplier = i;
+            float radius, denominator;
+            if (i < 12) { radius = 60.0F; denominator = 12.0F; }
+            else if (i < 20) { multiplier -= 12; radius = 40.0F; denominator = 8.0F; }
+            else { multiplier -= 20; radius = 20.0F; denominator = 4.0F; }
+            float angle = 2.0F * ((float) -Math.PI + (float) (Math.PI / denominator) * multiplier);
+            int nodeX = Mth.floor(radius * Mth.cos(angle));
+            int nodeZ = Mth.floor(radius * Mth.sin(angle));
+            inputs.add(ChunkPos.containing(new BlockPos(nodeX, 0, nodeZ)));
+        }
+        inputs.add(ChunkPos.containing(EndPodiumFeature.getLocation(fightOrigin)));
+        return List.copyOf(inputs);
+    }
+
+    /** Level.getHeight first tests ServerChunkCache.hasChunk. Preserve its absent-chunk
+     * fallback instead of force-loading all possible node cells. */
+    private DragonHeightmapCut prepareDragonHeightmapInputs(List<ChunkPos> inputs) {
+        var selected = new LinkedHashMap<ChunkPos, LevelChunk>();
+        var residents = new LinkedHashMap<ChunkPos, ResidentChunkSourceBinding>();
+        for (ChunkPos input : inputs) {
+            LevelChunk ready = null;
+            if (cache.hasChunk(input.x(), input.z())) {
+                var loaded = cache.getChunk(input.x(), input.z(), ChunkStatus.FULL, true);
+                if (!(loaded instanceof LevelChunk full)) return null;
+                ready = full;
+                var resident = ResidentChunkSourceBinding.capture(level, input.pack());
+                if (resident == null || resident.chunk() != ready) return null;
+                residents.put(input, resident);
+            }
+            selected.put(input, ready);
+        }
+        return new DragonHeightmapCut(selected, residents);
+    }
+
+    private boolean dragonInputRoutesCurrent(RoutingKey source, Set<RoutingKey> closure) {
+        var active = OwnershipContext.current().orElseThrow();
+        var route = directory.resolve(source).orElse(null);
+        if (route == null || !route.region().equals(active.region())) return false;
+        for (RoutingKey key : closure) {
+            var current = directory.resolve(key).orElse(null);
+            if (current == null || !current.region().equals(route.region())
+                    || !current.generation().equals(route.generation())
+                    || !current.ownerEpoch().equals(route.ownerEpoch())) return false;
+        }
+        return true;
+    }
+
+    static <T> boolean dragonHeightmapSelectionsCurrent(Map<ChunkPos, T> selected,
+            java.util.function.Predicate<ChunkPos> hasChunk,
+            java.util.function.Function<ChunkPos, T> currentChunk) {
+        for (var input : selected.entrySet()) {
+            boolean present = input.getValue() != null;
+            if (hasChunk.test(input.getKey()) != present) return false;
+            if (present && currentChunk.apply(input.getKey()) != input.getValue()) return false;
+        }
+        return true;
+    }
+
+    private final class DragonHeightmapCut {
+        private final Map<ChunkPos, LevelChunk> selected;
+        private final Map<ChunkPos, ResidentChunkSourceBinding> residents;
+        DragonHeightmapCut(Map<ChunkPos, LevelChunk> selected,
+                           Map<ChunkPos, ResidentChunkSourceBinding> residents) {
+            this.selected = Collections.unmodifiableMap(new LinkedHashMap<>(selected));
+            this.residents = Map.copyOf(residents);
+        }
+        boolean current() {
+            if (!dragonHeightmapSelectionsCurrent(selected,
+                    input -> cache.hasChunk(input.x(), input.z()),
+                    input -> cache.getChunkNow(input.x(), input.z()))) return false;
+            for (var resident : residents.values()) if (!resident.current()) return false;
+            for (ChunkPos input : selected.keySet())
+                dispatcher.requireCurrentOwner(new RoutingKey(world, input.x(), input.z()));
+            return true;
+        }
     }
 
     /** EntityTickList keeps iterating its old snapshot when an entity is removed during that
