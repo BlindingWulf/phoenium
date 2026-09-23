@@ -269,10 +269,20 @@ public final class Stage7RepairClientTest implements FabricClientGameTest {
         health(active);pass(active,"empty anchor fell back, charge remained zero, reconnect usable");
     }
     void deathAndClientRespawn()throws Exception {
-        JsonObject old=player();cmd("kill "+USER);context.waitTicks(110);
+        // A just-teleported or just-respawned player can still have native damage
+        // immunity. /kill reports its target even when that hit is ignored, so
+        // establish a settled live incarnation before issuing the one death.
+        context.waitTicks(120);
+        JsonObject old=player();
+        require(!old.get("removed").getAsBoolean()&&old.get("health").getAsDouble()>0,
+            "death fixture did not begin with a live player: "+old);
+        cmd("kill "+USER);context.waitTicks(110);
         JsonObject dead=player();
+        receipt.add(active+"-deathRetirement",dead.deepCopy());
+        require(dead.get("object").equals(old.get("object")),
+            "death fixture changed player incarnation before client Respawn");
         require(dead.get("removed").getAsBoolean()&&dead.get("deathTime").getAsInt()>=20,
-            "native death retirement missing");
+            "native death retirement missing: "+dead);
         context.runOnClient(c->c.player.respawn());
         for(int i=0;i<180;i++){context.waitTick();JsonObject current=player();
             if(!current.get("removed").getAsBoolean()&&current.get("health").getAsDouble()>0
