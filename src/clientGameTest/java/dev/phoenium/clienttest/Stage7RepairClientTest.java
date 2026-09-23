@@ -34,17 +34,20 @@ public final class Stage7RepairClientTest implements FabricClientGameTest {
             connect();
             if(group.equals("end-falling")){fallingEndCards();}
             else if(group.equals("selection-holes")){
+                cmd("gamemode creative "+USER);
                 int sequence=0;
                 for(String type:List.of("skeleton","horse","donkey","mule","skeleton_horse",
                         "zombie_horse","llama","trader_llama"))
                     for(String from:List.of(OW,NETHER))mobPortalCase(type,from,1,sequence++);
             }
             else if(group.equals("merchant-holes")){
+                cmd("gamemode creative "+USER);
                 int sequence=0;
                 for(String type:List.of("wandering_trader","villager"))
                     for(String from:List.of(OW,NETHER))mobPortalCase(type,from,1,sequence++);
             }
             else if(group.equals("armor-stand")){
+                cmd("gamemode creative "+USER);
                 decorativeLivingCase("armor_stand",OW,false,0);
                 decorativeLivingCase("armor_stand",NETHER,true,1);
                 decorativeLivingCase("mannequin",OW,false,2);
