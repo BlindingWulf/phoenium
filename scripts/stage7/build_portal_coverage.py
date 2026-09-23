@@ -73,6 +73,8 @@ PROJECTILE_REQUIREMENTS = {
 }
 SHA256_RE = re.compile(r"^[0-9A-F]{64}$")
 MOB_CARD = re.compile(r"M0-([a-z_]+)-size(\d+)-minecraft:(overworld|the_nether)")
+SILVERFISH_CARD = re.compile(r"M2-silverfish-(NETHER_ENTRY|NETHER_RETURN)")
+SILVERFISH_IDS = {"V2-SILVERFISH-NETHER_ENTRY", "V2-SILVERFISH-NETHER_RETURN"}
 ARMOR_CARD = re.compile(r"A0-(armor-stand|mannequin)-minecraft:(overworld|the_nether)-(empty|equipped)")
 FALLING_CARD = re.compile(r"F1-(sand|gravel|anvil)-native-fall-end-entry")
 ITEM_CARD = re.compile(r"I2-minecraft:(overworld|the_nether)")
@@ -381,9 +383,92 @@ def _trace_events(path: pathlib.Path) -> tuple[dict[str, Any], ...]:
     return tuple(events)
 
 
+def silverfish_snapshot_witness(card: Card, route: str) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any]] | None:
+    """Recover one exact M2 source, arrival and continuation from raw snapshots."""
+    match = SILVERFISH_CARD.fullmatch(card.name)
+    if (match is None or match.group(1) != route
+            or card.inputs_data.get("group") != "mob-prefix"
+            or card.receipt_data.get("selectedCards") not in ("", card.name)
+            or not isinstance(card.receipt_data.get("observations"), list)):
+        return None
+    details = card.data.get("details", "")
+    found = re.search(r"\bUUID=([0-9a-fA-F-]{36})\b", details) if isinstance(details, str) else None
+    if found is None:
+        return None
+    uuid = found.group(1).lower()
+    if not re.fullmatch(r"[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}", uuid):
+        return None
+    observations = card.receipt_data["observations"]
+    prefix = card.name + "-"
+
+    def members(snapshot: dict[str, Any]) -> list[dict[str, Any]]:
+        entities = snapshot.get("entities")
+        return ([entity for entity in entities if isinstance(entity, dict)
+                 and isinstance(entity.get("uuid"), str)
+                 and entity["uuid"].lower() == uuid]
+                if isinstance(entities, list) else [])
+
+    source_states = [state for state in observations if isinstance(state, dict)
+                     and state.get("label") == prefix + "source"]
+    if len(source_states) != 1 or len(members(source_states[0])) != 1:
+        return None
+    source = members(source_states[0])[0]
+    destination = ROUTE_DESTINATION_WORLD[route]
+    arrivals = [state for state in observations if isinstance(state, dict)
+                and state.get("label") == prefix + "wait"
+                and len(members(state)) == 1
+                and members(state)[0].get("world") == destination]
+    if len(arrivals) != 1:
+        return None
+    arrival = members(arrivals[0])[0]
+    later_states = [state for state in observations if isinstance(state, dict)
+                    and state.get("label") == prefix + "later"]
+    if not later_states or any(len(members(state)) != 1 for state in later_states):
+        return None
+    later = members(later_states[-1])[0]
+    expected_tag = "stage7_portal_mob_" + ("0" if route == "NETHER_ENTRY" else "1")
+    if (any(part.get("type") != "minecraft:silverfish" or part.get("removed") is not False
+            or not isinstance(part.get("health"), (int, float)) or part["health"] <= 0
+            or part.get("vehicleUuid") != "UNAVAILABLE" or part.get("passengerUuids") != []
+            or not isinstance(part.get("object"), str) or not part["object"]
+            or not isinstance(part.get("nativeId"), int) or part["nativeId"] < 0
+            for part in (source, arrival, later))
+            or source.get("world") != ROUTE_SOURCE_WORLD[route]
+            or source.get("portalCooldown") != 0
+            or source.get("x") != 0.5 or source.get("y") != 65.0 or source.get("z") != 2.5
+            or destination != arrival.get("world") or destination != later.get("world")
+            or source["object"] == arrival["object"]
+            or source["nativeId"] == arrival["nativeId"]
+            or arrival["object"] != later["object"] or arrival["nativeId"] != later["nativeId"]
+            or not isinstance(arrival.get("ticks"), int)
+            or not isinstance(later.get("ticks"), int)
+            or later["ticks"] <= arrival["ticks"] + 20
+            or not isinstance(source.get("tags"), str)
+            or expected_tag not in source["tags"] or "stage7_mob" not in source["tags"]
+            or source["tags"] != arrival.get("tags") or source["tags"] != later.get("tags")
+            or any(member.get("object") == source["object"]
+                   or member.get("nativeId") == source["nativeId"]
+                   for state in (arrivals[0], later_states[-1])
+                   for member in state.get("entities", []) if isinstance(member, dict))):
+        return None
+    if any((part.get("world"), part.get("object"), part.get("nativeId")) !=
+           (destination, arrival["object"], arrival["nativeId"])
+           for state in later_states for part in members(state)):
+        return None
+    return source, arrival, later
+
+
 def observer_assertions(card: Card, entity_type: str, route: str,
                         uuid_override: str | None = None) -> set[str]:
     """Credit owner context only from a matching final-byte transaction trace."""
+    silverfish = SILVERFISH_CARD.fullmatch(card.name)
+    silverfish_witness = None
+    if silverfish:
+        if entity_type != "minecraft:silverfish" or silverfish.group(1) != route:
+            return set()
+        silverfish_witness = silverfish_snapshot_witness(card, route)
+        if silverfish_witness is None:
+            return set()
     result = card.result_data
     status = result.get("txStatus")
     if (result.get("txPass") is not True or not isinstance(status, dict)
@@ -432,6 +517,14 @@ def observer_assertions(card: Card, entity_type: str, route: str,
             continue
         if [selected[phase][0] for phase in phases] != sorted(selected[phase][0] for phase in phases):
             continue
+        if silverfish_witness is not None:
+            retired = selected.get("SOURCE_RETIRED")
+            settled = selected.get("TRANSFER_SETTLED_AFTER_SUFFIX")
+            if (retired is None or settled is None
+                    or not (selected["SOURCE_RETIRING"][0] < retired[0]
+                            < selected["ADD_DURING_TELEPORT_HEAD"][0])
+                    or settled[0] <= selected["ADD_DURING_TELEPORT_RETURN"][0]):
+                continue
         source = selected["SOURCE_RETIRING"][1]
         admission = selected["ADD_DURING_TELEPORT_HEAD"][1]
         dest = admission.get("destinationWorld")
@@ -443,8 +536,10 @@ def observer_assertions(card: Card, entity_type: str, route: str,
                        for phase in phases[1:])
                 or any(event.get("violation") for event in events)):
             continue
-        source_snapshot = card.receipt_data.get(card.name + "-source")
-        arrival_snapshot = card.receipt_data.get(card.name + "-arrival")
+        source_snapshot = (silverfish_witness[0] if silverfish_witness is not None
+                           else card.receipt_data.get(card.name + "-source"))
+        arrival_snapshot = (silverfish_witness[1] if silverfish_witness is not None
+                            else card.receipt_data.get(card.name + "-arrival"))
         if isinstance(source_snapshot, dict) and isinstance(arrival_snapshot, dict):
             if (not isinstance(source_snapshot.get("uuid"), str)
                     or not isinstance(arrival_snapshot.get("uuid"), str)
@@ -454,6 +549,13 @@ def observer_assertions(card: Card, entity_type: str, route: str,
                     or source.get("object") != source_snapshot.get("object")
                     or admission.get("nativeId") != arrival_snapshot.get("nativeId")
                     or admission.get("object") != arrival_snapshot.get("object")):
+                continue
+        if silverfish_witness is not None:
+            old = (source_snapshot["nativeId"], source_snapshot["object"])
+            if (retired[1].get("ownerWorld") != ROUTE_SOURCE_WORLD[route]
+                    or (retired[1].get("nativeId"), retired[1].get("object")) != old
+                    or settled[1].get("ownerWorld") != "NONE"
+                    or (settled[1].get("nativeId"), settled[1].get("object")) != old):
                 continue
         return OWNER_ASSERTIONS.copy()
     return set()
@@ -941,6 +1043,16 @@ def legacy_claims(card: Card, worktree: pathlib.Path, contracts: dict[str, str])
             None if size == "1" else "size" + size,
             {"source_retired", "destination_unique", "tracking_unique", "post_arrival_tick",
              "uuid_preserved", "replacement_identity"})
+    silverfish = SILVERFISH_CARD.fullmatch(name)
+    if (silverfish and legacy_contract_ok(worktree, contracts, "mob")
+            and silverfish_snapshot_witness(card, silverfish.group(1)) is not None):
+        route = silverfish.group(1)
+        claims.append(dict(card=card, caseId="V2-SILVERFISH-" + route,
+                           entityType="minecraft:silverfish", route=route, variant=None,
+                           graph="standalone", observedOutcome="TRANSFER",
+                           assertions={"destination_unique", "post_arrival_tick",
+                                       "uuid_preserved", "replacement_identity", "client_tracking"},
+                           basicObservation=True, scope="row"))
     match = ARMOR_CARD.fullmatch(name)
     if match:
         entity, source, state = match.groups()
@@ -1086,6 +1198,53 @@ def proof_valid(row: dict[str, Any], source_sha: str, binary_sha: str) -> bool:
             and isinstance(proof.get("eligibilityPredicate"), str) and bool(proof["eligibilityPredicate"]))
 
 
+def silverfish_source_chain_ok(row: dict[str, Any], source_sha: str, binary_sha: str) -> bool:
+    """Bind the two M2 rows to their exact pinned native caller references."""
+    if row.get("id") not in SILVERFISH_IDS or row.get("entityType") != "minecraft:silverfish":
+        return False
+    if row.get("id") != "V2-SILVERFISH-" + str(row.get("route")):
+        return False
+    proof = row.get("sourceProof")
+    source_reference = row.get("sourceReference")
+    methods = source_reference.get("callerMethods") if isinstance(source_reference, dict) else None
+    fixture = row.get("fixture")
+    if (not isinstance(proof, dict) or not isinstance(methods, dict)
+            or not isinstance(fixture, dict) or not isinstance(row.get("eligibility"), dict)):
+        return False
+    tick = methods.get("tick")
+    handle = methods.get("handlePortal")
+    reference = proof.get("reference")
+    tick_method = tick.get("method") if isinstance(tick, dict) else None
+    handle_method = handle.get("method") if isinstance(handle, dict) else None
+    if not isinstance(tick_method, dict) or not isinstance(handle_method, dict):
+        return False
+    return (proof.get("kind") == "conditional_silverfish_prefix_nether_transfer"
+            and proof.get("sourceJarSha256") == source_sha
+            and proof.get("mappedBinarySha256") == binary_sha
+            and proof.get("nativeOutcome") == "TRANSFER"
+            and proof.get("registeredTypeId") == "minecraft:silverfish"
+            and proof.get("concreteClass") == "net.minecraft.world.entity.monster.Silverfish"
+            and proof.get("tickReference") == tick
+            and proof.get("baseTickReference") == methods.get("baseTick")
+            and proof.get("eligibilityReference") == methods.get("canUsePortal")
+            and isinstance(tick, dict) and isinstance(handle, dict)
+            and tick.get("classBytecodeSha256") ==
+                "523DB646F5430AA9FB04D6A67B278730F7F1033BD79D0B9D3EBE50191490288C"
+            and tick_method.get("sourceSha256") ==
+                "B08A64A733B29CE38F7AAA98DCF7743DE77F3DFDA754ECBCA4842C9D3B46BC9C"
+            and tick_method.get("lexicalSuffixSha256") ==
+                "D1E893A89B088DA316832FB74914D9E3870B957CA7BB0E0B478D1D8559A93D85"
+            and tick_method.get("lexicalSuffixBytes") == 5
+            and isinstance(reference, dict)
+            and reference.get("file") == handle.get("file")
+            and reference.get("method") == "handlePortal"
+            and reference.get("line") == handle_method.get("line")
+            and reference.get("sourceMethodSha256") == handle_method.get("sourceSha256")
+            and reference.get("classBytecodeSha256") == handle.get("classBytecodeSha256")
+            and fixture.get("contactImpossible") is False
+            and fixture.get("requiredPredicates") == proof.get("eligibilityPredicate"))
+
+
 def native_control_valid(row: dict[str, Any], source_sha: str, binary_sha: str) -> bool:
     control = row.get("nativeControlReceipt")
     return (isinstance(control, dict)
@@ -1176,6 +1335,7 @@ def apply_claims(row: dict[str, Any], claims: list[dict[str, Any]], candidate_sh
     observed: set[str] = set()
     assertions: set[str] = set()
     basic_by_worker: set[int] = set()
+    owner_by_worker: set[int] = set()
     for claim in claims:
         if not claim_matches(row, claim):
             continue
@@ -1192,12 +1352,23 @@ def apply_claims(row: dict[str, Any], claims: list[dict[str, Any]], candidate_sh
         assertions.update(verified_assertions)
         if claim["basicObservation"]:
             basic_by_worker.add(card.workers)
+        if OWNER_ASSERTIONS <= verified_assertions:
+            owner_by_worker.add(card.workers)
     row["receipts"] = receipts
     row["supportingReceipts"] = supporting
     row["finalCandidateSha256"] = candidate_sha if receipts["W1"] or receipts["W4"] else None
     row["observedPhoeniumResult"] = next(iter(observed)) if len(observed) == 1 else None
     row["witnessedAssertions"] = sorted(assertions)
     row["disposition"] = None
+    silverfish = row.get("id") in SILVERFISH_IDS
+    if (silverfish and basic_by_worker == {1, 4} and owner_by_worker == {1, 4}
+            and observed == {"TRANSFER"}
+            and REQUIRED_TRANSFER_ASSERTIONS | {"post_arrival_tick", "uuid_preserved",
+                                                "replacement_identity", "client_tracking"} <= assertions
+            and silverfish_source_chain_ok(row, source_sha, binary_sha)):
+        row["sourceProof"]["applicabilityDemonstrated"] = True
+        row["eligibility"]["resolvedForFixture"] = True
+        row["fixture"]["constructed"] = True
     reasons = []
     if expected not in OUTCOMES:
         reasons.append("native outcome unresolved or invalid")
@@ -1230,10 +1401,14 @@ def apply_claims(row: dict[str, Any], claims: list[dict[str, Any]], candidate_sh
                 reasons.append("missing semantic assertions: " + ", ".join(sorted(missing)))
             if expected in ("REFUSAL", "NO_NATIVE_ENTRY_PATH", "ROUTE_NOT_APPLICABLE") and not proof:
                 reasons.append("missing applicable pinned native source proof")
+            if silverfish and not (silverfish_source_chain_ok(row, source_sha, binary_sha) and proof):
+                reasons.append("missing exact applicable Silverfish pinned native source proof")
             if contact_impossible and proof_only_assertions and not (receipts["W1"] and receipts["W4"]):
                 reasons.append("source proof does not satisfy required final-byte negative assertions")
             if not reasons:
                 row["disposition"] = DISPOSITIONS[expected]
+                if silverfish:
+                    row["evidenceScope"] = "pinned_source_and_exact_final_byte_W1_W4"
     row["unresolvedReasons"] = reasons
     return row
 
@@ -1328,6 +1503,11 @@ def build_report(census: dict[str, Any], frozen: dict[str, Any], candidate_sha: 
                           graph_observer_assertions(claim["card"], claim["route"])
                           if claim.get("graph") == "mob riding mob" else set())
         claim["assertions"].update(observed_owner)
+        if (SILVERFISH_CARD.fullmatch(claim["card"].name)
+                and OWNER_ASSERTIONS <= observed_owner):
+            # The raw full-level snapshots prove the old incarnation vanished;
+            # the matching trace proves retirement and one tracking admission.
+            claim["assertions"].update({"source_retired", "tracking_unique"})
         if (claim["entityType"] == "minecraft:falling_block"
                 and claim["route"] == "END_ENTRY" and OWNER_ASSERTIONS <= observed_owner):
             claim["assertions"].update(falling_source_retired_assertions(claim["card"]))

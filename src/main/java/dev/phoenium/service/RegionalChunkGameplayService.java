@@ -533,14 +533,15 @@ public final class RegionalChunkGameplayService implements NaturalSpawnContinuat
         return false;
     }
 
-    /** EnderDragonFight's pinned arena reads are bounded to its origin +/-8 chunks and its
-     * ticket uses radius nine. Current level players are exact alias recipients of updatePlayers,
-     * so their owner keys join the cut without adding intervening terrain. */
+    /** EnderDragonFight's arena and portal-pattern reads fit its origin +/-9 chunks. The
+     * initial legacy scan also visits absolute chunk coordinates -8..8. Current level players
+     * are exact alias recipients of updatePlayers, so their owner keys join the cut. */
     public void tickDragonFight(net.minecraft.world.level.dimension.end.EnderDragonFight fight) {
         requireOwnerFree(); Objects.requireNonNull(fight, "fight");
         FullFinishingServices.requireWorld(level, FullFinishingServices.Kind.ENTITY_REGISTRY);
         FullFinishingServices.requireServer(level.getServer(), FullFinishingServices.Kind.CONNECTIONS);
-        BlockPos origin = ((RegionalDragonFightAccess) fight).phoenium$origin();
+        RegionalDragonFightAccess access = (RegionalDragonFightAccess) fight;
+        BlockPos origin = access.phoenium$origin();
         ChunkPos chunk = ChunkPos.containing(origin);
         RoutingKey source = new RoutingKey(world, chunk.x(), chunk.z());
         LinkedHashSet<RoutingKey> footprint = new LinkedHashSet<>(
@@ -554,13 +555,17 @@ public final class RegionalChunkGameplayService implements NaturalSpawnContinuat
         // incomplete. Resolve their public inputs before admitting the native
         // fight body, then retain their exact resident publications for the cut.
         var arenaInputs = new java.util.LinkedHashMap<RoutingKey, java.util.function.BooleanSupplier>();
-        if (!players.isEmpty() || !((RegionalDragonFightAccess) fight).phoenium$dragonEvent().getPlayers().isEmpty()) {
-            for (int x = chunk.x() - 8; x <= chunk.x() + 8; x++) {
-                int z = chunk.z() + 8;
+        if (!players.isEmpty() || !access.phoenium$dragonEvent().getPlayers().isEmpty()) {
+            // The first scan runs only while needsStateScanning is true. Its native
+            // hasActiveExitPortal and findExitPortal methods can synchronously request
+            // every FULL cell in the center, plus one pattern-border chunk. Finish
+            // those inputs without an owner claim before entering the native tick.
+            for (ChunkPos input : dragonFightFullInputs(chunk, access.phoenium$needsStateScanning())) {
+                int x = input.x(), z = input.z();
                 var ready = level.getChunkSource().getChunk(x, z,
                     net.minecraft.world.level.chunk.status.ChunkStatus.FULL, true);
                 if (ready == null) throw new IllegalStateException("dragon arena FULL input absent");
-                long position = new ChunkPos(x, z).pack();
+                long position = input.pack();
                 var resident = dev.phoenium.chunk.ResidentChunkSourceBinding.capture(level, position);
                 if (resident == null || resident.chunk() != ready)
                     throw new IllegalStateException("dragon arena FULL input lacks resident publication");
@@ -582,6 +587,25 @@ public final class RegionalChunkGameplayService implements NaturalSpawnContinuat
             for (PlayerProjection player : players) requireEntity(player.candidate, player.key);
             fight.tick();
         });
+    }
+
+    /** Exact owner-free FULL inputs for the pinned 26.2 fight paths. The ordinary arena
+     * check reads its z=origin+8 row; a pending scan can reach the full origin halo and
+     * the legacy portal search, which is fixed at absolute chunk coordinates -8..8. */
+    static List<ChunkPos> dragonFightFullInputs(ChunkPos origin, boolean pendingScan) {
+        var inputs = new LinkedHashSet<ChunkPos>();
+        if (pendingScan) {
+            for (int x = origin.x() - 9; x <= origin.x() + 9; x++)
+                for (int z = origin.z() - 9; z <= origin.z() + 9; z++)
+                    inputs.add(new ChunkPos(x, z));
+            for (int x = -8; x <= 8; x++)
+                for (int z = -8; z <= 8; z++)
+                    inputs.add(new ChunkPos(x, z));
+        } else {
+            for (int x = origin.x() - 8; x <= origin.x() + 8; x++)
+                inputs.add(new ChunkPos(x, origin.z() + 8));
+        }
+        return List.copyOf(inputs);
     }
 
     private void bootstrapTicker(TickingBlockEntity ticker) {

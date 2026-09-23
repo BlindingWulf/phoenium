@@ -47,6 +47,189 @@ def claim(name: str, workers: int, assertions: set[str], outcome: str = "TRANSFE
 
 
 class CoverageTests(unittest.TestCase):
+    def test_silverfish_m2_claim_requires_exact_raw_source_arrival_and_later(self) -> None:
+        name = "M2-silverfish-NETHER_ENTRY"
+        uuid = "12345678-1234-1234-1234-123456789abc"
+        source = {
+            "uuid": uuid, "type": "minecraft:silverfish", "world": "minecraft:overworld",
+            "object": "source", "nativeId": 17, "ticks": 0, "health": 8.0,
+            "removed": False, "portalCooldown": 0, "x": 0.5, "y": 65.0, "z": 2.5,
+            "vehicleUuid": "UNAVAILABLE", "passengerUuids": [],
+            "tags": "[stage7_portal_mob_0, stage7_mob]",
+        }
+        arrival = dict(source, world="minecraft:the_nether", object="replacement",
+                       nativeId=27, ticks=1, portalCooldown=300)
+        later = dict(arrival, ticks=27, portalCooldown=274)
+        receipt = {
+            "selectedCards": "",
+            "observations": [
+                {"label": name + "-source", "entities": [source]},
+                {"label": name + "-wait", "entities": [arrival]},
+                {"label": name + "-later", "entities": [later]},
+            ],
+        }
+        witness = dataclasses.replace(card(name, 1, data={"details": "UUID=" + uuid}),
+                                      receipt_data=receipt, inputs_data={"group": "mob-prefix"})
+        self.assertEqual(coverage.silverfish_snapshot_witness(witness, "NETHER_ENTRY"),
+                         (source, arrival, later))
+        with patch.object(coverage, "legacy_contract_ok", return_value=True):
+            claims = coverage.legacy_claims(witness, pathlib.Path("unused"), {})
+        self.assertEqual(len(claims), 1)
+        self.assertEqual(claims[0]["caseId"], "V2-SILVERFISH-NETHER_ENTRY")
+        self.assertNotIn("source_retired", claims[0]["assertions"])
+        for changed in (
+            {"observations": [receipt["observations"][0],
+                              {"label": name + "-wait", "entities": [arrival, dict(arrival)]},
+                              receipt["observations"][2]]},
+            {"observations": [receipt["observations"][0],
+                              {"label": name + "-wait", "entities": [source, arrival]},
+                              receipt["observations"][2]]},
+            {"observations": [receipt["observations"][0], receipt["observations"][1],
+                              {"label": name + "-later", "entities": [dict(later, ticks=20)]}]},
+            {"observations": [receipt["observations"][0],
+                              {"label": name + "-wait", "entities": [dict(arrival, uuid="0" * 36)]},
+                              receipt["observations"][2]]},
+        ):
+            forged = dataclasses.replace(witness, receipt_data={**receipt, **changed})
+            self.assertIsNone(coverage.silverfish_snapshot_witness(forged, "NETHER_ENTRY"))
+        self.assertIsNone(coverage.silverfish_snapshot_witness(
+            dataclasses.replace(witness, inputs_data={"group": "legacy"}), "NETHER_ENTRY"))
+
+    def test_silverfish_owner_trace_requires_retirement_and_settled_suffix(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            run = pathlib.Path(temp)
+            trace = run / "first-portal-transactions.log"
+            name = "M2-silverfish-NETHER_ENTRY"
+            uuid = "12345678-1234-1234-1234-123456789abc"
+            source = {
+                "uuid": uuid, "type": "minecraft:silverfish", "world": "minecraft:overworld",
+                "object": "old", "nativeId": 17, "ticks": 0, "health": 8.0,
+                "removed": False, "portalCooldown": 0, "x": 0.5, "y": 65.0, "z": 2.5,
+                "vehicleUuid": "UNAVAILABLE", "passengerUuids": [],
+                "tags": "[stage7_portal_mob_0, stage7_mob]",
+            }
+            arrival = dict(source, world="minecraft:the_nether", object="new",
+                           nativeId=27, ticks=1, portalCooldown=300)
+            later = dict(arrival, ticks=27)
+            receipt = {
+                "selectedCards": "",
+                "observations": [
+                    {"label": name + "-source", "entities": [source]},
+                    {"label": name + "-wait", "entities": [arrival]},
+                    {"label": name + "-later", "entities": [later]},
+                ],
+            }
+            phases = ("SOURCE_RETIRING", "SOURCE_RETIRED",
+                      "ADD_DURING_TELEPORT_HEAD", "CHUNK_MAP_TRACKING_HEAD",
+                      "CHUNK_MAP_TRACKING_RETURN", "ADD_DURING_TELEPORT_RETURN",
+                      "TRANSFER_SETTLED_AFTER_SUFFIX")
+            events = [{
+                "phase": phase, "uuid": uuid, "type": "entity.minecraft.silverfish",
+                "route": "NETHER_ENTRY", "generation": 7, "sourceWorld": "minecraft:overworld",
+                "destinationWorld": ("UNAVAILABLE" if phase == "TRANSFER_SETTLED_AFTER_SUFFIX"
+                                     else "minecraft:the_nether"),
+                "ownerWorld": ("minecraft:overworld" if phase in ("SOURCE_RETIRING", "SOURCE_RETIRED")
+                               else "NONE" if phase == "TRANSFER_SETTLED_AFTER_SUFFIX"
+                               else "minecraft:the_nether"),
+                "object": "old" if phase in ("SOURCE_RETIRING", "SOURCE_RETIRED",
+                                           "TRANSFER_SETTLED_AFTER_SUFFIX") else "new",
+                "nativeId": 17 if phase in ("SOURCE_RETIRING", "SOURCE_RETIRED",
+                                            "TRANSFER_SETTLED_AFTER_SUFFIX") else 27,
+                "candidateSha256": "A" * 64, "testSourceSha256": "B" * 64,
+            } for phase in phases]
+            result = {
+                "txPass": True,
+                "txStatus": {"pending": 0, "violations": 0,
+                             "candidateSha256": "A" * 64, "testSourceSha256": "B" * 64},
+                "candidateSha256": "A" * 64, "txTracePath": str(trace),
+            }
+            witness = coverage.Card(name, 1, "first", run / "first-client-receipt.json",
+                                    run / "first-result.json", run / "inputs.json",
+                                    {"details": "UUID=" + uuid}, result, receipt,
+                                    {"group": "mob-prefix", "probeSha256": "B" * 64})
+
+            def observed(current: list[dict]) -> set[str]:
+                trace.write_text("".join("STAGE7_PORTAL_TX " + json.dumps(event) + "\n"
+                                         for event in current), encoding="utf-8")
+                result["txTraceSha256"] = coverage.digest(trace)
+                coverage._trace_events.cache_clear()
+                return coverage.observer_assertions(witness, "minecraft:silverfish", "NETHER_ENTRY")
+
+            self.assertEqual(observed(events), coverage.OWNER_ASSERTIONS)
+            self.assertFalse(observed([event for event in events
+                                       if event["phase"] != "SOURCE_RETIRED"]))
+            self.assertFalse(observed([event for event in events
+                                       if event["phase"] != "TRANSFER_SETTLED_AFTER_SUFFIX"]))
+            wrong_owner = copy.deepcopy(events)
+            wrong_owner[3]["ownerWorld"] = "minecraft:overworld"
+            self.assertFalse(observed(wrong_owner))
+            wrong_id = copy.deepcopy(events)
+            wrong_id[2]["nativeId"] = 28
+            self.assertFalse(observed(wrong_id))
+
+    def test_silverfish_coverage_needs_both_owner_witnesses_and_exact_source_proof(self) -> None:
+        source_sha, binary_sha, candidate_sha = "A" * 64, "B" * 64, "C" * 64
+        tick = {
+            "classBytecodeSha256": "523DB646F5430AA9FB04D6A67B278730F7F1033BD79D0B9D3EBE50191490288C",
+            "method": {
+                "sourceSha256": "B08A64A733B29CE38F7AAA98DCF7743DE77F3DFDA754ECBCA4842C9D3B46BC9C",
+                "lexicalSuffixSha256": "D1E893A89B088DA316832FB74914D9E3870B957CA7BB0E0B478D1D8559A93D85",
+                "lexicalSuffixBytes": 5,
+            },
+        }
+        handle = {"file": "net/minecraft/world/entity/Entity.java",
+                  "classBytecodeSha256": "D" * 64,
+                  "method": {"line": 2607, "sourceSha256": "E" * 64}}
+        methods = {"tick": tick, "baseTick": {"owner": "net.minecraft.world.entity.Mob"},
+                   "canUsePortal": {"owner": "net.minecraft.world.entity.LivingEntity"},
+                   "handlePortal": handle}
+        reference = {"file": handle["file"], "method": "handlePortal", "line": 2607,
+                     "sourceMethodSha256": "E" * 64, "classBytecodeSha256": "D" * 64}
+        predicate = "alive awake standalone registered Silverfish in a ready Nether portal"
+        target = {
+            "id": "V2-SILVERFISH-NETHER_ENTRY", "legacyCaseId": "SILVERFISH-NETHER_ENTRY",
+            "entityType": "minecraft:silverfish", "route": "NETHER_ENTRY", "variant": None,
+            "graph": "standalone", "expectedNativeOutcome": "TRANSFER",
+            "sourceReference": {"callerMethods": methods},
+            "sourceProof": {
+                "kind": "conditional_silverfish_prefix_nether_transfer",
+                "sourceJarSha256": source_sha, "mappedBinarySha256": binary_sha,
+                "nativeOutcome": "TRANSFER", "registeredTypeId": "minecraft:silverfish",
+                "concreteClass": "net.minecraft.world.entity.monster.Silverfish",
+                "tickReference": tick, "baseTickReference": methods["baseTick"],
+                "eligibilityReference": methods["canUsePortal"], "reference": reference,
+                "eligibilityPredicate": predicate, "applicabilityDemonstrated": False,
+            },
+            "eligibility": {"resolvedForFixture": False},
+            "fixture": {"contactImpossible": False, "requiredPredicates": predicate,
+                        "constructed": False},
+        }
+        assertions = (coverage.REQUIRED_TRANSFER_ASSERTIONS | coverage.OWNER_ASSERTIONS |
+                      {"post_arrival_tick", "uuid_preserved", "replacement_identity",
+                       "client_tracking"})
+        claims = [{
+            "card": card("M2-silverfish-NETHER_ENTRY", workers),
+            "caseId": target["id"], "entityType": target["entityType"],
+            "route": target["route"], "variant": None, "graph": "standalone",
+            "observedOutcome": "TRANSFER", "assertions": set(assertions),
+            "basicObservation": True, "scope": "row", "observerValidated": True,
+        } for workers in (1, 4)]
+        resolved = coverage.apply_claims(target, claims, candidate_sha, source_sha, binary_sha)
+        self.assertEqual(resolved["disposition"], "TRANSFER_VERIFIED")
+        self.assertTrue(resolved["sourceProof"]["applicabilityDemonstrated"])
+        self.assertTrue(resolved["fixture"]["constructed"])
+        self.assertFalse(target["sourceProof"]["applicabilityDemonstrated"])
+        self.assertIsNone(coverage.apply_claims(
+            target, claims[:1], candidate_sha, source_sha, binary_sha)["disposition"])
+        unowned = copy.deepcopy(claims)
+        unowned[1]["observerValidated"] = False
+        self.assertIsNone(coverage.apply_claims(
+            target, unowned, candidate_sha, source_sha, binary_sha)["disposition"])
+        forged = copy.deepcopy(target)
+        forged["sourceProof"]["tickReference"]["method"]["sourceSha256"] = "0" * 64
+        self.assertIsNone(coverage.apply_claims(
+            forged, claims, candidate_sha, source_sha, binary_sha)["disposition"])
+
     def test_falling_cards_attach_to_exact_material_rows_without_earning_disposition(self) -> None:
         with patch.object(coverage, "legacy_contract_ok", return_value=True):
             for material in ("sand", "gravel", "anvil"):

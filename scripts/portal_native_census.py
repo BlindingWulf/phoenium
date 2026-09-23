@@ -801,6 +801,70 @@ def build_census(inventory: dict, frozen: dict) -> dict:
                     "applicabilityDemonstrated": False,
                     "artifact": "NATIVE_CONDITIONAL_TRANSFER_SOURCE_PROOFS.json",
                 }
+        if (entity_type == "minecraft:silverfish" and variant is None
+                and route in ("NETHER_ENTRY", "NETHER_RETURN") and expected is None):
+            # Silverfish has an exact outer tick prefix before Mob.tick. Its
+            # pinned method returns immediately after the super call, so no
+            # source-incarnation tail may execute after the native transfer.
+            if profile is None:
+                raise ValueError("pinned Silverfish caller profile missing")
+            methods = profile["declaringMethods"]
+            refs = profile["methodReferences"]
+            tick = refs["tick"]
+            mob = "net.minecraft.world.entity.Mob"
+            living = "net.minecraft.world.entity.LivingEntity"
+            entity = "net.minecraft.world.entity.Entity"
+            if (profile["concreteClass"] != "net.minecraft.world.entity.monster.Silverfish"
+                    or methods["tick"] != profile["concreteClass"]
+                    or methods["baseTick"] != mob
+                    or methods["canUsePortal"] != living
+                    or any(methods[name] != entity for name in
+                           ("handlePortal", "teleport", "canTeleport"))
+                    or mob not in profile["hierarchy"]
+                    or entity_type not in inventory["registeredTypeIds"]
+                    or tick["classBytecodeSha256"] !=
+                       "523DB646F5430AA9FB04D6A67B278730F7F1033BD79D0B9D3EBE50191490288C"
+                    or tick["method"]["sourceSha256"] !=
+                       "B08A64A733B29CE38F7AAA98DCF7743DE77F3DFDA754ECBCA4842C9D3B46BC9C"
+                    or tick["method"]["continuationAnchor"] != "super.tick("
+                    or tick["method"]["lexicalSuffixBytes"] != 5
+                    or tick["method"]["lexicalSuffixSha256"] !=
+                       "D1E893A89B088DA316832FB74914D9E3870B957CA7BB0E0B478D1D8559A93D85"
+                    or refs["baseTick"]["owner"] != mob
+                    or refs["canUsePortal"]["owner"] != living
+                    or refs["handlePortal"]["owner"] != entity):
+                raise ValueError("pinned Silverfish Nether caller chain changed")
+            handle = refs["handlePortal"]
+            expected = "TRANSFER"
+            source_proof = {
+                "kind": "conditional_silverfish_prefix_nether_transfer",
+                "sourceJarSha256": inventory["sourceJarSha256"],
+                "mappedBinarySha256": inventory["mappedBinarySha256"],
+                "nativeOutcome": expected,
+                "registeredTypeId": entity_type,
+                "concreteClass": profile["concreteClass"],
+                "reference": {"file": handle["file"], "method": "handlePortal",
+                              "line": handle["method"]["line"],
+                              "sourceMethodSha256": handle["method"]["sourceSha256"],
+                              "classBytecodeSha256": handle["classBytecodeSha256"]},
+                "tickReference": tick,
+                "baseTickReference": refs["baseTick"],
+                "eligibilityReference": refs["canUsePortal"],
+                "inheritedChainReference": "Silverfish.java:95-98 prefix then Mob.tick; "
+                                           "Mob.java:341-346 -> LivingEntity.java:2739-2741 -> "
+                                           "Entity.java:515-532; Mob.java:281-283 -> "
+                                           "LivingEntity.java:412-422 -> Entity.java:519-532",
+                "portalReference": "NetherPortalBlock.java:112-143,225-228; nonplayer transition time is zero",
+                "creationReference": "Entity.java:3069-3093 and EntityType.java:296-305",
+                "eligibilityPredicate": "alive awake standalone registered Silverfish, cooldown elapsed, "
+                                        "valid Nether portal and enabled destination; Silverfish.tick "
+                                        "sets yBodyRot before Mob.tick and returns immediately after it; "
+                                        "Mob.baseTick invokes Entity.handlePortal; LivingEntity.canUsePortal "
+                                        "and Entity.canTeleport permit this state; destination factory "
+                                        "creates the exact replacement type",
+                "applicabilityDemonstrated": False,
+                "artifact": "NATIVE_CONDITIONAL_TRANSFER_SOURCE_PROOFS.json",
+            }
         if (entity_type in SOURCE_PROVEN_MINECART_NETHER and variant is None
                 and graph == "standalone" and route in ("NETHER_ENTRY", "NETHER_RETURN")):
             assert profile is not None

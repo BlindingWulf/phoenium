@@ -10,4 +10,5 @@ import org.spongepowered.asm.mixin.gen.Accessor;
 public interface RegionalDragonFightAccess {
     @Accessor("origin") BlockPos phoenium$origin();
     @Accessor("dragonEvent") ServerBossEvent phoenium$dragonEvent();
+    @Accessor("needsStateScanning") boolean phoenium$needsStateScanning();
 }
