@@ -265,6 +265,32 @@ def build_inventory(source_path: pathlib.Path, binary_path: pathlib.Path, javap:
                 "NetherPortalBlock", "EndPortalBlock", "EndGatewayBlock"}:
             raise ValueError("portal implementation inventory differs from pinned three implementations")
         materials = falling_materials(sources)
+        primitive_specs = (
+            ("net.minecraft.world.entity.Entity", "setAsInsidePortal",
+             "if (this.isOnPortalCooldown())"),
+            ("net.minecraft.world.entity.Entity", "canTeleport",
+             "passenger instanceof ServerPlayer player && !player.seenCredits"),
+            ("net.minecraft.world.entity.PortalProcessor", "processPortalTeleportation",
+             "allowedToTeleport && this.portalTime++"),
+            ("net.minecraft.world.entity.LivingEntity", "canUsePortal",
+             "!this.isSleeping()"),
+            ("net.minecraft.world.entity.monster.creaking.Creaking", "canUsePortal",
+             "!this.isHeartBound() && super.canUsePortal(ignorePassenger)"),
+        )
+        eligibility_primitives = {}
+        for owner, method, required_text in primitive_specs:
+            src = source_text(owner)
+            if required_text not in src:
+                raise ValueError(f"native eligibility predicate changed: {owner}.{method}")
+            info = source_method(src, method)
+            if not info:
+                raise ValueError(f"native eligibility method absent: {owner}.{method}")
+            eligibility_primitives[owner + "." + method] = {
+                "file": source_member(owner), "line": info["line"],
+                "sourceMethodSha256": info["sourceSha256"],
+                "classBytecodeSha256": sha(binary.read(owner.replace(".", "/") + ".class")),
+                "predicateText": required_text,
+            }
         handle_portal_calls = []
         for member in sources.namelist():
             if not member.endswith(".java"):
@@ -280,6 +306,7 @@ def build_inventory(source_path: pathlib.Path, binary_path: pathlib.Path, javap:
                 "registeredTypeIds": list(types), "callerProfileCount": len({row["callerProfile"] for row in rows}),
                 "entityTypes": rows, "portalImplementations": portal_classes,
                 "fallingBlockStates": materials, "handlePortalDirectCallSites": handle_portal_calls,
+                "portalEligibilityPrimitives": eligibility_primitives,
                 "scope": "Pinned vanilla 26.2 mapped source/binary and detectable registry/caller/portal drift; not arbitrary mod code."}
 
 
@@ -287,7 +314,8 @@ def drift_signature(inventory: dict) -> dict:
     """Fields that change when any pinned native assumption changes."""
     return {key: inventory[key] for key in ("sourceJarSha256", "mappedBinarySha256", "registeredTypeCount",
                                             "registeredTypeIds", "callerProfileCount", "entityTypes",
-                                            "portalImplementations", "fallingBlockStates", "handlePortalDirectCallSites")}
+                                            "portalImplementations", "fallingBlockStates", "handlePortalDirectCallSites",
+                                            "portalEligibilityPrimitives")}
 
 
 def build_census(inventory: dict, frozen: dict) -> dict:
@@ -344,6 +372,37 @@ def build_census(inventory: dict, frozen: dict) -> dict:
                             "eligibilityPredicate": "declaring tick does not call super.tick, baseTick, or handlePortal; no direct portal call in class",
                             "applicabilityDemonstrated": True,
                             "artifact": "NATIVE_NO_ENTRY_SOURCE_PROOFS.json"}
+        conditional_key = None
+        condition = None
+        if entity_type == "minecraft:creaking" and variant == "heart_bound":
+            expected = "REFUSAL"
+            conditional_key = "net.minecraft.world.entity.monster.creaking.Creaking.canUsePortal"
+            condition = "isHeartBound() is true; canUsePortal(false) returns false at portal collision"
+        elif entity_type == "minecraft:player" and variant == "sleeping":
+            expected = "REFUSAL"
+            conditional_key = "net.minecraft.world.entity.LivingEntity.canUsePortal"
+            condition = "isSleeping() is true; canUsePortal(false) returns false at portal collision"
+        elif entity_type == "minecraft:player" and variant == "portal_cooldown":
+            expected = "REFUSAL"
+            conditional_key = "net.minecraft.world.entity.Entity.setAsInsidePortal"
+            condition = "portalCooldown > 0 at collision; setAsInsidePortal declines processor entry"
+        elif graph.endswith("credits unseen") and route == "END_EXIT":
+            expected = "REFUSAL"
+            conditional_key = "net.minecraft.world.entity.Entity.canTeleport"
+            condition = "root carries ServerPlayer with seenCredits=false; End exit destination is Overworld"
+        if conditional_key:
+            primitive = inventory["portalEligibilityPrimitives"][conditional_key]
+            source_proof = {"kind": "conditional_native_refusal",
+                            "sourceJarSha256": inventory["sourceJarSha256"],
+                            "mappedBinarySha256": inventory["mappedBinarySha256"],
+                            "nativeOutcome": expected,
+                            "reference": {"file": primitive["file"], "method": conditional_key.rsplit(".", 1)[1],
+                                          "line": primitive["line"],
+                                          "sourceMethodSha256": primitive["sourceMethodSha256"],
+                                          "classBytecodeSha256": primitive["classBytecodeSha256"]},
+                            "eligibilityPredicate": condition,
+                            "applicabilityDemonstrated": False,
+                            "artifact": "NATIVE_CONDITIONAL_REFUSAL_SOURCE_PROOFS.json"}
         predicates = ["alive at contact", "not a passenger unless type override permits",
                       "portal processor ready; cooldown elapsed", "valid portal geometry and destination world",
                       "source and destination owner context valid"]
@@ -357,7 +416,9 @@ def build_census(inventory: dict, frozen: dict) -> dict:
             predicates.append("End respawnData destination exists; player credits and vehicle passenger rule checked")
         if route == "END_GATEWAY":
             predicates.append("gateway block entity exists, is not cooling down, and supplies an exit position")
-        semantic_assertions = ["After eligible transfer, retire source and publish one destination incarnation under destination owner."]
+        semantic_assertions = (["No destination identity or leaked portal session; preserve the native source and passenger graph state."]
+                               if expected in ("REFUSAL", "NO_NATIVE_ENTRY_PATH") else
+                               ["After eligible transfer, retire source and publish one destination incarnation under destination owner."])
         if entity_type == "minecraft:falling_block":
             semantic_assertions += ["Preserve carried block state and native landing, drop, and damage behavior."]
         if entity_type == "minecraft:item":
@@ -373,7 +434,7 @@ def build_census(inventory: dict, frozen: dict) -> dict:
         if route == "END_GATEWAY":
             semantic_assertions += ["Prove same-dimension gateway coordinates, portal ticket, and cooldown behavior."]
         required_assertions = (["source_unchanged", "destination_absent", "portal_session_absent", "graph_unchanged"]
-                               if no_entry else [])
+                               if expected in ("REFUSAL", "NO_NATIVE_ENTRY_PATH") else [])
         rows.append({"id": v2_id, "legacyCaseId": legacy, "entityType": entity_type,
                      "variant": variant, "route": route, "graph": graph,
                      "sourceDimension": source_dim, "destinationDimension": destination_dim,
@@ -385,13 +446,17 @@ def build_census(inventory: dict, frozen: dict) -> dict:
                                          "callerMethods": profile["methodReferences"] if profile else None},
                      "sourceProof": source_proof, "nativeControlReceipt": None,
                      "expectedNativeOutcome": expected, "observedPhoeniumResult": None,
-                     "fixture": {"contactImpossible": True, "reason": "No native portal entry path"} if no_entry else None,
+                     "fixture": ({"contactImpossible": True, "reason": "No native portal entry path"} if no_entry else
+                                 {"contactImpossible": False, "statePredicate": condition, "constructed": False}
+                                 if conditional_key else None),
                      "receipts": {"W1": [], "W4": []},
                      "finalCandidateSha256": None, "semanticAssertions": semantic_assertions,
                      "requiredAssertions": required_assertions,
                      "disposition": None,
-                     "unresolvedReasons": ["No final-byte row observation or qualifying no-entry proof receipt"] if expected
-                     else ["Native outcome and fixture applicability require proof", "No final-byte row observation"],
+                     "unresolvedReasons": (["Conditional state not yet demonstrated in a fixture", "No final-byte W1/W4 negative observation"]
+                                           if conditional_key else
+                                           ["No final-byte row observation or qualifying no-entry proof receipt"] if no_entry else
+                                           ["Native outcome and fixture applicability require proof", "No final-byte row observation"]),
                      "generationReason": reason if not legacy else None})
 
     for old_id in ids:
@@ -440,10 +505,17 @@ def build_census(inventory: dict, frozen: dict) -> dict:
                   "nested vehicle and mob graph"):
         for route in ROUTES:
             add(None, None, None, route, shape, "graph " + shape)
+    for entity, shape in (("minecraft:oak_boat", "boat with player rider credits unseen"),
+                          ("minecraft:minecart", "minecart with player rider credits unseen"),
+                          ("minecraft:camel", "mountable mob with player rider credits unseen")):
+        add(None, entity, "credits_unseen_passenger", "END_EXIT", shape, "graph " + shape)
     row_ids = [row["id"] for row in rows]
     if len(set(row_ids)) != len(row_ids):
         raise ValueError("duplicate generated v2 obligation ID")
-    source_proofs = {row["entityType"]: row["sourceProof"] for row in rows if row["sourceProof"]}
+    source_proofs = {row["entityType"]: row["sourceProof"] for row in rows
+                     if row["sourceProof"] and row["sourceProof"]["nativeOutcome"] == "NO_NATIVE_ENTRY_PATH"}
+    conditional_proofs = {row["id"]: row["sourceProof"] for row in rows
+                          if row["sourceProof"] and row["sourceProof"]["nativeOutcome"] == "REFUSAL"}
     return {"schemaVersion": 2, "gameVersion": "Minecraft 26.2",
             "sourceJarSha256": inventory["sourceJarSha256"], "mappedBinarySha256": inventory["mappedBinarySha256"],
             "registeredTypeCount": inventory["registeredTypeCount"], "callerProfileCount": inventory["callerProfileCount"],
@@ -452,7 +524,8 @@ def build_census(inventory: dict, frozen: dict) -> dict:
             "dispositionVocabulary": ["TRANSFER_VERIFIED", "NATIVE_REFUSAL_VERIFIED",
                                       "NO_NATIVE_ENTRY_PATH_VERIFIED", "ROUTE_NOT_APPLICABLE_VERIFIED",
                                       "SAME_DIMENSION_TRANSFER_VERIFIED"],
-            "nativeNoEntrySourceProofs": source_proofs, "rows": rows}
+            "nativeNoEntrySourceProofs": source_proofs,
+            "nativeConditionalRefusalSourceProofs": conditional_proofs, "rows": rows}
 
 
 def write_report(path: pathlib.Path, census: dict, drift: dict) -> None:
@@ -508,6 +581,10 @@ def main() -> int:
          {"schemaVersion": 1, "sourceJarSha256": inventory["sourceJarSha256"],
           "mappedBinarySha256": inventory["mappedBinarySha256"],
           "proofsByEntityType": census["nativeNoEntrySourceProofs"]})
+    dump(output / "NATIVE_CONDITIONAL_REFUSAL_SOURCE_PROOFS.json",
+         {"schemaVersion": 1, "sourceJarSha256": inventory["sourceJarSha256"],
+          "mappedBinarySha256": inventory["mappedBinarySha256"],
+          "proofsByRowId": census["nativeConditionalRefusalSourceProofs"]})
     write_report(output / "PORTAL_BEHAVIOR_CENSUS_V2.md", census, drift)
     summary = {"driftPass": drift["pass"], "registeredTypes": inventory["registeredTypeCount"],
                "callerProfiles": inventory["callerProfileCount"], "portalImplementations": len(inventory["portalImplementations"]),

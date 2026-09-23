@@ -21928,5 +21928,42 @@
       "line": 280,
       "source": "this.handlePortal();"
     }
-  ]
+  ],
+  "portalEligibilityPrimitives": {
+    "net.minecraft.world.entity.Entity.setAsInsidePortal": {
+      "file": "net/minecraft/world/entity/Entity.java",
+      "line": 2594,
+      "sourceMethodSha256": "5F07E806597E51BEF721D85FE3340A12510E67497C98BA25C707218C18FA448C",
+      "classBytecodeSha256": "B159CA1E9EB18BE5A146CA9CE558886E3B659EF429072388B3CD19A75DF389A2",
+      "predicateText": "if (this.isOnPortalCooldown())"
+    },
+    "net.minecraft.world.entity.Entity.canTeleport": {
+      "file": "net/minecraft/world/entity/Entity.java",
+      "line": 3193,
+      "sourceMethodSha256": "765077B6B32E93DE48689C6DCFDDAFFA7F3D489D4B42831A1C43D67B6F50BB2C",
+      "classBytecodeSha256": "B159CA1E9EB18BE5A146CA9CE558886E3B659EF429072388B3CD19A75DF389A2",
+      "predicateText": "passenger instanceof ServerPlayer player && !player.seenCredits"
+    },
+    "net.minecraft.world.entity.PortalProcessor.processPortalTeleportation": {
+      "file": "net/minecraft/world/entity/PortalProcessor.java",
+      "line": 21,
+      "sourceMethodSha256": "44CA3CBE61B3C9B0A5B50331DA73B26331C63B4F0ABB53EAC7E4294610889584",
+      "classBytecodeSha256": "85FC7C65543C75A26FD5A2C2443AA5E1DDB939BF7EF7C4A0D01668D98994986F",
+      "predicateText": "allowedToTeleport && this.portalTime++"
+    },
+    "net.minecraft.world.entity.LivingEntity.canUsePortal": {
+      "file": "net/minecraft/world/entity/LivingEntity.java",
+      "line": 3728,
+      "sourceMethodSha256": "8D6E99466698F1997EFCA5C0F388E8F6A618296B7822B63CB40A4816EFE98D7C",
+      "classBytecodeSha256": "D74BA8F2188C2E523F24BBE8328B215270CD3E9D2183EAA194A6D8F48FF3BF33",
+      "predicateText": "!this.isSleeping()"
+    },
+    "net.minecraft.world.entity.monster.creaking.Creaking.canUsePortal": {
+      "file": "net/minecraft/world/entity/monster/creaking/Creaking.java",
+      "line": 346,
+      "sourceMethodSha256": "DEB9B487772FF8E431D5393007BF5BE9D78BE726463074FF1EC07D2C9FBCBF75",
+      "classBytecodeSha256": "2095D30911A4CA1E3933F7CB975518CEF4F022AE4E8B0F317B4C5E4539CE3F8D",
+      "predicateText": "!this.isHeartBound() && super.canUsePortal(ignorePassenger)"
+    }
+  }
 }
