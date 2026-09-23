@@ -8,7 +8,10 @@ public final class FullRegistrationTestTransform {
     public static byte[] transform(String name, byte[] bytes) {
         ClassNode node = new ClassNode(); new ClassReader(bytes).accept(node, ClassReader.EXPAND_FRAMES);
         MobPortalTestTransform.install(node);
-        if (name.equals(dev.phoenium.live.MobPortalNativeSuffixes.CUBE)) {
+        FallingBlockPortalTestTransform.install(node);
+        if (name.equals(dev.phoenium.live.MobPortalNativeSuffixes.CUBE)
+                || name.equals(dev.phoenium.live.MobPortalNativeSuffixes.HORSE)
+                || name.equals(dev.phoenium.live.MobPortalNativeSuffixes.VILLAGER)) {
             ClassWriter cubeWriter = new ClassWriter(ClassWriter.COMPUTE_MAXS);
             node.accept(cubeWriter); return cubeWriter.toByteArray();
         }

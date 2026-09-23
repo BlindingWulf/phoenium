@@ -1,6 +1,6 @@
 package dev.phoenium.live;
 
-/** Five pinned Minecraft 26.2 tails; no caller locals cross these super calls. */
+/** Pinned Minecraft 26.2 tails; no caller locals cross these super calls. */
 public interface MobPortalNativeAccess {
     interface LivingSuffix {
         void phoenium$resumeMobLivingBaseSuffix();
@@ -12,5 +12,11 @@ public interface MobPortalNativeAccess {
     }
     interface CubeSuffix {
         void phoenium$resumeMobCubeTickSuffix();
+    }
+    interface HorseSuffix {
+        void phoenium$resumeMobHorseTickSuffix();
+    }
+    interface VillagerSuffix {
+        void phoenium$resumeMobVillagerTickSuffix();
     }
 }

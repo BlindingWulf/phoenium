@@ -11,11 +11,12 @@ import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.PortalProcessor;
 import net.minecraft.world.entity.Mob;
 import net.minecraft.world.level.block.NetherPortalBlock;
+import net.minecraft.world.level.block.EndPortalBlock;
 import net.minecraft.world.level.block.Portal;
 import net.minecraft.world.level.portal.TeleportTransition;
 import org.slf4j.LoggerFactory;
 
-/** Reviewed passenger-free vanilla mob tick families retained before Nether lookup. */
+/** Exact passenger-free vanilla mob tick families retained before portal lookup. */
 public final class MobPortalTransitionManager implements AutoCloseable {
     private final NativePortalTransfer.Authority authority;
     private final ObjectOwnershipRegistry objects;
@@ -26,7 +27,7 @@ public final class MobPortalTransitionManager implements AutoCloseable {
     public MobPortalTransitionManager(NativePortalTransfer.Authority authority, ObjectOwnershipRegistry objects) {
         this.authority = Objects.requireNonNull(authority); this.objects = Objects.requireNonNull(objects);
     }
-    private enum NativeProfile { DIRECT_MOB_TICK, ZOMBIE_PREFIX, CUBE_OUTER_TAIL }
+    private enum NativeProfile { DIRECT_MOB_TICK, ZOMBIE_PREFIX, CUBE_OUTER_TAIL, HORSE_OUTER_TAIL, VILLAGER_OUTER_TAIL }
     /** Exact vanilla classes with Mob.tick and Mob.baseTick as their declaring callers. */
     private static final Set<Class<?>> DIRECT_MOB_TICK = Set.of(
         net.minecraft.world.entity.monster.Blaze.class,
@@ -49,10 +50,12 @@ public final class MobPortalTransitionManager implements AutoCloseable {
         net.minecraft.world.entity.monster.illager.Pillager.class,
         net.minecraft.world.entity.monster.Ravager.class,
         net.minecraft.world.entity.animal.sheep.Sheep.class,
+        net.minecraft.world.entity.monster.skeleton.Skeleton.class,
         net.minecraft.world.entity.animal.golem.SnowGolem.class,
         net.minecraft.world.entity.monster.skeleton.Stray.class,
         net.minecraft.world.entity.animal.turtle.Turtle.class,
         net.minecraft.world.entity.monster.illager.Vindicator.class,
+        net.minecraft.world.entity.npc.wanderingtrader.WanderingTrader.class,
         net.minecraft.world.entity.monster.Witch.class,
         net.minecraft.world.entity.monster.skeleton.WitherSkeleton.class,
         net.minecraft.world.entity.monster.Zoglin.class);
@@ -61,10 +64,22 @@ public final class MobPortalTransitionManager implements AutoCloseable {
         net.minecraft.world.entity.monster.zombie.Drowned.class,
         net.minecraft.world.entity.monster.zombie.Husk.class,
         net.minecraft.world.entity.monster.zombie.ZombifiedPiglin.class);
+    private static final Set<Class<?>> HORSE_OUTER_TAIL = Set.of(
+        net.minecraft.world.entity.animal.equine.Horse.class,
+        net.minecraft.world.entity.animal.equine.Donkey.class,
+        net.minecraft.world.entity.animal.equine.Mule.class,
+        net.minecraft.world.entity.animal.equine.SkeletonHorse.class,
+        net.minecraft.world.entity.animal.equine.ZombieHorse.class,
+        net.minecraft.world.entity.animal.equine.Llama.class,
+        net.minecraft.world.entity.animal.equine.TraderLlama.class);
+    private static final Set<Class<?>> VILLAGER_OUTER_TAIL = Set.of(
+        net.minecraft.world.entity.npc.villager.Villager.class);
     private static NativeProfile profile(Entity entity) {
         Class<?> type = entity.getClass();
         if (DIRECT_MOB_TICK.contains(type)) return NativeProfile.DIRECT_MOB_TICK;
         if (ZOMBIE_PREFIX.contains(type)) return NativeProfile.ZOMBIE_PREFIX;
+        if (HORSE_OUTER_TAIL.contains(type)) return NativeProfile.HORSE_OUTER_TAIL;
+        if (VILLAGER_OUTER_TAIL.contains(type)) return NativeProfile.VILLAGER_OUTER_TAIL;
         if (type == net.minecraft.world.entity.monster.cubemob.MagmaCube.class
                 || type == net.minecraft.world.entity.monster.cubemob.Slime.class) return NativeProfile.CUBE_OUTER_TAIL;
         return null;
@@ -85,7 +100,9 @@ public final class MobPortalTransitionManager implements AutoCloseable {
         if (rejected != null) { selection(mob, null, false, rejected); return false; }
         ServerLevel level = (ServerLevel) mob.level();
         Portal portal = ((PearlPortalProcessorAccess) processor).phoenium$portal();
-        if (!(portal instanceof NetherPortalBlock)) { selection(mob, null, false, "PORTAL_FAMILY_NOT_BOUND"); return false; }
+        if (!(portal instanceof NetherPortalBlock) && !(portal instanceof EndPortalBlock)) {
+            selection(mob, null, false, "PORTAL_FAMILY_NOT_BOUND"); return false;
+        }
         if (mob.isPassenger() || mob.isVehicle()) {
             selection(mob, null, false, "PASSENGER_GRAPH_NOT_BOUND");
             throw new IllegalStateException("mob portal passenger graph is outside this continuation");
@@ -146,6 +163,7 @@ public final class MobPortalTransitionManager implements AutoCloseable {
                 if (entry.destinationPending) {
                     NativePortalTransfer.retained(entry.mob, entry.binding, entry.token, null, "DESTINATION_PREPARING");
                     entry.transition = PortalDestinationObservation.prepare(entry.mob,entry.binding,entry.token,
+                        authority,() -> current(entry),
                         () -> entry.processor.getPortalDestination(entry.level, entry.mob));
                     entry.destinationPending = false;
                     if (!current(entry)) { cancel(entry,"STALE_AFTER_PREPARATION"); continue; }
@@ -158,8 +176,18 @@ public final class MobPortalTransitionManager implements AutoCloseable {
                         || entry.mob.canTeleport(entry.level, entry.transition.newLevel()));
                 if (permitted && entry.level.dimension() == entry.transition.newLevel().dimension())
                     throw new IllegalStateException("vanilla Nether portal produced a same-dimension mob transition");
+                if (permitted) {
+                    if (entry.visibilityReady == null)
+                        entry.visibilityReady = authority.demandDestinationEntityVisibility(entry.mob, entry.transition);
+                    if (!entry.visibilityReady.getAsBoolean()) {
+                        if (++entry.visibilityWaits > 200)
+                            throw new IllegalStateException("mob destination entity visibility deadline: " + entry.visibilityReady);
+                        continue;
+                    }
+                }
                 var transfer = permitted ? new NativePortalTransfer(authority, objects, replacements, entry.token,
-                    entry.mob, entry.binding, entry.transition, () -> active.get(key(entry.mob)) == entry) : null;
+                    entry.mob, entry.binding, entry.transition, () -> active.get(key(entry.mob)) == entry
+                        && entry.visibilityReady.getAsBoolean()) : null;
                 Entity result = transfer == null ? null : transfer.run();
                 var suffix = result == null
                     ? replacements.authorizeUnchangedSourceContinuation(entry.token, entry.token.source())
@@ -178,6 +206,10 @@ public final class MobPortalTransitionManager implements AutoCloseable {
                     ((MobPortalNativeAccess.MobSuffix) entry.mob).phoenium$resumeMobTickSuffix();
                     if (entry.mob instanceof net.minecraft.world.entity.monster.cubemob.AbstractCubeMob cube)
                         ((MobPortalNativeAccess.CubeSuffix) cube).phoenium$resumeMobCubeTickSuffix();
+                    if (entry.profile == NativeProfile.HORSE_OUTER_TAIL)
+                        ((MobPortalNativeAccess.HorseSuffix) entry.mob).phoenium$resumeMobHorseTickSuffix();
+                    if (entry.profile == NativeProfile.VILLAGER_OUTER_TAIL)
+                        ((MobPortalNativeAccess.VillagerSuffix) entry.mob).phoenium$resumeMobVillagerTickSuffix();
                 });
                 replacements.settle(suffix);
                 if (transfer != null) transfer.settled();
@@ -244,6 +276,8 @@ public final class MobPortalTransitionManager implements AutoCloseable {
         final CrossDimensionReplacementBoundary.Token token;
         final NativeProfile profile;
         volatile boolean retained, consumed, destinationPending, advancing;
+        int visibilityWaits;
+        java.util.function.BooleanSupplier visibilityReady;
         Entry(Mob mob, ServerLevel level, PortalProcessor processor, TeleportTransition transition,
                 ObjectOwnership binding, CrossDimensionReplacementBoundary.Token token, NativeProfile profile) {
             this.mob=mob; this.level=level; this.processor=processor; this.transition=transition; this.binding=binding; this.token=token; this.profile=profile;

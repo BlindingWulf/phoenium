@@ -187,9 +187,9 @@ class NativeItemPortalTransferTest {
     }
 
     static final class Fixture {
-        final WorldId a = new WorldId("minecraft:overworld"), b = new WorldId("minecraft:the_nether");
-        final RoutingKey from = new RoutingKey(a,0,0), to = new RoutingKey(b,0,0);
-        final RegionId ar = new RegionId(a,"stage2-live-world"), br = new RegionId(b,"stage2-live-world");
+        final WorldId a = new WorldId("minecraft:overworld"), b;
+        final RoutingKey from = new RoutingKey(a,0,0), to;
+        final RegionId ar = new RegionId(a,"stage2-live-world"), br;
         final RegionDirectory directory = new RegionDirectory();
         final Map<RegionId,RegionRuntime> runtimes = new LinkedHashMap<>();
         final FailureBarrier barrier = new FailureBarrier();
@@ -200,10 +200,13 @@ class NativeItemPortalTransferTest {
         final ItemPortalTransitionManager manager;
         final NativePortalTransfer.Authority authority;
         Entity replacement;
-        boolean enforceOwners=true, running=true, ready=true, cleanupFailure;
+        boolean enforceOwners=true, running=true, ready=true, entityVisible=true, cleanupFailure;
+        int visibilityDemands;
         FailurePoint failAt;
         final IllegalStateException failure=new IllegalStateException("controlled native endpoint");
         Runnable preparation=() -> { };
+        Runnable platformPreparation=() -> { };
+        int platformServices;
         Runnable afterInsertion=() -> { };
         final List<String> order = new ArrayList<>();
         int nextId;
@@ -212,13 +215,21 @@ class NativeItemPortalTransferTest {
         final Map<ServerLevel,net.minecraft.world.level.portal.PortalForcer> forcers = new IdentityHashMap<>();
         final Map<ServerLevel,net.minecraft.world.entity.ai.village.poi.PoiManager> pois = new IdentityHashMap<>();
         java.util.function.Function<Object[],Object> chunkRead = args -> null;
+        java.util.function.Function<net.minecraft.core.BlockPos,net.minecraft.world.level.block.state.BlockState> blockRead =
+            pos -> net.minecraft.world.level.block.Blocks.AIR.defaultBlockState();
+        final Map<net.minecraft.core.BlockPos,net.minecraft.world.level.block.state.BlockState> blockStates=new HashMap<>();
+        int blockWrites,blockDestroys;
         java.util.function.BiConsumer<ServerLevel,net.minecraft.server.level.ServerPlayer> playerRemove = (level,player)->{};
         java.util.function.BiConsumer<ServerLevel,net.minecraft.server.level.ServerPlayer> playerInsert = (level,player)->{};
         net.minecraft.world.level.storage.LevelData levelData;
         net.minecraft.world.damagesource.DamageSources damageSources;
         Runnable sound=()->{};
         final List<ItemEntity> mergeTargets=new ArrayList<>();
-        Fixture() throws Exception {
+        Fixture() throws Exception { this(Level.NETHER); }
+        Fixture(net.minecraft.resources.ResourceKey<Level> destinationDimension) throws Exception {
+            b = new WorldId(destinationDimension.identifier().toString());
+            to = new RoutingKey(b,destinationDimension == Level.END ? 6 : 0,0);
+            br = new RegionId(b,"stage2-live-world");
             for (var id : List.of(ar,br)) {
                 var runtime = new RegionRuntime(id,new OwnerEpoch(0)); runtime.transitionTo(RegionLifecycle.READY); runtimes.put(id,runtime);
             }
@@ -226,7 +237,7 @@ class NativeItemPortalTransferTest {
             directory.publish(generation,Map.of(from,new RegionRoute(ar,generation,new OwnerEpoch(0)),to,new RegionRoute(br,generation,new OwnerEpoch(0))));
             var scheduler = new RegionScheduler(runtimes,directory,barrier);
             dispatcher = new RegionalServiceDispatcher("native-item-portal",1,directory,runtimes,new OwnerGateway(directory,runtimes,scheduler),scheduler);
-            overworld = world(Level.OVERWORLD,from); nether = world(Level.NETHER,to);
+            overworld = world(Level.OVERWORLD,from); nether = world(destinationDimension,to);
             authority = new NativePortalTransfer.Authority() {
                 public boolean running() { return running; }
                 public boolean worldActive(ServerLevel level) { return level == overworld || level == nether; }
@@ -240,6 +251,20 @@ class NativeItemPortalTransferTest {
                     assertTrue(OwnershipContext.current().isEmpty());
                     assertTrue(runtimes.values().stream().noneMatch(r -> r.leases().hasActiveLease()));
                     preparation.run(); return () -> ready;
+                }
+                public java.util.function.BooleanSupplier demandDestinationEntityVisibility(Entity source,TeleportTransition transition) {
+                    visibilityDemands++;return () -> entityVisible;
+                }
+                public void withDestinationPlatform(ServerLevel destination,net.minecraft.core.BlockPos origin,
+                        java.util.function.BooleanSupplier sourceCurrent,Runnable nativePlatform) {
+                    assertTrue(OwnershipContext.current().isEmpty());
+                    assertTrue(sourceCurrent.getAsBoolean());
+                    platformPreparation.run();
+                    assertTrue(sourceCurrent.getAsBoolean());
+                    execute(key(destination),RegionalServiceKind.ENTITY_PORTAL_DESTINATION,()->{
+                        assertTrue(sourceCurrent.getAsBoolean());
+                        platformServices++; nativePlatform.run();
+                    });
                 }
                 public void retireExpectedSource(Entity source, Entity.RemovalReason reason, ObjectOwnership expected) {
                     assertTrue(identities.retirePortalPublication(expected, worldId((ServerLevel)source.level()),source.getId()));
@@ -296,6 +321,7 @@ class NativeItemPortalTransferTest {
                 new Answer(ServerLevel.class.getMethod("getWaypointManager"),args->new net.minecraft.server.waypoints.ServerWaypointManager()),
                 new Answer(ServerLevel.class.getMethod("getEntityInAnyDimension",UUID.class),args->visible.values().stream().map(map->map.get(args[0])).filter(Objects::nonNull).findFirst().orElse(null)),
                 new Answer(ServerLevel.class.getMethod("getLevelData"),args->levelData),
+                new Answer(ServerLevel.class.getMethod("getRespawnData"),args->net.minecraft.world.level.storage.LevelData.RespawnData.DEFAULT),
                 new Answer(ServerLevel.class.getMethod("getSeaLevel"),args->63),
                 new Answer(ServerLevel.class.getMethod("isSpawningMonsters"),args->false),
                 new Answer(Level.class.getMethod("damageSources"),args->damageSources),
@@ -309,8 +335,17 @@ class NativeItemPortalTransferTest {
                 new Answer(Level.class.getMethod("getWorldBorder"), args -> new net.minecraft.world.level.border.WorldBorder()),
                 new Answer(Level.class.getMethod("dimensionType"), args -> net.minecraft.data.registries.VanillaRegistries.createLookup()
                     .lookupOrThrow(net.minecraft.core.registries.Registries.DIMENSION_TYPE)
-                    .getOrThrow(dimension == Level.OVERWORLD ? net.minecraft.world.level.dimension.BuiltinDimensionTypes.OVERWORLD : net.minecraft.world.level.dimension.BuiltinDimensionTypes.NETHER).value()),
-                new Answer(Level.class.getMethod("getBlockState",net.minecraft.core.BlockPos.class), args -> net.minecraft.world.level.block.Blocks.AIR.defaultBlockState()),
+                    .getOrThrow(dimension == Level.OVERWORLD ? net.minecraft.world.level.dimension.BuiltinDimensionTypes.OVERWORLD
+                        : dimension == Level.END ? net.minecraft.world.level.dimension.BuiltinDimensionTypes.END
+                        : net.minecraft.world.level.dimension.BuiltinDimensionTypes.NETHER).value()),
+                new Answer(Level.class.getMethod("getBlockState",net.minecraft.core.BlockPos.class), args -> blockRead.apply((net.minecraft.core.BlockPos)args[0])),
+                new Answer(Level.class.getMethod("setBlock",net.minecraft.core.BlockPos.class,net.minecraft.world.level.block.state.BlockState.class,int.class), args -> {
+                    owner(key);blockWrites++;blockStates.put(((net.minecraft.core.BlockPos)args[0]).immutable(),
+                        (net.minecraft.world.level.block.state.BlockState)args[1]);return true;
+                }),
+                new Answer(Level.class.getMethod("destroyBlock",net.minecraft.core.BlockPos.class,boolean.class,Entity.class,int.class), args -> {
+                    owner(key);blockDestroys++;blockStates.remove((net.minecraft.core.BlockPos)args[0]);return true;
+                }),
                 new Answer(Level.class.getMethod("getChunk",int.class,int.class,net.minecraft.world.level.chunk.status.ChunkStatus.class,boolean.class), args -> chunkRead.apply(args)),
                 new Answer(ServerLevel.class.getMethod("getEntity",UUID.class), args -> entities.get(args[0])),
                 new Answer(ServerLevel.class.getMethod("getEntity",int.class), args -> entities.values().stream().filter(e -> e.getId() == (int)args[0]).findFirst().orElse(null)),

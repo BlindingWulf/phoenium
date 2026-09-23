@@ -329,8 +329,8 @@ public final class RegionalChunkGameplayService implements NaturalSpawnContinuat
                     throw new IllegalStateException("entity tick vehicle relation changed");
                 output.accept(entity);
             });
-            // The enclosing native owner callback has returned. Finish this finite mob
-            // operation before the next entity tick/RNG draw in the native list order.
+            // The enclosing native owner callback has returned. Finish this finite
+            // portal operation before the next entity tick/RNG draw in native order.
             dev.phoenium.Phoenium.liveRuntime().advanceMobPortalAfterEntityCallback();
         });
     }
@@ -547,9 +547,38 @@ public final class RegionalChunkGameplayService implements NaturalSpawnContinuat
             new TopologyPlanner().requiredClosure(Set.of(source), 9));
         List<PlayerProjection> players = captureLevelPlayers();
         players.forEach(player -> footprint.add(player.key));
+        // In 26.2 isArenaLoaded reads FULL at x = origin +/-8 and z = origin +8
+        // (the mapped loop's z lower and upper bounds are both +8). A DRAGON
+        // ticket is installed by tick() immediately before those reads. When a
+        // player first reaches the End, the ticket's FULL futures can still be
+        // incomplete. Resolve their public inputs before admitting the native
+        // fight body, then retain their exact resident publications for the cut.
+        var arenaInputs = new java.util.LinkedHashMap<RoutingKey, java.util.function.BooleanSupplier>();
+        if (!players.isEmpty() || !((RegionalDragonFightAccess) fight).phoenium$dragonEvent().getPlayers().isEmpty()) {
+            for (int x = chunk.x() - 8; x <= chunk.x() + 8; x++) {
+                int z = chunk.z() + 8;
+                var ready = level.getChunkSource().getChunk(x, z,
+                    net.minecraft.world.level.chunk.status.ChunkStatus.FULL, true);
+                if (ready == null) throw new IllegalStateException("dragon arena FULL input absent");
+                long position = new ChunkPos(x, z).pack();
+                var resident = dev.phoenium.chunk.ResidentChunkSourceBinding.capture(level, position);
+                if (resident == null || resident.chunk() != ready)
+                    throw new IllegalStateException("dragon arena FULL input lacks resident publication");
+                final int chunkX = x, chunkZ = z;
+                var key = new RoutingKey(world, x, z);
+                arenaInputs.put(key, () -> resident.current()
+                    && level.getChunkSource().getChunkNow(chunkX, chunkZ) == ready);
+                footprint.add(key);
+            }
+        }
         dispatcher.ensureClosure(Set.copyOf(footprint));
         dispatcher.executeAndDrain(source, RegionalServiceKind.CHUNK_GAMEPLAY, ignored -> {
             dispatcher.requireCurrentClosure(Set.copyOf(footprint));
+            for (var input : arenaInputs.entrySet()) {
+                dispatcher.requireCurrentOwner(input.getKey());
+                if (!input.getValue().getAsBoolean())
+                    throw new IllegalStateException("dragon arena resident input changed: " + input.getKey());
+            }
             for (PlayerProjection player : players) requireEntity(player.candidate, player.key);
             fight.tick();
         });

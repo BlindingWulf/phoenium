@@ -25,6 +25,13 @@ public final class NativePortalTransfer {
         WorldId worldId(ServerLevel level);
         void execute(RoutingKey key, RegionalServiceKind kind, Runnable body);
         BooleanSupplier prepare(Entity source, TeleportTransition transition, RoutingKey destination);
+        default BooleanSupplier demandDestinationEntityVisibility(Entity source, TeleportTransition transition) {
+            return () -> true;
+        }
+        default void withDestinationPlatform(ServerLevel destination, BlockPos origin,
+                BooleanSupplier sourceCurrent, Runnable nativePlatform) {
+            throw new IllegalStateException("destination platform service is not bound");
+        }
         void retireExpectedSource(Entity source, Entity.RemovalReason reason, ObjectOwnership expected);
     }
     private static final ThreadLocal<NativePortalTransfer> ACTIVE = new ThreadLocal<>();

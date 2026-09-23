@@ -10,6 +10,8 @@ import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.Leashable;
 import net.minecraft.world.entity.PortalProcessor;
 import net.minecraft.world.entity.projectile.throwableitemprojectile.ThrownEnderpearl;
+import net.minecraft.world.entity.decoration.ArmorStand;
+import net.minecraft.world.entity.decoration.Mannequin;
 import net.minecraft.world.level.portal.TeleportTransition;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Shadow;
@@ -49,7 +51,9 @@ abstract class PearlPortalEntityMixin implements PearlPortalNativeAccess.EntityS
         cancellable = true, require = 1, expect = 1)
     private void phoenium$returnSuspendedPearlBaseTick(CallbackInfo ci) {
         Entity self = (Entity) (Object) this;
-        if (self instanceof ThrownEnderpearl pearl && Phoenium.liveRuntime().pearlPortalTickSuspended(pearl)) {
+        if (self instanceof ThrownEnderpearl pearl && Phoenium.liveRuntime().pearlPortalTickSuspended(pearl)
+                || self instanceof ArmorStand stand && Phoenium.liveRuntime().armorStandPortalSuspended(stand)
+                || self instanceof Mannequin mannequin && Phoenium.liveRuntime().armorStandPortalSuspended(mannequin)) {
             // baseTick's native entityBaseTick section is resumed by the typed suffix below.
             Profiler.get().pop();
             ci.cancel();

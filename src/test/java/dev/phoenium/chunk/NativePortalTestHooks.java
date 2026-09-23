@@ -42,6 +42,7 @@ public final class NativePortalTestHooks {
         NativePortalTransfer.destinationEffect(entity,"ITEM_TELEPORT_SUFFIX",() -> invoke(ItemEntity.class,entity,"mergeWithNeighbours"));
     }
     public static void placePortalTicket(Entity entity, BlockPos pos) {
+        if (dev.phoenium.ownership.OwnershipContext.current().isPresent()) { ticket.accept(entity); return; }
         NativePortalTransfer.destinationEffect(entity,"PEARL_TELEPORT_SUFFIX",() -> ticket.accept(entity));
     }
     private static void invoke(Class<?> owner, Object value, String name) {

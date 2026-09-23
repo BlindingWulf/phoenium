@@ -20,7 +20,7 @@ import java.util.*;
 
 /** Installed Stage 7 cards. Commands prepare scenes/read state; client input causes the witnesses. */
 public final class Stage7RepairClientTest implements FabricClientGameTest {
-    static final String USER="PhoeniumTest0",OW="minecraft:overworld",NETHER="minecraft:the_nether";
+    static final String USER="PhoeniumTest0",OW="minecraft:overworld",NETHER="minecraft:the_nether",END="minecraft:the_end";
     final Path evidence=Path.of(System.getProperty("phoenium.repair.evidence"));
     final JsonObject receipt=new JsonObject();final JsonArray cards=new JsonArray(),observations=new JsonArray();
     ClientGameTestContext context;
@@ -29,9 +29,32 @@ public final class Stage7RepairClientTest implements FabricClientGameTest {
         context=ctx;receipt.add("cards",cards);receipt.add("observations",observations);
         receipt.addProperty("username",USER);receipt.addProperty("facility","Fabric Client GameTest over TCP, separate dedicated server");
         receipt.addProperty("humanActions",false);receipt.addProperty("candidateSha256",System.getProperty("phoenium.repair.sha256"));
+        String group=System.getProperty("phoenium.repair.group","");receipt.addProperty("group",group);
         try {
             connect();
-            if(Boolean.getBoolean("phoenium.repair.restart")){restartCard();}
+            if(group.equals("end-falling")){fallingEndCards();}
+            else if(group.equals("selection-holes")){
+                int sequence=0;
+                for(String type:List.of("skeleton","horse","donkey","mule","skeleton_horse",
+                        "zombie_horse","llama","trader_llama"))
+                    for(String from:List.of(OW,NETHER))mobPortalCase(type,from,1,sequence++);
+            }
+            else if(group.equals("merchant-holes")){
+                int sequence=0;
+                for(String type:List.of("wandering_trader","villager"))
+                    for(String from:List.of(OW,NETHER))mobPortalCase(type,from,1,sequence++);
+            }
+            else if(group.equals("armor-stand")){
+                decorativeLivingCase("armor_stand",OW,false,0);
+                decorativeLivingCase("armor_stand",NETHER,true,1);
+                decorativeLivingCase("mannequin",OW,false,2);
+                decorativeLivingCase("mannequin",NETHER,false,3);
+            }
+            else if(group.equals("bed-anchor")){
+                if(Boolean.getBoolean("phoenium.repair.restart"))bedAnchorRestartCards();
+                else bedAnchorFirstCards();
+            }
+            else if(Boolean.getBoolean("phoenium.repair.restart")){restartCard();}
             else {mobPortals();containers();baseline();playerPortals();itemCard(OW,NETHER,3,0);itemCard(NETHER,OW,4,1);
                 itemCard(OW,NETHER,2,2);itemCard(NETHER,OW,5,3);localPearl();pearlCard(OW,NETHER);pearlCard(NETHER,OW);coldDestination();respawns();
                 cmd("execute in "+OW+" run setblock 8 65 8 minecraft:diamond_block");
@@ -57,6 +80,258 @@ public final class Stage7RepairClientTest implements FabricClientGameTest {
             mobPortalCase("magma_cube",NETHER,size,sequence++);
             mobPortalCase("slime",OW,size,sequence++);
         }
+    }
+    void fallingEndCards()throws Exception {
+        active="F0-end-source-setup";
+        position(OW,8.5,66,5.5,180,0);
+        cmd("gamemode creative "+USER);
+        for(String c:List.of("fill -3 64 -3 3 64 3 minecraft:obsidian",
+                "fill -2 65 -2 2 76 2 minecraft:air",
+                "setblock 0 65 0 minecraft:end_portal"))
+            cmd("execute in "+OW+" run "+c);
+        require(cmd("execute in "+OW+" run execute if block 0 65 0 minecraft:end_portal").contains("Test passed"),
+            "source End portal block did not exist");
+        JsonObject initial=probe();
+        receipt.add("endPlatformInitially",initial.getAsJsonObject("endPlatform").deepCopy());
+        String lastLandingBlock="";
+        for(String material:List.of("sand","gravel","anvil")) {
+            active="F1-"+material+"-native-fall-end-entry";
+            cmd("execute in "+OW+" run fill 0 66 0 0 76 0 minecraft:air");
+            cmd("execute in "+OW+" run setblock 0 65 0 minecraft:end_portal");
+            cmd("execute in "+OW+" run setblock 0 72 0 minecraft:stone");
+            cmd("execute in "+OW+" run setblock 0 73 0 minecraft:"+material);
+            require(cmd("execute in "+OW+" run execute if block 0 73 0 minecraft:"+material).contains("Test passed"),
+                "falling block support setup absent");
+            snapshot(active+"-before-removal");
+            cmd("execute in "+OW+" run setblock 0 72 0 minecraft:air");
+            JsonObject source=null;
+            for(int i=0;i<30;i++){context.waitTick();
+                var seen=falling(probe(),null,material);
+                if(seen!=null&&seen.get("world").getAsString().equals(OW)){source=seen;break;}}
+            require(source!=null,"ordinary support removal did not create a native falling "+material+" entity");
+            String uuid=source.get("uuid").getAsString();
+            receipt.add(active+"-source",source.deepCopy());
+            JsonObject arrival=null;
+            for(int i=0;i<350;i++){context.waitTick();
+                var seen=fallingArrival(probe(),uuid,material);
+                if(seen!=null){arrival=seen;break;}}
+            require(arrival!=null,"native falling block End transfer/tracking not observed: "+material+" "+uuid);
+            require(!arrival.get("object").equals(source.get("object")),"End falling block did not use native replacement identity");
+            receipt.add(active+"-arrival",arrival.deepCopy());
+            snapshot(active+"-arrival");
+            context.waitTicks(30);
+            JsonObject after=snapshot(active+"-settled");
+            JsonObject platform=after.getAsJsonObject("endPlatform");
+            require(platform.get("ready").getAsBoolean()&&platform.get("obsidianFoundation").getAsInt()==25,
+                "End platform foundation missing after native entry");
+            JsonObject landed=fallingLandingEvent(after,uuid);
+            require(landed!=null,"native End falling-block landing/removal was not observed");
+            String landedState=landed.get("fallingState").getAsString();
+            String expectedBlock=landedState.substring(landedState.indexOf('{')+1,landedState.indexOf('}'));
+            require(expectedBlock.equals("minecraft:"+material)
+                    || material.equals("anvil")&&expectedBlock.equals("minecraft:chipped_anvil"),
+                "unexpected native falling-block conversion: "+material+" to "+expectedBlock);
+            require(cmd("execute in "+END+" run execute if block 100 49 0 "+expectedBlock).contains("Test passed"),
+                "falling "+material+" did not continue into its native End landing state "+expectedBlock);
+            lastLandingBlock=expectedBlock;
+            receipt.add(active+"-landing",landed.deepCopy());
+            pass(active,"support removal, portal contact, cross-dimension replacement, platform and native landing; uuid="+uuid);
+        }
+        active="F2-java-client-end-view";
+        position(END,103.5,50,2.5,180,0);
+        final String clientExpectedBlock=lastLandingBlock;
+        require(context.computeOnClient(c->net.minecraft.core.registries.BuiltInRegistries.BLOCK.getKey(
+            c.level.getBlockState(new BlockPos(100,49,0)).getBlock()).toString().equals(clientExpectedBlock)),
+            "connected Java client cannot see final native End landing block");
+        health(active);pass(active,"normal TCP Java client observed the final End block and remained usable");
+    }
+    void bedAnchorFirstCards()throws Exception {
+        active="R0-respawn-scene";
+        cmd("gamemode survival "+USER);
+        cmd("setworldspawn 0 65 0");
+        cmd("time set day");
+        for(String world:List.of(OW,NETHER)) {
+            for(String setup:List.of("fill -3 64 -3 13 64 15 minecraft:stone",
+                    "fill -3 65 -3 13 73 15 minecraft:air"))
+                cmd("execute in "+world+" run "+setup);
+        }
+        position(OW,8.5,65,7.5,180,0);
+        cmd("item replace entity "+USER+" hotbar.0 with minecraft:red_bed 1");
+        context.getInput().pressKey(o->o.keyHotbarSlots[0]);context.waitTicks(6);
+        context.getInput().lookAt(new BlockPos(8,64,10));context.waitTicks(3);
+        context.getInput().pressKey(o->o.keyUse);context.waitTicks(12);
+        JsonObject placed=probe();
+        int bedParts=0,headZ=-1;
+        for(int z:new int[]{9,10,11}) {
+            JsonObject part=respawnBlock(placed,OW,z);
+            if(part!=null&&part.get("block").getAsString().equals("minecraft:red_bed")) {
+                bedParts++;
+                if(part.get("state").getAsString().contains("part=head"))headZ=z;
+            }
+        }
+        require(bedParts==2&&headZ>=0,"ordinary client bed placement did not make two bed halves");
+        active="R1-bed-bind-and-cross-dimension-death";
+        context.getInput().lookAt(new BlockPos(8,65,headZ));context.waitTicks(3);
+        context.getInput().pressKey(o->o.keyUse);context.waitTicks(12);
+        JsonObject bound=player();
+        require(bound.has("respawnDimension")&&bound.get("respawnDimension").getAsString().equals(OW)
+            &&bound.get("respawnPosition").getAsString().equals("8, 65, "+headZ),
+            "ordinary bed interaction did not save the native bed spawn: "+bound);
+        receipt.add("bedBound",bound.deepCopy());
+        position(NETHER,8.5,65,7.5,180,0);
+        deathAndClientRespawn();
+        JsonObject atBed=player();
+        require(atBed.get("world").getAsString().equals(OW)
+            &&Math.abs(atBed.get("x").getAsDouble()-8)<5
+            &&Math.abs(atBed.get("z").getAsDouble()-headZ)<5,
+            "cross-dimension death did not use the saved bed: "+atBed);
+        health(active);pass(active,"client bed placement/use saved spawn; Nether death returned near intact Overworld bed");
+
+        active="R2-client-bed-break-and-fallback";
+        position(OW,8.5,65,7.5,180,0);
+        context.getInput().lookAt(new BlockPos(8,65,10));context.waitTicks(3);
+        context.getInput().holdKey(o->o.keyAttack);context.waitTicks(25);
+        context.getInput().releaseKey(o->o.keyAttack);context.waitTicks(10);
+        JsonObject broken=probe();
+        require(respawnBlock(broken,OW,9).get("block").getAsString().equals("minecraft:air")
+            &&respawnBlock(broken,OW,10).get("block").getAsString().equals("minecraft:air")
+            &&respawnBlock(broken,OW,11).get("block").getAsString().equals("minecraft:air"),
+            "ordinary block action did not break both bed halves");
+        receipt.add("bedBroken",broken.deepCopy());
+        deathAndClientRespawn();
+        JsonObject fallback=player();
+        require(fallback.get("world").getAsString().equals(OW)
+            &&Math.abs(fallback.get("x").getAsDouble())<32&&Math.abs(fallback.get("z").getAsDouble())<32
+            &&!fallback.has("respawnDimension"),
+            "broken bed was reused or world fallback missing: "+fallback);
+        health(active);pass(active,"client broke bed; next death used configured native world fallback");
+
+        active="R3-anchor-place-charge-bind";
+        position(NETHER,8.5,65,7.5,180,0);
+        cmd("item replace entity "+USER+" hotbar.0 with minecraft:respawn_anchor 1");
+        context.getInput().pressKey(o->o.keyHotbarSlots[0]);context.waitTicks(5);
+        context.getInput().lookAt(new BlockPos(8,64,10));context.waitTicks(3);
+        context.getInput().pressKey(o->o.keyUse);context.waitTicks(10);
+        JsonObject placedAnchor=probe();
+        int anchorZ=anchorPosition(placedAnchor);
+        require(anchorZ>=0,"ordinary client anchor placement missing");
+        receipt.addProperty("anchorZ",anchorZ);
+        cmd("item replace entity "+USER+" hotbar.0 with minecraft:glowstone 2");
+        context.getInput().lookAt(new BlockPos(8,65,anchorZ));context.waitTicks(3);
+        context.getInput().pressKey(o->o.keyUse);context.waitTicks(12);
+        JsonObject charged=probe();
+        require(respawnBlock(charged,NETHER,anchorZ).get("charge").getAsInt()==1,
+            "normal glowstone use did not charge anchor once");
+        require(player().get("glowstone").getAsInt()==1,"glowstone item consumption was not exactly one");
+        context.getInput().pressKey(o->o.keyHotbarSlots[1]);context.waitTicks(5);
+        context.getInput().pressKey(o->o.keyUse);context.waitTicks(12);
+        JsonObject anchorBound=player();
+        require(anchorBound.has("respawnDimension")&&anchorBound.get("respawnDimension").getAsString().equals(NETHER)
+            &&anchorBound.get("respawnPosition").getAsString().equals("8, 65, "+anchorZ),
+            "charged anchor interaction did not bind native spawn: "+anchorBound);
+        receipt.add("anchorBound",anchorBound.deepCopy());
+        cmd("save-all flush");health(active);pass(active,"client placed anchor, used one glowstone, separately bound Nether spawn and saved world");
+    }
+    void bedAnchorRestartCards()throws Exception {
+        active="R4-anchor-persisted-consumption";
+        JsonObject saved=probe(),before=player();
+        int anchorZ=anchorPosition(saved);
+        require(anchorZ>=0&&respawnBlock(saved,NETHER,anchorZ).get("charge").getAsInt()==1
+            &&before.has("respawnDimension")&&before.get("respawnDimension").getAsString().equals(NETHER),
+            "bound charged anchor did not survive normal save/restart");
+        position(NETHER,8.5,65,7.5,180,0);
+        deathAndClientRespawn();
+        JsonObject arrived=player(),after=probe();
+        require(arrived.get("world").getAsString().equals(NETHER)
+            &&Math.abs(arrived.get("x").getAsDouble()-8)<5
+            &&Math.abs(arrived.get("z").getAsDouble()-anchorZ)<5,
+            "charged anchor respawn location missing: "+arrived);
+        require(respawnBlock(after,NETHER,anchorZ).get("charge").getAsInt()==0,
+            "native anchor charge was not consumed exactly once");
+        receipt.add("anchorConsumed",after.deepCopy());
+        health(active);pass(active,"saved bound Nether anchor selected after death and one charge consumed");
+        active="R5-empty-anchor-fallback-reconnect";
+        // The next kill must occur after native post-respawn invulnerability ends.
+        context.waitTicks(100);
+        deathAndClientRespawn();
+        JsonObject fallback=player();
+        require(fallback.get("world").getAsString().equals(OW)
+            &&Math.abs(fallback.get("x").getAsDouble())<32&&Math.abs(fallback.get("z").getAsDouble())<32
+            &&!fallback.has("respawnDimension"),
+            "empty anchor was reused or world fallback missing: "+fallback);
+        require(respawnBlock(probe(),NETHER,anchorZ).get("charge").getAsInt()==0,
+            "empty anchor charge changed twice");
+        disconnect();context.waitTicks(20);connect();context.waitTicks(20);
+        require(player().get("world").getAsString().equals(OW),"post-anchor reconnect lost fallback session");
+        health(active);pass(active,"empty anchor fell back, charge remained zero, reconnect usable");
+    }
+    void deathAndClientRespawn()throws Exception {
+        JsonObject old=player();cmd("kill "+USER);context.waitTicks(110);
+        JsonObject dead=player();
+        require(dead.get("removed").getAsBoolean()&&dead.get("deathTime").getAsInt()>=20,
+            "native death retirement missing");
+        context.runOnClient(c->c.player.respawn());
+        for(int i=0;i<180;i++){context.waitTick();JsonObject current=player();
+            if(!current.get("removed").getAsBoolean()&&current.get("health").getAsDouble()>0
+                &&!current.get("object").equals(old.get("object")))return;}
+        throw new AssertionError("normal client Respawn did not publish new player session");
+    }
+    JsonObject respawnBlock(JsonObject state,String world,int z) {
+        for(JsonElement value:state.getAsJsonArray("respawnBlocks")) {
+            JsonObject block=value.getAsJsonObject();
+            if(block.get("world").getAsString().equals(world)
+                &&block.get("position").getAsString().equals("8, 65, "+z))return block;
+        }
+        return null;
+    }
+    int anchorPosition(JsonObject state) {
+        int found=-1;
+        for(int z:new int[]{9,10,11}) {
+            JsonObject block=respawnBlock(state,NETHER,z);
+            if(block!=null&&block.get("block").getAsString().equals("minecraft:respawn_anchor")) {
+                require(found<0,"multiple scene anchors found");found=z;
+            }
+        }
+        return found;
+    }
+    JsonObject probe()throws IOException {return JsonParser.parseString(cmd("stage7-probe snapshot")).getAsJsonObject();}
+    JsonObject falling(JsonObject state,String uuid,String material) {
+        JsonObject found=null;
+        for(JsonElement value:state.getAsJsonArray("entities")) {
+            JsonObject e=value.getAsJsonObject();
+            if(!e.get("type").getAsString().equals("minecraft:falling_block"))continue;
+            if(uuid!=null&&!e.get("uuid").getAsString().equals(uuid))continue;
+            if(!e.get("fallingState").getAsString().contains("minecraft:"+material))continue;
+            require(found==null,"duplicate live falling block for "+material+" "+uuid);found=e;
+        }
+        return found;
+    }
+    JsonObject fallingArrival(JsonObject state,String uuid,String material) {
+        JsonObject live=falling(state,uuid,material);
+        if(live!=null&&live.get("world").getAsString().equals(END))return live;
+        JsonObject found=null;
+        for(JsonElement value:state.getAsJsonArray("fallingEvents")) {
+            JsonObject e=value.getAsJsonObject();
+            if(!e.get("uuid").getAsString().equals(uuid)
+                    || !e.get("world").getAsString().equals(END)
+                    || !e.get("fallingState").getAsString().contains("minecraft:"+material)
+                    || !e.get("phase").getAsString().equals("TRACKING_ADD_RETURN"))continue;
+            require(found==null,"duplicate End tracking addition for "+material+" "+uuid);
+            found=e;
+        }
+        return found;
+    }
+    JsonObject fallingLandingEvent(JsonObject state,String uuid) {
+        JsonObject found=null;
+        for(JsonElement value:state.getAsJsonArray("fallingEvents")) {
+            JsonObject e=value.getAsJsonObject();
+            if(!e.get("uuid").getAsString().equals(uuid)
+                    || !e.get("world").getAsString().equals(END)
+                    || !e.get("phase").getAsString().equals("TRACKING_REMOVE_RETURN"))continue;
+            require(found==null,"duplicate End falling-block retirement for "+uuid);
+            found=e;
+        }
+        return found;
     }
     void mobPortalCase(String type,String from,int size,int sequence)throws Exception {
             active="M0-"+type+"-size"+size+"-"+from;String to=from.equals(OW)?NETHER:OW;
@@ -88,6 +363,37 @@ public final class Stage7RepairClientTest implements FabricClientGameTest {
             health(active);pass(active,"native portal lookup, replacement, destination tracking and later ticks; UUID="+uuid);
             if(type.equals("magma_cube")&&from.equals(NETHER)&&size==1) cubeReverseAfterCooldown(tag,arrived,uuid,size);
             else if(cube) holdCube(to,tag);
+    }
+    void decorativeLivingCase(String type,String from,boolean equipped,int sequence)throws Exception {
+        active="A0-"+type.replace('_','-')+"-"+from+"-"+(equipped?"equipped":"empty");
+        String to=from.equals(OW)?NETHER:OW,tag="stage7_decorative_"+sequence;
+        position(from,8.5,65,5.5,180,0);
+        String equipment=equipped?",ShowArms:1b,NoBasePlate:1b,ArmorItems:[{},{},{},{id:\"minecraft:diamond_helmet\",count:1}],HandItems:[{id:\"minecraft:iron_sword\",count:1},{}]":"";
+        cmd("execute in "+from+" run summon minecraft:"+type+" 0.5 65 2.5 {Tags:[\""+tag+"\"],PersistenceRequired:1b"+equipment+"}");
+        JsonObject before=taggedMob(snapshot(active+"-source"),tag);
+        require(before.get("world").getAsString().equals(from),"armor stand source world changed before contact");
+        cmd("execute in "+from+" run tp @e[tag="+tag+",limit=1] 0.5 65 0.5");
+        JsonObject arrived=null;
+        for(int i=0;i<180;i++) {context.waitTick();JsonObject now=taggedMob(snapshot(active+"-wait"),tag);
+            if(now.get("world").getAsString().equals(to)){arrived=now;break;}}
+        require(arrived!=null,"native armor stand portal transfer missing");
+        require(arrived.get("uuid").equals(before.get("uuid"))&&!arrived.get("object").equals(before.get("object")),
+            "armor stand replacement identity changed");
+        require(arrived.get("head").equals(before.get("head"))&&arrived.get("mainhand").equals(before.get("mainhand")),
+            type+" equipment changed on transfer");
+        if(type.equals("armor_stand"))
+            require(arrived.get("small").equals(before.get("small"))&&arrived.get("marker").equals(before.get("marker")),
+                "armor stand size changed on transfer");
+        position(to,8.5,65,5.5,180,0);
+        JsonObject later=arrived;
+        for(int i=0;i<160&&later.get("ticks").getAsInt()<=arrived.get("ticks").getAsInt()+25;i++) {
+            context.waitTicks(2);later=taggedMob(snapshot(active+"-later"),tag);
+        }
+        require(later.get("ticks").getAsInt()>arrived.get("ticks").getAsInt()+20,"armor stand did not tick after arrival");
+        String uuid=later.get("uuid").getAsString();
+        require(context.computeOnClient(c->{for(var e:c.level.entitiesForRendering())if(e.getUUID().toString().equals(uuid))return true;return false;}),
+            "armor stand client tracking absent");
+        health(active);pass(active,"native portal, replacement, tracking and later ticks; UUID="+uuid);
     }
     void holdCube(String world,String tag)throws Exception {
         // Same-world scene placement after the native portal and later-tick assertions.

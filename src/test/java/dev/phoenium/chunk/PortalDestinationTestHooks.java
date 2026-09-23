@@ -10,6 +10,12 @@ import org.objectweb.asm.tree.*;
 public final class PortalDestinationTestHooks {
     static ItemPortalTransitionManager items;
     static dev.phoenium.live.MobPortalTransitionManager mobs;
+    static dev.phoenium.live.FallingBlockPortalTransitionManager falling;
+    static dev.phoenium.live.ArmorStandPortalTransitionManager armorStands;
+    static java.util.function.Consumer<net.minecraft.world.entity.item.FallingBlockEntity> fallingTail;
+    public static void fallingTail(net.minecraft.world.entity.item.FallingBlockEntity block) {
+        if(fallingTail!=null)fallingTail.accept(block);
+    }
     static Object pearls;
     static net.minecraft.world.phys.HitResult controlledHit;
     static Entity controlledBase;
@@ -17,7 +23,26 @@ public final class PortalDestinationTestHooks {
     public static void cubeTail(net.minecraft.world.entity.monster.cubemob.AbstractCubeMob cube) {
         if (cubeTail != null) cubeTail.accept(cube);
     }
+    static java.util.function.Consumer<net.minecraft.world.entity.animal.equine.AbstractHorse> horseTail;
+    public static void horseTail(net.minecraft.world.entity.animal.equine.AbstractHorse horse) {
+        if(horseTail!=null)horseTail.accept(horse);
+    }
     public static void beginMob(Mob mob) { if (mobs != null) mobs.begin(mob); }
+    public static void beginFalling(net.minecraft.world.entity.item.FallingBlockEntity block) {
+        if(falling!=null)falling.begin(block);
+    }
+    public static boolean completeFalling(net.minecraft.world.entity.item.FallingBlockEntity block,
+            net.minecraft.world.level.block.Block originalBlock) {
+        return falling!=null && falling.complete(block,originalBlock);
+    }
+    public static void finishFalling(net.minecraft.world.entity.item.FallingBlockEntity block) {
+        if(falling!=null)falling.finish(block);
+    }
+    public static void endPlatform(net.minecraft.world.level.ServerLevelAccessor destination,
+            net.minecraft.core.BlockPos origin,boolean dropResources,Entity entity) {
+        dev.phoenium.live.PortalDestinationObservation.endPlatform(entity,(net.minecraft.server.level.ServerLevel)destination,
+            origin,()->net.minecraft.world.level.levelgen.feature.EndPlatformFeature.createEndPlatform(destination,origin,dropResources));
+    }
     public static void completeMob(Mob mob) { if (mobs != null) mobs.complete(mob); }
     public static void finishMob(Mob mob) { if (mobs != null) mobs.finish(mob); }
     public static boolean itemCutIsEarly() {
@@ -37,6 +62,11 @@ public final class PortalDestinationTestHooks {
         throw new AssertionError("production invocation selector absent");
     }
     public static boolean capture(Entity entity) {
+        if(armorStands!=null && (entity instanceof net.minecraft.world.entity.decoration.ArmorStand
+                || entity instanceof net.minecraft.world.entity.decoration.Mannequin))
+            return armorStands.suspendDestination((net.minecraft.world.entity.LivingEntity)entity,entity.portalProcess);
+        if(falling!=null && entity instanceof net.minecraft.world.entity.item.FallingBlockEntity block)
+            return falling.suspendDestination(block,block.portalProcess);
         if(mobs!=null && entity instanceof Mob mob) return mobs.suspendDestination(mob,mob.portalProcess);
         if(pearls!=null && entity instanceof net.minecraft.world.entity.projectile.throwableitemprojectile.ThrownEnderpearl)
             return (boolean)pearlCall("suspendDestination",entity,entity.portalProcess);
@@ -46,6 +76,11 @@ public final class PortalDestinationTestHooks {
         catch(ReflectiveOperationException e) { throw new AssertionError(e); }
     }
     public static boolean suspended(Entity entity) {
+        if(armorStands!=null && (entity instanceof net.minecraft.world.entity.decoration.ArmorStand
+                || entity instanceof net.minecraft.world.entity.decoration.Mannequin))
+            return armorStands.suspended((net.minecraft.world.entity.LivingEntity)entity);
+        if(falling!=null && entity instanceof net.minecraft.world.entity.item.FallingBlockEntity block)
+            return falling.suspended(block);
         if(mobs!=null && entity instanceof Mob mob) return mobs.suspended(mob);
         if(pearls!=null && entity instanceof net.minecraft.world.entity.projectile.throwableitemprojectile.ThrownEnderpearl) return (boolean)pearlCall("suspended",entity);
         return items!=null && entity instanceof ItemEntity item && items.suspended(item);

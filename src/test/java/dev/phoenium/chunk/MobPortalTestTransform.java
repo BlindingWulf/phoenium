@@ -6,7 +6,9 @@ import org.objectweb.asm.tree.*;
 
 /** Install the production native tails and the two exact after-super cuts per class. */
 public final class MobPortalTestTransform {
-    public static boolean supports(String name) { return name.equals(MobPortalNativeSuffixes.LIVING)||name.equals(MobPortalNativeSuffixes.MOB)||name.equals(MobPortalNativeSuffixes.CUBE); }
+    public static boolean supports(String name) { return name.equals(MobPortalNativeSuffixes.LIVING)||name.equals(MobPortalNativeSuffixes.MOB)
+        ||name.equals(MobPortalNativeSuffixes.CUBE)||name.equals(MobPortalNativeSuffixes.HORSE)
+        ||name.equals(MobPortalNativeSuffixes.VILLAGER); }
     public static byte[] transform(String name,byte[] bytes) {
         var node=new ClassNode();new ClassReader(bytes).accept(node,ClassReader.EXPAND_FRAMES);
         install(node);
@@ -20,6 +22,13 @@ public final class MobPortalTestTransform {
                 var marker=new InsnList();marker.add(new VarInsnNode(Opcodes.ALOAD,0));
                 marker.add(new MethodInsnNode(Opcodes.INVOKESTATIC,"dev/phoenium/chunk/PortalDestinationTestHooks","cubeTail",
                     "(Lnet/minecraft/world/entity/monster/cubemob/AbstractCubeMob;)V",false));
+                method.instructions.insert(marker);
+            }
+        if(name.equals(MobPortalNativeSuffixes.HORSE))
+            for(var method:node.methods) if(method.name.equals("phoenium$resumeMobHorseTickSuffix")) {
+                var marker=new InsnList();marker.add(new VarInsnNode(Opcodes.ALOAD,0));
+                marker.add(new MethodInsnNode(Opcodes.INVOKESTATIC,"dev/phoenium/chunk/PortalDestinationTestHooks","horseTail",
+                    "(Lnet/minecraft/world/entity/animal/equine/AbstractHorse;)V",false));
                 method.instructions.insert(marker);
             }
         if(name.equals(MobPortalNativeSuffixes.LIVING))for(var method:node.methods)if(method.name.equals("tickDeath"))

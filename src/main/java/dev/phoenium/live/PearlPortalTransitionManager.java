@@ -24,6 +24,7 @@ import net.minecraft.world.entity.PortalProcessor;
 import net.minecraft.world.entity.PositionMoveRotation;
 import net.minecraft.world.entity.projectile.throwableitemprojectile.ThrownEnderpearl;
 import net.minecraft.world.level.block.NetherPortalBlock;
+import net.minecraft.world.level.block.EndPortalBlock;
 import net.minecraft.world.level.block.Portal;
 import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.level.portal.TeleportTransition;
@@ -65,7 +66,7 @@ final class PearlPortalTransitionManager implements AutoCloseable {
         if (!(pearl.level() instanceof ServerLevel sourceLevel) || pearl.portalProcess != processor || pearl.isRemoved()
                 || pearl.getClass() != ThrownEnderpearl.class) return false;
         Portal portal = ((PearlPortalProcessorAccess) processor).phoenium$portal();
-        if (!(portal instanceof NetherPortalBlock)) return false;
+        if (!(portal instanceof NetherPortalBlock) && !(portal instanceof EndPortalBlock)) return false;
         if (pearl.isPassenger() || pearl.isVehicle())
             throw new IllegalStateException("ridden pearl cannot use the retained portal continuation");
         FullEntityFacts.Access access = access(pearl);
@@ -150,6 +151,7 @@ final class PearlPortalTransitionManager implements AutoCloseable {
         try {
             NativePortalTransfer.retained(entry.source, entry.binding, entry.token, null, "DESTINATION_PREPARING");
             prepared = PortalDestinationObservation.prepare(entry.source,entry.binding,entry.token,
+                authority,() -> currentSource(entry)!=null,
                 () -> entry.processor.getPortalDestination(entry.sourceLevel, entry.source));
         } finally {
             Profiler.get().pop();
@@ -188,6 +190,13 @@ final class PearlPortalTransitionManager implements AutoCloseable {
         if (destinationLevel.dimension() == entry.sourceLevel.dimension()) {
             throw new IllegalStateException("vanilla Nether portal produced a same-dimension pearl transition");
         }
+        if (entry.visibilityReady == null)
+            entry.visibilityReady = authority.demandDestinationEntityVisibility(entry.source, transition);
+        if (!entry.visibilityReady.getAsBoolean()) {
+            if (++entry.visibilityWaits > 200)
+                throw new IllegalStateException("pearl destination entity visibility deadline: " + entry.visibilityReady);
+            return;
+        }
         replaceCrossDimension(entry, sourceBinding, transition);
     }
 
@@ -204,7 +213,8 @@ final class PearlPortalTransitionManager implements AutoCloseable {
 
     private void replaceCrossDimension(Entry entry, ObjectOwnership sourceBinding, TeleportTransition transition) {
         var transfer = new NativePortalTransfer(authority, objects, replacements, entry.token,
-            entry.source, sourceBinding, transition, () -> active.get(key(entry.source)) == entry);
+            entry.source, sourceBinding, transition, () -> active.get(key(entry.source)) == entry
+                && entry.visibilityReady.getAsBoolean());
         Entity result = transfer.run();
         if (result == null) { resumeUnchanged(entry, sourceBinding); return; }
         if (!(result instanceof ThrownEnderpearl)) throw new IllegalStateException("native pearl returned another type");
@@ -360,6 +370,8 @@ final class PearlPortalTransitionManager implements AutoCloseable {
         volatile RetainedPearlTickContinuation continuation;
         volatile TeleportTransition prepared;
         volatile long preparedGeneration;
+        java.util.function.BooleanSupplier visibilityReady;
+        int visibilityWaits;
         volatile CrossDimensionReplacementBoundary.SourceRemoval sourceRemoval;
         Entry(CrossDimensionReplacementBoundary.Token token, ThrownEnderpearl source, ServerLevel sourceLevel,
                 PortalProcessor processor, Portal portal, BlockPos entryPosition, ObjectOwnership binding) {

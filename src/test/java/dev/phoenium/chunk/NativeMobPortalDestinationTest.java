@@ -18,12 +18,14 @@ import static org.junit.jupiter.api.Assertions.*;
  * -> PoiManager; only world/provider endpoints are controlled. */
 class NativeMobPortalDestinationTest {
     @BeforeAll static void bootstrap() { NativeItemPortalTransferTest.bootstrap(); }
-    @AfterEach void reset() { if(PortalDestinationTestHooks.mobs!=null) PortalDestinationTestHooks.mobs.close(); PortalDestinationTestHooks.mobs=null; PortalDestinationTestHooks.cubeTail=null; }
+    @AfterEach void reset() { if(PortalDestinationTestHooks.mobs!=null) PortalDestinationTestHooks.mobs.close(); PortalDestinationTestHooks.mobs=null; PortalDestinationTestHooks.cubeTail=null; PortalDestinationTestHooks.horseTail=null; }
 
-    @Test void distinctVanillaCallersRemainExplicitlyUnbound() throws Exception {
-        assertFalse(dev.phoenium.live.MobPortalTransitionManager.supports(
+    @Test void distinctVanillaMerchantCallersAreBoundWithTheirNativeOverrides() throws Exception {
+        assertTrue(dev.phoenium.live.MobPortalTransitionManager.supports(
             allocate(net.minecraft.world.entity.npc.wanderingtrader.WanderingTrader.class)));
-        assertFalse(dev.phoenium.live.MobPortalTransitionManager.supports(
+        assertTrue(dev.phoenium.live.MobPortalTransitionManager.supports(
+            allocate(net.minecraft.world.entity.npc.villager.Villager.class)));
+        assertTrue(dev.phoenium.live.MobPortalTransitionManager.supports(
             allocate(net.minecraft.world.entity.monster.skeleton.Skeleton.class)));
         assertEquals(net.minecraft.world.entity.npc.villager.AbstractVillager.class,
             net.minecraft.world.entity.npc.wanderingtrader.WanderingTrader.class
@@ -41,7 +43,9 @@ class NativeMobPortalDestinationTest {
         var directSiblings=java.util.stream.Stream.of("blaze","bogged","cow","elder_guardian","ghast","goat",
             "guardian","hoglin","iron_golem","mooshroom","ocelot","parched","piglin","piglin_brute",
             "pillager","ravager","sheep","snow_golem","stray","turtle","vindicator",
-            "witch","wither_skeleton","zoglin","zombie","drowned","husk")
+            "witch","wither_skeleton","zoglin","zombie","drowned","husk","skeleton",
+            "horse","donkey","mule","skeleton_horse","zombie_horse","llama","trader_llama",
+            "wandering_trader","villager")
             .flatMap(type->java.util.stream.Stream.of(true,false).flatMap(forward->java.util.stream.Stream.of(true,false)
                 .map(ready->org.junit.jupiter.params.provider.Arguments.of(type,forward,ready,1))));
         return java.util.stream.Stream.concat(established,directSiblings);
@@ -57,6 +61,10 @@ class NativeMobPortalDestinationTest {
         NativePortalDestinationPreparationTest.installNativeLookup(f);
         var registries=NativePortalDestinationPreparationTest.dynamicRegistries();
         set(f.overworld,Level.class,"registryAccess",registries);set(f.nether,Level.class,"registryAccess",registries);
+        set(f.overworld,net.minecraft.server.level.ServerLevel.class,"environmentAttributes",
+            net.minecraft.world.attribute.EnvironmentAttributeSystem.builder().build());
+        set(f.nether,net.minecraft.server.level.ServerLevel.class,"environmentAttributes",
+            net.minecraft.world.attribute.EnvironmentAttributeSystem.builder().build());
         var source=forward ? f.overworld : f.nether;var destination=forward ? f.nether : f.overworld;
         var route=f.key(source);
         EntityType<?> entityType=net.minecraft.core.registries.BuiltInRegistries.ENTITY_TYPE.getValue(
@@ -65,12 +73,18 @@ class NativeMobPortalDestinationTest {
         var mob=(Mob)entityType.create(source,EntitySpawnReason.COMMAND);
         assertTrue(dev.phoenium.live.MobPortalTransitionManager.supports(mob),"actual concrete class was not selected: "+type);
         if(!(mob instanceof net.minecraft.world.entity.monster.cubemob.AbstractCubeMob)) {
-            Class<?> tick=java.util.Set.of("zombified_piglin","zombie","drowned","husk").contains(type)
-                ? net.minecraft.world.entity.monster.zombie.Zombie.class : Mob.class;
+            Class<?> tick=type.equals("skeleton") ? net.minecraft.world.entity.monster.skeleton.Skeleton.class
+                : type.equals("villager") ? net.minecraft.world.entity.npc.villager.Villager.class
+                : java.util.Set.of("horse","donkey","mule","skeleton_horse","zombie_horse","llama","trader_llama").contains(type)
+                    ? net.minecraft.world.entity.animal.equine.AbstractHorse.class
+                : java.util.Set.of("zombified_piglin","zombie","drowned","husk").contains(type)
+                    ? net.minecraft.world.entity.monster.zombie.Zombie.class : Mob.class;
             assertEquals(tick,mob.getClass().getMethod("tick").getDeclaringClass());
             assertEquals(Mob.class,mob.getClass().getMethod("baseTick").getDeclaringClass());
         }
-        assertEquals(Entity.class,mob.getClass().getMethod("teleport",
+        assertEquals(mob instanceof net.minecraft.world.entity.npc.villager.AbstractVillager
+                ? net.minecraft.world.entity.npc.villager.AbstractVillager.class : Entity.class,
+            mob.getClass().getMethod("teleport",
             net.minecraft.world.level.portal.TeleportTransition.class).getDeclaringClass());
         if(mob instanceof net.minecraft.world.entity.monster.cubemob.AbstractCubeMob cube) {
             cube.setSize(size,true);cube.targetSquish=.8F;cube.squish=.4F;cube.oSquish=.1F;
@@ -78,6 +92,10 @@ class NativeMobPortalDestinationTest {
                 assertSame(mob,seen,"the outer native tail belongs to the retired source");
                 f.dispatcher.requireCurrentOwner(route);f.order.add("cube-suffix");
             };
+        }
+        if(mob instanceof net.minecraft.world.entity.animal.equine.AbstractHorse) {
+            set(mob,net.minecraft.world.entity.animal.equine.AbstractHorse.class,"mouthCounter",1);
+            PortalDestinationTestHooks.horseTail=seen->{assertSame(mob,seen);f.dispatcher.requireCurrentOwner(route);f.order.add("horse-suffix");};
         }
         assertNotNull(mob); mob.setPos(.44,65.31,.02); f.publish(mob,route);
         mob.hurtTime=7;mob.invulnerableTime=9;mob.tickCount=83;
@@ -106,6 +124,10 @@ class NativeMobPortalDestinationTest {
         }));
         assertEquals(0,reads.get(),"lookup must wait until the enclosing owner callback has returned");
         assertEquals(1,manager.pendingCount());
+        if(mob instanceof net.minecraft.world.entity.animal.equine.AbstractHorse) {
+            assertEquals(1,field(mob,net.minecraft.world.entity.animal.equine.AbstractHorse.class,"mouthCounter"));
+            assertFalse(f.order.contains("horse-suffix"));
+        }
         if(mob instanceof net.minecraft.world.entity.monster.cubemob.AbstractCubeMob cube) {
             assertEquals(.4F,cube.oSquish);assertEquals(.6F,cube.squish);
             assertEquals(.8F,cube.targetSquish,"outer cube suffix must wait for the native transfer");
@@ -124,6 +146,11 @@ class NativeMobPortalDestinationTest {
         assertEquals(300,mob.getPortalCooldown());assertEquals(300,f.replacement.getPortalCooldown());
         assertTrue(f.order.indexOf("source-retire")<f.order.indexOf("insert"));
         assertTrue(f.order.indexOf("post")<f.order.indexOf("base-suffix"));
+        if(mob instanceof net.minecraft.world.entity.animal.equine.AbstractHorse) {
+            assertEquals(2,field(mob,net.minecraft.world.entity.animal.equine.AbstractHorse.class,"mouthCounter"));
+            assertEquals(1,java.util.Collections.frequency(f.order,"horse-suffix"));
+            assertTrue(f.order.indexOf("post")<f.order.indexOf("horse-suffix"));
+        }
         if(mob instanceof net.minecraft.world.entity.monster.cubemob.AbstractCubeMob cube) {
             var replacement=(net.minecraft.world.entity.monster.cubemob.AbstractCubeMob)f.replacement;
             assertEquals(size,replacement.getSize());assertEquals(cube.getHealth(),replacement.getHealth());

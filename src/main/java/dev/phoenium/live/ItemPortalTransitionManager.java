@@ -11,6 +11,7 @@ import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.PortalProcessor;
 import net.minecraft.world.entity.item.ItemEntity;
 import net.minecraft.world.level.block.NetherPortalBlock;
+import net.minecraft.world.level.block.EndPortalBlock;
 import net.minecraft.world.level.block.Portal;
 import net.minecraft.world.level.portal.TeleportTransition;
 
@@ -51,7 +52,7 @@ public final class ItemPortalTransitionManager implements AutoCloseable {
                 || !(item.level() instanceof ServerLevel level) || item.portalProcess != processor
                 || processor == null || item.getClass() != ItemEntity.class) return false;
         Portal portal = ((PearlPortalProcessorAccess) processor).phoenium$portal();
-        if (!(portal instanceof NetherPortalBlock)) return false;
+        if (!(portal instanceof NetherPortalBlock) && !(portal instanceof EndPortalBlock)) return false;
         if (item.isPassenger() || item.isVehicle())
             throw new IllegalStateException("item portal passenger graph is outside this continuation");
         ObjectOwnership binding = objects.current(item.getUUID().toString()).orElseThrow();
@@ -91,6 +92,7 @@ public final class ItemPortalTransitionManager implements AutoCloseable {
                 if (entry.destinationPending) {
                     NativePortalTransfer.retained(entry.item, entry.binding, entry.token, null, "DESTINATION_PREPARING");
                     entry.transition = PortalDestinationObservation.prepare(entry.item,entry.binding,entry.token,
+                        authority,() -> current(entry),
                         () -> entry.processor.getPortalDestination(entry.level, entry.item));
                     entry.destinationPending = false;
                     if (!current(entry)) { cancel(entry,"STALE_AFTER_PREPARATION"); continue; }
@@ -103,8 +105,18 @@ public final class ItemPortalTransitionManager implements AutoCloseable {
                         || entry.item.canTeleport(entry.level, entry.transition.newLevel()));
                 if (permitted && entry.level.dimension() == entry.transition.newLevel().dimension())
                     throw new IllegalStateException("vanilla Nether portal produced a same-dimension item transition");
+                if (permitted) {
+                    if (entry.visibilityReady == null)
+                        entry.visibilityReady = authority.demandDestinationEntityVisibility(entry.item, entry.transition);
+                    if (!entry.visibilityReady.getAsBoolean()) {
+                        if (++entry.visibilityWaits > 200)
+                            throw new IllegalStateException("item destination entity visibility deadline: " + entry.visibilityReady);
+                        continue;
+                    }
+                }
                 var transfer = permitted ? new NativePortalTransfer(authority, objects, replacements, entry.token,
-                    entry.item, entry.binding, entry.transition, () -> active.get(key(entry.item)) == entry) : null;
+                    entry.item, entry.binding, entry.transition, () -> active.get(key(entry.item)) == entry
+                        && entry.visibilityReady.getAsBoolean()) : null;
                 Entity result = transfer == null ? null : transfer.run();
                 var suffix = result == null
                     ? replacements.authorizeUnchangedSourceContinuation(entry.token, entry.token.source())
@@ -179,6 +191,8 @@ public final class ItemPortalTransitionManager implements AutoCloseable {
         final Portal portal; final BlockPos entryPosition; final int portalTime; final boolean insidePortal;
         final CrossDimensionReplacementBoundary.Token token;
         volatile boolean retained, consumed, destinationPending, advancing;
+        int visibilityWaits;
+        java.util.function.BooleanSupplier visibilityReady;
         Entry(ItemEntity item, ServerLevel level, PortalProcessor processor, TeleportTransition transition,
                 ObjectOwnership binding, CrossDimensionReplacementBoundary.Token token) {
             this.item=item; this.level=level; this.processor=processor; this.transition=transition; this.binding=binding; this.token=token;

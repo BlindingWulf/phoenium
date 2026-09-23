@@ -68,8 +68,14 @@ public final class PhoeniumMixinConfigPlugin implements IMixinConfigPlugin {
     @Override public void preApply(String targetClassName, ClassNode targetClass, String mixinClassName, IMixinInfo info) {
         if (mixinClassName.equals("dev.phoenium.mixin.MobPortalLivingMixin")
                 || mixinClassName.equals("dev.phoenium.mixin.MobPortalMobMixin")
-                || mixinClassName.equals("dev.phoenium.mixin.MobPortalCubeMixin"))
+                || mixinClassName.equals("dev.phoenium.mixin.MobPortalCubeMixin")
+                || mixinClassName.equals("dev.phoenium.mixin.MobPortalHorseMixin")
+                || mixinClassName.equals("dev.phoenium.mixin.MobPortalVillagerMixin"))
             dev.phoenium.live.MobPortalNativeSuffixes.install(targetClass);
+        if (mixinClassName.equals("dev.phoenium.mixin.FallingBlockPortalTickMixin"))
+            dev.phoenium.live.FallingBlockPortalNativeSuffix.install(targetClass);
+        if (mixinClassName.equals("dev.phoenium.mixin.SkeletonPortalCallerShapeMixin"))
+            dev.phoenium.live.SkeletonPortalCallerShape.verify(targetClass);
         if (mixinClassName.equals("dev.phoenium.mixin.VaultTickContinuationMixin")
                 || mixinClassName.equals("dev.phoenium.mixin.VaultOutputNeighborMixin")
                 || mixinClassName.equals("dev.phoenium.mixin.VaultSetChangedAccess"))

@@ -106,6 +106,8 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
     private final PearlPortalTransitionManager pearlPortalTransitions;
     private final ItemPortalTransitionManager itemPortalTransitions;
     private final MobPortalTransitionManager mobPortalTransitions;
+    private final FallingBlockPortalTransitionManager fallingBlockPortalTransitions;
+    private final ArmorStandPortalTransitionManager armorStandPortalTransitions;
     private final PlayerDimensionTransitionManager playerDimensionTransitions;
     private final PearlPlayerHitHandoff pearlPlayerHits;
     private final Map<TaskCorrelationId, PendingPacket> packets = new ConcurrentHashMap<>();
@@ -263,6 +265,71 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
                 }
                 return readiness;
             }
+            @Override public java.util.function.BooleanSupplier demandDestinationEntityVisibility(Entity source,
+                    net.minecraft.world.level.portal.TeleportTransition transition) {
+                if (OwnershipContext.current().isPresent())
+                    throw new IllegalStateException("portal visibility demand retained owner authority");
+                ServerLevel level=transition.newLevel();
+                var absolute=net.minecraft.world.entity.PositionMoveRotation.calculateAbsolute(
+                    net.minecraft.world.entity.PositionMoveRotation.of(source),
+                    net.minecraft.world.entity.PositionMoveRotation.of(transition),transition.relatives());
+                var arrival=net.minecraft.core.BlockPos.containing(absolute.position());
+                var chunk=net.minecraft.world.level.ChunkPos.containing(arrival);
+                // Vanilla's post-transition callback places this same timed PORTAL ticket.
+                // Demand it during preparation so a fresh destination section is visible
+                // when native addDuringTeleport runs; the callback still executes normally.
+                if (!level.isPositionEntityTicking(arrival)
+                        || !level.areEntitiesActuallyLoadedAndTicking(chunk))
+                    level.getChunkSource().addTicketWithRadius(net.minecraft.server.level.TicketType.PORTAL,chunk,3);
+                return new java.util.function.BooleanSupplier() {
+                    @Override public boolean getAsBoolean() {
+                        return worldActive(level) && level.isPositionEntityTicking(arrival)
+                            && level.areEntitiesActuallyLoadedAndTicking(chunk);
+                    }
+                    @Override public String toString() {
+                        return "world="+level.dimension().identifier()+" arrival="+arrival.toShortString()
+                            +" chunk="+chunk+" entityTicking="+level.isPositionEntityTicking(arrival)
+                            +" loadedTicking="+level.areEntitiesActuallyLoadedAndTicking(chunk);
+                    }
+                };
+            }
+            @Override public void withDestinationPlatform(ServerLevel level, net.minecraft.core.BlockPos origin,
+                    java.util.function.BooleanSupplier sourceCurrent, Runnable nativePlatform) {
+                if (OwnershipContext.current().isPresent())
+                    throw new IllegalStateException("End platform preparation retained owner authority");
+                if (!worldActive(level) || !sourceCurrent.getAsBoolean())
+                    throw new IllegalStateException("End platform source or destination changed before preparation");
+                // EndPlatformFeature.createEndPlatform reads/writes x,z = origin +/-2,
+                // y = origin-1..origin+2. The native block update may inspect the
+                // immediate horizontal neighbours; prepare their public FULL inputs too.
+                int minX = Math.floorDiv(origin.getX() - 3, 16), maxX = Math.floorDiv(origin.getX() + 3, 16);
+                int minZ = Math.floorDiv(origin.getZ() - 3, 16), maxZ = Math.floorDiv(origin.getZ() + 3, 16);
+                var footprint = new java.util.LinkedHashMap<RoutingKey, java.util.function.BooleanSupplier>();
+                for (int x = minX; x <= maxX; x++) for (int z = minZ; z <= maxZ; z++) {
+                    var chunk = level.getChunkSource().getChunk(x, z,
+                        net.minecraft.world.level.chunk.status.ChunkStatus.FULL, true);
+                    if (chunk == null) throw new IllegalStateException("End platform FULL input absent");
+                    long position = new net.minecraft.world.level.ChunkPos(x, z).pack();
+                    var resident = dev.phoenium.chunk.ResidentChunkSourceBinding.capture(level, position);
+                    if (resident == null || resident.chunk() != chunk)
+                        throw new IllegalStateException("End platform FULL input lacks resident publication");
+                    final int chunkX = x, chunkZ = z;
+                    footprint.put(new RoutingKey(worldId(level), x, z), () -> resident.current()
+                        && level.getChunkSource().getChunkNow(chunkX, chunkZ) == chunk);
+                }
+                regionalDispatcher.ensureClosure(footprint.keySet());
+                var center = new RoutingKey(worldId(level), Math.floorDiv(origin.getX(), 16), Math.floorDiv(origin.getZ(), 16));
+                execute(center, RegionalServiceKind.ENTITY_PORTAL_DESTINATION, () -> {
+                    if (!worldActive(level) || !sourceCurrent.getAsBoolean())
+                        throw new IllegalStateException("End platform source changed before destination effects");
+                    for (var part : footprint.entrySet()) {
+                        regionalDispatcher.requireCurrentOwner(part.getKey());
+                        if (!part.getValue().getAsBoolean())
+                            throw new IllegalStateException("End platform resident input changed: " + part.getKey());
+                    }
+                    nativePlatform.run();
+                });
+            }
             @Override public void retireExpectedSource(Entity source, Entity.RemovalReason reason, ObjectOwnership expected) {
                 if (!entityIndexLifecycle.retirePortalPublication(expected, worldId((ServerLevel) source.level()), source.getId()))
                     throw new IllegalStateException("portal retirement no longer owns its exact entity publication");
@@ -274,6 +341,8 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
         this.pearlPortalTransitions = new PearlPortalTransitionManager(portalAuthority, objects);
         this.itemPortalTransitions = new ItemPortalTransitionManager(portalAuthority, objects);
         this.mobPortalTransitions = new MobPortalTransitionManager(portalAuthority, objects);
+        this.fallingBlockPortalTransitions = new FallingBlockPortalTransitionManager(portalAuthority, objects);
+        this.armorStandPortalTransitions = new ArmorStandPortalTransitionManager(portalAuthority, objects);
         this.playerDimensionTransitions = new PlayerDimensionTransitionManager(
             new PlayerDimensionTransitionManager.Authority() {
                 @Override public boolean running() { return PhoeniumLiveRuntime.this.isRunning(); }
@@ -491,6 +560,8 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
                 // for movement first observed during this tick's entity body.
                 entityIndexLifecycle.advancePendingRelocations(runtimes);
                 mobPortalTransitions.advance();
+                fallingBlockPortalTransitions.advance();
+                armorStandPortalTransitions.advance();
                 itemPortalTransitions.advance();
                 pearlPortalTransitions.advance();
                 pearlPlayerHits.advance();
@@ -533,6 +604,8 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
                 // retain their bounded fact for the next tick instead of waiting on one another.
                 entityIndexLifecycle.advancePendingRelocations(runtimes);
                 mobPortalTransitions.advance();
+                fallingBlockPortalTransitions.advance();
+                armorStandPortalTransitions.advance();
                 itemPortalTransitions.advance();
                 pearlPortalTransitions.advance();
                 pearlPlayerHits.advance();
@@ -703,6 +776,8 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
             failures.run(pearlPortalTransitions::close);
             failures.run(itemPortalTransitions::close);
             failures.run(mobPortalTransitions::close);
+            failures.run(fallingBlockPortalTransitions::close);
+            failures.run(armorStandPortalTransitions::close);
             failures.run(pearlPlayerHits::close);
             failures.run(() -> { if (scheduler != null) { scheduler.quiesce(); scheduler.stop(); } });
             failures.run(() -> {
@@ -2281,6 +2356,8 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
         if (!isRunning() || !(entity.level() instanceof ServerLevel level)) return;
         if (NativePortalTransfer.expectedRemoval(entity, reason)) return;
         if (mobPortalTransitions.onRemoval(entity, reason)) return;
+        if (fallingBlockPortalTransitions.onRemoval(entity, reason)) return;
+        if (armorStandPortalTransitions.onRemoval(entity, reason)) return;
         if (itemPortalTransitions.onRemoval(entity, reason)) return;
         if (entity instanceof ServerPlayer player && playerDimensionTransitions.onRemoval(player, reason)) return;
         if (pearlPortalTransitions.onRemoval(entity, reason)) return;
@@ -2309,7 +2386,46 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
     public boolean completeMobPortalTick(net.minecraft.world.entity.Mob mob) { return mobPortalTransitions.complete(mob); }
     public void finishMobPortalTick(net.minecraft.world.entity.Mob mob) { mobPortalTransitions.finish(mob); }
     /** Called after executeAndDrain returned, before the next entity consumes native RNG. */
-    public void advanceMobPortalAfterEntityCallback() { mobPortalTransitions.advance(); }
+    public void advanceMobPortalAfterEntityCallback() {
+        mobPortalTransitions.advance();
+        fallingBlockPortalTransitions.advance();
+        armorStandPortalTransitions.advance();
+    }
+
+    public void beginFallingBlockPortalTick(net.minecraft.world.entity.item.FallingBlockEntity block) {
+        fallingBlockPortalTransitions.begin(block);
+    }
+    public boolean fallingBlockPortalSuspended(net.minecraft.world.entity.item.FallingBlockEntity block) {
+        return fallingBlockPortalTransitions.suspended(block);
+    }
+    public boolean suspendFallingBlockPortalDestination(net.minecraft.world.entity.item.FallingBlockEntity block,
+            net.minecraft.world.entity.PortalProcessor processor) {
+        return fallingBlockPortalTransitions.suspendDestination(block,processor);
+    }
+    public boolean completeFallingBlockPortalTick(net.minecraft.world.entity.item.FallingBlockEntity block,
+            net.minecraft.world.level.block.Block originalBlock) {
+        return fallingBlockPortalTransitions.complete(block,originalBlock);
+    }
+    public void finishFallingBlockPortalTick(net.minecraft.world.entity.item.FallingBlockEntity block) {
+        fallingBlockPortalTransitions.finish(block);
+    }
+
+    public void beginArmorStandPortalTick(net.minecraft.world.entity.LivingEntity stand) {
+        armorStandPortalTransitions.begin(stand);
+    }
+    public boolean armorStandPortalSuspended(net.minecraft.world.entity.LivingEntity stand) {
+        return armorStandPortalTransitions.suspended(stand);
+    }
+    public boolean suspendArmorStandPortalDestination(net.minecraft.world.entity.LivingEntity stand,
+            PortalProcessor processor) {
+        return armorStandPortalTransitions.suspendDestination(stand,processor);
+    }
+    public boolean completeArmorStandPortalTick(net.minecraft.world.entity.LivingEntity stand) {
+        return armorStandPortalTransitions.complete(stand);
+    }
+    public void finishArmorStandPortalTick(net.minecraft.world.entity.LivingEntity stand) {
+        armorStandPortalTransitions.finish(stand);
+    }
 
     public void beginItemPortalTick(net.minecraft.world.entity.item.ItemEntity item) { itemPortalTransitions.begin(item); }
     public boolean suspendItemPortalDestination(net.minecraft.world.entity.item.ItemEntity item, PortalProcessor processor) {
@@ -2370,6 +2486,8 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
         pearlPortalTransitions.worldClosing(level);
         itemPortalTransitions.worldClosing(level);
         mobPortalTransitions.worldClosing(level);
+        fallingBlockPortalTransitions.worldClosing(level);
+        armorStandPortalTransitions.worldClosing(level);
         pearlPlayerHits.worldClosing(level);
     }
 

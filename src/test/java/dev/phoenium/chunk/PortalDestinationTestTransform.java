@@ -12,6 +12,7 @@ final class PortalDestinationTestTransform {
     private static final String PROJECTILE = "net/minecraft/world/entity/projectile/Projectile";
     private static final String THROWABLE = "net/minecraft/world/entity/projectile/ThrowableProjectile";
     private static final String PEARL = "net/minecraft/world/entity/projectile/throwableitemprojectile/ThrownEnderpearl";
+    private static final String END = "net/minecraft/world/level/block/EndPortalBlock";
     private static final String PROFILER = "net/minecraft/util/profiling/ProfilerFiller";
     private static final String HOOK = "dev/phoenium/chunk/PortalDestinationTestHooks";
     static void install(ClassNode node) {
@@ -22,6 +23,14 @@ final class PortalDestinationTestTransform {
             getter.instructions.add(new FieldInsnNode(Opcodes.GETFIELD,PROCESSOR,"portal","Lnet/minecraft/world/level/block/Portal;"));
             getter.instructions.add(new InsnNode(Opcodes.ARETURN)); node.methods.add(getter);
         }
+        if(node.name.equals(END)) for(var method:node.methods) if(method.name.equals("getPortalDestination"))
+            for(var instruction:method.instructions.toArray()) if(instruction instanceof MethodInsnNode call
+                    && call.owner.equals("net/minecraft/world/level/levelgen/feature/EndPlatformFeature")
+                    && call.name.equals("createEndPlatform")) {
+                method.instructions.insertBefore(call,new VarInsnNode(Opcodes.ALOAD,2));
+                method.instructions.set(call,new MethodInsnNode(Opcodes.INVOKESTATIC,HOOK,"endPlatform",
+                    "(Lnet/minecraft/world/level/ServerLevelAccessor;Lnet/minecraft/core/BlockPos;ZL"+ENTITY+";)V",false));
+            }
         for (var method : node.methods) {
           int superOrdinal=0;
           for (var insn : method.instructions.toArray()) {

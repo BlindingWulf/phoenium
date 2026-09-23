@@ -12,12 +12,20 @@ public final class NativePortalTestTransform {
     private static final String PEARL = "net/minecraft/world/entity/projectile/throwableitemprojectile/ThrownEnderpearl";
     private static final String HOOK = "dev/phoenium/chunk/NativePortalTestHooks";
     public static boolean supports(String name) { return Set.of(ENTITY, ITEM, PEARL, "net/minecraft/world/entity/PortalProcessor",
+        "net/minecraft/world/entity/item/FallingBlockEntity", "net/minecraft/world/level/block/EndPortalBlock",
+        "net/minecraft/world/level/portal/TeleportTransition",
         "net/minecraft/world/entity/projectile/Projectile", "net/minecraft/world/entity/projectile/ThrowableProjectile",
         "net/minecraft/server/level/ServerPlayer").contains(name); }
     static void install(ClassNode node) {
         if (!supports(node.name)) return;
         PortalDestinationTestTransform.install(node);
         NativePlayerPortalTestTransform.install(node);
+        if(node.name.equals("net/minecraft/world/level/portal/TeleportTransition"))
+            for(MethodNode method:node.methods)if(method.name.equals("placePortalTicket"))
+                for(var instruction:method.instructions.toArray())if(instruction instanceof MethodInsnNode call
+                        && call.name.equals("placePortalTicket") && call.owner.equals(ENTITY))
+                    method.instructions.set(call,new MethodInsnNode(Opcodes.INVOKESTATIC,HOOK,"placePortalTicket",
+                        "(L"+ENTITY+";Lnet/minecraft/core/BlockPos;)V",false));
         for (MethodNode method : node.methods.toArray(MethodNode[]::new)) {
             if (!method.name.equals("teleport") && !method.name.equals("teleportCrossDimension")) continue;
             for (var at : method.instructions.toArray()) if (at instanceof MethodInsnNode call) {

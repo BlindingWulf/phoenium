@@ -4,7 +4,7 @@ import java.util.*;
 import org.objectweb.asm.Opcodes;
 import org.objectweb.asm.tree.*;
 
-/** Bounded extraction of precisely five native void suffixes. Keeping the original
+/** Bounded extraction of precisely seven native void suffixes. Keeping the original
  * instructions in their declaring class preserves private calls, dispatch, RNG and
  * every native branch. This is not an arbitrary stack/local continuation engine.
  * The reviewed cuts have only `this` live; a changed native shape fails binding. */
@@ -12,12 +12,25 @@ public final class MobPortalNativeSuffixes {
     public static final String LIVING="net/minecraft/world/entity/LivingEntity";
     public static final String MOB="net/minecraft/world/entity/Mob";
     public static final String CUBE="net/minecraft/world/entity/monster/cubemob/AbstractCubeMob";
+    public static final String HORSE="net/minecraft/world/entity/animal/equine/AbstractHorse";
+    public static final String VILLAGER="net/minecraft/world/entity/npc/villager/Villager";
     private MobPortalNativeSuffixes() { }
     public static void install(ClassNode node) {
-        if (!node.name.equals(LIVING) && !node.name.equals(MOB) && !node.name.equals(CUBE)) throw new IllegalArgumentException(node.name);
+        if (!node.name.equals(LIVING) && !node.name.equals(MOB) && !node.name.equals(CUBE)
+                && !node.name.equals(HORSE) && !node.name.equals(VILLAGER)) throw new IllegalArgumentException(node.name);
         if (node.name.equals(CUBE)) {
             node.interfaces.add("dev/phoenium/live/MobPortalNativeAccess$CubeSuffix");
             copy(node,"tick","phoenium$resumeMobCubeTickSuffix");
+            return;
+        }
+        if (node.name.equals(HORSE)) {
+            node.interfaces.add("dev/phoenium/live/MobPortalNativeAccess$HorseSuffix");
+            copy(node,"tick","phoenium$resumeMobHorseTickSuffix");
+            return;
+        }
+        if (node.name.equals(VILLAGER)) {
+            node.interfaces.add("dev/phoenium/live/MobPortalNativeAccess$VillagerSuffix");
+            copy(node,"tick","phoenium$resumeMobVillagerTickSuffix");
             return;
         }
         boolean living=node.name.equals(LIVING);
@@ -60,6 +73,8 @@ public final class MobPortalNativeSuffixes {
             case "phoenium$resumeMobBaseSuffix" -> "c432d27117ab21139b6327c78d1a2ffbe3644314723890743de6fd9d6484be2a";
             case "phoenium$resumeMobTickSuffix" -> "d67927a767f718868dbaea5c231974b4d85cf2f53b3939b28d1ebb9d47c41b13";
             case "phoenium$resumeMobCubeTickSuffix" -> "b3c50458cfec594f75422b7e48cd83c09461e1f533d975b7675e6e2bd4fd2c3d";
+            case "phoenium$resumeMobHorseTickSuffix" -> "286c6749f259c5eae4808b373d8e9de2e2fdb44eca0f7806ff75d0b1cbe2dd57";
+            case "phoenium$resumeMobVillagerTickSuffix" -> "94a0ab11728eefa7a7ad02d49776dd2c83cf23993e06337df411f7839ab107da";
             default -> throw new IllegalStateException("unreviewed mob suffix");
         };
         String actual=dev.phoenium.service.VaultContinuationPin.fingerprint(suffix);
