@@ -62,8 +62,8 @@ class NativePearlPlayerHitTest {
         assertFalse(h.player.isRemoved());assertFalse(h.order.contains("player-remove"));
     }
     @org.junit.jupiter.params.ParameterizedTest @org.junit.jupiter.params.provider.ValueSource(booleans={true,false})
-    void ordinaryPlayerPortalPreparesOwnerFreeAndUsesExistingDimensionSuffix(boolean forward) throws Exception {
-        var h=new Fixture(forward);h.ownerFreeSource=true;
+    void ordinaryPlayerPortalPreparesOwnerFreeButRetiresUnderSourceOwner(boolean forward) throws Exception {
+        var h=new Fixture(forward);
         var reads=new java.util.concurrent.atomic.AtomicInteger();
         var portal=stub(net.minecraft.world.level.block.NetherPortalBlock.class,List.of(
             new Answer(net.minecraft.world.level.block.NetherPortalBlock.class.getMethod("getPortalTransitionTime",ServerLevel.class,Entity.class),args->0),
@@ -83,8 +83,71 @@ class NativePearlPlayerHitTest {
         var h=new Fixture(true);
         h.f.dispatcher.executeAndDrain(h.f.key(h.destination),RegionalServiceKind.CHUNK_GAMEPLAY,ignored->{
             assertThrows(IllegalStateException.class,()->PortalDestinationTestHooks.invoke(h.dimensions,"begin",h.player,h.f.transition(h.destination)));
+            assertThrows(IllegalStateException.class,()->NativePlayerPortalTestHooks.teleport(h.player,h.f.transition(h.destination)));
         });
         assertSame(h.source,h.player.level()); assertFalse(h.player.isRemoved());
+        assertFalse(h.order.contains("player-remove"));
+    }
+    @Test void ownerFreeDirectBeginCannotBypassSourceAdmission() throws Exception {
+        var h=new Fixture(true);
+        assertThrows(IllegalStateException.class,
+            ()->PortalDestinationTestHooks.invoke(h.dimensions,"begin",h.player,h.f.transition(h.destination)));
+        assertSame(h.source,h.player.level());
+        assertFalse(h.player.isRemoved());
+        assertFalse(h.order.contains("player-remove"));
+    }
+    @Test void staleSourceChunkBindingRejectsBeforeNativePlayerPrefix() throws Exception {
+        var h=new Fixture(true);
+        var binding=h.f.objects.current(h.player.getUUID().toString()).orElseThrow();
+        var stale=new dev.phoenium.topology.RoutingKey(binding.routingKey().world(),
+            binding.routingKey().x()+1,binding.routingKey().z());
+        var generation=h.f.directory.snapshot().generation().next();
+        h.f.directory.publish(generation,Map.of(
+            h.f.from,new dev.phoenium.topology.RegionRoute(h.f.ar,generation,new dev.phoenium.core.OwnerEpoch(0)),
+            stale,new dev.phoenium.topology.RegionRoute(h.f.ar,generation,new dev.phoenium.core.OwnerEpoch(0)),
+            h.f.to,new dev.phoenium.topology.RegionRoute(h.f.br,generation,new dev.phoenium.core.OwnerEpoch(0))));
+        h.f.objects.reconcileTopology();
+        binding=h.f.objects.current(h.player.getUUID().toString()).orElseThrow();
+        h.f.objects.updateRoutingKey(binding.objectId(),stale,binding.objectEpoch());
+        assertNull(NativePlayerPortalTestHooks.teleport(h.player,h.f.transition(h.destination)));
+        assertSame(h.source,h.player.level());
+        assertFalse(h.player.isRemoved());
+        assertFalse(h.order.contains("player-remove"));
+    }
+    @Test void sourceBindingMovedAfterDispatchSnapshotRejectsBeforeNativePrefix() throws Exception {
+        var h=new Fixture(true);
+        var stale=new dev.phoenium.topology.RoutingKey(h.f.a,1,0);
+        var generation=h.f.directory.snapshot().generation().next();
+        h.f.directory.publish(generation,Map.of(
+            h.f.from,new dev.phoenium.topology.RegionRoute(h.f.ar,generation,new dev.phoenium.core.OwnerEpoch(0)),
+            stale,new dev.phoenium.topology.RegionRoute(h.f.ar,generation,new dev.phoenium.core.OwnerEpoch(0)),
+            h.f.to,new dev.phoenium.topology.RegionRoute(h.f.br,generation,new dev.phoenium.core.OwnerEpoch(0))));
+        h.f.objects.reconcileTopology();
+        h.beforeDimensionSourceExecute=()->{
+            var binding=h.f.objects.current(h.player.getUUID().toString()).orElseThrow();
+            h.f.objects.updateRoutingKey(binding.objectId(),stale,binding.objectEpoch());
+        };
+        assertNull(NativePlayerPortalTestHooks.teleport(h.player,h.f.transition(h.destination)));
+        assertSame(h.source,h.player.level());
+        assertFalse(h.player.isRemoved());
+        assertFalse(h.order.contains("player-remove"));
+        assertFalse(h.order.contains("packet"));
+    }
+    @Test void staleSessionCancelsBeforeMovementFenceOrNativePrefix() throws Exception {
+        var h=new Fixture(true);h.session=-1;
+        assertNull(NativePlayerPortalTestHooks.teleport(h.player,h.f.transition(h.destination)));
+        assertSame(h.source,h.player.level());
+        assertFalse(h.player.isRemoved());
+        assertFalse(h.order.contains("player-remove"));
+        assertFalse(h.order.contains("packet"));
+    }
+    @Test void sameDimensionTeleportKeepsItsSeparateNativeBranch() throws Exception {
+        var h=new Fixture(true);h.destination=h.source;
+        h.f.dispatcher.executeAndDrain(h.f.key(h.source),RegionalServiceKind.CHUNK_GAMEPLAY,
+            ignored->assertSame(h.player,NativePlayerPortalTestHooks.teleport(h.player,h.f.transition(h.source))));
+        assertSame(h.source,h.player.level());
+        assertFalse(h.player.isRemoved());
+        assertFalse(h.order.contains("player-remove"));
     }
     @Test void ordinaryLocalThrownPearlKeepsNativeHitAndPlayerTeleport() throws Exception {
         var h=new Fixture(true);h.destination=h.source;
@@ -138,7 +201,7 @@ class NativePearlPlayerHitTest {
         final List<String> order=new ArrayList<>(); ServerLevel source,destination;
         final List<Vec3> positions=new ArrayList<>(); Vec3 hitPosition=new Vec3(.1,64.9,.2);
         final Object dimensions,handoff;
-        ServerPlayer player; long session=7; boolean ownerFreeSource;
+        ServerPlayer player; long session=7; Runnable beforeDimensionSourceExecute;
         Fixture(boolean forward) throws Exception {
             source=forward?f.overworld:f.nether; destination=forward?f.nether:f.overworld;
             f.levelData=(net.minecraft.world.level.storage.LevelData)java.lang.reflect.Proxy.newProxyInstance(getClass().getClassLoader(),
@@ -161,7 +224,15 @@ class NativePearlPlayerHitTest {
                 case "worldActive"->args[0]==f.overworld || args[0]==f.nether;
                 case "worldId"->f.authority.worldId((ServerLevel)args[0]);
                 case "currentSession"->args[0]==player ? session : -1L;
-                case "execute"->{f.authority.execute((dev.phoenium.topology.RoutingKey)args[0],(RegionalServiceKind)args[1],(Runnable)args[2]);yield null;}
+                case "execute"->{
+                    if(args[1]==RegionalServiceKind.ENTITY_PORTAL_SOURCE && beforeDimensionSourceExecute!=null) {
+                        Runnable before=beforeDimensionSourceExecute;
+                        beforeDimensionSourceExecute=null;
+                        before.run();
+                    }
+                    f.authority.execute((dev.phoenium.topology.RoutingKey)args[0],(RegionalServiceKind)args[1],(Runnable)args[2]);
+                    yield null;
+                }
                 case "retireSourceIndex"->{f.identities.retireTransitionSource(player.getUUID().toString(),f.authority.worldId(source),player.getId(),(long)args[2]);yield null;}
                 default->throw new AssertionError(m.getName());
             });
@@ -182,7 +253,6 @@ class NativePearlPlayerHitTest {
             NativePlayerPortalTestHooks.trigger=p->{owner(destination);order.add("advancement");};
         }
         void owner(ServerLevel level) {
-            if(ownerFreeSource && level==source && OwnershipContext.current().isEmpty()) return;
             f.owner(f.key(level));
         }
         ServerPlayer makePlayer() throws Exception {

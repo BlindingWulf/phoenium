@@ -6,6 +6,7 @@ from pathlib import Path
 import json
 import tempfile
 import unittest
+from unittest.mock import patch
 
 
 path = Path(__file__).with_name('run_storm.py')
@@ -152,6 +153,47 @@ class StormAccountingTest(unittest.TestCase):
         self.assertEqual({row['source'] for row in first[:4]}, {storm.OW})
         self.assertEqual({row['source'] for row in first[4:8]}, {storm.NETHER})
 
+    def test_opt_in_end_cross_plan_keeps_four_lanes_and_exact_route_owners(self):
+        plan = storm.planned_attempts(2704, 16, ('item', 'chicken'), storm.END_CROSS_ROUTES)
+        self.assertEqual([(row['family'], row['route']) for row in plan[::4]],
+                         [('item', 'END_ENTRY'), ('item', 'END_EXIT'),
+                          ('chicken', 'END_ENTRY'), ('chicken', 'END_EXIT')])
+        self.assertEqual([row['region'] for row in plan[:8]], [0, 1, 2, 3] * 2)
+        self.assertEqual({row['source'] for row in plan if row['route'] == 'END_ENTRY'}, {storm.OW})
+        self.assertEqual({row['source'] for row in plan if row['route'] == 'END_EXIT'}, {storm.END})
+        self.assertEqual(storm.portal_origin(plan[0]), (32, 65, 8))
+        self.assertEqual(storm.spawn_position(plan[0]), (32.5, 65.25, 8.5))
+        self.assertEqual(storm.portal_origin(plan[4]), (32, 65, 8))
+        with self.assertRaisesRegex(ValueError, 'unknown or repeated storm route'):
+            storm.planned_attempts(2704, 8, ('item',), ('END_GATEWAY',))
+        with self.assertRaisesRegex(ValueError, 'unknown or repeated storm route'):
+            storm.planned_attempts(2704, 8, ('item',), ('END_ENTRY', 'END_ENTRY'))
+
+    def test_end_cross_classification_requires_route_world_and_full_lifecycle(self):
+        attempt = {'uuid': self.attempt['uuid'], 'family': 'item', 'source': storm.END,
+                   'route': 'END_EXIT', 'region': 0}
+        def event(phase, **changes):
+            row = self.event(phase, route='END_EXIT', destination=storm.OW)
+            row['sourceWorld'] = storm.END
+            row.update(changes)
+            return row
+        complete = [event('CAPTURED_ITEM_TICK'), event('SOURCE_RETIRING'),
+                    event('SOURCE_RETIRED'), event('ADD_DURING_TELEPORT_RETURN'),
+                    event('CHUNK_MAP_TRACKING_RETURN'), event('TRANSFER_SETTLED_AFTER_SUFFIX')]
+        outcome = storm.classify_attempt(attempt, complete, self.product, self.probe)
+        self.assertEqual((outcome['route'], outcome['outcome'], outcome['contactCount']),
+                         ('END_EXIT', 'TRANSFER', 1))
+        with self.assertRaisesRegex(RuntimeError, 'wrong route/source'):
+            storm.classify_attempt(attempt, [event('CAPTURED_ITEM_TICK', route='END_ENTRY')]
+                                   + complete[1:], self.product, self.probe)
+        with self.assertRaisesRegex(RuntimeError, 'wrong destination'):
+            storm.classify_attempt(attempt, complete[:3]
+                                   + [event('ADD_DURING_TELEPORT_RETURN', destinationWorld=storm.END)]
+                                   + complete[4:], self.product, self.probe)
+        with self.assertRaisesRegex(RuntimeError, 'planned route/source mismatch'):
+            storm.classify_attempt({**attempt, 'source': storm.OW}, complete,
+                                   self.product, self.probe)
+
     def test_portal_integrity_command_checks_all_twelve_blocks(self):
         check = storm.portal_check_command(storm.OW, 1)
         self.assertEqual(check.count('if block '), 12)
@@ -173,6 +215,41 @@ class StormAccountingTest(unittest.TestCase):
         self.assertEqual((repairs[0]['dimension'], repairs[0]['region']), (storm.OW, 1))
         self.assertEqual(seen.count(damaged), 2)
         self.assertEqual(sum(' run setblock ' in command for command in seen), 1)
+
+    def test_end_portal_fixture_repairs_only_damaged_lane_and_requires_pregen(self):
+        check = storm.end_portal_check_command(storm.END, 1)
+        self.assertEqual(check,
+            'execute in minecraft:the_end run execute if block 64 65 8 minecraft:end_portal')
+        seen = []
+        def fake_rcon(text):
+            seen.append(text)
+            if text == check and seen.count(check) == 1:
+                return 'Test failed'
+            return 'Test passed' if 'execute if block ' in text else 'Changed block'
+        with tempfile.TemporaryDirectory() as folder:
+            repairs = storm.ensure_lanes(fake_rcon, Path(folder) / 'commands.jsonl',
+                                         ('END_EXIT',))
+        self.assertEqual(repairs, [{'dimension': storm.END, 'route': 'END_EXIT',
+                                    'region': 1, 'x': 64, 'z': 8, 'before': 'Test failed'}])
+        self.assertEqual(seen.count(check), 2)
+        self.assertIn('execute in minecraft:the_end run setblock 64 65 8 minecraft:end_portal', seen)
+        with patch.object(storm, 'preexisting_chunks', return_value=set()):
+            with self.assertRaisesRegex(RuntimeError, 'ungenerated chunks'):
+                storm.check_end_lane_seed(Path(folder))
+
+    def test_recursive_copy_target_stays_in_fresh_namespace(self):
+        with tempfile.TemporaryDirectory() as folder:
+            run = Path(folder) / 'fresh'
+            run.mkdir()
+            server = run / 'server'
+            server.mkdir()
+            good = server / 'STAGE7-STORM-W4'
+            self.assertEqual(storm.require_fresh_copy_target(run, good), good)
+            with self.assertRaisesRegex(RuntimeError, 'not fresh inside storm namespace'):
+                storm.require_fresh_copy_target(run, Path(folder) / 'outside')
+            good.mkdir()
+            with self.assertRaisesRegex(RuntimeError, 'not fresh inside storm namespace'):
+                storm.require_fresh_copy_target(run, good)
 
     def test_console_pump_preserves_lifecycle_and_failure_while_counting_queries(self):
         first = b'[x] STAGE7_PORTAL_TX {"phase":"DESTINATION_QUERY","uuid":"u"}\n'
@@ -297,6 +374,21 @@ class StormAccountingTest(unittest.TestCase):
         self.assertEqual(sum('minecraft:overworld' in command for command in seen), 3)
         self.assertEqual(sum('minecraft:the_nether' in command for command in seen), 3)
         self.assertTrue(all('distance=..' in command for command in seen))
+
+    def test_end_selector_preflight_rejects_inherited_storm_entities(self):
+        seen = []
+        def fake_rcon(text):
+            seen.append(text)
+            if ' run kill ' in text:
+                return 'No entity was found'
+            return 'Test passed'
+        with tempfile.TemporaryDirectory() as folder:
+            receipts = storm.preflight_selectors(fake_rcon, Path(folder) / 'commands.jsonl',
+                                                  storm.END_CROSS_ROUTES)
+        self.assertEqual(len(receipts), 12)
+        self.assertEqual(sum('tag=stage7_storm,distance=' in text for text in seen), 3)
+        self.assertTrue(all(receipts['inherited-storm-absence-' + world] == 'Test passed'
+                            for world in (storm.OW, storm.NETHER, storm.END)))
 
     def test_graph_segments_keep_exact_snapshot_below_rcon_limit(self):
         wave = [{'index': index, 'family': family} for index, family in enumerate(

@@ -1,4 +1,4 @@
-"""Deterministic installed Stage 7 mixed Nether portal storm.
+"""Deterministic installed Stage 7 mixed portal storm.
 
 This owns a fresh copied world and its two child server processes. Every summon is
 given a deterministic UUID. Transaction observer events, rather than command
@@ -11,6 +11,11 @@ The optional --families and --attempts switches are for bounded diagnostics. The
 bounded Nether storm gate requires the default family list, >= 2,000 actual portal
 contacts, four lanes, both directions, W4, zero observer violations, and a
 same-world restart with a transferred persistent sentinel.
+
+An opt-in --routes END_ENTRY,END_EXIT run copies the normally stopped,
+audited disposable N0 W4 fixture with pre-generated End lanes.
+Gateway and connected-player contacts require separate observer/client contracts
+and are not credited by this RCON runner.
 """
 
 from __future__ import annotations
@@ -38,6 +43,12 @@ ROOT = WORK.parent.parent
 AUDIT = ROOT / '.audit/sol-ultra-final-campaign-20260923'
 PINNED = ROOT / '.audit/container-close-admission-20260922/PINNED_PROFILE_MANIFEST.json'
 ORACLE = ROOT / '.candidate-worktrees/respawn-lifecycle-repair/.gradle/loom-cache/minecraftMaven/net/minecraft/minecraft-merged-043a8b3edf/26.2/minecraft-merged-043a8b3edf-26.2-sources.jar'
+DEFAULT_WORLD_SEED = ROOT / '.audit/astra-max-stage7-20260922/manual-ready/server/STAGE7-LUNA-FINAL'
+END_W4_WORLD_SEED = (AUDIT / 'installed/no-entry-full-scoped-75d6-no-native-entry-w4'
+                     / 'server/STAGE7-REPAIR-W4')
+END_W4_SEED_RECEIPT = END_W4_WORLD_SEED.parent.parent / 'first-result.json'
+END_W4_SEED_RECEIPT_SHA = '6039822E48A137412BDD8675B2FEEF3B5FDC83C8B626C78FB00A5D88B8F7DC90'
+END_W4_WORLD_MANIFEST_SHA = '0BB7B5DEE19A40AFEADF997B895DC15E33F6C134A818D1F3F51B532F4F951FFC'
 FAMILIES = (
     'item', 'chicken', 'magma_cube', 'fireball', 'small_fireball',
     'dragon_fireball', 'wither_skull', 'wind_charge', 'breeze_wind_charge',
@@ -50,6 +61,15 @@ STATIONARY_FAMILIES = (
 )
 OW = 'minecraft:overworld'
 NETHER = 'minecraft:the_nether'
+END = 'minecraft:the_end'
+DEFAULT_ROUTES = ('NETHER_ENTRY', 'NETHER_RETURN')
+END_CROSS_ROUTES = ('END_ENTRY', 'END_EXIT')
+ROUTE_WORLDS = {
+    'NETHER_ENTRY': (OW, NETHER),
+    'NETHER_RETURN': (NETHER, OW),
+    'END_ENTRY': (OW, END),
+    'END_EXIT': (END, OW),
+}
 # 32 Nether blocks separate the four portal neighborhoods. Every Nether lane
 # lies within the copied seed's pre-generated chunks; a prior pilot proved that
 # /forceload of a new distant Nether chunk can block this runtime's server tick.
@@ -243,8 +263,11 @@ def classify_attempt(attempt: dict, events: list[dict], product_sha: str,
     for event in relevant:
         generations[event.get('generation')].append(event)
     expected_source = attempt['source']
-    expected_dest = NETHER if expected_source == OW else OW
-    expected_route = 'NETHER_ENTRY' if expected_source == OW else 'NETHER_RETURN'
+    expected_route = attempt.get('route',
+                                 'NETHER_ENTRY' if expected_source == OW else 'NETHER_RETURN')
+    route_source, expected_dest = ROUTE_WORLDS[expected_route]
+    if expected_source != route_source:
+        raise RuntimeError(f'planned route/source mismatch for {attempt["uuid"]}')
     complete = []
     refused = []
     for generation, group in generations.items():
@@ -338,7 +361,7 @@ def graph_snapshot_receipt(root: dict, root_outcome: dict, child_outcome: dict,
     attached = one_time(root_outcome, root_events, 'PASSENGER_ATTACHED')
     if not child_retired < root_retired or not child_admitted < root_admitted < attached:
         raise RuntimeError(f'boat graph lost native child-first order: {root["uuid"]}')
-    destination = NETHER if root['source'] == OW else OW
+    destination = ROUTE_WORLDS[root['route']][1]
     rows = snapshot.get('entities')
     if not isinstance(rows, list):
         raise RuntimeError('boat graph probe snapshot lacks entities')
@@ -449,17 +472,20 @@ def entity_id(family: str) -> str:
     return 'minecraft:oak_boat' if family == 'boat_pig_graph' else 'minecraft:' + family
 
 
-def planned_attempts(seed: int, count: int, families: tuple[str, ...]) -> list[dict]:
+def planned_attempts(seed: int, count: int, families: tuple[str, ...],
+                     routes: tuple[str, ...] = DEFAULT_ROUTES) -> list[dict]:
+    if not routes or len(set(routes)) != len(routes) or any(route not in ROUTE_WORLDS for route in routes):
+        raise ValueError('unknown or repeated storm route')
     result = []
     for index in range(count):
-        family = families[(index // (len(LANES) * 2)) % len(families)]
-        route_slot = index % (len(LANES) * 2)
+        family = families[(index // (len(LANES) * len(routes))) % len(families)]
+        route_slot = index % (len(LANES) * len(routes))
         region = route_slot % len(LANES)
-        source = OW if route_slot < len(LANES) else NETHER
+        route = routes[route_slot // len(LANES)]
+        source = ROUTE_WORLDS[route][0]
         value = deterministic_uuid(seed, index)
         result.append({'index': index, 'uuid': str(value), 'family': family,
-                       'region': region, 'source': source,
-                       'route': 'NETHER_ENTRY' if source == OW else 'NETHER_RETURN'})
+                       'region': region, 'source': source, 'route': route})
     return result
 
 
@@ -488,6 +514,26 @@ def inspection_segments(wave: list[dict]) -> list[list[dict]]:
 
 def lane_x(source: str, region: int) -> int:
     return LANES[region] * (8 if source == OW else 1)
+
+
+def portal_origin(attempt: dict) -> tuple[int, int, int]:
+    """Return the exact source block, keeping End portals away from Nether lanes."""
+    route = attempt['route']
+    source, _ = ROUTE_WORLDS[route]
+    if source != attempt['source']:
+        raise ValueError(f'route/source mismatch: {route}/{attempt["source"]}')
+    if route in DEFAULT_ROUTES:
+        return lane_x(source, attempt['region']), 66, 0
+    return LANES[attempt['region']], 65, 8
+
+
+def spawn_position(attempt: dict) -> tuple[float, float, float]:
+    x, y, z = portal_origin(attempt)
+    if attempt['route'] in END_CROSS_ROUTES:
+        # EndPortalBlock is a horizontal contact surface. The pinned I0 item
+        # fixture enters at Y=65.25 inside the exact portal block.
+        return x + .5, y + .25, z + .5
+    return x + .5, y, z + spawn_z(attempt['family'])
 
 
 def spawn_z(family: str) -> float:
@@ -523,6 +569,22 @@ def check_nether_lane_seed(world: Path) -> list[tuple[int, int]]:
     if missing:
         raise RuntimeError(f'Nether storm lane would force-load ungenerated chunks: {missing}')
     return needed
+
+
+def check_end_lane_seed(world: Path) -> list[tuple[int, int]]:
+    """Reject the C2ME ungenerated-chunk wait before starting any End route."""
+    available = preexisting_chunks(world, 'the_end')
+    needed = {(chunk_x, chunk_z) for x in LANES
+              for chunk_x in range((x - 16) >> 4, ((x + 16) >> 4) + 1)
+              for chunk_z in range((8 - 16) >> 4, ((8 + 16) >> 4) + 1)}
+    # Native End entry creates the central arrival platform around (100, 50, 0).
+    needed.update((chunk_x, chunk_z)
+                  for chunk_x in range((100 - 16) >> 4, ((100 + 16) >> 4) + 1)
+                  for chunk_z in range((-16) >> 4, (16 >> 4) + 1))
+    missing = sorted(needed - available)
+    if missing:
+        raise RuntimeError(f'End storm lane/platform would load ungenerated chunks: {missing}')
+    return sorted(needed)
 
 
 def first_failure(log: Path) -> str | None:
@@ -670,6 +732,13 @@ def portal_check_command(source: str, region: int) -> str:
     return f'execute in {source} run execute {conditions}'
 
 
+def end_portal_check_command(source: str, region: int) -> str:
+    if source not in (OW, END):
+        raise ValueError('End portal source must be Overworld or End')
+    x = LANES[region]
+    return f'execute in {source} run execute if block {x} 65 8 minecraft:end_portal'
+
+
 def build_lane(rcon: Rcon, journal: Path, source: str, region: int,
                *, force_load: bool) -> None:
     x = lane_x(source, region)
@@ -688,17 +757,45 @@ def build_lane(rcon: Rcon, journal: Path, source: str, region: int,
     command(rcon, journal, portal_check_command(source, region), contains='Test passed')
 
 
-def setup_lanes(rcon: Rcon, journal: Path) -> None:
+def build_end_lane(rcon: Rcon, journal: Path, source: str, region: int,
+                   *, force_load: bool) -> None:
+    x = LANES[region]
+    prefix = f'execute in {source} run '
+    operations = [
+        f'fill {x-6} 64 2 {x+6} 64 14 minecraft:obsidian',
+        f'fill {x-6} 65 2 {x+6} 76 14 minecraft:air',
+        f'setblock {x} 65 8 minecraft:end_portal',
+    ]
+    if force_load:
+        operations.insert(0, f'forceload add {x-16} -8 {x+16} 24')
+    for operation in operations:
+        command(rcon, journal, prefix + operation)
+    command(rcon, journal, end_portal_check_command(source, region), contains='Test passed')
+
+
+def setup_lanes(rcon: Rcon, journal: Path,
+                routes: tuple[str, ...] = DEFAULT_ROUTES) -> None:
+    # End-only runs need only lane zero of the Nether pair for the saved
+    # restart sentinel. Avoid generating three unrelated Overworld lanes.
+    nether_regions = range(len(LANES)) if any(route in DEFAULT_ROUTES for route in routes) else range(1)
     for source in (OW, NETHER):
-        for region in range(len(LANES)):
+        for region in nether_regions:
             build_lane(rcon, journal, source, region, force_load=True)
+    for route in routes:
+        if route not in END_CROSS_ROUTES:
+            continue
+        source = ROUTE_WORLDS[route][0]
+        for region in range(len(LANES)):
+            build_end_lane(rcon, journal, source, region, force_load=True)
 
 
-def ensure_lanes(rcon: Rcon, journal: Path) -> list[dict]:
+def ensure_lanes(rcon: Rcon, journal: Path,
+                 routes: tuple[str, ...] = DEFAULT_ROUTES) -> list[dict]:
     """Validate all twelve blocks per portal; repair only damaged test lanes."""
     repaired = []
+    nether_regions = range(len(LANES)) if any(route in DEFAULT_ROUTES for route in routes) else range(1)
     for source in (OW, NETHER):
-        for region in range(len(LANES)):
+        for region in nether_regions:
             query = portal_check_command(source, region)
             response = command(rcon, journal, query)
             if response == 'Test passed':
@@ -708,10 +805,25 @@ def ensure_lanes(rcon: Rcon, journal: Path) -> list[dict]:
             build_lane(rcon, journal, source, region, force_load=False)
             repaired.append({'dimension': source, 'region': region,
                              'x': lane_x(source, region), 'before': response})
+    for route in routes:
+        if route not in END_CROSS_ROUTES:
+            continue
+        source = ROUTE_WORLDS[route][0]
+        for region in range(len(LANES)):
+            query = end_portal_check_command(source, region)
+            response = command(rcon, journal, query)
+            if response == 'Test passed':
+                continue
+            if response != 'Test failed':
+                raise RuntimeError(f'unreadable End portal integrity check: {route} lane {region}: {response!r}')
+            build_end_lane(rcon, journal, source, region, force_load=False)
+            repaired.append({'dimension': source, 'route': route, 'region': region,
+                             'x': LANES[region], 'z': 8, 'before': response})
     return repaired
 
 
-def preflight_selectors(rcon: Rcon, journal: Path) -> dict:
+def preflight_selectors(rcon: Rcon, journal: Path,
+                        routes: tuple[str, ...] = DEFAULT_ROUTES) -> dict:
     """Check the exact world-limited selector grammar before wave summons."""
     absent_tag = 'stage7_storm_selector_preflight'
     receipts = {}
@@ -729,6 +841,22 @@ def preflight_selectors(rcon: Rcon, journal: Path) -> dict:
     receipts['destination-absence'] = command(rcon, journal,
         scoped_tag_command(NETHER, absent_tag, 'absent',
                            center=(72, 65, 5), radius=8), contains='Test passed')
+    if any(route in END_CROSS_ROUTES for route in routes):
+        receipts['empty-' + END] = command(rcon, journal,
+            scoped_tag_command(END, absent_tag, 'absent'), contains='Test passed')
+        receipts['kill-' + END] = command(rcon, journal,
+            scoped_tag_command(END, absent_tag, 'kill'))
+        if receipts['kill-' + END] != 'No entity was found':
+            raise RuntimeError(f'selector preflight unexpectedly found {absent_tag} in {END}')
+        receipts['end-lane-absence'] = command(rcon, journal,
+            scoped_tag_command(END, absent_tag, 'absent', center=(LANES[0], 65, 8), radius=16),
+            contains='Test passed')
+        # The End seed was produced by a prior installed audit. It must not
+        # contain any storm UUID/tag before this new namespace begins.
+        for dimension in (OW, NETHER, END):
+            receipts['inherited-storm-absence-' + dimension] = command(rcon, journal,
+                scoped_tag_command(dimension, 'stage7_storm', 'absent'),
+                contains='Test passed')
     return receipts
 
 
@@ -775,8 +903,19 @@ def stop(process: subprocess.Popen, log: Path, result: dict, phase: str) -> None
     result[phase + 'Saved'] = 'All dimensions are saved' in log.read_text(encoding='utf-8', errors='replace')
 
 
+def require_fresh_copy_target(run: Path, target: Path) -> Path:
+    """Resolve every recursive copy destination under the new audit namespace."""
+    resolved_run = run.resolve(strict=True)
+    resolved_target = target.resolve(strict=False)
+    if (not resolved_target.is_relative_to(resolved_run)
+            or resolved_target == resolved_run or target.exists()):
+        raise RuntimeError(f'recursive copy target is not fresh inside storm namespace: {target}')
+    return target
+
+
 def prepare(args: argparse.Namespace, run: Path, candidate: Path, probe: Path,
-            pinned: dict, product_sha: str, probe_sha: str) -> tuple[Path, dict]:
+            pinned: dict, product_sha: str, probe_sha: str,
+            routes: tuple[str, ...] = DEFAULT_ROUTES) -> tuple[Path, dict]:
     run.mkdir(parents=True, exist_ok=False)
     server = run / 'server'
     server.mkdir()
@@ -788,9 +927,9 @@ def prepare(args: argparse.Namespace, run: Path, candidate: Path, probe: Path,
         if sha(template / 'config' / name) != digest:
             raise RuntimeError(f'pinned config drift: {name}')
     for name in ('libraries', 'versions'):
-        shutil.copytree(template / name, server / name,
+        shutil.copytree(template / name, require_fresh_copy_target(run, server / name),
                         copy_function=lambda source, dest: os.link(source, dest))
-    shutil.copytree(template / 'config', server / 'config')
+    shutil.copytree(template / 'config', require_fresh_copy_target(run, server / 'config'))
     for name in ('fabric-server-launch.jar', 'eula.txt'):
         shutil.copy2(template / name, server / name)
     (server / 'mods').mkdir()
@@ -799,14 +938,29 @@ def prepare(args: argparse.Namespace, run: Path, candidate: Path, probe: Path,
     installed_name = 'phoenium-stage7-storm-' + product_sha[:12].lower() + '.jar'
     shutil.copy2(candidate, server / 'mods' / installed_name)
     shutil.copy2(probe, server / 'mods' / 'stage7-repair-probe.jar')
-    source_world = ROOT / '.audit/astra-max-stage7-20260922/manual-ready/server/STAGE7-LUNA-FINAL'
-    target_world = server / 'STAGE7-STORM-W4'
+    end_cross = any(route in END_CROSS_ROUTES for route in routes)
+    source_world = END_W4_WORLD_SEED if end_cross else DEFAULT_WORLD_SEED
+    target_world = require_fresh_copy_target(run, server / 'STAGE7-STORM-W4')
     if not source_world.is_dir():
         raise RuntimeError(f'missing pinned disposable world seed: {source_world}')
+    if end_cross:
+        if source_world.resolve() != END_W4_WORLD_SEED.resolve():
+            raise RuntimeError('End storm seed is not the audited W4 fixture')
+        if sha(END_W4_SEED_RECEIPT) != END_W4_SEED_RECEIPT_SHA:
+            raise RuntimeError('audited End W4 seed receipt hash drift')
+        seed_receipt = json.loads(END_W4_SEED_RECEIPT.read_text(encoding='utf-8'))
+        if not (seed_receipt.get('pass') is True and seed_receipt.get('txPass') is True
+                and seed_receipt.get('normalSave') is True
+                and seed_receipt.get('serverExitCode') == 0):
+            raise RuntimeError('audited End W4 seed did not pass and save/stop normally')
     nether_chunks = check_nether_lane_seed(source_world)
+    end_chunks = check_end_lane_seed(source_world) if end_cross else []
     shutil.copytree(source_world, target_world)
     source_hashes = {str(file.relative_to(source_world)): sha(file) for file in source_world.rglob('*')
                      if file.is_file() and file.name != 'session.lock'}
+    world_manifest_sha = hash_manifest(source_hashes)
+    if end_cross and world_manifest_sha != END_W4_WORLD_MANIFEST_SHA:
+        raise RuntimeError('audited End W4 source world hash drift')
     if any(sha(target_world / name) != digest for name, digest in source_hashes.items()):
         raise RuntimeError('isolated world copy did not match source')
     properties = template.joinpath('server.properties').read_text().splitlines()
@@ -839,16 +993,22 @@ def prepare(args: argparse.Namespace, run: Path, candidate: Path, probe: Path,
                                   for name in pinned['configFilesSha256']},
         'serverPropertiesSha256': sha(server / 'server.properties'),
         'worldSource': str(source_world), 'worldSourceHashes': source_hashes,
+        'worldSourceManifestSha256': world_manifest_sha,
+        'worldSeedKind': 'audited-n0-w4-end-pregenerated' if end_cross else 'manual-ready-nether',
+        'worldSeedReceipt': str(END_W4_SEED_RECEIPT) if end_cross else None,
+        'worldSeedReceiptSha256': sha(END_W4_SEED_RECEIPT) if end_cross else None,
         'head': git_head, 'sourceStatus': git_status, 'testSourceHashes': hashes,
         'clientTestSourceLaunchSha256': hash_manifest(
             {name: digest for name, digest in hashes.items() if client_test_source(name)}),
         'seed': args.seed, 'attempts': args.attempts, 'waveSize': args.wave_size,
-        'families': args.families, 'lanes': list(LANES), 'workers': args.workers,
+        'families': args.families, 'routes': list(routes),
+        'lanes': list(LANES), 'workers': args.workers,
         'queryConsoleCompression': {'suppressedPhases': list(QUERY_PHASES),
                                     'perUuidPhaseCountAndFirstLastRawLines': True,
                                     'allOtherLinesRetained': True},
         'stationaryFamiliesSpawnZ': .5, 'movingFamiliesSpawnZ': 3.5,
         'preexistingNetherFixtureChunks': nether_chunks,
+        'preexistingEndFixtureChunks': end_chunks,
         'ports': {'java': args.java_port, 'bedrock': args.bedrock_port,
                   'rcon': args.rcon_port},
     }
@@ -882,8 +1042,13 @@ def run(args: argparse.Namespace) -> int:
     if not families or len(set(families)) != len(families) \
             or any(family not in FAMILIES + DIAGNOSTIC_FAMILIES for family in families):
         raise ValueError('unknown or repeated storm family')
+    routes = tuple(args.routes.split(','))
+    if not routes or len(set(routes)) != len(routes) or any(route not in ROUTE_WORLDS for route in routes):
+        raise ValueError('unknown or repeated storm route; gateway needs a separate same-object receipt')
     if args.tnt_card and (families != ('tnt',) or args.attempts != 1 or args.workers != 1):
         raise ValueError('TNT post-arrival tick card requires W1, one TNT, and the loaded first lane')
+    if args.tnt_card and routes != DEFAULT_ROUTES:
+        raise ValueError('TNT post-arrival card is only fixtured for the default Nether route pair')
     candidate = args.candidate.resolve(strict=True)
     probe = args.probe.resolve(strict=True)
     product_sha, probe_sha = sha(candidate), sha(probe)
@@ -896,10 +1061,14 @@ def run(args: argparse.Namespace) -> int:
     run_dir = output_root / args.name
     if run_dir.exists():
         raise RuntimeError(f'storm namespace already exists; preserve it: {run_dir}')
-    server, manifest = prepare(args, run_dir, candidate, probe, pinned, product_sha, probe_sha)
+    server, manifest = prepare(args, run_dir, candidate, probe, pinned, product_sha, probe_sha,
+                               routes)
     rcon = Rcon(args.rcon_port, 'phoenium-stage7-local-test')
     result = {'schema': 'stage7-storm-result-v1', 'startUtc': utc(),
               'candidateSha256': product_sha, 'testProbeSha256': probe_sha,
+              'routes': list(routes), 'worldSeedKind': manifest['worldSeedKind'],
+              'worldSeedReceiptSha256': manifest['worldSeedReceiptSha256'],
+              'worldSourceManifestSha256': manifest['worldSourceManifestSha256'],
               'firstFailure': None, 'pass': False}
     first_log = run_dir / 'first-server-console.log'
     restart_log = run_dir / 'restart-server-console.log'
@@ -912,10 +1081,10 @@ def run(args: argparse.Namespace) -> int:
         print('STORM SERVER', first_process.pid, args.name, flush=True)
         wait_ready(first_process, first_log, args.bedrock_port)
         monitor = TransactionMonitor(first_log)
-        setup_lanes(rcon, journal)
+        setup_lanes(rcon, journal, routes)
         result['lastTxStatus'] = require_status(rcon, product_sha, probe_sha)
-        result['selectorPreflight'] = preflight_selectors(rcon, journal)
-        planned = planned_attempts(args.seed, args.attempts, families)
+        result['selectorPreflight'] = preflight_selectors(rcon, journal, routes)
+        planned = planned_attempts(args.seed, args.attempts, families, routes)
         (run_dir / 'planned-attempts.json').write_text(json.dumps(planned, indent=2) + '\n')
         completed = []
         observed_threads = set()
@@ -936,8 +1105,10 @@ def run(args: argparse.Namespace) -> int:
             for segment_number, segment in enumerate(inspection_segments(wave)):
                 require_pump_healthy(first_process)
                 monitor.require_healthy()
-                repairs = ensure_lanes(rcon, journal)
-                result['portalIntegrityChecks'] += len(LANES) * 2
+                repairs = ensure_lanes(rcon, journal, routes)
+                result['portalIntegrityChecks'] += (2 * (len(LANES) if any(
+                    route in DEFAULT_ROUTES for route in routes) else 1)
+                    + len(LANES) * sum(route in END_CROSS_ROUTES for route in routes))
                 result['portalRepairs'].extend({'wave': wave_number, 'segment': segment_number,
                                                 **repair} for repair in repairs)
                 segment_receipt = {'segment': segment_number, 'attemptIndices':
@@ -952,7 +1123,7 @@ def run(args: argparse.Namespace) -> int:
                     monitor.require_healthy()
                     family = attempt['family']
                     source = attempt['source']
-                    x = lane_x(source, attempt['region'])
+                    x, y, z = spawn_position(attempt)
                     value = uuid.UUID(attempt['uuid'])
                     tags = ['stage7_storm', f'stage7_storm_wave_{wave_number}',
                             segment_tag, f'stage7_storm_{attempt["index"]}']
@@ -960,7 +1131,7 @@ def run(args: argparse.Namespace) -> int:
                         tags.append('stage7_vehicle_storm')
                     nbt = summoning_nbt(family, value, tags)
                     spawn = (f'execute in {source} run summon {entity_id(family)} '
-                             f'{x + .5} 66 {spawn_z(family)} {nbt}')
+                             f'{x} {y} {z} {nbt}')
                     command(rcon, journal, spawn, contains='Summoned new')
                 deadline = time.monotonic() + args.wave_timeout
                 last = []
@@ -1041,7 +1212,7 @@ def run(args: argparse.Namespace) -> int:
                     child_outcome = graph_outcomes[attempt['uuid']]
                     source_absence = command(rcon, journal, scoped_tag_command(
                         attempt['source'], f'stage7_storm_{attempt["index"]}', 'absent',
-                        center=(lane_x(attempt['source'], attempt['region']), 66, 0)),
+                        center=portal_origin(attempt)),
                         contains='Test passed')
                     snapshot = json.loads(command(rcon, journal,
                         graph_probe_command(attempt['uuid'], child['uuid'])))
@@ -1065,7 +1236,8 @@ def run(args: argparse.Namespace) -> int:
                     result['lastTxStatus'] = require_status(rcon, product_sha, probe_sha)
                 # Retired objects and destination replacements are cleaned
                 # before the opposite route can use a portal they might damage.
-                for dimension in (OW, NETHER):
+                for dimension in (OW, NETHER) + ((END,) if any(
+                        route in END_CROSS_ROUTES for route in routes) else ()):
                     command(rcon, journal, scoped_tag_command(dimension, segment_tag, 'kill'))
                 segment_receipt['globalCleanup'] = command(
                     rcon, journal, f'execute unless entity @e[tag={segment_tag}]',
@@ -1100,6 +1272,7 @@ def run(args: argparse.Namespace) -> int:
                 or len(result['graphMemberReceipts']) != result['expectedGraphTransfers']:
             raise RuntimeError('boat graph child witness count differs from completed root attempts')
         result['laneCount'] = len(LANES)
+        result['routes'] = list(routes)
         result['observedWorkerThreads'] = sorted(observed_threads)
         result['observedOwnerRegions'] = sorted(observed_owner_regions)
         result['maxObservedPendingTransactions'] = max_observed_pending
@@ -1109,16 +1282,21 @@ def run(args: argparse.Namespace) -> int:
         result['netherStormGate'] = False
         result['stage7FullStormGate'] = False
         result['uncoveredStormFirstBlocker'] = (
-            'planned_attempts generates only Overworld/Nether portal lanes; '
-            'this RCON-only harness has no End portal/gateway lane or connected player session')
+            'End gateway needs a concise per-UUID same-object/ticket/tracking receipt; '
+            'connected player requires a real client session'
+            if any(route in END_CROSS_ROUTES for route in routes) else
+            'this default Nether route plan has no End portal/gateway lane or connected player session')
         result['uncoveredStormScope'] = [
-            'End entry, End exit and End gateway contacts are not generated by this harness',
+            'End entry and exit require a separate opt-in run using the audited End W4 world seed'
+            if not any(route in END_CROSS_ROUTES for route in routes) else
+            'This run does not include a same-dimension End gateway contact',
             'A real connected player is not part of this independent RCON fixture',
             'Graph admission is represented only by one boat-plus-pig shape',
             'Same-dimension gateway requires its own same-object relocation outcome contract',
             'Per-entity final identity, client visibility, and native post-impact effects remain exact-card obligations',
         ]
-        for dimension in (OW, NETHER):
+        for dimension in (OW, NETHER) + ((END,) if any(
+                route in END_CROSS_ROUTES for route in routes) else ()):
             result['emptyAfterWaveCleanup-' + dimension] = command(
                 rcon, journal, scoped_tag_command(dimension, 'stage7_storm', 'absent'),
                 contains='Test passed')
@@ -1223,6 +1401,8 @@ def run(args: argparse.Namespace) -> int:
         if result['restartExitCode'] != 0 or not result['restartSaved'] or result.get('restartPumpError'):
             raise RuntimeError('same-world restart did not save/stop normally')
         result['sourceWorldChanges'] = verify_source_unchanged(manifest)
+        result['worldSeedReceiptEndSha256'] = (
+            sha(Path(manifest['worldSeedReceipt'])) if manifest['worldSeedReceipt'] else None)
         record_test_source_drift(result, manifest)
         result['configChanges'] = [name for name, digest in manifest['installedConfigHashes'].items()
                                    if sha(server / 'config' / name) != digest]
@@ -1231,18 +1411,25 @@ def run(args: argparse.Namespace) -> int:
         result['stormHarnessSha256'] = sha(Path(__file__))
         result['providerHashes'] = {name: sha(server / 'mods' / name)
                                     for name in manifest['pinnedProviderHashes']}
-        if result['sourceWorldChanges'] or result['executedTestSourceChanges'] or result['configChanges']:
+        if (result['sourceWorldChanges'] or result['executedTestSourceChanges']
+                or result['configChanges']
+                or result['worldSeedReceiptEndSha256'] != manifest['worldSeedReceiptSha256']):
             raise RuntimeError('source world, executed observer source, or installed config changed during storm')
         if result['installedCandidateSha256'] != product_sha or result['installedProbeSha256'] != probe_sha \
                 or result['stormHarnessSha256'] != manifest['stormHarnessSha256'] \
                 or result['providerHashes'] != manifest['pinnedProviderHashes']:
             raise RuntimeError('installed bytes changed during storm')
-        result['netherStormGate'] = (set(families) == set(FAMILIES)
+        result['netherStormGate'] = (routes == DEFAULT_ROUTES
+                                     and set(families) == set(FAMILIES)
                                      and result['actualContacts'] >= 2000
                                      and args.workers == 4
                                      and result['ownerViolations'] == 0
                                      and result['firstTxStatus']['violations'] == 0
                                      and result['restartTxStatus']['violations'] == 0)
+        result['endCrossPilotPass'] = (set(routes) == set(END_CROSS_ROUTES)
+                                       and len(routes) == 2 and args.workers == 4
+                                       and result['actualContacts'] >= 8
+                                       and result['ownerViolations'] == 0)
         result['pass'] = True
     except BaseException as error:
         result['triggerFailure'] = str(error)
@@ -1306,6 +1493,9 @@ def main() -> int:
     parser.add_argument('--wave-size', type=int, default=8)
     parser.add_argument('--wave-timeout', type=float, default=45)
     parser.add_argument('--families', default=','.join(FAMILIES))
+    parser.add_argument('--routes', default=','.join(DEFAULT_ROUTES),
+                        help='ordered cross-dimension route cycle; supported: '
+                             + ','.join(ROUTE_WORLDS))
     parser.add_argument('--tnt-card', action='store_true',
                         help='W1 first-lane card requiring destination-owned usedPortal suffix and fuse tick')
     parser.add_argument('--workers', type=int, choices=(1, 4), default=4)

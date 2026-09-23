@@ -40,7 +40,7 @@ class NativeMobPortalDestinationTest {
             java.util.stream.IntStream.of(type.equals("magma_cube")||type.equals("slime") ? new int[]{1,2,4} : new int[]{1})
                 .boxed().flatMap(size->java.util.stream.Stream.of(true,false).flatMap(forward->java.util.stream.Stream.of(true,false)
                     .map(ready->org.junit.jupiter.params.provider.Arguments.of(type,forward,ready,size)))));
-        var directSiblings=java.util.stream.Stream.of("blaze","bogged","cow","elder_guardian","ghast","goat",
+        var directSiblings=java.util.stream.Stream.of("blaze","bogged","cow","elder_guardian","endermite","silverfish","ghast","goat",
             "guardian","hoglin","iron_golem","mooshroom","ocelot","parched","piglin","piglin_brute",
             "pillager","ravager","sheep","snow_golem","stray","turtle","vindicator",
             "witch","wither_skeleton","zoglin","zombie","drowned","husk","skeleton",
@@ -73,7 +73,9 @@ class NativeMobPortalDestinationTest {
         var mob=(Mob)entityType.create(source,EntitySpawnReason.COMMAND);
         assertTrue(dev.phoenium.live.MobPortalTransitionManager.supports(mob),"actual concrete class was not selected: "+type);
         if(!(mob instanceof net.minecraft.world.entity.monster.cubemob.AbstractCubeMob)) {
-            Class<?> tick=type.equals("skeleton") ? net.minecraft.world.entity.monster.skeleton.Skeleton.class
+            Class<?> tick=type.equals("endermite") ? net.minecraft.world.entity.monster.Endermite.class
+                : type.equals("silverfish") ? net.minecraft.world.entity.monster.Silverfish.class
+                : type.equals("skeleton") ? net.minecraft.world.entity.monster.skeleton.Skeleton.class
                 : type.equals("villager") ? net.minecraft.world.entity.npc.villager.Villager.class
                 : java.util.Set.of("horse","donkey","mule","skeleton_horse","zombie_horse","llama","trader_llama").contains(type)
                     ? net.minecraft.world.entity.animal.equine.AbstractHorse.class

@@ -51,6 +51,10 @@ public final class Stage7RepairClientTest implements FabricClientGameTest {
                     && selectedCards.equals("I0-item-END_ENTRY"))
                     && !(group.equals("same-dimension-gateway")
                     && selectedCards.equals("G1-pig-END_GATEWAY"))
+                    && !(group.equals("mob-prefix")
+                    && selectedCards.equals("M2-silverfish-NETHER_ENTRY"))
+                    && !(group.equals("mob-prefix")
+                    && selectedCards.equals("M2-silverfish-NETHER_RETURN"))
                     && !(group.equals("no-native-entry")
                     && selectedCards.matches("N0-(block_display|ender_dragon|glow_item_frame|interaction|item_display|item_frame|marker|painting|text_display|fishing_bobber|wither)-(NETHER_ENTRY|NETHER_RETURN|END_ENTRY|END_EXIT|END_GATEWAY)")))
                 throw new IllegalArgumentException("unbound exact card selection: "+group+"/"+selectedCards);
@@ -66,6 +70,13 @@ public final class Stage7RepairClientTest implements FabricClientGameTest {
             else if(group.equals("vehicle-minecart-chest")){chestMinecartMatrix(selectedCards);}
             else if(group.equals("item-end-platform")){itemEndPlatformScopeCard();}
             else if(group.equals("same-dimension-gateway")){pigEndGatewayCard();}
+            else if(group.equals("mob-prefix")){
+                cmd("gamemode creative "+USER);
+                if(selectedCards.isBlank()||selectedCards.equals("M2-silverfish-NETHER_ENTRY"))
+                    mobPortalCase("silverfish",OW,1,0);
+                if(selectedCards.isBlank()||selectedCards.equals("M2-silverfish-NETHER_RETURN"))
+                    mobPortalCase("silverfish",NETHER,1,1);
+            }
             else if(group.equals("no-native-entry")){noNativeEntryMatrix(selectedCards);}
             else if(group.equals("selection-holes")){
                 cmd("gamemode creative "+USER);
@@ -137,7 +148,9 @@ public final class Stage7RepairClientTest implements FabricClientGameTest {
             cmd("execute in "+OW+" run setblock 0 65 0 minecraft:end_portal");
             cmd("execute in "+OW+" run setblock 0 72 0 minecraft:stone");
             cmd("execute in "+OW+" run setblock 0 73 0 minecraft:"+material);
-            require(cmd("execute in "+OW+" run execute if block 0 73 0 minecraft:"+material).contains("Test passed"),
+            String beforeCellCommand="execute in "+OW+" run execute if block 0 73 0 minecraft:"+material;
+            String beforeCellResponse=cmd(beforeCellCommand);
+            require(beforeCellResponse.contains("Test passed"),
                 "falling block support setup absent");
             snapshot(active+"-before-removal");
             cmd("execute in "+OW+" run setblock 0 72 0 minecraft:air");
@@ -148,6 +161,23 @@ public final class Stage7RepairClientTest implements FabricClientGameTest {
             require(source!=null,"ordinary support removal did not create a native falling "+material+" entity");
             String uuid=source.get("uuid").getAsString();
             receipt.add(active+"-source",source.deepCopy());
+            String afterCellCommand="execute in "+OW+" run execute if block 0 73 0 minecraft:air";
+            String afterCellResponse=cmd(afterCellCommand);
+            require(afterCellResponse.contains("Test passed"),
+                "former "+material+" source cell still occupied after native fall");
+            JsonObject sourceCell=new JsonObject();
+            sourceCell.addProperty("world",OW);
+            sourceCell.addProperty("position","0 73 0");
+            sourceCell.addProperty("material","minecraft:"+material);
+            sourceCell.addProperty("sourceUuid",uuid);
+            sourceCell.addProperty("sourceObject",source.get("object").getAsString());
+            sourceCell.addProperty("sourceFallingState",source.get("fallingState").getAsString());
+            sourceCell.addProperty("beforeCommand",beforeCellCommand);
+            sourceCell.addProperty("beforeResponse",beforeCellResponse);
+            sourceCell.addProperty("afterCommand",afterCellCommand);
+            sourceCell.addProperty("afterResponse",afterCellResponse);
+            receipt.add(active+"-source-cell",sourceCell);
+            snapshot(active+"-source-cell-after");
             JsonObject arrival=null;
             for(int i=0;i<350;i++){context.waitTick();
                 var seen=fallingArrival(probe(),uuid,material);
@@ -1678,7 +1708,9 @@ public final class Stage7RepairClientTest implements FabricClientGameTest {
         return found;
     }
     void mobPortalCase(String type,String from,int size,int sequence)throws Exception {
-            active="M0-"+type+"-size"+size+"-"+from;String to=from.equals(OW)?NETHER:OW;
+            active=type.equals("silverfish") ? "M2-silverfish-"+(from.equals(OW)?"NETHER_ENTRY":"NETHER_RETURN")
+                : "M0-"+type+"-size"+size+"-"+from;
+            String to=from.equals(OW)?NETHER:OW;
             position(from,8.5,65,5.5,180,0);
             String tag="stage7_portal_mob_"+sequence;
             boolean cube=type.equals("magma_cube")||type.equals("slime");

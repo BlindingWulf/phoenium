@@ -61,6 +61,11 @@ SOURCE_PROVEN_ARROW_NETHER = {
 }
 SOURCE_PROVEN_SHULKER_NETHER = {"minecraft:shulker_bullet"}
 SOURCE_PROVEN_MINECART_NETHER = {"minecraft:minecart", "minecraft:chest_minecart"}
+SOURCE_PROVEN_FALLING_END_STATES = {
+    "minecraft:sand": "SandBlock",
+    "minecraft:gravel": "ColoredFallingBlock",
+    "minecraft:anvil": "AnvilBlock",
+}
 
 
 def sha(data: bytes) -> str:
@@ -210,6 +215,53 @@ def falling_materials(sources: zipfile.ZipFile) -> list[dict]:
     return result
 
 
+def falling_end_entry_source_refs(sources: zipfile.ZipFile, binary: zipfile.ZipFile) -> dict:
+    """Pin the ordinary dry falling-block path through native End admission."""
+    specs = (
+        ("fallingBlockTick", "net/minecraft/world/level/block/FallingBlock.java", "tick", 49,
+         ("isFree(level.getBlockState(pos.below()))", "FallingBlockEntity.fall(level, pos, state)")),
+        ("fallingEntityCreation", "net/minecraft/world/entity/item/FallingBlockEntity.java", "fall", 92,
+         ("level.setBlock(pos, state.getFluidState().createLegacyBlock(), 3)", "level.addFreshEntity(entity)")),
+        ("fallingEntityTick", "net/minecraft/world/entity/item/FallingBlockEntity.java", "tick", 148,
+         ("this.applyEffectsFromBlocks()", "this.handlePortal()")),
+        ("fallingEntityTeleport", "net/minecraft/world/entity/item/FallingBlockEntity.java", "teleport", 353,
+         ("boolean fromOrToEnd =", "Entity newEntity = super.teleport(transition)",
+          "this.forceTickAfterTeleportToDuplicate = newEntity != null && fromOrToEnd")),
+        ("endPortalEntry", "net/minecraft/world/level/block/EndPortalBlock.java", "entityInside", 67,
+         ("entity.canUsePortal(false)", "entity.setAsInsidePortal(this, pos)")),
+        ("endPortalDestination", "net/minecraft/world/level/block/EndPortalBlock.java", "getPortalDestination", 80,
+         ("fromEnd ? respawnData.dimension() : Level.END", "EndPlatformFeature.createEndPlatform",
+          "return new TeleportTransition")),
+        ("crossDimensionCreation", "net/minecraft/world/entity/Entity.java", "teleportCrossDimension", 3069,
+         ("this.getType().create(newLevel, EntitySpawnReason.DIMENSION_TRAVEL)",
+          "if (newEntity == null)", "newEntity.restoreFrom(this)",
+          "this.removeAfterChangingDimensions()", "newLevel.addDuringTeleport(newEntity)")),
+    )
+    refs = {}
+    for key, member, method, expected_line, fragments in specs:
+        source = sources.read(member).decode()
+        info = source_method(source, method)
+        positions = [source.find(fragment) for fragment in fragments]
+        if (info is None or info["line"] != expected_line or -1 in positions
+                or positions != sorted(positions)):
+            raise ValueError(f"pinned falling End source path changed: {key}")
+        refs[key] = {"file": member, "method": method, "line": info["line"],
+                     "sourceMethodSha256": info["sourceSha256"],
+                     "classBytecodeSha256": sha(binary.read(member.removesuffix(".java") + ".class"))}
+    registry_file = "net/minecraft/world/entity/EntityTypes.java"
+    registry = sources.read(registry_file).decode()
+    start = registry.index("public static final EntityType<FallingBlockEntity> FALLING_BLOCK = register(")
+    end = registry.index("public static final EntityType<", start + 1)
+    declaration = registry[start:end]
+    if ("FallingBlockEntity::new" not in declaration or "MobCategory.MISC" not in declaration
+            or ".notInPeaceful()" in declaration):
+        raise ValueError("pinned falling-block destination factory changed")
+    refs["registration"] = {"file": registry_file, "line": registry.count("\n", 0, start) + 1,
+                            "declarationSha256": sha(declaration.encode()),
+                            "classBytecodeSha256": sha(binary.read(registry_file.removesuffix(".java") + ".class"))}
+    return refs
+
+
 def build_inventory(source_path: pathlib.Path, binary_path: pathlib.Path, javap: pathlib.Path) -> dict:
     source_sha, binary_sha = file_sha(source_path), file_sha(binary_path)
     if source_sha != PINNED_SOURCE_SHA or binary_sha != PINNED_BINARY_SHA:
@@ -291,6 +343,7 @@ def build_inventory(source_path: pathlib.Path, binary_path: pathlib.Path, javap:
                 "NetherPortalBlock", "EndPortalBlock", "EndGatewayBlock"}:
             raise ValueError("portal implementation inventory differs from pinned three implementations")
         materials = falling_materials(sources)
+        falling_end_refs = falling_end_entry_source_refs(sources, binary)
         transfer_factories = {}
         for entity_id in sorted(SOURCE_PROVEN_HURTING_NETHER | SOURCE_PROVEN_THROWABLE_NETHER
                                 | set(SOURCE_PROVEN_ARROW_NETHER) | SOURCE_PROVEN_SHULKER_NETHER):
@@ -352,6 +405,7 @@ def build_inventory(source_path: pathlib.Path, binary_path: pathlib.Path, javap:
                 "registeredTypeIds": list(types), "callerProfileCount": len({row["callerProfile"] for row in rows}),
                 "entityTypes": rows, "portalImplementations": portal_classes,
                 "fallingBlockStates": materials, "handlePortalDirectCallSites": handle_portal_calls,
+                "fallingEndEntrySourceRefs": falling_end_refs,
                 "portalEligibilityPrimitives": eligibility_primitives,
                 "nativeNetherTransferFactories": transfer_factories,
                 "scope": "Pinned vanilla 26.2 mapped source/binary and detectable registry/caller/portal drift; not arbitrary mod code."}
@@ -653,7 +707,48 @@ def build_census(inventory: dict, frozen: dict) -> dict:
                                                     "Entity.baseTick and then handlePortal directly; Entity.canUsePortal(false), "
                                                     "canTeleport and teleport inherited; registered constructor available",
                             "applicabilityDemonstrated": False,
-                            "artifact": "NATIVE_CONDITIONAL_TRANSFER_SOURCE_PROOFS.json"}
+                             "artifact": "NATIVE_CONDITIONAL_TRANSFER_SOURCE_PROOFS.json"}
+        if (entity_type == "minecraft:falling_block" and route == "END_ENTRY"
+                and graph == "standalone" and variant in SOURCE_PROVEN_FALLING_END_STATES):
+            assert profile is not None
+            methods = profile["declaringMethods"]
+            falling = "net.minecraft.world.entity.item.FallingBlockEntity"
+            entity = "net.minecraft.world.entity.Entity"
+            material = next((state for state in inventory["fallingBlockStates"]
+                             if state["blockState"] == variant), None)
+            refs = inventory.get("fallingEndEntrySourceRefs")
+            tick = profile["methodReferences"]["tick"]
+            teleport = profile["methodReferences"]["teleport"]
+            end_portal = next((portal for portal in inventory["portalImplementations"]
+                               if portal["class"] == "net.minecraft.world.level.block.EndPortalBlock"), None)
+            if (material is None or material["nativeProducer"] != SOURCE_PROVEN_FALLING_END_STATES[variant]
+                    or methods["tick"] != falling or methods["teleport"] != falling
+                    or any(methods[name] != entity for name in ("handlePortal", "canUsePortal", "canTeleport"))
+                    or "this.handlePortal(" not in tick["method"]["directCalls"]
+                    or not isinstance(refs, dict) or refs["fallingEntityTick"]["sourceMethodSha256"] != tick["method"]["sourceSha256"]
+                    or refs["fallingEntityTeleport"]["sourceMethodSha256"] != teleport["method"]["sourceSha256"]
+                    or end_portal is None or refs["endPortalEntry"]["sourceMethodSha256"] != end_portal["entryMethod"]["sourceSha256"]
+                    or refs["endPortalDestination"]["sourceMethodSha256"] != end_portal["destinationMethod"]["sourceSha256"]):
+                raise ValueError(f"pinned ordinary falling End transfer path changed: {variant}")
+            expected = "TRANSFER"
+            source_proof = {
+                "kind": "conditional_ordinary_falling_end_entry_transfer",
+                "sourceJarSha256": inventory["sourceJarSha256"],
+                "mappedBinarySha256": inventory["mappedBinarySha256"],
+                "nativeOutcome": expected,
+                "registeredTypeId": entity_type,
+                "carriedBlockState": variant,
+                "concreteClass": falling,
+                "reference": {**refs["fallingEntityTick"]},
+                "sourcePathReferences": refs,
+                "eligibilityPredicate": "ordinary dry " + variant + " block loses support and creates an alive "
+                                        "standalone falling-block entity; it contacts an End portal without "
+                                        "cooldown, the End dimension is enabled, and the registered "
+                                        "FallingBlockEntity factory creates its destination replacement; "
+                                        "Entity.canUsePortal and canTeleport permit Overworld-to-End travel",
+                "applicabilityDemonstrated": False,
+                "artifact": "NATIVE_CONDITIONAL_TRANSFER_SOURCE_PROOFS.json",
+            }
         if (profile is not None and entity_type not in ALWAYS_NO_ENTRY and variant is None
                 and route in ("NETHER_ENTRY", "NETHER_RETURN") and expected is None):
             # This is deliberately narrower than the whole Mob hierarchy. A subtype

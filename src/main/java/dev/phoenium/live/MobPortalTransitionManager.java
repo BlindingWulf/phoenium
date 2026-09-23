@@ -28,7 +28,7 @@ public final class MobPortalTransitionManager implements AutoCloseable {
     public MobPortalTransitionManager(NativePortalTransfer.Authority authority, ObjectOwnershipRegistry objects) {
         this.authority = Objects.requireNonNull(authority); this.objects = Objects.requireNonNull(objects);
     }
-    private enum NativeProfile { DIRECT_MOB_TICK, ZOMBIE_PREFIX, CUBE_OUTER_TAIL, HORSE_OUTER_TAIL, VILLAGER_OUTER_TAIL }
+    private enum NativeProfile { DIRECT_MOB_TICK, ENDERMITE_PREFIX, SILVERFISH_PREFIX, ZOMBIE_PREFIX, CUBE_OUTER_TAIL, HORSE_OUTER_TAIL, VILLAGER_OUTER_TAIL }
     /** Exact vanilla classes with Mob.tick and Mob.baseTick as their declaring callers. */
     private static final Set<Class<?>> DIRECT_MOB_TICK = Set.of(
         net.minecraft.world.entity.monster.Blaze.class,
@@ -78,6 +78,11 @@ public final class MobPortalTransitionManager implements AutoCloseable {
     private static NativeProfile profile(Entity entity) {
         Class<?> type = entity.getClass();
         if (DIRECT_MOB_TICK.contains(type)) return NativeProfile.DIRECT_MOB_TICK;
+        // Endermite.tick sets yBodyRot before super.tick and has no suffix after it.
+        // The Mob.tick suspension point therefore retains its exact already-run prefix.
+        if (type == net.minecraft.world.entity.monster.Endermite.class) return NativeProfile.ENDERMITE_PREFIX;
+        // Silverfish.tick has the same pinned method body and no outer suffix.
+        if (type == net.minecraft.world.entity.monster.Silverfish.class) return NativeProfile.SILVERFISH_PREFIX;
         if (ZOMBIE_PREFIX.contains(type)) return NativeProfile.ZOMBIE_PREFIX;
         if (HORSE_OUTER_TAIL.contains(type)) return NativeProfile.HORSE_OUTER_TAIL;
         if (VILLAGER_OUTER_TAIL.contains(type)) return NativeProfile.VILLAGER_OUTER_TAIL;

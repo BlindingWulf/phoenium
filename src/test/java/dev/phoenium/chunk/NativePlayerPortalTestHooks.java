@@ -17,13 +17,17 @@ public final class NativePlayerPortalTestHooks {
     }
     public static boolean suspend(ServerPlayer player) { return dimensions!=null && (boolean)PortalDestinationTestHooks.invoke(dimensions,"suspendAfterSourceRemoval",player); }
     public static ServerPlayer teleport(ServerPlayer player,TeleportTransition transition) {
-        boolean began=dimensions!=null && (boolean)PortalDestinationTestHooks.invoke(dimensions,"begin",player,transition);
-        try {
-            var method=ServerPlayer.class.getMethod("phoenium$testNativePlayerTeleport",TeleportTransition.class);
-            return (ServerPlayer)method.invoke(player,transition);
-        } catch(java.lang.reflect.InvocationTargetException e) { if(e.getCause() instanceof RuntimeException r) throw r; if(e.getCause() instanceof Error r) throw r; throw new AssertionError(e.getCause()); }
-        catch(ReflectiveOperationException e) {throw new AssertionError(e);}
-        finally { if(dimensions!=null) PortalDestinationTestHooks.invoke(dimensions,"finishNativeCall",player,began); }
+        java.util.function.Supplier<ServerPlayer> nativePrefix=()->{
+            boolean began=dimensions!=null && (boolean)PortalDestinationTestHooks.invoke(dimensions,"begin",player,transition);
+            try {
+                var method=ServerPlayer.class.getMethod("phoenium$testNativePlayerTeleport",TeleportTransition.class);
+                return (ServerPlayer)method.invoke(player,transition);
+            } catch(java.lang.reflect.InvocationTargetException e) { if(e.getCause() instanceof RuntimeException r) throw r; if(e.getCause() instanceof Error r) throw r; throw new AssertionError(e.getCause()); }
+            catch(ReflectiveOperationException e) {throw new AssertionError(e);}
+            finally { if(dimensions!=null) PortalDestinationTestHooks.invoke(dimensions,"finishNativeCall",player,began); }
+        };
+        return dimensions==null ? nativePrefix.get()
+            : (ServerPlayer)PortalDestinationTestHooks.invoke(dimensions,"withSourceOwner",player,transition,nativePrefix);
     }
     public static void damage(ThrownEnderpearl pearl,ServerPlayer player) { damage.accept(player); }
     public static void effects(ThrownEnderpearl pearl,ServerLevel level,Vec3 position) { effects.accept(pearl); pearl.discard(); }

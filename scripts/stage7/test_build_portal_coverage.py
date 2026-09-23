@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import copy
+import dataclasses
 import hashlib
 import json
 import pathlib
@@ -45,6 +47,122 @@ def claim(name: str, workers: int, assertions: set[str], outcome: str = "TRANSFE
 
 
 class CoverageTests(unittest.TestCase):
+    def test_falling_cards_attach_to_exact_material_rows_without_earning_disposition(self) -> None:
+        with patch.object(coverage, "legacy_contract_ok", return_value=True):
+            for material in ("sand", "gravel", "anvil"):
+                witness = card(f"F1-{material}-native-fall-end-entry", 1)
+                claims = coverage.legacy_claims(witness, pathlib.Path("unused"), {})
+                self.assertEqual(len(claims), 1)
+                matched = claims[0]
+                target = row()
+                target.update({"id": f"V2-FALLING_{material.upper()}-END_ENTRY",
+                               "entityType": "minecraft:falling_block",
+                               "variant": "minecraft:" + material,
+                               "route": "END_ENTRY", "expectedNativeOutcome": None})
+                self.assertTrue(coverage.claim_matches(target, matched))
+                self.assertNotIn("source_block_removed", matched["assertions"])
+                observed = coverage.apply_claims(target, claims, "A" * 64, "B" * 64, "C" * 64)
+                self.assertEqual(len(observed["receipts"]["W1"]), 1)
+                self.assertEqual(observed["receipts"]["W4"], [])
+                self.assertEqual(observed["observedPhoeniumResult"], "TRANSFER")
+                self.assertIsNone(observed["disposition"])
+                self.assertIn("native outcome unresolved or invalid", observed["unresolvedReasons"])
+
+    def test_falling_source_cell_requires_exact_raw_before_and_after_witness(self) -> None:
+        for material in ("sand", "gravel", "anvil"):
+            name = f"F1-{material}-native-fall-end-entry"
+            uuid = "12345678-1234-1234-1234-123456789abc"
+            state = f"Block{{minecraft:{material}}}"
+            source = {"uuid": uuid, "object": "source-1", "type": "minecraft:falling_block",
+                      "world": "minecraft:overworld", "x": 0.5, "y": 72.96, "z": 0.5,
+                      "fallingState": state}
+            cell = {"world": "minecraft:overworld", "position": "0 73 0",
+                    "material": "minecraft:" + material, "sourceUuid": uuid,
+                    "sourceObject": "source-1", "sourceFallingState": state,
+                    "beforeCommand": "execute in minecraft:overworld run execute if block 0 73 0 minecraft:" + material,
+                    "beforeResponse": "Test passed", "afterCommand":
+                    "execute in minecraft:overworld run execute if block 0 73 0 minecraft:air",
+                    "afterResponse": "Test passed"}
+            receipt = {name + "-source": source, name + "-source-cell": cell}
+            witness = coverage.Card(name, 1, "first", pathlib.Path("receipt.json"),
+                                    pathlib.Path("result.json"), pathlib.Path("inputs.json"),
+                                    {}, receipt_data=receipt)
+            self.assertEqual(coverage.falling_source_cell_assertions(witness, material),
+                             {"source_block_removed"})
+            with patch.object(coverage, "legacy_contract_ok", return_value=True):
+                self.assertIn("source_block_removed",
+                              coverage.legacy_claims(witness, pathlib.Path("unused"), {})[0]["assertions"])
+            for field, bad in (("position", "0 72 0"),
+                               ("afterCommand", "execute in minecraft:overworld run execute if block 0 72 0 minecraft:air"),
+                               ("afterResponse", "Test failed"),
+                               ("sourceUuid", "00000000-0000-0000-0000-000000000000"),
+                               ("material", "minecraft:stone")):
+                rejected = {**cell, field: bad}
+                witness.receipt_data[name + "-source-cell"] = rejected
+                self.assertEqual(coverage.falling_source_cell_assertions(witness, material), set(), field)
+            witness.receipt_data.pop(name + "-source-cell")
+            self.assertEqual(coverage.falling_source_cell_assertions(witness, material), set())
+
+    def test_falling_source_retirement_requires_raw_removal_and_owner_trace(self) -> None:
+        name = "F1-sand-native-fall-end-entry"
+        uuid = "12345678-1234-1234-1234-123456789abc"
+        source = {"uuid": uuid, "object": "source-1", "nativeId": 12,
+                  "type": "minecraft:falling_block", "world": "minecraft:overworld",
+                  "fallingState": "Block{minecraft:sand}"}
+        arrival = {**source, "object": "destination-1", "nativeId": 34,
+                   "world": "minecraft:the_end"}
+        removed = {**source, "phase": "TRACKING_REMOVE_RETURN", "removed": True,
+                   "reason": "CHANGED_DIMENSION"}
+        admitted = {**arrival, "phase": "TRACKING_ADD_RETURN", "removed": False,
+                    "reason": "null"}
+        events = [removed, admitted]
+        receipt = {name + "-source": source, name + "-arrival": arrival,
+                   "observations": [
+                       {"label": name + "-arrival", "entities": [arrival],
+                        "fallingEvents": events},
+                       {"label": name + "-settled", "entities": [],
+                        "fallingEvents": events},
+                   ]}
+        witness = coverage.Card(name, 1, "first", pathlib.Path("receipt.json"),
+                                pathlib.Path("result.json"), pathlib.Path("inputs.json"),
+                                {}, receipt_data=receipt)
+        self.assertEqual(coverage.falling_source_retired_assertions(witness),
+                         {"source_retired"})
+        for mutation in (lambda d: d["observations"][0]["fallingEvents"][0].update(reason="DISCARDED"),
+                         lambda d: d["observations"][1]["fallingEvents"][0].update(removed=False),
+                         lambda d: d["observations"][0]["entities"].append(source),
+                         lambda d: d["observations"][0]["fallingEvents"].append(removed),
+                         lambda d: d["observations"][1].update(label="wrong-settled"),
+                         lambda d: d["observations"][0]["fallingEvents"].reverse()):
+            changed = copy.deepcopy(receipt)
+            mutation(changed)
+            self.assertEqual(coverage.falling_source_retired_assertions(
+                dataclasses.replace(witness, receipt_data=changed)), set())
+
+        falling_row = row()
+        falling_row.update({"id": "V2-FALLING_SAND-END_ENTRY",
+                            "legacyCaseId": "FALLING_SAND-END_ENTRY",
+                            "entityType": "minecraft:falling_block", "route": "END_ENTRY",
+                            "variant": "minecraft:sand"})
+        frozen = {"required_case_ids": ["FALLING_SAND-END_ENTRY"]}
+        census = {"rows": [falling_row],
+                  "frozenIdMapping": {"FALLING_SAND-END_ENTRY": falling_row["id"]}}
+        matched = {"card": witness, "entityType": "minecraft:falling_block",
+                   "route": "END_ENTRY", "variant": "minecraft:sand", "graph": "standalone",
+                   "observedOutcome": "TRANSFER", "assertions": set(),
+                   "basicObservation": True, "scope": "row"}
+        with patch.object(coverage, "legacy_claims", return_value=[matched]), \
+                patch.object(coverage, "observer_assertions", return_value=coverage.OWNER_ASSERTIONS):
+            report = coverage.build_report(census, frozen, "A" * 64, "B" * 64, "C" * 64,
+                                           [witness], [], pathlib.Path("unused"), {})
+        self.assertIn("source_retired", report["rows"][0]["witnessedAssertions"])
+        matched["assertions"] = set()
+        with patch.object(coverage, "legacy_claims", return_value=[matched]), \
+                patch.object(coverage, "observer_assertions", return_value=set()):
+            report = coverage.build_report(census, frozen, "A" * 64, "B" * 64, "C" * 64,
+                                           [witness], [], pathlib.Path("unused"), {})
+        self.assertNotIn("source_retired", report["rows"][0]["witnessedAssertions"])
+
     def test_chest_vehicle_rows_require_storage_and_drop_witnesses(self) -> None:
         for entity in ("minecraft:oak_chest_boat", "minecraft:bamboo_chest_raft",
                        "minecraft:chest_minecart"):

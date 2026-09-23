@@ -16,6 +16,9 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Supplier;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.Entity;
@@ -55,6 +58,62 @@ final class PlayerDimensionTransitionManager implements AutoCloseable {
         this.objects = Objects.requireNonNull(objects, "objects");
     }
 
+    /**
+     * The native player prefix through oldLevel.removePlayerImmediately is a source effect.
+     * Portal lookup may call ServerPlayer.teleport from the owner-free server turn, so deliver
+     * that prefix synchronously to the player's current source owner before it can mutate the
+     * player or source storage. The existing suspension point then releases the source lease;
+     * advance() alone runs the retained native suffix under the destination owner.
+     */
+    ServerPlayer withSourceOwner(ServerPlayer player, TeleportTransition transition,
+                                 Supplier<ServerPlayer> nativePrefix) {
+        Objects.requireNonNull(player, "player");
+        Objects.requireNonNull(transition, "transition");
+        Objects.requireNonNull(nativePrefix, "nativePrefix");
+        if (closed || !authority.running()) return nativePrefix.get();
+
+        ObjectOwnership source = objects.current(player.getUUID().toString()).orElse(null);
+        if (source == null || source.kind() != OwnedObjectKind.PLAYER) return null;
+        // Pinned ServerPlayer.teleport has a separate same-dimension branch before source
+        // retirement. Its far-target gateway effects need their own boundary, not this one.
+        if (source.routingKey().world().equals(authority.worldId(transition.newLevel())))
+            return nativePrefix.get();
+        if (OwnershipContext.current().isPresent()) {
+            if (!currentSourceOwner(player, source) || !authority.worldActive(transition.newLevel())) return null;
+            return nativePrefix.get();
+        }
+
+        AtomicReference<ServerPlayer> result = new AtomicReference<>();
+        AtomicBoolean executed = new AtomicBoolean();
+        authority.execute(source.routingKey(), RegionalServiceKind.ENTITY_PORTAL_SOURCE, () -> {
+            if (currentSourceOwner(player, source) && authority.worldActive(transition.newLevel()))
+                result.set(nativePrefix.get());
+            executed.set(true);
+        });
+        if (!executed.get()) throw new IllegalStateException("player dimension source prefix was not delivered");
+        return result.get();
+    }
+
+    private boolean currentSourceOwner(ServerPlayer player, ObjectOwnership expected) {
+        ObjectOwnership current = objects.current(expected.objectId()).orElse(null);
+        if (current == null || current.kind() != OwnedObjectKind.PLAYER
+                || current.incarnation() != expected.incarnation()
+                || !current.objectEpoch().equals(expected.objectEpoch())
+                || !current.routingKey().equals(expected.routingKey()))
+            return false;
+        objects.requireCurrentOwner(current.objectId(), current.objectEpoch(),
+            OwnershipContext.current().orElseThrow(
+                () -> new IllegalStateException("player dimension source prefix lacks owner authority")).region());
+        if (player.isRemoved() || !(player.level() instanceof ServerLevel sourceLevel)
+                || !authority.worldActive(sourceLevel)
+                || !current.routingKey().world().equals(authority.worldId(sourceLevel)))
+            return false;
+        ChunkPos chunk = player.chunkPosition();
+        if (chunk.x() != current.routingKey().x() || chunk.z() != current.routingKey().z())
+            return false;
+        return authority.currentSession(player) >= 0;
+    }
+
     /** Begins only the cross-world path. Same-dimension teleport remains entirely native. */
     boolean begin(ServerPlayer player, TeleportTransition transition) {
         Objects.requireNonNull(player, "player");
@@ -69,9 +128,7 @@ final class PlayerDimensionTransitionManager implements AutoCloseable {
         FullEntityFacts.Access access = access(player);
         ObjectOwnership binding = objects.current(player.getUUID().toString()).orElse(null);
         if (binding == null || binding.kind() != OwnedObjectKind.PLAYER) return false;
-        if (OwnershipContext.current().isPresent())
-            objects.requireCurrentOwner(binding.objectId(), binding.objectEpoch(),
-                OwnershipContext.current().orElseThrow().region());
+        if (!currentSourceOwner(player, binding)) return false;
 
         WorldId sourceWorld = authority.worldId(sourceLevel);
         WorldId destinationWorld = authority.worldId(destinationLevel);

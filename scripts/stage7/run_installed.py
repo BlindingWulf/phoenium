@@ -153,7 +153,7 @@ try:
             for dimension in ['minecraft:overworld','minecraft:the_nether']:
                 command='execute in '+dimension+' run gamerule minecraft:keep_inventory'
                 setup.append([command,rcon(command)])
-        if not restart and not snapshot_probe and group in ('legacy','selection-holes','merchant-holes','armor-stand','projectile-fireball','hurting-projectiles','arrow-trident','throwable-projectiles','passenger-graph','vehicle-empty','vehicle-chest','vehicle-minecart-chest','no-native-entry'):
+        if not restart and not snapshot_probe and group in ('legacy','selection-holes','merchant-holes','armor-stand','projectile-fireball','hurting-projectiles','arrow-trident','throwable-projectiles','passenger-graph','vehicle-empty','vehicle-chest','vehicle-minecart-chest','mob-prefix','no-native-entry'):
             for world in ['minecraft:overworld','minecraft:the_nether']:
                 prefix='execute in '+world+' run '
                 for c in ['forceload add -16 -16 16 16','fill -12 64 -12 12 64 12 minecraft:sea_lantern',
@@ -231,7 +231,10 @@ try:
         # Same-dimension gateways keep the native object and do not enter the
         # cross-dimension replacement observer. Their exact contact, ticket,
         # tracking and owner witnesses are checked by the G1 card/importer.
-        if group not in ('bed-anchor','no-native-entry','same-dimension-gateway') and tx.get('events',0)==0:
+        # Restart cards verify the saved world and client/session health. Some (including
+        # legacy I8) intentionally make no new portal contact after the server restarts.
+        # Still reject any violation or pending transaction observed in this phase.
+        if not restart and group not in ('bed-anchor','no-native-entry','same-dimension-gateway') and tx.get('events',0)==0:
             result['txPass']=False
             raise RuntimeError('stage7-tx observed no portal transaction events')
         if not result['txPass']:

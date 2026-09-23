@@ -148,7 +148,8 @@ LEGACY_METHODS = {
                     "cmd", "require", "health", "pass"),
     "mob": ("mobPortalCase", "taggedMob", "snapshot", "health", "pass"),
     "armor": ("decorativeLivingCase", "taggedMob", "snapshot", "health", "pass"),
-    "falling": ("fallingEndCards", "falling", "fallingArrival", "fallingLandingEvent", "snapshot", "pass"),
+    "falling": ("fallingEndCards", "falling", "fallingArrival", "fallingLandingEvent",
+                "snapshot", "cmd", "require", "pass"),
     "item": ("itemCard", "items", "snapshot", "health", "pass"),
     "cold_item": ("itemCard", "coldDestination", "items", "snapshot", "health", "pass"),
     "player": ("playerPortals", "awaitWorld", "snapshot", "health", "pass"),
@@ -806,6 +807,94 @@ def gateway_pig_assertions(card: Card) -> set[str]:
             "source_owner", "tracking_owner", "observer_phases", "client_tracking"}
 
 
+def falling_source_cell_assertions(card: Card, material: str) -> set[str]:
+    """Read the exact carried source cell, not the support block below it."""
+    source = card.receipt_data.get(card.name + "-source")
+    cell = card.receipt_data.get(card.name + "-source-cell")
+    if not isinstance(source, dict) or not isinstance(cell, dict):
+        return set()
+    uuid = source.get("uuid")
+    state = "Block{minecraft:" + material + "}"
+    if (not isinstance(uuid, str) or re.fullmatch(r"[0-9a-fA-F-]{36}", uuid) is None
+            or source.get("type") != "minecraft:falling_block"
+            or source.get("world") != "minecraft:overworld"
+            or source.get("fallingState") != state
+            or source.get("x") != 0.5 or source.get("z") != 0.5
+            or not isinstance(source.get("y"), (int, float))
+            or not 65 <= source["y"] <= 74
+            or cell.get("world") != "minecraft:overworld"
+            or cell.get("position") != "0 73 0"
+            or cell.get("material") != "minecraft:" + material
+            or cell.get("sourceUuid") != uuid
+            or cell.get("sourceObject") != source.get("object")
+            or cell.get("sourceFallingState") != state
+            or cell.get("beforeCommand") != "execute in minecraft:overworld run execute if block 0 73 0 minecraft:" + material
+            or cell.get("afterCommand") != "execute in minecraft:overworld run execute if block 0 73 0 minecraft:air"
+            or not isinstance(cell.get("beforeResponse"), str)
+            or "Test passed" not in cell["beforeResponse"]
+            or not isinstance(cell.get("afterResponse"), str)
+            or "Test passed" not in cell["afterResponse"]):
+        return set()
+    return {"source_block_removed"}
+
+
+def falling_source_retired_assertions(card: Card) -> set[str]:
+    """Bind native source removal to the same UUID and replacement admission."""
+    source = card.receipt_data.get(card.name + "-source")
+    arrival = card.receipt_data.get(card.name + "-arrival")
+    observations = card.receipt_data.get("observations")
+    if (not isinstance(source, dict) or not isinstance(arrival, dict)
+            or not isinstance(observations, list)
+            or source.get("type") != "minecraft:falling_block"
+            or source.get("world") != "minecraft:overworld"
+            or arrival.get("type") != "minecraft:falling_block"
+            or arrival.get("world") != "minecraft:the_end"
+            or source.get("uuid") != arrival.get("uuid")
+            or not isinstance(source.get("uuid"), str)
+            or source.get("object") == arrival.get("object")
+            or source.get("nativeId") == arrival.get("nativeId")
+            or source.get("fallingState") != arrival.get("fallingState")):
+        return set()
+    snapshots = {}
+    for suffix in ("-arrival", "-settled"):
+        matches = [row for row in observations if isinstance(row, dict)
+                   and row.get("label") == card.name + suffix]
+        if len(matches) != 1:
+            return set()
+        snapshots[suffix] = matches[0]
+    for snapshot in snapshots.values():
+        live = snapshot.get("entities")
+        events = snapshot.get("fallingEvents")
+        if not isinstance(live, list) or not isinstance(events, list):
+            return set()
+        if any(isinstance(entity, dict) and entity.get("uuid") == source["uuid"]
+               and (entity.get("world") == source["world"]
+                    or entity.get("object") == source.get("object")) for entity in live):
+            return set()
+        source_removals = [(index, event) for index, event in enumerate(events)
+                           if isinstance(event, dict)
+                           and event.get("uuid") == source["uuid"]
+                           and event.get("object") == source.get("object")
+                           and event.get("nativeId") == source.get("nativeId")
+                           and event.get("world") == source["world"]
+                           and event.get("type") == source["type"]
+                           and event.get("phase") == "TRACKING_REMOVE_RETURN"
+                           and event.get("removed") is True
+                           and event.get("reason") == "CHANGED_DIMENSION"]
+        destination_adds = [(index, event) for index, event in enumerate(events)
+                            if isinstance(event, dict)
+                            and event.get("uuid") == arrival["uuid"]
+                            and event.get("object") == arrival.get("object")
+                            and event.get("nativeId") == arrival.get("nativeId")
+                            and event.get("world") == arrival["world"]
+                            and event.get("type") == arrival["type"]
+                            and event.get("phase") == "TRACKING_ADD_RETURN"]
+        if (len(source_removals) != 1 or len(destination_adds) != 1
+                or source_removals[0][0] >= destination_adds[0][0]):
+            return set()
+    return {"source_retired"}
+
+
 def legacy_claims(card: Card, worktree: pathlib.Path, contracts: dict[str, str]) -> list[dict[str, Any]]:
     """Return reviewed legacy observations; no native outcome is inferred here."""
     name = card.name
@@ -897,9 +986,11 @@ def legacy_claims(card: Card, worktree: pathlib.Path, contracts: dict[str, str])
                                scope="row" if storage == "items" else "supporting"))
     match = FALLING_CARD.fullmatch(name)
     if match:
-        add("falling", "minecraft:falling_block", "END_ENTRY", match.group(1),
+        material = match.group(1)
+        add("falling", "minecraft:falling_block", "END_ENTRY", "minecraft:" + material,
             {"support_removed", "destination_unique", "tracking_unique", "uuid_preserved",
-             "replacement_identity", "carried_state", "end_platform", "native_landing"})
+             "replacement_identity", "carried_state", "end_platform", "native_landing"}
+            | falling_source_cell_assertions(card, material))
     if name == "P0-fireball-nether-return":
         add("fireball", "minecraft:fireball", "NETHER_RETURN", None,
             {"source_retired", "destination_unique", "tracking_unique", "uuid_preserved",
@@ -1237,6 +1328,9 @@ def build_report(census: dict[str, Any], frozen: dict[str, Any], candidate_sha: 
                           graph_observer_assertions(claim["card"], claim["route"])
                           if claim.get("graph") == "mob riding mob" else set())
         claim["assertions"].update(observed_owner)
+        if (claim["entityType"] == "minecraft:falling_block"
+                and claim["route"] == "END_ENTRY" and OWNER_ASSERTIONS <= observed_owner):
+            claim["assertions"].update(falling_source_retired_assertions(claim["card"]))
         claim["observerValidated"] = bool(observed_owner)
     rows = [apply_claims(row, claims, candidate_sha, source_sha, binary_sha) for row in census["rows"]]
     disposition_counts = collections.Counter({name: 0 for name in (*DISPOSITIONS.values(), "UNRESOLVED")})

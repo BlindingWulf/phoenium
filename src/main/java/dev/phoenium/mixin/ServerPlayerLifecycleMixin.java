@@ -51,14 +51,16 @@ abstract class ServerPlayerLifecycleMixin implements PlayerDimensionTransitionNa
     @WrapMethod(method = "teleport(Lnet/minecraft/world/level/portal/TeleportTransition;)Lnet/minecraft/server/level/ServerPlayer;")
     private ServerPlayer phoenium$dimensionChange(TeleportTransition transition, Operation<ServerPlayer> original) {
         ServerPlayer player = (ServerPlayer) (Object) this;
-        Phoenium.liveRuntime().onPlayerLevelChanging(player, transition.newLevel());
-        boolean began = Phoenium.liveRuntime().beginPlayerDimensionTransition(player, transition);
-        try {
-            return original.call(transition);
-        } finally {
-            boolean retained = Phoenium.liveRuntime().finishPlayerDimensionTransitionCall(player, began);
-            if (!retained) Phoenium.liveRuntime().onPlayerLevelChanged(player);
-        }
+        return Phoenium.liveRuntime().withPlayerDimensionSourceOwner(player, transition, () -> {
+            Phoenium.liveRuntime().onPlayerLevelChanging(player, transition.newLevel());
+            boolean began = Phoenium.liveRuntime().beginPlayerDimensionTransition(player, transition);
+            try {
+                return original.call(transition);
+            } finally {
+                boolean retained = Phoenium.liveRuntime().finishPlayerDimensionTransitionCall(player, began);
+                if (!retained) Phoenium.liveRuntime().onPlayerLevelChanged(player);
+            }
+        });
     }
 
     /**

@@ -2725,6 +2725,12 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
         return playerDimensionTransitions.begin(player, transition);
     }
 
+    public ServerPlayer withPlayerDimensionSourceOwner(ServerPlayer player,
+            net.minecraft.world.level.portal.TeleportTransition transition,
+            java.util.function.Supplier<ServerPlayer> nativePrefix) {
+        return playerDimensionTransitions.withSourceOwner(player, transition, nativePrefix);
+    }
+
     public boolean suspendPlayerDimensionTransition(ServerPlayer player) {
         return playerDimensionTransitions.suspendAfterSourceRemoval(player);
     }
