@@ -2566,7 +2566,8 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
     public boolean mobPortalGraphTickSuspended(Entity entity, boolean passenger) {
         return mobPortalTransitions.graphTickSuspended(entity, passenger)
             || boatPortalTransitions.graphTickSuspended(entity, passenger)
-            || minecartPortalTransitions.graphTickSuspended(entity, passenger);
+            || minecartPortalTransitions.graphTickSuspended(entity, passenger)
+            || entityPortalTransitions.graphTickSuspended(entity, passenger);
     }
     public boolean completeMobPortalTick(net.minecraft.world.entity.Mob mob) { return mobPortalTransitions.complete(mob); }
     public void finishMobPortalTick(net.minecraft.world.entity.Mob mob) { mobPortalTransitions.finish(mob); }
