@@ -3,9 +3,10 @@
 Usage: python scripts/stage7/headless_census.py <fresh-name> <workers 1|4> <candidate-jar> <census> [--types a,b,c] [--routes R1,R2]
 
 A census is a list of E0-style cards (<type>-<ROUTE>): the entity is summoned in the source dimension's portal cell,
-the harness waits for the native transfer and records TRANSFERRED / STAYED / GONE. Only server health is required
-(no crash, no observer violation, normal save). The output is DATA for finding crashes, never ledger evidence: the
-importer only accepts real-client receipts.
+the harness waits for the native transfer and records TRANSFERRED / STAYED / GONE together with raw probe snapshots
+(source / arrival / later / settled) per card. Output layout: inputs.json, headless-result.json, headless-receipt.json
+and headless-portal-transactions.log. Importer: build_portal_coverage.scan_headless. This is SERVER-HEADLESS evidence:
+it has no real client, so it can never witness client_tracking / client_playable / native_pickup assertions.
 """
 import pathlib, subprocess, hashlib, json, shutil, socket, struct, time, sys, datetime, os, re
 
@@ -23,6 +24,7 @@ candidate = pathlib.Path(sys.argv[3])
 census = sys.argv[4]
 types = next((a.partition('=')[2].split(',') for a in sys.argv if a.startswith('--types=')), None)
 routes = next((a.partition('=')[2].split(',') for a in sys.argv if a.startswith('--routes=')), ['NETHER_ENTRY', 'NETHER_RETURN', 'END_ENTRY', 'END_EXIT', 'END_GATEWAY'])
+noentry_tag = '' if os.environ.get('HC_NO_NOENTRY_TAG') else ',"stage7_noentry_h"'   # probe contact observer opt-in
 vanilla = '--vanilla' in sys.argv   # Phoenium-free native control: empty mods directory, same fixture
 ports = dict(java=25687, bedrock=19187, rcon=25787) if vanilla else dict(java=25686, bedrock=19186, rcon=25786)
 run = audit / 'installed' / name
@@ -39,6 +41,11 @@ NBT = {
     'item': ',Item:{id:"minecraft:diamond",count:1},PickupDelay:32767',
     'falling_block': ',BlockState:{Name:"minecraft:sand"},Time:1', 'tnt': ',fuse:400s',
 }
+
+
+def snapshot_contacts():
+    raw = rcon('stage7-probe snapshot', whole=True)
+    return json.loads(raw[raw.index('{'):]).get('noEntryContactEvents', [])
 
 
 def snapshot_members(tag):
@@ -73,24 +80,18 @@ def rcon(command, whole=False):
             if struct.unpack('<i', b[:4])[0] < 0: raise RuntimeError('RCON authentication failed')
             return b[8:-2].decode(errors='replace')
         def read_whole():
-            # Long replies (the probe snapshot) arrive as several packets; an unknown-type request echoes id 3 afterwards.
-            chunks = []
-            while True:
-                length = struct.unpack('<i', _exact(4))[0]; b = _exact(length)
-                ident = struct.unpack('<i', b[:4])[0]
-                if ident < 0: raise RuntimeError('RCON authentication failed')
-                if ident == 3: return ''.join(chunks)
-                chunks.append(b[8:-2].decode(errors='replace'))
-        def _exact(count):
-            b = b''
-            while len(b) < count:
-                part = s.recv(count - len(b))
-                if not part: raise EOFError('RCON closed')
-                b += part
-            return b
+            # The server splits long replies into 4096-character packets; keep reading while a full chunk was just received.
+            # (The packet-length cap on the server side rejects any sentinel request, so no end marker can be used.)
+            text = read()
+            while len(text.encode()) >= 4096 and len(text) % 4096 == 0:
+                s.settimeout(1.0)
+                try: more = read()
+                except (socket.timeout, TimeoutError): break
+                finally: s.settimeout(60)
+                text += more
+            return text
         packet(1, 3, 'phoenium-stage7-local-test'); read(); packet(2, 2, command)
-        if not whole: return read()
-        packet(3, 0, ''); return read_whole()
+        return read_whole() if whole else read()
 
 
 run.mkdir(parents=True, exist_ok=False); server.mkdir()
@@ -126,9 +127,27 @@ if not vanilla:
     geyser.write_text(geyser.read_text().replace('19172', str(ports['bedrock'])))
 else:
     shutil.rmtree(server / 'config')
-(run / 'inputs.json').write_text(json.dumps(dict(candidate=str(immutable), candidateSha256=digest, probeSha256=sha(probe), workers=workers, vanilla=vanilla,
-    census=census, routes=routes, headless=True,
-    head=subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=work, text=True).strip()), indent=2))
+world_hashes = {str(q.relative_to(source_world)): sha(q) for q in source_world.rglob('*') if q.is_file() and q.name != 'session.lock'}
+(run / 'world-copy.json').write_text(json.dumps(dict(source=str(source_world), destination=str(target_world), hashes=world_hashes), indent=2))
+census_v2 = json.loads((base_audit / 'PORTAL_BEHAVIOR_CENSUS_V2.json').read_text(encoding='utf-8'))
+def selected(card):
+    kind, route = re.fullmatch(r'E0-([a-z_]+)-([A-Z_]+)', card).groups()
+    return (not types or kind in types) and route in routes
+card_list = [c for c in census.split(',') if selected(c)]
+test_sources = {str(q.relative_to(work)): sha(q) for base in [work / 'src/clientGameTest', work / 'src/test/java/dev/phoenium/stage7repair', work / 'src/stage7RepairHarness']
+                for q in base.rglob('*') if q.is_file()}
+test_sources[str(script_path.relative_to(work))] = sha(script_path)
+inputs = dict(candidate=str(immutable), candidateSha256=digest, probeSha256=None if vanilla else sha(probe), workers=workers, vanilla=vanilla,
+              group='headless-census', cards=card_list, census=census, routes=routes, headless=True, evidence='server-headless',
+              censusScriptSha256=sha(script_path), testSourceHashes=test_sources,
+              head=subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=work, text=True).strip(),
+              sourceStatus=subprocess.check_output(['git', 'status', '--short'], cwd=work, text=True),
+              providers=pinned['providers'], configHashes={} if vanilla else {n: sha(server / 'config' / n) for n in pinned['configFilesSha256']})
+if vanilla:
+    # Phoenium-free native control: empty mods directory, same launcher/libraries/world fixture.
+    inputs.update(mods=[], sourceJarSha256=census_v2['sourceJarSha256'], mappedBinarySha256=census_v2['mappedBinarySha256'],
+                  vanillaServerJarSha256=sha(server / 'versions/26.2/server-26.2.jar'))
+(run / 'inputs.json').write_text(json.dumps(inputs, indent=2))
 
 console = run / 'first-server-console.log'
 command = [str(java), '-Xmx2G', '-Dphoenium.test.diagnostics=true', '-Dphoenium.gameplay.workers=' + str(workers),
@@ -208,7 +227,7 @@ try:
                         rcon('execute in ' + src + ' run ' + c)
                     end_ready.add((src, y))
                 at = '8.5 %d.25 8.5' % y
-            summon = rcon('execute in %s run summon minecraft:%s %s {Tags:["stage7_mob","%s"],NoGravity:1b%s}' % (src, etype, at, tag, NBT.get(etype, '')))
+            summon = rcon('execute in %s run summon minecraft:%s %s {Tags:["stage7_mob"%s,"%s"],NoGravity:1b%s}' % (src, etype, at, noentry_tag, tag, NBT.get(etype, '')))
             outcome = 'GONE' if fixture_ok else 'FIXTURE_INVALID'; where = 'NONE'
             witness = {}
             if fixture_ok: witness['source'] = snapshot_members(tag)
@@ -238,6 +257,7 @@ try:
                     time.sleep(.25)
             elif fixture_ok and not vanilla:
                 witness['settled'] = snapshot_members(tag)
+                witness['noEntryContactEvents'] = [e for e in snapshot_contacts() if e.get('uuid', '').lower() in {m.get('uuid', '').lower() for m in witness['settled']}]
             info = ''
             if outcome != 'TRANSFERRED':
                 info = rcon('execute in %s positioned 0 64 0 run data get entity @e[tag=%s,distance=0..2000,limit=1] Pos' % (src, tag)).strip()[:120]
@@ -253,9 +273,10 @@ try:
                 if tx.get('violations', 0) > 0 or tx.get('pending', 0) == 0: break
                 time.sleep(.5)
             result['txPass'] = tx.get('violations') == 0 and tx.get('pending') == 0
-        result['clientPass'] = True
+        result['harnessPass'] = True
 except BaseException as error:
     result['failure'] = str(error); print('FAILED', error, flush=True)
+    import traceback; result['failureTrace'] = traceback.format_exc(); print(result['failureTrace'], flush=True)
 finally:
     if process and process.poll() is None:
         try: process.stdin.write(b'save-all\nstop\n'); process.stdin.flush(); result['normalStopRequested'] = True
@@ -264,8 +285,25 @@ finally:
         except subprocess.TimeoutExpired: process.terminate(); process.wait(timeout=15); result['forcedOwnServerStop'] = True
     result['serverExitCode'] = None if process is None else process.poll()
     result['logFailure'] = failed(); result['normalSave'] = 'All dimensions are saved' in logtext()
-    result['pass'] = bool(result.get('clientPass') and result.get('txPass') and not result.get('failure') and not result['logFailure'] and result['normalSave'])
-    (run / 'first-result.json').write_text(json.dumps(result, indent=2))
+    result['phase'] = 'headless'
+    tx_lines = [line for line in logtext().splitlines() if 'STAGE7_PORTAL_TX' in line]
+    tx_trace = run / 'headless-portal-transactions.log'
+    tx_trace.write_text('\n'.join(tx_lines) + ('\n' if tx_lines else ''))
+    result['txTracePath'] = str(tx_trace); result['txTraceSha256'] = sha(tx_trace); result['txTraceLineCount'] = len(tx_lines)
+    result['sourceWorldChanges'] = [n for n, h in world_hashes.items() if sha(source_world / n) != h]
+    result['providerHashes'] = {} if vanilla else {n: sha(server / 'mods' / n) for n in pinned['providers']}
+    result['installedCandidateSha256'] = digest if vanilla else sha(server / 'mods' / immutable.name)
+    result['testSourceChanged'] = [n for n, h in test_sources.items() if sha(work / n) != h]
+    result['configChanges'] = [] if vanilla else [n for n, h in inputs['configHashes'].items() if sha(server / 'config' / n) != h]
+    result['pass'] = bool(result.get('harnessPass') and result.get('txPass') and not result.get('failure') and not result['logFailure']
+                          and result['normalSave'] and not result.get('forcedOwnServerStop') and not result['sourceWorldChanges']
+                          and not result['testSourceChanged'] and not result['configChanges'] and result['installedCandidateSha256'] == digest)
+    receipt = {'schema': 'stage7-headless-receipt-v1', 'evidence': 'server-headless', 'group': 'headless-census',
+               'pass': bool(result['pass']), 'candidateSha256': digest, 'cards': result['cards']}
+    (run / 'headless-receipt.json').write_text(json.dumps(receipt, indent=2))
+    result['cards'] = [{k: v for k, v in c.items() if k != 'witness'} for c in result['cards']]
+    (run / 'headless-result.json').write_text(json.dumps(result, indent=2))
+    (run / 'first-result.json').write_text(json.dumps(result, indent=2))   # compare_census.py compatibility
     summary = {}
     for c in result['cards']: summary.setdefault(c['outcome'], []).append(c['card'])
     print(json.dumps({k: (v if len(v) < 40 else str(len(v)) + ' cards') for k, v in summary.items()}, indent=1))
