@@ -87,6 +87,32 @@ final class PlayerRespawnHandoffTest {
             assertThrows(ChunkProtocolException.class, f::open);
         }
     }
+    /** ServerPlayer.showEndCredits removes the player with CHANGED_DIMENSION before PERFORM_RESPAWN opens the respawn. */
+    @Test void endCreditsRemovalIsAnAcceptedRetiredOpeningAndIsNeverReplayed() throws Exception {
+        try (var f = new Fixture()) {
+            var old = f.player;
+            f.creditsRemoval(old, true);
+            var handoff = f.success();
+            f.assertCurrent(f.player);
+            assertSame(old, handoff.oldPlayer);
+            assertEquals(1, f.removals.get(old), "native removal ran once (showEndCredits); the handoff must not replay it");
+            assertTrue(PlayerRespawnHandoff.retired(old));
+            assertFalse(((PlayerRespawnHandoff.Incarnation) old).phoenium$creditsRemovalCompleted(), "the receipt is consumed at commit");
+        }
+        // The same removal without the credits receipt is an unrelated dimension change and is refused.
+        try (var f = new Fixture()) {
+            f.creditsRemoval(f.player, false);
+            assertThrows(ChunkProtocolException.class, f::open);
+        }
+        // A receipt does not outlive a disconnect: a stale object can no longer open a respawn.
+        try (var f = new Fixture()) {
+            var stale = f.player;
+            f.creditsRemoval(stale, true);
+            try (var turn = f.service.scoreboardAccess()) { f.service.scoreboard.remove(stale, true); }
+            assertFalse(((PlayerRespawnHandoff.Incarnation) stale).phoenium$creditsRemovalCompleted());
+            assertThrows(ChunkProtocolException.class, f::open);
+        }
+    }
     @Test void deathReceiptDoesNotAuthorizeConflictDisconnectOrNewerConnection() throws Exception {
         try (var f = new Fixture()) {
             f.nativeDeathTicks(); var impostor = f.newPlayer(f.listener); f.lookup.add(impostor);
@@ -349,6 +375,7 @@ final class PlayerRespawnHandoffTest {
             var deathRemoved = new AtomicBoolean();
             var deathPosition = new java.util.concurrent.atomic.AtomicReference<FullEntityFacts.PublishedPosition>();
             var precheckLogged = new AtomicBoolean();
+            var creditsRemoved = new AtomicBoolean();
             ServerPlayer[] exact = new ServerPlayer[1];
             ServerPlayer result = stub(ServerPlayer.class, List.of(
                 new Answer(ServerPlayer.class.getMethod("level"), args -> world),
@@ -367,6 +394,8 @@ final class PlayerRespawnHandoffTest {
                 new Answer(Incarnation.class.getMethod("phoenium$deathRemovalCompleted", boolean.class), args -> { deathRemoved.set((boolean) args[0]); return null; }),
                 new Answer(Incarnation.class.getMethod("phoenium$deathPosition"),args->deathPosition.get()),
                 new Answer(Incarnation.class.getMethod("phoenium$deathPosition",FullEntityFacts.PublishedPosition.class),args->{deathPosition.set((FullEntityFacts.PublishedPosition)args[0]);return null;}),
+                new Answer(Incarnation.class.getMethod("phoenium$creditsRemovalCompleted"), args -> creditsRemoved.get()),
+                new Answer(Incarnation.class.getMethod("phoenium$creditsRemovalCompleted", boolean.class), args -> { creditsRemoved.set((boolean) args[0]); return null; }),
                 new Answer(Incarnation.class.getMethod("phoenium$respawnPrecheckLogged"), args -> precheckLogged.get()),
                 new Answer(Incarnation.class.getMethod("phoenium$respawnPrecheckLogged", boolean.class), args -> { precheckLogged.set((boolean) args[0]); return null; })), Incarnation.class);
             exact[0] = result;
@@ -398,6 +427,22 @@ final class PlayerRespawnHandoffTest {
                 assertTrue(players.removeIf(value -> value == player)); service.scoreboard.remove(player, false); h.oldListRemoved(player);
             }
             assertNoAuthority(); h.removeOldWorld(world, player, () -> world.removePlayerImmediately(player, Entity.RemovalReason.KILLED));
+        }
+        /** The native effect of ServerPlayer.showEndCredits: removePlayerImmediately(CHANGED_DIMENSION), then the receipt. */
+        void creditsRemoval(ServerPlayer leaving, boolean receipt) {
+            EntityInLevelCallback callback = (EntityInLevelCallback) java.lang.reflect.Proxy.newProxyInstance(
+                EntityInLevelCallback.class.getClassLoader(), new Class<?>[] { EntityInLevelCallback.class },
+                (proxy, method, args) -> {
+                    if (method.getName().equals("onRemove")) {
+                        assertEquals(Entity.RemovalReason.CHANGED_DIMENSION, args[0]);
+                        lookup.remove(leaving); worldPlayers.removeIf(value -> value == leaving);
+                        tracked.remove(leaving); stored.remove(leaving); removals.merge(leaving, 1, Integer::sum);
+                    }
+                    return null;
+                });
+            leaving.setLevelCallback(callback);
+            leaving.remove(Entity.RemovalReason.CHANGED_DIMENSION);
+            if (receipt) ((PlayerRespawnHandoff.Incarnation) leaving).phoenium$creditsRemovalCompleted(true);
         }
         void nativeDeathTicks() throws Exception { nativeDeathTicks(20); }
         void nativeDeathTicks(int ticks) throws Exception {
