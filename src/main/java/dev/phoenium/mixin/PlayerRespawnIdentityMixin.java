@@ -13,6 +13,13 @@ abstract class PlayerRespawnIdentityMixin implements PlayerRespawnHandoff.Incarn
     @Unique private volatile boolean phoenium$creditsRemovalCompleted;
     @Override public boolean phoenium$creditsRemovalCompleted() { return phoenium$creditsRemovalCompleted; }
     @Override public void phoenium$creditsRemovalCompleted(boolean completed) { phoenium$creditsRemovalCompleted = completed; }
+    /** The exact player is still published here; native removal below discards its routing facts. */
+    @org.spongepowered.asm.mixin.injection.Inject(method = "showEndCredits()V", at = @org.spongepowered.asm.mixin.injection.At(
+        value = "INVOKE", target = "Lnet/minecraft/server/level/ServerLevel;removePlayerImmediately(Lnet/minecraft/server/level/ServerPlayer;Lnet/minecraft/world/entity/Entity$RemovalReason;)V",
+        shift = org.spongepowered.asm.mixin.injection.At.Shift.BEFORE), require = 1, allow = 1)
+    private void phoenium$creditsPositionCapture(org.spongepowered.asm.mixin.injection.callback.CallbackInfo ci) {
+        PlayerRespawnHandoff.captureCreditsPosition((ServerPlayer) (Object) this);
+    }
     /** Native has just removed the player with CHANGED_DIMENSION; the respawn that follows opens on that retirement. */
     @org.spongepowered.asm.mixin.injection.Inject(method = "showEndCredits()V", at = @org.spongepowered.asm.mixin.injection.At(
         value = "INVOKE", target = "Lnet/minecraft/server/level/ServerLevel;removePlayerImmediately(Lnet/minecraft/server/level/ServerPlayer;Lnet/minecraft/world/entity/Entity$RemovalReason;)V",

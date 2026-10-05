@@ -267,7 +267,8 @@ public final class FullEntityFacts {
 
     /** Owner-side movement publishes routing metadata without reading through a foreign alias. */
     public static void routed(Entity entity) {
-        if(entity instanceof PlayerRespawnHandoff.Incarnation access && access.phoenium$deathRemovalCompleted()
+        if(entity instanceof PlayerRespawnHandoff.Incarnation access
+                && (access.phoenium$deathRemovalCompleted() || access.phoenium$creditsRemovalCompleted())
                 && access.phoenium$deathPosition()!=null)access.phoenium$deathPosition(null);
         Fact fact = entity instanceof Access access ? access.phoenium$referenceFact() : null;
         if (fact == null) return;

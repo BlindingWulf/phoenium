@@ -135,9 +135,18 @@ public final class PlayerRespawnHandoff {
         var position=FullFinishingServices.forServer(player.level().getServer()).entityFacts.publishedPosition(player);
         ((Incarnation)player).phoenium$deathPosition(position);
     }
+    /** Same receipt for ServerPlayer.showEndCredits: captured while the exact player is still published, before native
+     * removal(CHANGED_DIMENSION). The player stays in the player list until PERFORM_RESPAWN, so a nearby block-event
+     * broadcast in that window needs this position instead of the published one that removal has just discarded.
+     * The receipt is unusable until the completed-credits-removal bit is published. */
+    public static void captureCreditsPosition(ServerPlayer player) {
+        var position=FullFinishingServices.forServer(player.level().getServer()).entityFacts.publishedPosition(player);
+        ((Incarnation)player).phoenium$deathPosition(position);
+    }
     /** Connection-recipient data only; this never restores entity tracking authority. */
     public static FullEntityFacts.PublishedPosition deathPosition(ServerPlayer player) {
-        if(!(player instanceof Incarnation access)||!access.phoenium$deathRemovalCompleted()||access.phoenium$respawnRetired())return null;
+        if(!(player instanceof Incarnation access)||!(access.phoenium$deathRemovalCompleted()||access.phoenium$creditsRemovalCompleted())
+            ||access.phoenium$respawnRetired())return null;
         var position=access.phoenium$deathPosition();
         return position!=null&&position.candidate().alias()==player
             &&position.candidate().fact().incarnation()==((FullEntityFacts.Access)player).phoenium$entityIncarnation()

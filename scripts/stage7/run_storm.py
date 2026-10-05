@@ -56,10 +56,18 @@ FAMILIES = (
     'falling_block', 'tnt', 'oak_boat', 'minecart', 'boat_pig_graph',
 )
 DIAGNOSTIC_FAMILIES = ('shulker_bullet',)
+# Opt-in families for the mixed gate (mixed_storm.py). They are never part of the frozen default mix.
+MIXED_FAMILIES = ('pig', 'cow', 'zombified_piglin', 'chest_minecart')
+MOB_PROFILE_FAMILIES = ('chicken', 'magma_cube', 'pig', 'cow', 'zombified_piglin')
 STATIONARY_FAMILIES = (
     'chicken', 'magma_cube', 'falling_block', 'tnt',
     'oak_boat', 'minecart', 'boat_pig_graph',
+    'pig', 'cow', 'zombified_piglin', 'chest_minecart',
 )
+# Optional extension points, empty for every default storm. mixed_storm.py registers callables that receive one
+# StormContext: after_setup, segment_settled(ctx, segment, outcomes), between_waves(ctx, wave), after_waves,
+# after_restart, finalize.
+HOOKS: dict = {}
 OW = 'minecraft:overworld'
 NETHER = 'minecraft:the_nether'
 END = 'minecraft:the_end'
@@ -400,6 +408,20 @@ def graph_probe_command(root_uuid: str, child_uuid: str) -> str:
     return f'stage7-probe graph {uuid.UUID(root_uuid)} {uuid.UUID(child_uuid)}'
 
 
+class StormContext:
+    """What an opt-in hook may use; created only when a hook is registered."""
+
+    def __init__(self, **values):
+        self.__dict__.update(values)
+
+
+def call_hook(name: str, ctx, *arguments):
+    hook = HOOKS.get(name)
+    if hook is not None:
+        return hook(ctx, *arguments)
+    return None
+
+
 class Rcon:
     def __init__(self, port: int, password: str):
         self.port = port
@@ -444,6 +466,11 @@ def summoning_nbt(family: str, value: uuid.UUID, tags: list[str]) -> str:
     motion = ',Motion:[0.0d,0.0d,-0.8d]'
     if family == 'item':
         return '{' + common + ',Item:{id:"minecraft:cobblestone",count:1},PickupDelay:32767s' + motion + '}'
+    if family in ('pig', 'cow', 'zombified_piglin'):
+        return '{' + common + ',PersistenceRequired:1b,NoAI:1b,NoGravity:1b' + motion + '}'
+    if family == 'chest_minecart':
+        return ('{' + common + ',NoGravity:1b' + motion
+                + ',Items:[{Slot:0b,id:"minecraft:cobblestone",count:5},{Slot:13b,id:"minecraft:stick",count:3}]}')
     if family in ('chicken', 'magma_cube'):
         size = ',Size:0' if family == 'magma_cube' else ''
         return '{' + common + ',PersistenceRequired:1b,NoAI:1b,NoGravity:1b' + size + motion + '}'
@@ -969,6 +996,7 @@ def prepare(args: argparse.Namespace, run: Path, candidate: Path, probe: Path,
                  'enable-rcon': 'true', 'rcon.port': str(args.rcon_port),
                  'rcon.password': 'phoenium-stage7-local-test',
                  'motd': 'Phoenium Stage7 isolated mixed portal storm'}
+    overrides.update(getattr(args, 'server_properties', None) or {})
     properties = [line.split('=')[0] + '=' + overrides.pop(line.split('=')[0])
                   if '=' in line and line.split('=')[0] in overrides else line for line in properties]
     properties += [key + '=' + value for key, value in overrides.items()]
@@ -1041,7 +1069,7 @@ def run(args: argparse.Namespace) -> int:
         raise ValueError('minimum contacts cannot exceed attempts')
     families = tuple(args.families.split(','))
     if not families or len(set(families)) != len(families) \
-            or any(family not in FAMILIES + DIAGNOSTIC_FAMILIES for family in families):
+            or any(family not in FAMILIES + DIAGNOSTIC_FAMILIES + MIXED_FAMILIES for family in families):
         raise ValueError('unknown or repeated storm family')
     routes = tuple(args.routes.split(','))
     if not routes or len(set(routes)) != len(routes) or any(route not in ROUTE_WORLDS for route in routes):
@@ -1083,6 +1111,11 @@ def run(args: argparse.Namespace) -> int:
         wait_ready(first_process, first_log, args.bedrock_port)
         monitor = TransactionMonitor(first_log)
         setup_lanes(rcon, journal, routes)
+        ctx = StormContext(args=args, rcon=rcon, journal=journal, monitor=monitor, result=result,
+                           run_dir=run_dir, server=server, first_process=first_process,
+                           routes=routes, product_sha=product_sha, probe_sha=probe_sha,
+                           manifest=manifest, completed=None)
+        call_hook('after_setup', ctx)
         result['lastTxStatus'] = require_status(rcon, product_sha, probe_sha)
         result['selectorPreflight'] = preflight_selectors(rcon, journal, routes)
         planned = planned_attempts(args.seed, args.attempts, families, routes)
@@ -1206,6 +1239,8 @@ def run(args: argparse.Namespace) -> int:
                             context = event.get('ownerContext', 'UNAVAILABLE')
                             observed_owner_regions.add(context.split(', lease=', 1)[0])
                 completed.extend(last)
+                ctx.completed = completed
+                call_hook('segment_settled', ctx, segment, last)
                 for attempt, outcome in zip(segment, last):
                     if attempt['family'] != 'boat_pig_graph':
                         continue
@@ -1254,6 +1289,7 @@ def run(args: argparse.Namespace) -> int:
             status = require_status(rcon, product_sha, probe_sha)
             print('STORM WAVE', wave_number, len(completed), 'events', status['events'],
                   'elapsed', round(time.monotonic() - started, 2), flush=True)
+            call_hook('between_waves', ctx, wave_number)
         grouped = collections.defaultdict(lambda: {'attempts': 0, 'contacts': 0,
                                                      'transfers': 0, 'refusals': 0})
         for item in completed:
@@ -1274,6 +1310,7 @@ def run(args: argparse.Namespace) -> int:
             raise RuntimeError('boat graph child witness count differs from completed root attempts')
         result['laneCount'] = len(LANES)
         result['routes'] = list(routes)
+        call_hook('after_waves', ctx)
         result['observedWorkerThreads'] = sorted(observed_threads)
         result['observedOwnerRegions'] = sorted(observed_owner_regions)
         result['maxObservedPendingTransactions'] = max_observed_pending
@@ -1398,6 +1435,7 @@ def run(args: argparse.Namespace) -> int:
         result['sourceSentinelAfterRestart'] = command(rcon, journal,
             scoped_tag_command(OW, sentinel_tag, 'absent',
                                center=(lane_x(OW, 0), 66, 0), radius=16), contains='Test passed')
+        call_hook('after_restart', ctx)
         stop(restart_process, restart_log, result, 'restart')
         if result['restartExitCode'] != 0 or not result['restartSaved'] or result.get('restartPumpError'):
             raise RuntimeError('same-world restart did not save/stop normally')
@@ -1431,6 +1469,7 @@ def run(args: argparse.Namespace) -> int:
                                        and len(routes) == 2 and args.workers == 4
                                        and result['actualContacts'] >= 8
                                        and result['ownerViolations'] == 0)
+        call_hook('finalize', ctx)
         result['pass'] = True
     except BaseException as error:
         result['triggerFailure'] = str(error)

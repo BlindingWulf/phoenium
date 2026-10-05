@@ -25,4 +25,22 @@ class PlayerRespawnDeathRecipientTest {
             FullEntityFacts.routed(f.player);assertNull(PlayerRespawnHandoff.deathPosition(f.player));
         }
     }
+    /** A block-event broadcast while the player waits on the End credits crashed the server: native had already removed the
+     * player (CHANGED_DIMENSION), so its published routing facts were gone while it was still a connection recipient. */
+    @Test void endCreditsPositionIsCapturedBeforeRemovalAndNeverRestoresTracking()throws Exception {
+        try(var f=new PlayerRespawnHandoffTest.Fixture()) {
+            FullEntityFacts.PublishedPosition before;
+            try(var turn=f.service.referenceAccess()) {before=f.service.entityFacts.publishedPosition(f.player);}
+            assertNull(PlayerRespawnHandoff.deathPosition(f.player));
+            try(var turn=f.service.referenceAccess()) {PlayerRespawnHandoff.captureCreditsPosition(f.player);}
+            assertNull(PlayerRespawnHandoff.deathPosition(f.player),"unusable until the completed-removal bit is published");
+            f.creditsRemoval(f.player,true);
+            var retired=PlayerRespawnHandoff.deathPosition(f.player);
+            assertNotNull(retired);assertEquals(before.position(),retired.position());assertSame(f.player,retired.candidate().alias());
+            try(var turn=f.service.referenceAccess()) {
+                assertThrows(ChunkProtocolException.class,()->f.service.entityFacts.publishedPosition(f.player));
+            }
+            FullEntityFacts.routed(f.player);assertNull(PlayerRespawnHandoff.deathPosition(f.player));
+        }
+    }
 }
