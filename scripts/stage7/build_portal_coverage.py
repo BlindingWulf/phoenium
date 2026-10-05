@@ -1183,7 +1183,40 @@ def legacy_claims(card: Card, worktree: pathlib.Path, contracts: dict[str, str])
 # native_pickup, and every row they credit is labelled "server-headless" in its receipts.
 # ---------------------------------------------------------------------------------------------------------------
 HEADLESS_CARD = re.compile(r"E0-([a-z_]+)-(NETHER_ENTRY|NETHER_RETURN|END_ENTRY|END_EXIT|END_GATEWAY)")
+GRAPH_CARD = re.compile(r"G0-([a-z0-9_]+)-(NETHER_ENTRY|NETHER_RETURN|END_ENTRY|END_EXIT|END_GATEWAY)")
 HEADLESS_CENSUS_SCRIPT = pathlib.Path("scripts/stage7/headless_census.py")
+HEADLESS_GRAPH_SCRIPT = pathlib.Path("scripts/stage7/headless_graphs.py")
+HEADLESS_GROUPS = {"headless-census": (HEADLESS_CENSUS_SCRIPT, HEADLESS_CARD),
+                   "headless-graphs": (HEADLESS_GRAPH_SCRIPT, GRAPH_CARD)}
+# shape -> (root type, children); each child is again (type, children). Mirrors SHAPES in headless_graphs.py.
+GRAPH_SHAPES = {
+    "boat_empty": ("minecraft:oak_boat", ()),
+    "boat_mob": ("minecraft:oak_boat", (("minecraft:villager", ()),)),
+    "boat_two": ("minecraft:oak_boat", (("minecraft:villager", ()), ("minecraft:pig", ()))),
+    "minecart_empty": ("minecraft:minecart", ()),
+    "minecart_mob": ("minecraft:minecart", (("minecraft:pig", ()),)),
+    "mob_on_mob": ("minecraft:pig", (("minecraft:chicken", ()),)),
+    "nested_passenger": ("minecraft:pig", (("minecraft:chicken", (("minecraft:chicken", ()),)),)),
+    "chest_boat_inventory_mob": ("minecraft:oak_chest_boat", (("minecraft:villager", ()),)),
+    "chest_raft_inventory_two": ("minecraft:bamboo_chest_raft", (("minecraft:villager", ()), ("minecraft:pig", ()))),
+    "furnace_minecart_rider": ("minecraft:furnace_minecart", (("minecraft:pig", ()),)),
+    "hopper_minecart_inventory_rider": ("minecraft:hopper_minecart", (("minecraft:pig", ()),)),
+    "command_block_minecart_rider": ("minecraft:command_block_minecart", (("minecraft:pig", ()),)),
+    "nested_vehicle_mob": ("minecraft:oak_boat", (("minecraft:pig", (("minecraft:chicken", ()),)),)),
+}
+# ledger graph name -> headless shape (player-rider graph names are deliberately absent: they need the real client)
+GRAPH_ROW_SHAPE = {
+    "boat, no passengers": "boat_empty", "boat with mob rider": "boat_mob", "boat with two riders": "boat_two",
+    "minecart, no passengers": "minecart_empty", "minecart with mob rider": "minecart_mob",
+    "mob riding mob": "mob_on_mob", "nested passenger graph": "nested_passenger",
+    "chest boat with inventory and mob": "chest_boat_inventory_mob",
+    "chest raft with inventory and two riders": "chest_raft_inventory_two",
+    "furnace minecart with rider": "furnace_minecart_rider",
+    "hopper minecart with inventory and rider": "hopper_minecart_inventory_rider",
+    "command block minecart with rider": "command_block_minecart_rider",
+    "nested vehicle and mob graph": "nested_vehicle_mob",
+}
+GRAPH_SHAPE_ROW = {shape: name for name, shape in GRAPH_ROW_SHAPE.items()}
 HEADLESS_OUTCOMES = {"TRANSFERRED", "STAYED", "GONE", "FIXTURE_INVALID"}
 HEADLESS_PHASES = ("SOURCE_RETIRING", "SOURCE_RETIRED", "ADD_DURING_TELEPORT_HEAD", "CHUNK_MAP_TRACKING_HEAD",
                    "CHUNK_MAP_TRACKING_RETURN", "ADD_DURING_TELEPORT_RETURN")
@@ -1261,8 +1294,10 @@ def scan_headless(roots: list[pathlib.Path], candidate_sha: str, worktree: pathl
     """Read headless census runs and return one Card per recorded census card."""
     cards: list[Card] = []
     rejected: list[dict[str, str]] = []
-    script = worktree.joinpath(*HEADLESS_CENSUS_SCRIPT.parts)
-    script_sha = digest(script) if script.is_file() else ""
+    script_shas = {}
+    for group, (script_path, _pattern) in HEADLESS_GROUPS.items():
+        script = worktree.joinpath(*script_path.parts)
+        script_shas[group] = digest(script) if script.is_file() else ""
     for root in roots:
         for result_path in sorted(root.glob("*/headless-result.json")):
             receipt_path = result_path.with_name("headless-receipt.json")
@@ -1278,8 +1313,8 @@ def scan_headless(roots: list[pathlib.Path], candidate_sha: str, worktree: pathl
                     reason = "candidate hash mismatch"
                 elif str(result.get("installedCandidateSha256", "")).upper() != candidate_sha:
                     reason = "installed candidate hash mismatch"
-                elif result.get("phase") != "headless" or inputs.get("group") != "headless-census" \
-                        or receipt.get("group") != "headless-census":
+                elif result.get("phase") != "headless" or inputs.get("group") not in HEADLESS_GROUPS \
+                        or receipt.get("group") != inputs.get("group"):
                     reason = "not a headless census run"
                 elif inputs.get("evidence") != "server-headless" or receipt.get("evidence") != "server-headless" \
                         or inputs.get("headless") is not True:
@@ -1293,7 +1328,8 @@ def scan_headless(roots: list[pathlib.Path], candidate_sha: str, worktree: pathl
                     reason = "source world, test source or config changed during run"
                 elif inputs.get("workers") not in (1, 4):
                     reason = "unsupported worker count"
-                elif not script_sha or str(inputs.get("censusScriptSha256", "")).upper() != script_sha:
+                elif (not script_shas[inputs["group"]]
+                      or str(inputs.get("censusScriptSha256", "")).upper() != script_shas[inputs["group"]]):
                     reason = "headless census script identity differs from installed run"
                 elif not _test_sources_match(worktree, inputs.get("testSourceHashes")):
                     reason = "test source identity differs from installed run"
@@ -1307,8 +1343,10 @@ def scan_headless(roots: list[pathlib.Path], candidate_sha: str, worktree: pathl
                           or len({entry.get("card") for entry in entries}) != len(entries)):
                         reason = "receipt cards differ from requested cards"
                     else:
+                        pattern = HEADLESS_GROUPS[inputs["group"]][1]
                         for entry in entries:
-                            if entry.get("outcome") in HEADLESS_OUTCOMES and isinstance(entry.get("card"), str):
+                            if (entry.get("outcome") in HEADLESS_OUTCOMES | {"PARTIAL"} and isinstance(entry.get("card"), str)
+                                    and pattern.fullmatch(entry["card"])):
                                 data = dict(entry)
                                 found = _snapshot_uuid(entry)
                                 if found:
@@ -1572,8 +1610,152 @@ def headless_gateway_assertions(card: Card, entity_type: str) -> set[str]:
     return assertions
 
 
+def _expected_tree(node: tuple) -> tuple:
+    kind, children = node
+    return (kind, tuple(sorted(_expected_tree(child) for child in children)))
+
+
+def _snapshot_tree(members: list[dict[str, Any]]) -> tuple | None:
+    """Canonical (type, sorted children) tree from vehicle/passenger edges; None unless a single consistent tree."""
+    by_uuid = {str(member.get("uuid", "")).lower(): member for member in members}
+    if len(by_uuid) != len(members) or "" in by_uuid:
+        return None
+    roots = [member for member in members if member.get("vehicleUuid") in (None, "UNAVAILABLE")]
+    if len(roots) != 1:
+        return None
+    seen: set[str] = set()
+
+    def build(member: dict[str, Any]) -> tuple:
+        uuid = str(member["uuid"]).lower()
+        if uuid in seen:
+            raise ValueError("cycle")
+        seen.add(uuid)
+        kids = []
+        for passenger in member.get("passengerUuids", []):
+            child = by_uuid.get(str(passenger).lower())
+            if child is None or str(child.get("vehicleUuid", "")).lower() != uuid:
+                raise ValueError("edge mismatch")
+            kids.append(build(child))
+        return (member["type"], tuple(sorted(kids)))
+
+    try:
+        tree = build(roots[0])
+    except (ValueError, KeyError):
+        return None
+    return tree if len(seen) == len(members) else None
+
+
+def headless_graph_assertions(card: Card, shape: str, route: str) -> tuple[set[str], bool]:
+    """Assertions for one non-player passenger graph, and whether every node's owner phases were validated."""
+    witness = card.data.get("witness")
+    if card.data.get("outcome") != "TRANSFERRED" or not isinstance(witness, dict) or shape not in GRAPH_SHAPES:
+        return set(), False
+    expected = _expected_tree(GRAPH_SHAPES[shape])
+
+    def count(tree: tuple) -> int:
+        return 1 + sum(count(child) for child in tree[1])
+
+    total = count(expected)
+    arrival, later = witness.get("arrival"), witness.get("later")
+    if (not isinstance(arrival, list) or not isinstance(later, list) or len(arrival) != total or len(later) != total
+            or not all(isinstance(member, dict) for member in (*arrival, *later))
+            or witness.get("counts", {}).get("total") != total):
+        return set(), False
+    destination = ROUTE_DESTINATION_WORLD[route]
+    if any(member.get("world") != destination or member.get("removed") is not False for member in (*arrival, *later)):
+        return set(), False
+    arrival_tree, later_tree = _snapshot_tree(arrival), _snapshot_tree(later)
+    assertions: set[str] = set()
+    if arrival_tree == expected:
+        assertions.add("graph_nodes_exact")
+        assertions.add("graph_edges_exact")
+    if arrival_tree is None or later_tree != arrival_tree:
+        return set(), False
+    # One tagged copy of every node in the whole server, all in the destination world: nothing addressable twice.
+    assertions |= {"no_dual_addressability", "destination_unique"}
+    later_by_uuid = {str(member["uuid"]).lower(): member for member in later}
+    ticks_ok = True
+    for member in arrival:
+        other = later_by_uuid.get(str(member["uuid"]).lower())
+        if (other is None or other.get("object") != member.get("object") or other.get("nativeId") != member.get("nativeId")
+                or not isinstance(member.get("ticks"), int) or not isinstance(other.get("ticks"), int)
+                or other["ticks"] <= member["ticks"] + 20):
+            ticks_ok = False
+    if ticks_ok:
+        assertions.add("post_arrival_tick")
+    if route == "END_GATEWAY":
+        return _headless_graph_gateway(card, shape, witness, arrival, later, assertions)
+    owners = True
+    for member in arrival:
+        uuid = str(member["uuid"]).lower()
+        events = headless_generation(card, uuid, member["type"], route)
+        if events is None or any(event.get("violation") for event in events):
+            return assertions, False
+        first = {phase: next(event for event in events if event.get("phase") == phase) for phase in HEADLESS_PHASES}
+        retiring, retired, head = first["SOURCE_RETIRING"], first["SOURCE_RETIRED"], first["ADD_DURING_TELEPORT_HEAD"]
+        if (retiring.get("sourceWorld") != ROUTE_SOURCE_WORLD[route] or retired.get("ownerWorld") != ROUTE_SOURCE_WORLD[route]
+                or head.get("destinationWorld") != destination or head.get("object") != member.get("object")
+                or head.get("nativeId") != member.get("nativeId")
+                or retiring.get("object") == head.get("object") or retiring.get("nativeId") == head.get("nativeId")):
+            return assertions, False
+        phases = [event["phase"] for event in events if event.get("object") == head.get("object")
+                  and event.get("phase") in ("CHUNK_MAP_TRACKING_HEAD", "CHUNK_MAP_TRACKING_RETURN")]
+        if phases.count("CHUNK_MAP_TRACKING_HEAD") != 1 or phases.count("CHUNK_MAP_TRACKING_RETURN") != 1:
+            return assertions, False
+        if not OWNER_ASSERTIONS <= observer_assertions(card, member["type"], route, uuid):
+            owners = False
+    assertions |= {"source_retired", "tracking_unique", "uuid_preserved", "replacement_identity"}
+    return assertions, owners
+
+
+def _headless_graph_gateway(card: Card, shape: str, witness: dict[str, Any], arrival: list, later: list,
+                            assertions: set[str]) -> tuple[set[str], bool]:
+    """Same-dimension gateway: every node keeps its native object; the root carries the gateway/ticket/owner records."""
+    source_members = witness.get("source")
+    if not isinstance(source_members, list) or len(source_members) != len(arrival):
+        return assertions, False
+    source_by_uuid = {str(member.get("uuid", "")).lower(): member for member in source_members if isinstance(member, dict)}
+    for member in arrival:
+        before = source_by_uuid.get(str(member["uuid"]).lower())
+        if (before is None or before.get("object") != member.get("object") or before.get("nativeId") != member.get("nativeId")
+                or before.get("world") != "minecraft:the_end"):
+            return assertions, False
+    assertions = assertions | {"same_native_object", "same_dimension"}
+    root_uuid = next(str(member["uuid"]).lower() for member in arrival if member.get("vehicleUuid") in (None, "UNAVAILABLE"))
+    pick = lambda members: [member for member in members if str(member.get("uuid", "")).lower() == root_uuid]
+    synthetic = dataclasses.replace(card, data=dict(card.data, details="UUID=" + root_uuid, witness={
+        "source": pick(source_members), "arrival": pick(arrival), "later": pick(later),
+        "gateway": {kind: [event for event in events if str(event.get("uuid", "")).lower() == root_uuid]
+                    for kind, events in (witness.get("gateway") or {}).items()},
+    }))
+    root_type = GRAPH_SHAPES[shape][0]
+    root = headless_gateway_assertions(synthetic, root_type)
+    # Vehicles keep their riders, so the root-only checks that compare against the whole snapshot are re-derived above.
+    assertions |= root & {"source_location_vacated", "gateway_cooldown", "gateway_ticket", "source_owner", "tracking_unique",
+                          "tracking_owner", "destination_owner", "observer_phases"}
+    return assertions, OWNER_ASSERTIONS <= root
+
+
 def headless_claims(card: Card, rows: list[dict[str, Any]] | None = None) -> list[dict[str, Any]]:
-    """Server-headless claims for entity types without family-specific semantics (plain entities)."""
+    """Server-headless claims for entity types without family-specific semantics (plain entities) and passenger graphs."""
+    graph_match = GRAPH_CARD.fullmatch(card.name)
+    if card.evidence == "server-headless" and graph_match is not None:
+        shape, route = graph_match.groups()
+        if shape not in GRAPH_SHAPE_ROW or card.data.get("outcome") != "TRANSFERRED":
+            return []
+        assertions, owners = headless_graph_assertions(card, shape, route)
+        if route == "END_GATEWAY":
+            needed = REQUIRED_SAME_DIMENSION_ASSERTIONS | {"graph_nodes_exact", "graph_edges_exact", "no_dual_addressability"}
+            outcome = "SAME_DIMENSION_TRANSFER"
+        else:
+            needed = {"source_retired", "destination_unique", "tracking_unique", "uuid_preserved", "replacement_identity",
+                      "graph_nodes_exact", "graph_edges_exact", "no_dual_addressability"}
+            outcome = "TRANSFER"
+        if needed - OWNER_ASSERTIONS - {"destination_owner"} <= assertions and owners:
+            return [dict(card=card, entityType=None, route=route, variant=None, graph=GRAPH_SHAPE_ROW[shape],
+                         observedOutcome=outcome, assertions=assertions, basicObservation=True, scope="row",
+                         headlessOwner=True, sameDimensionGateway=route == "END_GATEWAY")]
+        return []
     match = HEADLESS_CARD.fullmatch(card.name)
     if card.evidence != "server-headless" or match is None:
         return []

@@ -18,6 +18,7 @@ census already referenced, so the importer can resolve every control path relati
 from __future__ import annotations
 
 import argparse
+import build_portal_coverage as coverage
 import hashlib
 import json
 import pathlib
@@ -27,6 +28,7 @@ import sys
 
 CROSS_DIMENSION = {"NETHER_ENTRY", "NETHER_RETURN", "END_ENTRY", "END_EXIT"}
 CARD = re.compile(r"E0-([a-z_]+)-(NETHER_ENTRY|NETHER_RETURN|END_ENTRY|END_EXIT|END_GATEWAY)")
+GRAPH_CARD = re.compile(r"G0-([a-z0-9_]+)-(NETHER_ENTRY|NETHER_RETURN|END_ENTRY|END_EXIT|END_GATEWAY)")
 CONTROL_FILES = ("headless-result.json", "headless-receipt.json", "inputs.json")
 
 
@@ -51,7 +53,8 @@ def load_control(run: pathlib.Path, source_sha: str, binary_sha: str) -> dict[tu
         raise SystemExit(f"{run}: " + "; ".join(problems))
     table = {}
     for card in receipt["cards"]:
-        kind, route = CARD.fullmatch(card["card"]).groups()
+        graph = GRAPH_CARD.fullmatch(card["card"])
+        kind, route = (("graph:" + graph.group(1), graph.group(2)) if graph else CARD.fullmatch(card["card"]).groups())
         table[(kind, route)] = card["outcome"]
     return table
 
@@ -102,15 +105,21 @@ def main(argv: list[str] | None = None) -> int:
         shutil.copy2(args.no_entry_proofs, out / args.no_entry_proofs.name)
     classified, conflicts, pending, classified_no_entry = 0, [], [], 0
     for row in census["rows"]:
-        if row.get("graph", "standalone") != "standalone" or row.get("variant") not in (None, ""):
+        if row.get("variant") not in (None, ""):
             continue
-        key = (row["entityType"].removeprefix("minecraft:"), row["route"])
+        if row.get("graph", "standalone") != "standalone":
+            shape = coverage.GRAPH_ROW_SHAPE.get(row["graph"])
+            if shape is None:
+                continue
+            key = ("graph:" + shape, row["route"])
+        else:
+            key = (row["entityType"].removeprefix("minecraft:"), row["route"])
         observed = controls.get(key)
         if not observed:
             continue
         outcomes = {outcome for outcome, _ in observed}
         expected = row.get("expectedNativeOutcome")
-        proof = proofs.get(row["entityType"])
+        proof = proofs.get(row["entityType"]) if row.get("entityType") else None
         if expected is None and proof is not None:
             if outcomes <= {"STAYED", "GONE"}:
                 row["expectedNativeOutcome"] = "NO_NATIVE_ENTRY_PATH"
@@ -130,7 +139,8 @@ def main(argv: list[str] | None = None) -> int:
                 row["nativeControlReceipt"] = {
                     "sourceJarSha256": source_sha, "mappedBinarySha256": binary_sha, "observedOutcome": verdict,
                     "path": f"native-controls/{run_name}/headless-result.json", "sha256": digest(result_path),
-                    "card": f"E0-{key[0]}-{key[1]}",
+                    "card": (f"G0-{key[0].removeprefix('graph:')}-{key[1]}" if key[0].startswith("graph:")
+                             else f"E0-{key[0]}-{key[1]}"),
                     "receiptSha256": digest(result_path.with_name("headless-receipt.json")),
                     "inputsSha256": digest(result_path.with_name("inputs.json")),
                 }
