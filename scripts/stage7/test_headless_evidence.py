@@ -790,3 +790,159 @@ class HeadlessDynamicTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+def fx_state(alive: bool = True, health: float | None = 10.0, effects: tuple = (), hurt: bool = False, pos: tuple = (0.5, 65.0, 2.5)) -> dict:
+    return {"alive": alive, "health": health if alive else None, "fire": 0, "effects": list(effects), "hurtBy": hurt,
+            "pos": list(pos) if alive else None}
+
+
+def fx_dimension(damage: bool = True, counts: dict | None = None, effects: tuple = (), projectile_alive: bool = False) -> dict:
+    targets = {"t%d" % i: fx_state(pos=(0.5, 65.0, 2.5 + 2 * i)) for i in range(5)}
+    if damage:
+        targets["t0"] = fx_state(health=9.0, effects=effects, pos=(0.5, 65.0, 2.5))
+    return {"targets": targets, "owner": fx_state(pos=(0.5, 65.0, -4.0)),
+            "counts": dict({"area_effect_cloud": 0, "experience_orb": 0, "chicken": 0, "arrow": 0}, **(counts or {})),
+            "projectile": {"alive": projectile_alive}}
+
+
+def fx_witness(kind: str = "arrow", owner: str = "Owner: [I; 9100, 2, 0, 2]", arrival_owner: str | None = None,
+               damage: bool = True, fuse: tuple | None = None, route: str = "NETHER_ENTRY", **dimension) -> dict:
+    entity = "minecraft:" + kind
+    arrival_owner = owner if arrival_owner is None else arrival_owner
+    def nbt(extra: str, fuse_value: int | None) -> str:
+        fuse_text = "" if fuse_value is None else "fuse: %ds, " % fuse_value
+        return "Thing has the following entity data: {NoGravity: 1b, %s%s%s}" % (fuse_text, extra, "")
+    source_fuse, arrival_fuse, later_fuse = fuse if fuse else (None, None, None)
+    destination = coverage.WORLD_LABEL[coverage.ROUTE_DESTINATION_WORLD[route]]
+    return {"kind": kind, "armedAt": [0.5, 65.0, 0.5],
+            "nbtSource": nbt(owner, source_fuse), "nbtArrival": nbt(arrival_owner, arrival_fuse),
+            "nbtLater": nbt(arrival_owner, later_fuse),
+            "source": [member("minecraft:overworld", type=entity, object="old", nativeId=8, ticks=0)],
+            "arrival": [member(coverage.ROUTE_DESTINATION_WORLD[route], type=entity, ticks=5)],
+            "later": [member(coverage.ROUTE_DESTINATION_WORLD[route], type=entity, ticks=30)],
+            "effects": {destination: fx_dimension(damage, **dimension)}}
+
+
+def fx_trace(kind: str, route: str = "NETHER_ENTRY") -> list[dict]:
+    source, destination = coverage.ROUTE_SOURCE_WORLD[route], coverage.ROUTE_DESTINATION_WORLD[route]
+    return [dict(event, type="entity.minecraft." + kind, route=route, sourceWorld=source, destinationWorld=destination,
+                 ownerWorld=source if event["phase"] in ("SOURCE_RETIRING", "SOURCE_RETIRED") else destination)
+            for event in transfer_trace()]
+
+
+class HeadlessEffectsTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.temp = tempfile.TemporaryDirectory()
+        self.dir = pathlib.Path(self.temp.name)
+        self.previous_root = coverage.CONTROL_ROOT
+        coverage.CONTROL_ROOT = self.dir
+
+    def tearDown(self) -> None:
+        coverage.CONTROL_ROOT = self.previous_root
+        self.temp.cleanup()
+
+    def claims(self, kind: str, witness: dict, control: dict, route: str = "NETHER_ENTRY", variant=None, trace=None):
+        name = f"D1-{kind}-{route}"
+        folder = self.dir / "native-controls" / "ctl"
+        folder.mkdir(parents=True, exist_ok=True)
+        (folder / "headless-result.json").write_text("{}", encoding="utf-8")
+        receipt = folder / "headless-receipt.json"
+        receipt.write_text(json.dumps({"cards": [{"card": name, "outcome": "TRANSFERRED", "witness": control}]}), encoding="utf-8")
+        entity_type, row_variant, _ = coverage.EFFECT_KINDS[kind]
+        row = {"id": "V2-" + kind.upper() + "-" + route, "entityType": entity_type, "route": route, "variant": row_variant,
+               "graph": "standalone",
+               "expectedNativeOutcome": "SAME_DIMENSION_TRANSFER" if route == "END_GATEWAY" else "TRANSFER",
+               "effectsControlReceipt": {"card": name, "path": "native-controls/ctl/headless-result.json",
+                                         "receiptSha256": coverage.digest(receipt)}}
+        card = make_card(self.dir, name, "TRANSFERRED", witness, trace if trace is not None else fx_trace(kind, route), kind)
+        return coverage.headless_claims(card, [row])
+
+    def test_matching_effect_with_preserved_owner_is_credited(self) -> None:
+        claims = self.claims("arrow", fx_witness(), fx_witness())
+        self.assertEqual(len(claims), 1)
+        self.assertTrue({"impact_effect", "projectile_owner_preserved", "source_retired", "destination_unique",
+                         "tracking_unique", "post_arrival_tick"} <= claims[0]["assertions"], claims[0]["assertions"])
+
+    def test_a_different_world_than_the_control_removes_the_claim(self) -> None:
+        other = fx_witness()
+        other["effects"]["nether"]["targets"]["t1"] = fx_state(health=9.0, pos=(0.5, 65.0, 4.5))
+        self.assertEqual(self.claims("arrow", other, fx_witness()), [])
+        flag = fx_witness()
+        flag["effects"]["nether"]["targets"]["t2"]["hurtBy"] = True
+        self.assertEqual(self.claims("arrow", flag, fx_witness()), [])
+
+    def test_a_control_without_the_effect_proves_nothing(self) -> None:
+        quiet = fx_witness(damage=False)
+        self.assertEqual(self.claims("arrow", quiet, quiet), [])
+
+    def test_a_lost_or_changed_owner_is_not_credited(self) -> None:
+        lost = fx_witness(arrival_owner="")
+        self.assertEqual(self.claims("arrow", lost, fx_witness()), [])
+        self.assertEqual(self.claims("arrow", lost, lost), [])
+        changed = fx_witness(arrival_owner="Owner: [I; 1, 2, 3, 4]")
+        self.assertEqual(self.claims("arrow", changed, changed), [])
+
+    def test_the_effect_is_judged_per_kind(self) -> None:
+        cloud = fx_witness("dragon_fireball", damage=False, counts={"area_effect_cloud": 1})
+        self.assertEqual(len(self.claims("dragon_fireball", cloud, cloud)), 1)
+        none = fx_witness("dragon_fireball", damage=True)
+        self.assertEqual(self.claims("dragon_fireball", none, none), [])
+        glow = fx_witness("spectral_arrow", effects=("glowing",))
+        self.assertEqual(len(self.claims("spectral_arrow", glow, glow)), 1)
+        plain = fx_witness("spectral_arrow")
+        self.assertEqual(self.claims("spectral_arrow", plain, plain), [])
+        hurt_only = fx_witness("egg", damage=False)
+        hurt_only["effects"]["nether"]["targets"]["t0"]["hurtBy"] = True
+        self.assertEqual(len(self.claims("egg", hurt_only, hurt_only)), 1)
+        orbs = fx_witness("experience_bottle", damage=False, counts={"experience_orb": 3})
+        self.assertEqual(len(self.claims("experience_bottle", orbs, orbs)), 1)
+
+    def test_tnt_fuse_must_continue_not_reset(self) -> None:
+        good = fx_witness("tnt", owner="", fuse=(160, 158, 118), counts={"tnt": 0})
+        self.assertEqual(len(self.claims("tnt", good, good)), 1)
+        reset = fx_witness("tnt", owner="", fuse=(160, 80, 40), counts={"tnt": 0})
+        self.assertEqual(self.claims("tnt", reset, good), [])
+        self.assertEqual(self.claims("tnt", reset, reset), [])
+        standing = fx_witness("tnt", owner="", fuse=(160, 158, 158), counts={"tnt": 0})
+        self.assertEqual(self.claims("tnt", standing, standing), [])
+        remaining = fx_witness("tnt", owner="", fuse=(160, 158, 118), counts={"tnt": 1})
+        self.assertEqual(self.claims("tnt", remaining, remaining), [])
+
+    def test_shulker_bullet_keeps_exactly_what_the_native_control_keeps(self) -> None:
+        owner, target = "Owner: [I; 9100, 9, 0, 2]", "Owner: [I; 9100, 9, 0, 2], Target: [I; 9100, 9, 0, 1]"
+        native = fx_witness("shulker_bullet", owner=target, arrival_owner=owner, damage=False)
+        claims = self.claims("shulker_bullet", native, native)
+        self.assertEqual(len(claims), 1)
+        self.assertIn("owner_target_preserved", claims[0]["assertions"])
+        kept = fx_witness("shulker_bullet", owner=target, arrival_owner=target, damage=False)
+        self.assertEqual(self.claims("shulker_bullet", kept, native), [])
+
+    def test_tampered_control_and_bad_trace_remove_the_claim(self) -> None:
+        witness = fx_witness()
+        self.assertEqual(len(self.claims("arrow", witness, witness)), 1)
+        broken = fx_trace("arrow")
+        broken[2]["violation"] = "x"
+        self.assertEqual(self.claims("arrow", witness, witness, trace=broken), [])
+        incomplete = [event for event in fx_trace("arrow") if event["phase"] != "CHUNK_MAP_TRACKING_RETURN"]
+        self.assertEqual(self.claims("arrow", witness, witness, trace=incomplete), [])
+        receipt = self.dir / "native-controls" / "ctl" / "headless-receipt.json"
+        name = "D1-arrow-NETHER_ENTRY"
+        row = {"id": "x", "entityType": "minecraft:arrow", "route": "NETHER_ENTRY", "variant": None, "graph": "standalone",
+               "expectedNativeOutcome": "TRANSFER",
+               "effectsControlReceipt": {"card": name, "path": "native-controls/ctl/headless-result.json",
+                                         "receiptSha256": coverage.digest(receipt)}}
+        receipt.write_text(json.dumps({"cards": [{"card": name, "outcome": "TRANSFERRED", "witness": fx_witness(damage=False)}]}),
+                           encoding="utf-8")
+        card = make_card(self.dir, name, "TRANSFERRED", witness, fx_trace("arrow"), "arrow")
+        self.assertEqual(coverage.headless_claims(card, [row]), [])
+
+    def test_gateway_needs_the_gateway_witness(self) -> None:
+        witness = fx_witness("arrow", route="END_GATEWAY")
+        self.assertEqual(self.claims("arrow", witness, witness, route="END_GATEWAY"), [])
+
+    def test_rows_and_cards_resolve_by_kind_and_variant(self) -> None:
+        self.assertEqual(coverage.effects_kind_of_row({"entityType": "minecraft:tnt", "variant": "fuse_near_expiry"}), "tnt_near_expiry")
+        self.assertEqual(coverage.effects_kind_of_row({"entityType": "minecraft:tnt", "variant": None}), "tnt")
+        self.assertIsNone(coverage.effects_kind_of_row({"entityType": "minecraft:tnt", "variant": "other"}))
+        self.assertIsNone(coverage.effects_kind_of_row({"entityType": "minecraft:arrow", "graph": "boat+arrow"}))

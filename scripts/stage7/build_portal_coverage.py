@@ -1188,9 +1188,12 @@ DYNAMIC_CARD = re.compile(r"D0-falling-([a-z0-9_]+)-(NETHER_ENTRY|NETHER_RETURN|
 HEADLESS_CENSUS_SCRIPT = pathlib.Path("scripts/stage7/headless_census.py")
 HEADLESS_GRAPH_SCRIPT = pathlib.Path("scripts/stage7/headless_graphs.py")
 HEADLESS_DYNAMIC_SCRIPT = pathlib.Path("scripts/stage7/headless_dynamic.py")
+EFFECTS_CARD = re.compile(r"D1-([a-z_]+)-(NETHER_ENTRY|NETHER_RETURN|END_ENTRY|END_EXIT|END_GATEWAY)")
+HEADLESS_EFFECTS_SCRIPT = pathlib.Path("scripts/stage7/headless_effects.py")
 HEADLESS_GROUPS = {"headless-census": (HEADLESS_CENSUS_SCRIPT, HEADLESS_CARD),
                    "headless-graphs": (HEADLESS_GRAPH_SCRIPT, GRAPH_CARD),
-                   "headless-dynamic": (HEADLESS_DYNAMIC_SCRIPT, DYNAMIC_CARD)}
+                   "headless-dynamic": (HEADLESS_DYNAMIC_SCRIPT, DYNAMIC_CARD),
+                   "headless-effects": (HEADLESS_EFFECTS_SCRIPT, EFFECTS_CARD)}
 # Census directory: native-control receipt paths of the rows resolve against it (set by main / tests).
 CONTROL_ROOT: pathlib.Path | None = None
 # shape -> (root type, children); each child is again (type, children). Mirrors SHAPES in headless_graphs.py.
@@ -1547,7 +1550,7 @@ def _region(value: Any) -> str | None:
     return match.group(1) if match else None
 
 
-def headless_gateway_assertions(card: Card, entity_type: str, falling: bool = False) -> set[str]:
+def headless_gateway_assertions(card: Card, entity_type: str, falling: bool = False, later_optional: bool = False) -> set[str]:
     """Same-dimension End gateway witness from raw snapshots plus the probe's contact/ticket/tracking records.
 
     `falling` is for a falling block: it is summoned above the gateway (the contact event proves it entered the gateway cell),
@@ -1559,7 +1562,7 @@ def headless_gateway_assertions(card: Card, entity_type: str, falling: bool = Fa
         return set()
     source, arrival, later = (_single(witness.get(key)) for key in ("source", "arrival", "later"))
     gateway = witness.get("gateway")
-    if source is None or arrival is None or (later is None and not falling) or not isinstance(gateway, dict):
+    if source is None or arrival is None or (later is None and not (falling or later_optional)) or not isinstance(gateway, dict):
         return set()
     end = "minecraft:the_end"
     parts = (source, arrival) if later is None else (source, arrival, later)
@@ -1830,8 +1833,9 @@ def _dynamic_landing(witness: dict[str, Any], route: str) -> dict[str, Any] | No
 
 def _control_card(row: dict[str, Any], name: str) -> dict[str, Any] | None:
     """The native-control card for this exact card name, only through the hash-bound control receipt of the row."""
-    control = row.get("nativeControlReceipt")
-    if not isinstance(control, dict) or control.get("card") != name or CONTROL_ROOT is None:
+    control = next((candidate for candidate in (row.get("nativeControlReceipt"), row.get("effectsControlReceipt"))
+                    if isinstance(candidate, dict) and candidate.get("card") == name), None)
+    if control is None or CONTROL_ROOT is None:
         return None
     relative = pathlib.Path(str(control.get("path", "")))
     if relative.is_absolute() or ".." in relative.parts or not relative.parts:
@@ -1842,9 +1846,10 @@ def _control_card(row: dict[str, Any], name: str) -> dict[str, Any] | None:
     return next((entry for entry in read_json(receipt).get("cards", []) if entry.get("card") == name), None)
 
 
-def _dynamic_trace_assertions(card: Card, route: str, uuid: str) -> set[str]:
-    """Transfer assertions for a falling block from the complete transaction trace (the entity may be gone before any arrival snapshot)."""
-    events = headless_generation(card, uuid, "minecraft:falling_block", route)
+def _dynamic_trace_assertions(card: Card, route: str, uuid: str, entity_type: str = "minecraft:falling_block") -> set[str]:
+    """Transfer assertions for a falling block (or another short-lived entity) from the complete transaction trace
+    (the entity may be gone before any arrival snapshot)."""
+    events = headless_generation(card, uuid, entity_type, route)
     if events is None or any(event.get("violation") for event in events):
         return set()
     first = {phase: next(event for event in events if event.get("phase") == phase) for phase in HEADLESS_PHASES}
@@ -1942,10 +1947,205 @@ def _landing_damage_exhibited(control_witness: dict[str, Any], route: str) -> bo
         return False
 
 
+# kind -> (entity type, ledger variant, the assertions the observation can establish)
+EFFECT_KINDS: dict[str, tuple[str, str | None, set[str]]] = {
+    "arrow": ("minecraft:arrow", None, {"projectile_owner_preserved", "impact_effect"}),
+    "spectral_arrow": ("minecraft:spectral_arrow", None, {"projectile_owner_preserved", "impact_effect"}),
+    "trident": ("minecraft:trident", None, {"projectile_owner_preserved", "loyalty_effect"}),
+    "fireball": ("minecraft:fireball", None, {"impact_explosion"}),
+    "small_fireball": ("minecraft:small_fireball", None, {"impact_fire_effect"}),
+    "dragon_fireball": ("minecraft:dragon_fireball", None, {"dragon_breath_effect"}),
+    "wither_skull": ("minecraft:wither_skull", None, {"wither_impact_effect"}),
+    "wind_charge": ("minecraft:wind_charge", None, {"wind_impact_effect"}),
+    "breeze_wind_charge": ("minecraft:breeze_wind_charge", None, {"wind_impact_effect"}),
+    "shulker_bullet": ("minecraft:shulker_bullet", None, {"owner_target_preserved", "impact_effect"}),
+    "egg": ("minecraft:egg", None, {"impact_effect"}),
+    "snowball": ("minecraft:snowball", None, {"impact_effect"}),
+    "splash_potion": ("minecraft:splash_potion", None, {"splash_effect"}),
+    "lingering_potion": ("minecraft:lingering_potion", None, {"lingering_cloud_effect"}),
+    "experience_bottle": ("minecraft:experience_bottle", None, {"xp_release"}),
+    "firework_rocket": ("minecraft:firework_rocket", None, {"firework_effect"}),
+    "tnt": ("minecraft:tnt", None, {"fuse_preserved", "native_explosion"}),
+    "tnt_near_expiry": ("minecraft:tnt", "fuse_near_expiry", {"fuse_preserved", "native_explosion"}),
+}
+# Kinds with no snapshot after the arrival: they explode or end by themselves within a second.
+EFFECT_SHORT_LIVED = {"firework_rocket", "tnt_near_expiry"}
+EFFECT_OWNER_KINDS = {"arrow", "spectral_arrow", "trident", "shulker_bullet"}
+UUID_ARRAY = r"\[I; (?:-?\d+, ){3}-?\d+\]"
+
+
+def _effect_targets(witness: dict[str, Any], route: str) -> dict[str, dict[str, Any]] | None:
+    try:
+        targets = witness["effects"][WORLD_LABEL[ROUTE_DESTINATION_WORLD[route]]]["targets"]
+    except (KeyError, TypeError):
+        return None
+    return targets if isinstance(targets, dict) and targets else None
+
+
+def effects_kind_of_row(row: dict[str, Any]) -> str | None:
+    """The D1 card kind of a standalone ledger row that the effects harness drives, or None."""
+    if row.get("graph", "standalone") != "standalone":
+        return None
+    variant = row.get("variant") or None
+    return next((kind for kind, (entity_type, row_variant, _) in EFFECT_KINDS.items()
+                 if entity_type == row.get("entityType") and row_variant == variant), None)
+
+
+def _effects_comparable(witness: dict[str, Any]) -> Any:
+    """What a native effect leaves behind, normalised: target health to one decimal, fire/orbs as flags, the random hen of an egg dropped."""
+    effects = witness.get("effects")
+    if not isinstance(effects, dict) or not effects:
+        return None
+    result: dict[str, Any] = {}
+    for dimension, entry in sorted(effects.items()):
+        try:
+            targets = {name: (state.get("alive"), None if state.get("health") is None else round(float(state["health"]), 1),
+                              tuple(state.get("effects") or ()), (state.get("fire") or 0) > 0, bool(state.get("hurtBy")),
+                              tuple(state.get("pos") or ()))
+                       for name, state in sorted(entry["targets"].items())}
+            owner = entry["owner"]
+            projectile = entry["projectile"]
+            result[dimension] = {
+                "targets": targets,
+                "owner": (owner.get("alive"), None if owner.get("health") is None else round(float(owner["health"]), 1)),
+                "counts": {key: (value > 0 if key == "experience_orb" else value)
+                           for key, value in sorted(entry["counts"].items()) if key != "chicken"},
+                "projectile": (projectile.get("alive"), tuple(round(value, 1) for value in projectile.get("pos") or ())),
+            }
+        except (KeyError, TypeError, AttributeError, ValueError):
+            return None
+    return result
+
+
+def _is_damaged(state: dict[str, Any]) -> bool:
+    return state.get("alive") is False or (state.get("health") is not None and state["health"] < 10.0)
+
+
+def _effect_exhibited(kind: str, witness: dict[str, Any], route: str) -> bool:
+    """Does the NATIVE control show this projectile's effect on the targets it was aimed at? (Phoenium is then compared to it.)"""
+    targets = _effect_targets(witness, route)
+    if targets is None:
+        return False
+    destination = witness["effects"][WORLD_LABEL[ROUTE_DESTINATION_WORLD[route]]]
+    states, counts = list(targets.values()), destination.get("counts", {})
+    damaged = any(_is_damaged(state) for state in states)
+    if kind in ("arrow", "fireball", "small_fireball", "wither_skull", "wind_charge", "breeze_wind_charge", "firework_rocket"):
+        return damaged
+    if kind == "spectral_arrow":
+        return any("glowing" in (state.get("effects") or ()) for state in states)
+    if kind == "trident":
+        projectile = destination.get("projectile", {})
+        return damaged and projectile.get("alive") is not True
+    if kind == "dragon_fireball":
+        return counts.get("area_effect_cloud", 0) >= 1
+    if kind in ("egg", "snowball"):
+        return damaged or any(state.get("hurtBy") for state in states)
+    if kind == "splash_potion":
+        return any("poison" in (state.get("effects") or ()) for state in states)
+    if kind == "lingering_potion":
+        return counts.get("area_effect_cloud", 0) >= 1 or any("poison" in (state.get("effects") or ()) for state in states)
+    if kind == "experience_bottle":
+        return any(entry.get("counts", {}).get("experience_orb", 0) > 0 for entry in witness["effects"].values())
+    if kind in ("tnt", "tnt_near_expiry"):
+        return damaged and destination.get("counts", {}).get("tnt", 1) == 0
+    if kind == "shulker_bullet":
+        return True   # the native outcome is "no impact": the bullet keeps no target (see _effect_links)
+    return False
+
+
+def _nbt_value(nbt: Any, key: str, pattern: str) -> str | None:
+    found = re.search(rf"[{{ ,]{key}: ({pattern})", nbt) if isinstance(nbt, str) else None
+    return found.group(1) if found else None
+
+
+def _effect_links(kind: str, witness: dict[str, Any], control_witness: dict[str, Any]) -> set[str]:
+    """Owner (and a shulker bullet's target) across the transfer, exactly as the native control kept or dropped it."""
+    result: set[str] = set()
+    if kind not in EFFECT_OWNER_KINDS:
+        return result
+    stages = ("nbtSource", "nbtArrival", "nbtLater")
+    own = {stage: {key: _nbt_value(witness.get(stage), key, UUID_ARRAY) for key in ("Owner", "Target")} for stage in stages}
+    native = {stage: {key: _nbt_value(control_witness.get(stage), key, UUID_ARRAY) for key in ("Owner", "Target")} for stage in stages}
+    if own["nbtSource"]["Owner"] is None or own["nbtSource"] != native["nbtSource"]:
+        return result
+    if own["nbtArrival"] != native["nbtArrival"] or own["nbtLater"] != native["nbtLater"]:
+        return result
+    if own["nbtArrival"]["Owner"] == own["nbtSource"]["Owner"]:
+        result.add("owner_target_preserved" if kind == "shulker_bullet" else "projectile_owner_preserved")
+    return result
+
+
+def _fuse_preserved(witness: dict[str, Any], control_witness: dict[str, Any]) -> bool:
+    """The primed TNT keeps counting down from where it was (not reset), and in the same way as in the native control."""
+    def fuse(source: dict[str, Any], stage: str) -> int | None:
+        value = _nbt_value(source.get(stage), "fuse", r"\d+")
+        return int(value) if value is not None else None
+    start, arrival = fuse(witness, "nbtSource"), fuse(witness, "nbtArrival")
+    native_start, native_arrival = fuse(control_witness, "nbtSource"), fuse(control_witness, "nbtArrival")
+    if None in (start, arrival, native_start, native_arrival) or start != native_start:
+        return False
+    if not 0 < arrival <= start or start - arrival > 40 or not 0 < native_arrival <= native_start:
+        return False
+    later, native_later = fuse(witness, "nbtLater"), fuse(control_witness, "nbtLater")
+    if (later is None) != (native_later is None):
+        return False
+    return later is None or later < arrival
+
+
+def headless_effects_claims(card: Card, rows: list[dict[str, Any]] | None) -> list[dict[str, Any]]:
+    match = EFFECTS_CARD.fullmatch(card.name)
+    witness = card.data.get("witness")
+    if card.evidence != "server-headless" or match is None or not isinstance(witness, dict):
+        return []
+    kind, route = match.groups()
+    spec = EFFECT_KINDS.get(kind)
+    if spec is None or card.data.get("outcome") != "TRANSFERRED":
+        return []
+    entity_type, row_variant, effect_assertions = spec
+    gateway = route == "END_GATEWAY"
+    expected = "SAME_DIMENSION_TRANSFER" if gateway else "TRANSFER"
+    row = next((candidate for candidate in rows or [] if candidate.get("entityType") == entity_type
+                and candidate.get("route") == route and (candidate.get("variant") or None) == row_variant
+                and candidate.get("graph", "standalone") == "standalone"), None)
+    if row is None or row.get("expectedNativeOutcome") != expected:
+        return []
+    control = _control_card(row, card.name)
+    control_witness = control.get("witness") if isinstance(control, dict) else None
+    uuid = _snapshot_uuid(card.data)
+    if not isinstance(control_witness, dict) or control.get("outcome") != "TRANSFERRED" or uuid is None:
+        return []
+    own, native = _effects_comparable(witness), _effects_comparable(control_witness)
+    if own is None or native is None or own != native or witness.get("armedAt") != control_witness.get("armedAt"):
+        return []
+    if not _effect_exhibited(kind, control_witness, route):
+        return []
+    assertions: set[str] = set(effect_assertions) - {"projectile_owner_preserved", "owner_target_preserved", "fuse_preserved"}
+    assertions |= _effect_links(kind, witness, control_witness)
+    if "fuse_preserved" in effect_assertions and _fuse_preserved(witness, control_witness):
+        assertions.add("fuse_preserved")
+    if gateway:
+        assertions |= headless_gateway_assertions(card, entity_type, later_optional=kind in EFFECT_SHORT_LIVED)
+        needed = REQUIRED_SAME_DIMENSION_ASSERTIONS
+    else:
+        assertions |= _dynamic_trace_assertions(card, route, uuid, entity_type)
+        if kind not in EFFECT_SHORT_LIVED:
+            assertions |= headless_transfer_assertions(card, entity_type, route)
+        needed = REQUIRED_TRANSFER_ASSERTIONS | {"uuid_preserved", "replacement_identity"}
+    needed = (needed - OWNER_ASSERTIONS - {"destination_owner"}) | (required_assertions(row, expected) - REQUIRED_TRANSFER_ASSERTIONS
+                                                                       - REQUIRED_SAME_DIMENSION_ASSERTIONS)
+    if not needed <= assertions:
+        return []
+    return [dict(card=card, entityType=entity_type, route=route, variant=row_variant, graph="standalone",
+                 observedOutcome=expected, assertions=assertions, basicObservation=True, scope="row",
+                 sameDimensionGateway=gateway, headlessOwner=gateway and OWNER_ASSERTIONS <= assertions)]
+
+
 def headless_claims(card: Card, rows: list[dict[str, Any]] | None = None) -> list[dict[str, Any]]:
     """Server-headless claims for entity types without family-specific semantics (plain entities) and passenger graphs."""
     if DYNAMIC_CARD.fullmatch(card.name):
         return headless_dynamic_claims(card, rows)
+    if EFFECTS_CARD.fullmatch(card.name):
+        return headless_effects_claims(card, rows)
     graph_match = GRAPH_CARD.fullmatch(card.name)
     if card.evidence == "server-headless" and graph_match is not None:
         shape, route = graph_match.groups()

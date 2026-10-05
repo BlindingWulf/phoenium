@@ -56,8 +56,11 @@ def load_control(run: pathlib.Path, source_sha: str, binary_sha: str) -> dict[tu
     for card in receipt["cards"]:
         graph = GRAPH_CARD.fullmatch(card["card"])
         falling = FALLING_CARD.fullmatch(card["card"])
+        effects = coverage.EFFECTS_CARD.fullmatch(card["card"])
         if falling:
             kind, route = "falling:" + falling.group(1), falling.group(2)
+        elif effects:
+            kind, route = "effects:" + effects.group(1), effects.group(2)
         else:
             kind, route = (("graph:" + graph.group(1), graph.group(2)) if graph else CARD.fullmatch(card["card"]).groups())
         table[(kind, route)] = card["outcome"]
@@ -109,7 +112,30 @@ def main(argv: list[str] | None = None) -> int:
         proofs = document["proofs"]
         shutil.copy2(args.no_entry_proofs, out / args.no_entry_proofs.name)
     classified, conflicts, pending, classified_no_entry = 0, [], [], 0
+
+    def receipt_of(run_name: str, card: str, verdict: str) -> dict:
+        result_path = out / "native-controls" / run_name / "headless-result.json"
+        return {"sourceJarSha256": source_sha, "mappedBinarySha256": binary_sha, "observedOutcome": verdict,
+                "path": f"native-controls/{run_name}/headless-result.json", "sha256": digest(result_path), "card": card,
+                "receiptSha256": digest(result_path.with_name("headless-receipt.json")),
+                "inputsSha256": digest(result_path.with_name("inputs.json"))}
+
     for row in census["rows"]:
+        fx = coverage.effects_kind_of_row(row)
+        fx_observed = controls.get(("effects:" + fx, row["route"])) if fx else None
+        if fx_observed and {outcome for outcome, _ in fx_observed} == {"TRANSFERRED"}:
+            verdict = "SAME_DIMENSION_TRANSFER" if row["route"] == "END_GATEWAY" else "TRANSFER"
+            receipt = receipt_of(fx_observed[0][1], f"D1-{fx}-{row['route']}", verdict)
+            if row.get("variant") in (None, ""):
+                row["effectsControlReceipt"] = receipt   # the E0 control below still fixes the native outcome
+            elif row.get("expectedNativeOutcome") is None:
+                row["expectedNativeOutcome"] = verdict
+                row["nativeControlReceipt"] = receipt
+                classified += 1
+                continue
+        elif fx and row.get("variant") not in (None, "") and row.get("expectedNativeOutcome") is None:
+            pending.append({"id": row["id"], "controlOutcomes": sorted({outcome for outcome, _ in fx_observed or []})})
+            continue
         falling = row.get("entityType") == "minecraft:falling_block" and row.get("graph", "standalone") == "standalone"
         if row.get("variant") not in (None, "") and not falling:
             continue
