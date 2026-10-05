@@ -22,6 +22,10 @@ import org.objectweb.asm.tree.ClassNode;
  */
 @EnabledIfEnvironmentVariable(named = "PHOENIUM_TAIL_PINS", matches = ".+")
 class MobTailCensusTest {
+    /** Non-Mob families with no retained manager: they get pins for the generic entity manager. */
+    private static final java.util.Set<String> EXTRA_TYPES = java.util.Set.of("minecraft:experience_orb", "minecraft:firework_rocket",
+        "minecraft:end_crystal", "minecraft:tnt_minecart", "minecraft:spawner_minecart", "minecraft:command_block_minecart",
+        "minecraft:hopper_minecart", "minecraft:furnace_minecart");
     private static final java.util.Set<String> LEGACY = java.util.Set.of(
         "net/minecraft/world/entity/Entity", MobPortalNativeSuffixes.LIVING, MobPortalNativeSuffixes.MOB,
         MobPortalNativeSuffixes.CUBE, MobPortalNativeSuffixes.HORSE, MobPortalNativeSuffixes.VILLAGER);
@@ -36,7 +40,7 @@ class MobTailCensusTest {
             JsonObject callers = row.getAsJsonObject("sourceReference").getAsJsonObject("callerMethods");
             String type = row.get("entityType").getAsString();
             String tickOwner = callers.getAsJsonObject("tick").get("owner").getAsString().replace('.', '/');
-            if (!isMob(tickOwner)) continue;
+            if (!isMob(tickOwner) && !EXTRA_TYPES.contains(type)) continue;
             for (String method : List.of("tick", "baseTick")) {
                 String owner = callers.getAsJsonObject(method).get("owner").getAsString().replace('.', '/');
                 for (String declaring : chain(owner, method))
@@ -45,14 +49,15 @@ class MobTailCensusTest {
             }
         }
         List<String> lines = new ArrayList<>(), failures = new ArrayList<>();
-        lines.add("# owner|method|capture|emptyTail|fingerprint  (generated from the pinned 26.2 bytecode; review before use)");
+        lines.add("# owner|method|anchor|capture|emptyTail|fingerprint  (generated from the pinned 26.2 bytecode; review before use)");
         for (var byClass : users.entrySet()) {
             if (LEGACY.contains(byClass.getKey())) continue;
             ClassNode node = node(byClass.getKey());
             for (String method : byClass.getValue().keySet()) {
                 try {
-                    var lifted = MobPortalOuterTails.lift(node, method);
-                    lines.add(byClass.getKey() + "|" + method + "|" + lifted.capture() + "|" + lifted.emptyTail() + "|" + lifted.fingerprint());
+                    var anchor = MobPortalOuterTails.detectAnchor(node, method);
+                    var lifted = MobPortalOuterTails.lift(node, method, anchor);
+                    lines.add(byClass.getKey() + "|" + method + "|" + anchor + "|" + lifted.capture() + "|" + lifted.emptyTail() + "|" + lifted.fingerprint());
                 } catch (RuntimeException unliftable) {
                     failures.add(byClass.getKey() + "." + method + " : " + unliftable.getMessage());
                 }
@@ -72,7 +77,12 @@ class MobTailCensusTest {
         List<String> declaring = new ArrayList<>();
         for (String cls = owner; cls != null && !cls.equals("java/lang/Object"); ) {
             ClassNode node = node(cls);
-            if (node.methods.stream().anyMatch(m -> m.name.equals(method) && m.desc.equals("()V"))) declaring.add(cls);
+            if (node.methods.stream().anyMatch(m -> m.name.equals(method) && m.desc.equals("()V"))) {
+                declaring.add(cls);
+                // A method that calls this.handlePortal() itself never reaches its super method's code.
+                if (!cls.equals("net/minecraft/world/entity/Entity")
+                        && MobPortalOuterTails.detectAnchor(node, method) == MobPortalOuterTails.Anchor.HANDLE_PORTAL) break;
+            }
             cls = node.superName;
         }
         return declaring;

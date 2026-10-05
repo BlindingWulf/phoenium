@@ -14,6 +14,7 @@ public final class MobPortalGuard {
     public static boolean suspended(Object self) {
         Predicate<Object> test = hook;
         if (test != null) return test.test(self);
-        return self instanceof Mob mob && Phoenium.liveRuntime().mobPortalSuspended(mob);
+        if (self instanceof Mob mob) return Phoenium.liveRuntime().mobPortalSuspended(mob);
+        return self instanceof net.minecraft.world.entity.Entity entity && Phoenium.liveRuntime().entityPortalSuspended(entity);
     }
 }

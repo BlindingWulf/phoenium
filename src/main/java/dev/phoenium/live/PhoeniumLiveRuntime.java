@@ -106,6 +106,7 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
     private final PearlPortalTransitionManager pearlPortalTransitions;
     private final ItemPortalTransitionManager itemPortalTransitions;
     private final MobPortalTransitionManager mobPortalTransitions;
+    private final EntityPortalTransitionManager entityPortalTransitions;
     private final HurtingProjectilePortalTransitionManager hurtingProjectilePortalTransitions;
     private final ShulkerBulletPortalTransitionManager shulkerBulletPortalTransitions;
     private final ThrowableProjectilePortalTransitionManager throwableProjectilePortalTransitions;
@@ -350,6 +351,7 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
         this.pearlPortalTransitions = new PearlPortalTransitionManager(portalAuthority, objects);
         this.itemPortalTransitions = new ItemPortalTransitionManager(portalAuthority, objects);
         this.mobPortalTransitions = new MobPortalTransitionManager(portalAuthority, objects);
+        this.entityPortalTransitions = new EntityPortalTransitionManager(portalAuthority, objects);
         this.hurtingProjectilePortalTransitions = new HurtingProjectilePortalTransitionManager(portalAuthority, objects);
         this.shulkerBulletPortalTransitions = new ShulkerBulletPortalTransitionManager(portalAuthority, objects);
         this.throwableProjectilePortalTransitions = new ThrowableProjectilePortalTransitionManager(portalAuthority, objects);
@@ -581,6 +583,7 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
                 portalTickets.advance();
                 gatewayExits.advance();
                 mobPortalTransitions.advance();
+                entityPortalTransitions.advance();
                 hurtingProjectilePortalTransitions.advance();
                 shulkerBulletPortalTransitions.advance();
                 throwableProjectilePortalTransitions.advance();
@@ -634,6 +637,7 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
                 portalTickets.advance();
                 gatewayExits.advance();
                 mobPortalTransitions.advance();
+                entityPortalTransitions.advance();
                 hurtingProjectilePortalTransitions.advance();
                 shulkerBulletPortalTransitions.advance();
                 throwableProjectilePortalTransitions.advance();
@@ -815,6 +819,7 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
             failures.run(pearlPortalTransitions::close);
             failures.run(itemPortalTransitions::close);
             failures.run(mobPortalTransitions::close);
+            failures.run(entityPortalTransitions::close);
             failures.run(hurtingProjectilePortalTransitions::close);
             failures.run(shulkerBulletPortalTransitions::close);
             failures.run(throwableProjectilePortalTransitions::close);
@@ -2469,6 +2474,7 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
         if (!isRunning() || !(entity.level() instanceof ServerLevel level)) return;
         if (NativePortalTransfer.expectedRemoval(entity, reason)) return;
         if (mobPortalTransitions.onRemoval(entity, reason)) return;
+        if (entityPortalTransitions.onRemoval(entity, reason)) return;
         if (hurtingProjectilePortalTransitions.onRemoval(entity, reason)) return;
         if (shulkerBulletPortalTransitions.onRemoval(entity, reason)) return;
         if (throwableProjectilePortalTransitions.onRemoval(entity, reason)) return;
@@ -2498,6 +2504,12 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
         pearlPortalTransitions.beginTick(pearl, previousSectionX, previousSectionZ, retainedOwner);
     }
 
+    /** Entity classes without a dedicated manager: tick scope, destination cut and retained check. */
+    public void entityPortalTick(Entity entity, Runnable nativeTick) { entityPortalTransitions.tick(entity, nativeTick); }
+    public boolean suspendEntityPortalDestination(Entity entity, PortalProcessor processor) {
+        return entityPortalTransitions.suspendDestination(entity, processor);
+    }
+    public boolean entityPortalSuspended(Entity entity) { return entityPortalTransitions.suspended(entity); }
     public void beginMobPortalTick(net.minecraft.world.entity.Mob mob) { mobPortalTransitions.begin(mob); }
     public boolean suspendMobPortalDestination(net.minecraft.world.entity.Mob mob, net.minecraft.world.entity.PortalProcessor processor) {
         return mobPortalTransitions.suspendDestination(mob, processor);
@@ -2606,6 +2618,7 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
         portalTickets.advance();
         gatewayExits.advance();
         mobPortalTransitions.advance();
+        entityPortalTransitions.advance();
         hurtingProjectilePortalTransitions.advance();
         shulkerBulletPortalTransitions.advance();
         throwableProjectilePortalTransitions.advance();
@@ -2785,6 +2798,7 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
         pearlPortalTransitions.worldClosing(level);
         itemPortalTransitions.worldClosing(level);
         mobPortalTransitions.worldClosing(level);
+        entityPortalTransitions.worldClosing(level);
         hurtingProjectilePortalTransitions.worldClosing(level);
         shulkerBulletPortalTransitions.worldClosing(level);
         throwableProjectilePortalTransitions.worldClosing(level);

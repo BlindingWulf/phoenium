@@ -51,8 +51,12 @@ public final class Stage7RepairClientTest implements FabricClientGameTest {
                     && selectedCards.equals("I0-item-END_ENTRY"))
                     && !(group.equals("same-dimension-gateway")
                     && selectedCards.equals("G1-pig-END_GATEWAY"))
+                    && !(group.equals("entity-probe")
+                    && selectedCards.matches("E0-[a-z_]+-(NETHER_ENTRY|NETHER_RETURN)(,E0-[a-z_]+-(NETHER_ENTRY|NETHER_RETURN))*"))
                     && !(group.equals("mob-census")
                     && selectedCards.matches("M3-[a-z_]+-(NETHER_ENTRY|NETHER_RETURN)(,M3-[a-z_]+-(NETHER_ENTRY|NETHER_RETURN))*"))
+                    && !(group.equals("same-dimension-gateway-natural-item")
+                    && selectedCards.equals("G4-item-END_GATEWAY-NATURAL"))
                     && !(group.equals("same-dimension-gateway-natural")
                     && selectedCards.equals("G3-pig-END_GATEWAY-NATURAL"))
                     && !(group.equals("same-dimension-gateway-ab")
@@ -76,9 +80,11 @@ public final class Stage7RepairClientTest implements FabricClientGameTest {
             else if(group.equals("vehicle-minecart-chest")){chestMinecartMatrix(selectedCards);}
             else if(group.equals("item-end-platform")){itemEndPlatformScopeCard();}
             else if(group.equals("mob-census")){mobCensus(selectedCards);}
+            else if(group.equals("entity-probe")){entityProbe(selectedCards);}
             else if(group.equals("same-dimension-gateway")){pigEndGatewayCard(false);}
             else if(group.equals("same-dimension-gateway-ab")){pigEndGatewayCard(true);}
             else if(group.equals("same-dimension-gateway-natural")){naturalGatewayCard();}
+            else if(group.equals("same-dimension-gateway-natural-item")){naturalGatewayItemCard();}
             else if(group.equals("mob-prefix")){
                 cmd("gamemode creative "+USER);
                 if(selectedCards.isBlank()||selectedCards.equals("M2-silverfish-NETHER_ENTRY"))
@@ -657,6 +663,41 @@ public final class Stage7RepairClientTest implements FabricClientGameTest {
         loose.addProperty("arrivalIron",arrivalIron);loose.addProperty("laterIron",laterIron);
         receipt.add(active+"-looseItems",loose);
         health(active);pass(active,"three-wide portal; native minecart inventory or latent loot persistence; no loose item duplication; one replacement UUID/new object; empty graph, later ticks and client tracking");
+    }
+    /** G4: the G3 gateway entered by a dropped item, a family with its own manager and tick path. */
+    void naturalGatewayItemCard()throws Exception {
+        active="G4-item-END_GATEWAY-NATURAL";
+        final int exitX=1000,exitZ=1000;
+        cmd("gamemode creative "+USER);
+        for(String command:List.of("forceload add 0 0 16 16","fill 8 64 4 16 64 16 minecraft:end_stone",
+                "fill 8 65 4 16 73 16 minecraft:air","setblock 12 66 8 minecraft:end_gateway"))
+            cmd("execute in "+END+" run "+command);
+        String configured=cmd("execute in "+END+" run data merge block 12 66 8 "
+            +"{exit_portal:[I;"+exitX+",65,"+exitZ+"],ExactTeleport:0b,Age:200L}");
+        require(configured.contains("Modified")||configured.contains("modified"),"natural gateway not configured: "+configured);
+        position(END,12.5,65,14.5,180,0);
+        cmd("tick freeze");
+        try {
+            String summoned=cmd("execute in "+END+" run summon minecraft:item 12.5 66 8.5 "
+                +"{Item:{id:\"minecraft:sugar_cane\",count:3},NoGravity:1b,PickupDelay:32767s}");
+            require(summoned.contains("Summoned")||summoned.contains("summoned"),"natural gateway item summon failed: "+summoned);
+        } finally { cmd("tick unfreeze"); }
+        JsonObject arrival=null;
+        for(int i=0;i<400&&arrival==null;i++) {
+            context.waitTick();
+            for(var e:items(snapshot(active+"-wait-"+i),END)) {
+                JsonObject item=e.getAsJsonObject();
+                if(Math.abs(item.get("x").getAsDouble()-exitX)<24&&Math.abs(item.get("z").getAsDouble()-exitZ)<24){arrival=item;break;}
+            }
+        }
+        require(arrival!=null,"dropped item did not reach the natural gateway exit");
+        require(arrival.get("count").getAsInt()==3,"gateway changed the item count");
+        JsonObject state=snapshot(active+"-arrived");
+        int total=0;for(var e:items(state,END))total++;
+        require(total==1,"item duplicated or lost by the gateway: "+total);
+        receipt.add(active+"-arrival",arrival.deepCopy());
+        health(active);
+        pass(active,"native dropped item through a non-exact gateway with an unloaded exit; one item, count preserved, server healthy");
     }
     /**
      * G3: a gateway the way worlds really have it. ExactTeleport is off, so native getPortalPosition runs
@@ -1797,6 +1838,47 @@ public final class Stage7RepairClientTest implements FabricClientGameTest {
             found=e;
         }
         return found;
+    }
+    /** Per-type summon NBT for the entity-family probe (types with required fields or very short lives). */
+    static final java.util.Map<String,String> PROBE_NBT=java.util.Map.ofEntries(
+        java.util.Map.entry("area_effect_cloud",",Duration:1200,Radius:2.0f,Particle:{type:\"minecraft:effect\",color:16711680}"),
+        java.util.Map.entry("experience_orb",",Value:5s"),
+        java.util.Map.entry("firework_rocket",",LifeTime:400,FireworksItem:{id:\"minecraft:firework_rocket\",count:1,components:{\"minecraft:fireworks\":{flight_duration:3}}}"),
+        java.util.Map.entry("evoker_fangs",",Warmup:0"),
+        java.util.Map.entry("llama_spit",""),
+        java.util.Map.entry("eye_of_ender",""),
+        java.util.Map.entry("end_crystal",",ShowBottom:0b"),
+        java.util.Map.entry("ominous_item_spawner",",item:{id:\"minecraft:arrow\",count:1},spawn_item_after_ticks:400L"));
+    /**
+     * Loose, defect-finding probe for entity families without a retained portal manager: place the entity in the
+     * Nether portal cell and record what native does. Only server health is required; the outcome is data.
+     */
+    void entityProbe(String selected)throws Exception {
+        cmd("gamemode creative "+USER);
+        int sequence=0;
+        for(String card:selected.split(",")) {
+            var parts=java.util.regex.Pattern.compile("E0-([a-z_]+)-(NETHER_ENTRY|NETHER_RETURN)").matcher(card);
+            require(parts.matches(),"bad probe card "+card);
+            active=card;String type=parts.group(1),from=parts.group(2).equals("NETHER_ENTRY")?OW:NETHER,to=from.equals(OW)?NETHER:OW;
+            String tag="stage7_probe_"+sequence++;
+            position(from,8.5,65,5.5,180,0);
+            String summoned=cmd("execute in "+from+" run summon minecraft:"+type+" 0.5 65 0.5 {Tags:[\"stage7_mob\",\""+tag+"\"],NoGravity:1b"
+                +PROBE_NBT.getOrDefault(type,"")+"}");
+            receipt.addProperty(card+"-summon",summoned);
+            String outcome="GONE",world="NONE";
+            for(int i=0;i<100;i++) {
+                context.waitTick();
+                JsonObject found=null;
+                for(var e:snapshot(card+"-wait-"+i).getAsJsonArray("entities")) {var o=e.getAsJsonObject();
+                    if(o.has("tags")&&o.get("tags").getAsString().contains(tag))found=o;}
+                if(found==null)continue;
+                world=found.get("world").getAsString();outcome=world.equals(to)?"TRANSFERRED":"STAYED";
+                if(outcome.equals("TRANSFERRED"))break;
+            }
+            receipt.addProperty(card+"-outcome",outcome);receipt.addProperty(card+"-world",world);
+            health(card);pass(card,"entity-family probe outcome="+outcome+" world="+world);
+            for(String w:List.of(OW,NETHER))cmd("execute in "+w+" run kill @e[tag=stage7_mob]");
+        }
     }
     static final java.util.Set<String> PLACED_INTO_PORTAL=java.util.Set.of("squid","glow_squid","tadpole","pufferfish","tropical_fish","salmon","shulker");
     /** Data-driven mob caller-profile census: one exact Nether-route observation per M3 card. */

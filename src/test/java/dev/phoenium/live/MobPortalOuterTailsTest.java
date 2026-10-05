@@ -83,27 +83,27 @@ class MobPortalOuterTailsTest {
         assertThrows(IllegalStateException.class, () -> MobPortalOuterTails.lift(synthetic(m -> {
             call(m, "tick"); call(m, "tick");
             m.instructions.add(new InsnNode(Opcodes.RETURN));
-        }), "tick"), "two super calls");
+        }), "tick", MobPortalOuterTails.Anchor.SUPER), "two super calls");
         assertThrows(IllegalStateException.class, () -> MobPortalOuterTails.lift(synthetic(m -> {
             LabelNode a = new LabelNode(), b = new LabelNode(), h = new LabelNode();
             m.instructions.add(a); call(m, "tick"); m.instructions.add(b); m.instructions.add(new InsnNode(Opcodes.RETURN));
             m.instructions.add(h); m.instructions.add(new InsnNode(Opcodes.RETURN));
             m.tryCatchBlocks.add(new TryCatchBlockNode(a, b, h, null));
-        }), "tick"), "handler");
+        }), "tick", MobPortalOuterTails.Anchor.SUPER), "handler");
         assertThrows(IllegalStateException.class, () -> MobPortalOuterTails.lift(synthetic(m -> {
             LabelNode inside = new LabelNode();
             m.instructions.add(new VarInsnNode(Opcodes.ALOAD, 0));
             m.instructions.add(new JumpInsnNode(Opcodes.IFNULL, inside));   // prefix jumps into the tail
             call(m, "tick"); m.instructions.add(inside); m.instructions.add(new InsnNode(Opcodes.RETURN));
-        }), "tick"), "branch crossing the cut");
+        }), "tick", MobPortalOuterTails.Anchor.SUPER), "branch crossing the cut");
         assertThrows(IllegalStateException.class, () -> MobPortalOuterTails.lift(synthetic(m -> {
             m.instructions.add(new InsnNode(Opcodes.ICONST_1)); m.instructions.add(new VarInsnNode(Opcodes.ISTORE, 2));
             call(m, "tick");
             m.instructions.add(new VarInsnNode(Opcodes.ILOAD, 2)); m.instructions.add(new InsnNode(Opcodes.POP));
             m.instructions.add(new InsnNode(Opcodes.RETURN));
-        }), "tick"), "an unreviewed live caller local");
+        }), "tick", MobPortalOuterTails.Anchor.SUPER), "an unreviewed live caller local");
         // The reviewed shape is accepted: nothing after the call.
-        var ok = MobPortalOuterTails.lift(synthetic(m -> { call(m, "tick"); m.instructions.add(new InsnNode(Opcodes.RETURN)); }), "tick");
+        var ok = MobPortalOuterTails.lift(synthetic(m -> { call(m, "tick"); m.instructions.add(new InsnNode(Opcodes.RETURN)); }), "tick", MobPortalOuterTails.Anchor.SUPER);
         assertTrue(ok.emptyTail());
         assertEquals(MobPortalOuterTails.Capture.NONE, ok.capture());
     }

@@ -6,55 +6,83 @@ import java.lang.invoke.MethodType;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
-import java.util.Map;
+import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.Map;
+import net.minecraft.world.entity.Entity;
+import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.Mob;
 
-/** Runtime resume order for the lifted outer tails of one concrete Mob class (see {@link MobPortalOuterTails}). */
+/**
+ * Runtime resume order for the lifted outer tails of one concrete class (see {@link MobPortalOuterTails}).
+ * {@link #plan} serves Mob subclasses (chain root Mob); {@link #entityPlan} serves other entities (chain root
+ * Entity). Both return null unless every declared tick()/baseTick() override in the chain is a reviewed pin.
+ */
 public final class MobPortalTailPlans {
     private MobPortalTailPlans() { }
 
-    /** Ordered resume steps for one concrete Mob class; {@code legacy} classes are handled elsewhere. */
-    public record Plan(List<Step> baseTails, List<Step> tickTails) {
-        public void resumeBase(Mob mob, int airSupply) { for (Step step : baseTails) step.invoke(mob, airSupply); }
-        public void resumeTick(Mob mob) { for (Step step : tickTails) step.invoke(mob, 0); }
+    /**
+     * {@code viaBaseTick}: the portal cut unwinds through Entity.baseTick, so its native tail must be resumed first.
+     * False for classes whose reviewed tick calls this.handlePortal() itself.
+     */
+    public record Plan(List<Step> baseTails, List<Step> tickTails, boolean viaBaseTick) {
+        public void resumeBase(Entity entity, int airSupply) { for (Step step : baseTails) step.invoke(entity, airSupply); }
+        public void resumeTick(Entity entity) { for (Step step : tickTails) step.invoke(entity, 0); }
     }
 
-    /** A step is a lifted tail (handle) or one of the three legacy reviewed tails (kind) that sits in the same chain. */
+    /** A step is a lifted tail (handle) or one of the legacy reviewed tails (kind) that sits in the same chain. */
     public record Step(MethodHandle handle, MobPortalOuterTails.Capture capture, String legacy) {
         Step(MethodHandle handle, MobPortalOuterTails.Capture capture) { this(handle, capture, null); }
-        void invoke(Mob mob, int airSupply) {
+        void invoke(Entity entity, int airSupply) {
             if (legacy != null) {
                 switch (legacy) {
-                    case MobPortalNativeSuffixes.CUBE -> ((MobPortalNativeAccess.CubeSuffix) mob).phoenium$resumeMobCubeTickSuffix();
-                    case MobPortalNativeSuffixes.HORSE -> ((MobPortalNativeAccess.HorseSuffix) mob).phoenium$resumeMobHorseTickSuffix();
-                    case MobPortalNativeSuffixes.VILLAGER -> ((MobPortalNativeAccess.VillagerSuffix) mob).phoenium$resumeMobVillagerTickSuffix();
+                    case MobPortalNativeSuffixes.CUBE -> ((MobPortalNativeAccess.CubeSuffix) entity).phoenium$resumeMobCubeTickSuffix();
+                    case MobPortalNativeSuffixes.HORSE -> ((MobPortalNativeAccess.HorseSuffix) entity).phoenium$resumeMobHorseTickSuffix();
+                    case MobPortalNativeSuffixes.VILLAGER -> ((MobPortalNativeAccess.VillagerSuffix) entity).phoenium$resumeMobVillagerTickSuffix();
                     default -> throw new IllegalStateException("unreviewed legacy mob tail " + legacy);
                 }
                 return;
             }
             try {
-                if (capture == MobPortalOuterTails.Capture.AIR_SUPPLY) handle.invoke(mob, airSupply); else handle.invoke(mob);
+                if (capture == MobPortalOuterTails.Capture.AIR_SUPPLY) handle.invoke(entity, airSupply); else handle.invoke(entity);
             } catch (RuntimeException | Error failure) { throw failure; }
-            catch (Throwable failure) { throw new IllegalStateException("mob tail resume failed", failure); }
+            catch (Throwable failure) { throw new IllegalStateException("tail resume failed", failure); }
         }
     }
 
-    private static final Map<Class<?>, java.util.Optional<Plan>> PLANS = new ConcurrentHashMap<>();
+    private static final Map<Class<?>, Optional<Plan>> MOB_PLANS = new ConcurrentHashMap<>(),
+        ENTITY_PLANS = new ConcurrentHashMap<>();
     private static final java.util.Set<String> LEGACY_OWNERS = java.util.Set.of(
         MobPortalNativeSuffixes.CUBE, MobPortalNativeSuffixes.HORSE, MobPortalNativeSuffixes.VILLAGER);
 
-    /** Supported iff every declared tick()/baseTick() between the class and Mob is reviewed; null otherwise. */
+    /** Mob subclass plan; null means the class falls through to a native destination search. */
     public static Plan plan(Class<?> mobClass) {
-        return PLANS.computeIfAbsent(mobClass, MobPortalTailPlans::buildPlan).orElse(null);
+        return MOB_PLANS.computeIfAbsent(mobClass, type -> build(type, Mob.class)).orElse(null);
     }
 
-    private static java.util.Optional<Plan> buildPlan(Class<?> mobClass) {
-        List<Step> base = new ArrayList<>(), tick = new ArrayList<>();
+    /** Plan for a non-living, non-Mob entity class. */
+    public static Plan entityPlan(Class<?> type) {
+        return ENTITY_PLANS.computeIfAbsent(type, t -> build(t, Entity.class)).orElse(null);
+    }
+
+    private static Optional<Plan> build(Class<?> type, Class<?> root) {
+        if (!root.isAssignableFrom(type)) return Optional.empty();
+        if (root == Entity.class && LivingEntity.class.isAssignableFrom(type)) return Optional.empty();
         var chain = new ArrayList<Class<?>>();
-        for (Class<?> c = mobClass; c != null && c != Mob.class; c = c.getSuperclass()) chain.add(c);
-        if (!Mob.class.isAssignableFrom(mobClass)) return java.util.Optional.empty();
-        Collections.reverse(chain);   // closest to Mob first: the order the native tails would have run
+        boolean viaBaseTick = true;
+        for (Class<?> c = type; c != null && c != root; c = c.getSuperclass()) {
+            chain.add(c);
+            // A reviewed tick that calls this.handlePortal() itself never reaches its super method's code.
+            String internal = c.getName().replace('.', '/');
+            var tickPin = MobPortalOuterTails.pins().getOrDefault(internal, List.of()).stream()
+                .filter(p -> p.method().equals("tick")).findFirst().orElse(null);
+            if (tickPin != null && tickPin.anchor() == MobPortalOuterTails.Anchor.HANDLE_PORTAL && declares(c, "tick")) {
+                viaBaseTick = false;
+                break;
+            }
+        }
+        Collections.reverse(chain);   // closest to the root first: the order the native tails would have run
+        List<Step> base = new ArrayList<>(), tick = new ArrayList<>();
         for (Class<?> c : chain) {
             String internal = c.getName().replace('.', '/');
             if (LEGACY_OWNERS.contains(internal)) {
@@ -67,25 +95,23 @@ public final class MobPortalTailPlans {
                 if (!declares(c, method)) continue;
                 MobPortalOuterTails.Pin pin = MobPortalOuterTails.pins().getOrDefault(internal, List.of()).stream()
                     .filter(p -> p.method().equals(method)).findFirst().orElse(null);
-                if (pin == null) return java.util.Optional.empty();
+                if (pin == null) return Optional.empty();
                 if (pin.emptyTail()) continue;
                 try {
-                    MethodType type = pin.capture() == MobPortalOuterTails.Capture.AIR_SUPPLY
-                        ? MethodType.methodType(void.class, int.class) : MethodType.methodType(void.class);
+                    boolean air = pin.capture() == MobPortalOuterTails.Capture.AIR_SUPPLY;
                     MethodHandle handle = MethodHandles.privateLookupIn(c, MethodHandles.lookup())
-                        .findVirtual(c, MobPortalOuterTails.resumeName(internal, method), type)
-                        .asType(pin.capture() == MobPortalOuterTails.Capture.AIR_SUPPLY
-                            ? MethodType.methodType(void.class, Mob.class, int.class)
-                            : MethodType.methodType(void.class, Mob.class));
+                        .findVirtual(c, MobPortalOuterTails.resumeName(internal, method),
+                            air ? MethodType.methodType(void.class, int.class) : MethodType.methodType(void.class))
+                        .asType(air ? MethodType.methodType(void.class, Entity.class, int.class)
+                            : MethodType.methodType(void.class, Entity.class));
                     (method.equals("baseTick") ? base : tick).add(new Step(handle, pin.capture()));
-                } catch (ReflectiveOperationException unbound) { return java.util.Optional.empty(); }
+                } catch (ReflectiveOperationException unbound) { return Optional.empty(); }
             }
         }
-        return java.util.Optional.of(new Plan(List.copyOf(base), List.copyOf(tick)));
+        return Optional.of(new Plan(List.copyOf(base), List.copyOf(tick), viaBaseTick));
     }
 
     private static boolean declares(Class<?> c, String method) {
         try { c.getDeclaredMethod(method); return true; } catch (NoSuchMethodException none) { return false; }
     }
-
 }

@@ -50,8 +50,15 @@ import org.objectweb.asm.tree.VarInsnNode;
 public final class MobPortalOuterTails {
     public enum Capture { NONE, AIR_SUPPLY }
 
+    /**
+     * Where the retained portal cut returns to. SUPER: the method calls its super method, which reaches
+     * Entity.handlePortal (Entity.tick -> baseTick). HANDLE_PORTAL: the method calls this.handlePortal() itself
+     * (End Crystal, AbstractMinecart); the tail is everything after that call.
+     */
+    public enum Anchor { SUPER, HANDLE_PORTAL }
+
     /** One reviewed pin. {@code emptyTail} means nothing executes after the super call. */
-    public record Pin(String owner, String method, Capture capture, boolean emptyTail, String fingerprint) { }
+    public record Pin(String owner, String method, Anchor anchor, Capture capture, boolean emptyTail, String fingerprint) { }
 
     /** Result of lifting one tail from a pinned native method. */
     public record Lifted(MethodInsnNode cut, MethodNode method, Capture capture, boolean emptyTail, String fingerprint) { }
@@ -85,9 +92,9 @@ public final class MobPortalOuterTails {
                 for (String line; (line = reader.readLine()) != null; ) {
                     if (line.isBlank() || line.startsWith("#")) continue;
                     String[] f = line.split("\\|");
-                    if (f.length != 5) throw new IllegalStateException("bad pin line: " + line);
+                    if (f.length != 6) throw new IllegalStateException("bad pin line: " + line);
                     byOwner.computeIfAbsent(f[0], k -> new ArrayList<>())
-                        .add(new Pin(f[0], f[1], Capture.valueOf(f[2]), Boolean.parseBoolean(f[3]), f[4]));
+                        .add(new Pin(f[0], f[1], Anchor.valueOf(f[2]), Capture.valueOf(f[3]), Boolean.parseBoolean(f[4]), f[5]));
                 }
             }
         } catch (java.io.IOException failure) { throw new IllegalStateException("unreadable pin resource", failure); }
@@ -99,7 +106,7 @@ public final class MobPortalOuterTails {
         List<Pin> reviewed = pins().get(node.name);
         if (reviewed == null) throw new IllegalArgumentException("unreviewed mob tail owner " + node.name);
         for (Pin pin : reviewed) {
-            Lifted lifted = lift(node, pin.method());
+            Lifted lifted = lift(node, pin.method(), pin.anchor());
             if (!pin.fingerprint().equals(lifted.fingerprint()) || pin.capture() != lifted.capture()
                     || pin.emptyTail() != lifted.emptyTail())
                 throw new IllegalStateException("Minecraft 26.2 mob tail changed: " + node.name + "." + pin.method()
@@ -126,14 +133,30 @@ public final class MobPortalOuterTails {
     // ---------------------------------------------------------------------------------------------- lifting
 
     /** Extracts the suffix after the single super call; throws when a reviewed rule does not hold. */
-    public static Lifted lift(ClassNode node, String name) {
+    /** The anchor the method uses: its super call if it has exactly one, else its own handlePortal() call. */
+    public static Anchor detectAnchor(ClassNode node, String name) {
+        var methods = node.methods.stream().filter(m -> m.name.equals(name) && m.desc.equals("()V")).toList();
+        if (methods.size() != 1) throw new IllegalStateException("changed mob tail method: " + node.name + "." + name);
+        return cuts(node, methods.getFirst(), name, Anchor.SUPER).size() == 1 ? Anchor.SUPER : Anchor.HANDLE_PORTAL;
+    }
+
+    private static List<MethodInsnNode> cuts(ClassNode node, MethodNode method, String name, Anchor anchor) {
+        var cuts = new ArrayList<MethodInsnNode>();
+        for (var i : method.instructions) {
+            if (!(i instanceof MethodInsnNode call) || !call.desc.equals("()V")) continue;
+            if (anchor == Anchor.SUPER && call.getOpcode() == Opcodes.INVOKESPECIAL
+                    && call.owner.equals(node.superName) && call.name.equals(name)) cuts.add(call);
+            if (anchor == Anchor.HANDLE_PORTAL && call.name.equals("handlePortal")
+                    && (call.getOpcode() == Opcodes.INVOKEVIRTUAL || call.getOpcode() == Opcodes.INVOKESPECIAL)) cuts.add(call);
+        }
+        return cuts;
+    }
+
+    public static Lifted lift(ClassNode node, String name, Anchor anchor) {
         var methods = node.methods.stream().filter(m -> m.name.equals(name) && m.desc.equals("()V")).toList();
         if (methods.size() != 1) throw new IllegalStateException("changed mob tail method: " + node.name + "." + name);
         MethodNode nativeMethod = methods.getFirst();
-        var cuts = new ArrayList<MethodInsnNode>();
-        for (var i : nativeMethod.instructions)
-            if (i instanceof MethodInsnNode call && call.getOpcode() == Opcodes.INVOKESPECIAL
-                    && call.owner.equals(node.superName) && call.name.equals(name) && call.desc.equals("()V")) cuts.add(call);
+        var cuts = cuts(node, nativeMethod, name, anchor);
         if (cuts.size() != 1 || !nativeMethod.tryCatchBlocks.isEmpty())
             throw new IllegalStateException("changed mob super boundary: " + node.name + "." + name);
         MethodInsnNode cut = cuts.getFirst();

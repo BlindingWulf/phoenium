@@ -8,6 +8,7 @@ import org.spongepowered.asm.mixin.Mixin;
  * mob-portal-tail-pins.txt (a contract test keeps them identical).
  */
 @Mixin(targets = {
+    "net.minecraft.world.entity.ExperienceOrb",
     "net.minecraft.world.entity.ambient.Bat",
     "net.minecraft.world.entity.animal.AgeableWaterCreature",
     "net.minecraft.world.entity.animal.allay.Allay",
@@ -32,6 +33,7 @@ import org.spongepowered.asm.mixin.Mixin;
     "net.minecraft.world.entity.animal.rabbit.Rabbit",
     "net.minecraft.world.entity.animal.sniffer.Sniffer",
     "net.minecraft.world.entity.animal.wolf.Wolf",
+    "net.minecraft.world.entity.boss.enderdragon.EndCrystal",
     "net.minecraft.world.entity.monster.Creeper",
     "net.minecraft.world.entity.monster.Endermite",
     "net.minecraft.world.entity.monster.Phantom",
@@ -47,6 +49,13 @@ import org.spongepowered.asm.mixin.Mixin;
     "net.minecraft.world.entity.monster.spider.Spider",
     "net.minecraft.world.entity.monster.warden.Warden",
     "net.minecraft.world.entity.monster.zombie.Zombie",
-    "net.minecraft.world.entity.monster.zombie.ZombieVillager"
+    "net.minecraft.world.entity.monster.zombie.ZombieVillager",
+    "net.minecraft.world.entity.projectile.FireworkRocketEntity",
+    "net.minecraft.world.entity.projectile.Projectile",
+    "net.minecraft.world.entity.vehicle.minecart.AbstractMinecart",
+    "net.minecraft.world.entity.vehicle.minecart.MinecartFurnace",
+    "net.minecraft.world.entity.vehicle.minecart.MinecartHopper",
+    "net.minecraft.world.entity.vehicle.minecart.MinecartSpawner",
+    "net.minecraft.world.entity.vehicle.minecart.MinecartTNT"
 })
 abstract class MobPortalOuterTailMixin { }
