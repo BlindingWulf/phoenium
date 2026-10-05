@@ -122,12 +122,13 @@ def main(argv: list[str] | None = None) -> int:
             else:
                 conflicts.append({"id": row["id"], "expected": "NO_NATIVE_ENTRY_PATH", "controlOutcomes": sorted(outcomes)})
         elif expected is None:
-            if outcomes == {"TRANSFERRED"} and row["route"] in CROSS_DIMENSION:
+            if outcomes == {"TRANSFERRED"} and (row["route"] in CROSS_DIMENSION or row["route"] == "END_GATEWAY"):
                 run_name = observed[0][1]
                 result_path = out / "native-controls" / run_name / "headless-result.json"
-                row["expectedNativeOutcome"] = "TRANSFER"
+                verdict = "SAME_DIMENSION_TRANSFER" if row["route"] == "END_GATEWAY" else "TRANSFER"
+                row["expectedNativeOutcome"] = verdict
                 row["nativeControlReceipt"] = {
-                    "sourceJarSha256": source_sha, "mappedBinarySha256": binary_sha, "observedOutcome": "TRANSFER",
+                    "sourceJarSha256": source_sha, "mappedBinarySha256": binary_sha, "observedOutcome": verdict,
                     "path": f"native-controls/{run_name}/headless-result.json", "sha256": digest(result_path),
                     "card": f"E0-{key[0]}-{key[1]}",
                     "receiptSha256": digest(result_path.with_name("headless-receipt.json")),

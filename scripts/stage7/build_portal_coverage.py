@@ -1536,12 +1536,11 @@ def headless_claims(card: Card, rows: list[dict[str, Any]] | None = None) -> lis
         return []
     kind, route = match.groups()
     entity_type = "minecraft:" + kind
-    if headless_family(entity_type) != "plain":
-        return []
     outcome = card.data.get("outcome")
-    if route == "END_GATEWAY":
-        if outcome != "TRANSFERRED":
-            return []
+    # Negative (no-entry) claims are gated by the row's pinned-source proof; transfers need a plain family contract.
+    if outcome in ("TRANSFERRED",) and headless_family(entity_type) != "plain":
+        return []
+    if route == "END_GATEWAY" and outcome == "TRANSFERRED":
         assertions = headless_gateway_assertions(card, entity_type)
         if REQUIRED_SAME_DIMENSION_ASSERTIONS | {"post_arrival_tick"} <= assertions:
             return [dict(card=card, entityType=entity_type, route=route, variant=None, graph="standalone",
@@ -1811,7 +1810,7 @@ def apply_claims(row: dict[str, Any], claims: list[dict[str, Any]], candidate_sh
                 reasons.append("missing semantic assertions: " + ", ".join(sorted(missing)))
             if expected in ("REFUSAL", "NO_NATIVE_ENTRY_PATH", "ROUTE_NOT_APPLICABLE") and not proof:
                 reasons.append("missing applicable pinned native source proof")
-            if (expected == "TRANSFER" and row.get("nativeControlReceipt") is not None
+            if (expected in ("TRANSFER", "SAME_DIMENSION_TRANSFER") and row.get("nativeControlReceipt") is not None
                     and not native_control_valid(row, source_sha, binary_sha)):
                 reasons.append("native control receipt does not match the native outcome")
             if silverfish and not (silverfish_source_chain_ok(row, source_sha, binary_sha) and proof):
@@ -1895,7 +1894,8 @@ def validate_census(census: dict[str, Any], frozen: dict[str, Any], source_sha: 
                         or inputs.get("vanilla") is not True):
                     raise ValueError(f"headless native control files changed: {row.get('id')}")
                 cards = {item.get("card"): item.get("outcome") for item in read_json(receipt_path).get("cards", [])}
-                if {"TRANSFER": "TRANSFERRED"}.get(control.get("observedOutcome")) != cards.get(control["card"]):
+                if {"TRANSFER": "TRANSFERRED", "SAME_DIMENSION_TRANSFER": "TRANSFERRED"}.get(
+                        control.get("observedOutcome")) != cards.get(control["card"]):
                     raise ValueError(f"headless native control card outcome mismatch: {row.get('id')}")
 
 
