@@ -54,7 +54,7 @@ public final class Stage7RepairClientTest implements FabricClientGameTest {
                     && !(group.equals("graph-probe")
                     && selectedCards.matches("GP-[a-z_]+-(NETHER_ENTRY|NETHER_RETURN)(,GP-[a-z_]+-(NETHER_ENTRY|NETHER_RETURN))*"))
                     && !(group.equals("entity-probe")
-                    && selectedCards.matches("E0-[a-z_]+-(NETHER_ENTRY|NETHER_RETURN)(,E0-[a-z_]+-(NETHER_ENTRY|NETHER_RETURN))*"))
+                    && selectedCards.matches("E0-[a-z_]+-(NETHER_ENTRY|NETHER_RETURN|END_ENTRY|END_EXIT)(,E0-[a-z_]+-(NETHER_ENTRY|NETHER_RETURN|END_ENTRY|END_EXIT))*"))
                     && !(group.equals("mob-census")
                     && selectedCards.matches("M3-[a-z_]+-(NETHER_ENTRY|NETHER_RETURN)(,M3-[a-z_]+-(NETHER_ENTRY|NETHER_RETURN))*"))
                     && !(group.equals("same-dimension-gateway-natural-item")
@@ -1849,6 +1849,9 @@ public final class Stage7RepairClientTest implements FabricClientGameTest {
         java.util.Map.entry("firework_rocket",",LifeTime:400,FireworksItem:{id:\"minecraft:firework_rocket\",count:1,components:{\"minecraft:fireworks\":{flight_duration:3}}}"),
         java.util.Map.entry("evoker_fangs",",Warmup:0"),
         java.util.Map.entry("llama_spit",""),
+        java.util.Map.entry("item",",Item:{id:\"minecraft:diamond\",count:1},PickupDelay:32767"),
+        java.util.Map.entry("falling_block",",BlockState:{Name:\"minecraft:sand\"},Time:1"),
+        java.util.Map.entry("tnt",",fuse:400s"),
         java.util.Map.entry("eye_of_ender",""),
         java.util.Map.entry("end_crystal",",ShowBottom:0b"),
         java.util.Map.entry("ominous_item_spawner",",item:{id:\"minecraft:arrow\",count:1},spawn_item_after_ticks:400L"));
@@ -1860,12 +1863,28 @@ public final class Stage7RepairClientTest implements FabricClientGameTest {
         cmd("gamemode creative "+USER);
         int sequence=0;
         for(String card:selected.split(",")) {
-            var parts=java.util.regex.Pattern.compile("E0-([a-z_]+)-(NETHER_ENTRY|NETHER_RETURN)").matcher(card);
+            var parts=java.util.regex.Pattern.compile("E0-([a-z_]+)-(NETHER_ENTRY|NETHER_RETURN|END_ENTRY|END_EXIT)").matcher(card);
             require(parts.matches(),"bad probe card "+card);
-            active=card;String type=parts.group(1),from=parts.group(2).equals("NETHER_ENTRY")?OW:NETHER,to=from.equals(OW)?NETHER:OW;
+            String route=parts.group(2);
+            active=card;String type=parts.group(1),from,to;
+            switch(route){
+                case "NETHER_ENTRY"->{from=OW;to=NETHER;}
+                case "NETHER_RETURN"->{from=NETHER;to=OW;}
+                case "END_ENTRY"->{from=OW;to=END;}
+                default->{from=END;to=OW;}
+            }
             String tag="stage7_probe_"+sequence++;
-            position(from,8.5,65,5.5,180,0);
-            String summoned=cmd("execute in "+from+" run summon minecraft:"+type+" 0.5 65 0.5 {Tags:[\"stage7_mob\",\""+tag+"\"],NoGravity:1b"
+            position(OW,8.5,65,5.5,180,0);
+            String at="0.5 65 0.5";
+            if(route.startsWith("END")) {
+                // Local scene: an isolated End portal block over an obsidian floor. The dimension change itself is native.
+                int y=route.equals("END_ENTRY")?65:70;
+                for(String c:List.of("forceload add 0 0 15 15","fill 4 "+(y-1)+" 4 12 "+(y-1)+" 12 minecraft:obsidian",
+                        "fill 4 "+y+" 4 12 "+(y+6)+" 12 minecraft:air","setblock 8 "+y+" 8 minecraft:end_portal"))
+                    cmd("execute in "+from+" run "+c);
+                at="8.5 "+y+".25 8.5";
+            }
+            String summoned=cmd("execute in "+from+" run summon minecraft:"+type+" "+at+" {Tags:[\"stage7_mob\",\""+tag+"\"],NoGravity:1b"
                 +PROBE_NBT.getOrDefault(type,"")+"}");
             receipt.addProperty(card+"-summon",summoned);
             String outcome="GONE",world="NONE";
@@ -1880,7 +1899,7 @@ public final class Stage7RepairClientTest implements FabricClientGameTest {
             }
             receipt.addProperty(card+"-outcome",outcome);receipt.addProperty(card+"-world",world);
             health(card);pass(card,"entity-family probe outcome="+outcome+" world="+world);
-            for(String w:List.of(OW,NETHER))cmd("execute in "+w+" run kill @e[tag=stage7_mob]");
+            for(String w:List.of(OW,NETHER,END))cmd("execute in "+w+" run kill @e[tag=stage7_mob]");
         }
     }
     /**

@@ -41,7 +41,7 @@ dynamic_mob_census=(group=='mob-census' and len(cards)>=1
                     and all(re.fullmatch(r'M3-[a-z_]+-(NETHER_ENTRY|NETHER_RETURN)',card) for card in cards)
                     and 'mobCensus(selectedCards)' in client_source)
 dynamic_probe=(group=='entity-probe' and len(cards)>=1
-                and all(re.fullmatch(r'E0-[a-z_]+-(NETHER_ENTRY|NETHER_RETURN)',card) for card in cards)
+                and all(re.fullmatch(r'E0-[a-z_]+-(NETHER_ENTRY|NETHER_RETURN|END_ENTRY|END_EXIT)',card) for card in cards)
                 and 'entityProbe(selectedCards)' in client_source)
 dynamic_graph_probe=(group=='graph-probe' and len(cards)>=1
                 and all(re.fullmatch(r'GP-[a-z_]+-(NETHER_ENTRY|NETHER_RETURN)',card) for card in cards)

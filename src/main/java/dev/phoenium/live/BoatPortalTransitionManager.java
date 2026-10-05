@@ -28,6 +28,7 @@ import net.minecraft.world.entity.vehicle.boat.Boat;
 import net.minecraft.world.entity.vehicle.boat.ChestBoat;
 import net.minecraft.world.entity.vehicle.boat.ChestRaft;
 import net.minecraft.world.entity.vehicle.boat.Raft;
+import net.minecraft.world.level.block.EndPortalBlock;
 import net.minecraft.world.level.block.NetherPortalBlock;
 import net.minecraft.world.level.block.Portal;
 import net.minecraft.world.level.portal.TeleportTransition;
@@ -78,7 +79,7 @@ public final class BoatPortalTransitionManager implements AutoCloseable {
                 || !supported(boat) || !(boat.level() instanceof ServerLevel level)
                 || processor == null || boat.portalProcess != processor) return false;
         Portal portal = ((PearlPortalProcessorAccess) processor).phoenium$portal();
-        if (!(portal instanceof NetherPortalBlock)) return false;
+        if (!(portal instanceof NetherPortalBlock) && !(portal instanceof EndPortalBlock)) return false;
         if (boat.isPassenger())
             throw new IllegalStateException("boat passenger cannot be a native portal root");
         PortalPassengerGraphSnapshot graph = null;
