@@ -243,7 +243,8 @@ class NativePortalDestinationPreparationTest {
         var constructor=type.getDeclaredConstructors()[0]; constructor.setAccessible(true); return constructor.newInstance(proxy,f.objects);
     }
     static void installNativeLookup(NativeItemPortalTransferTest.Fixture f) throws Exception {
-        f.server=stub(net.minecraft.server.MinecraftServer.class,List.of(new Answer(net.minecraft.server.MinecraftServer.class.getMethod("getLevel",net.minecraft.resources.ResourceKey.class),args->args[0]==net.minecraft.world.level.Level.OVERWORLD ? f.overworld : f.nether)));
+        f.server=stub(net.minecraft.server.MinecraftServer.class,List.of(new Answer(net.minecraft.server.MinecraftServer.class.getMethod("getLevel",net.minecraft.resources.ResourceKey.class),args->args[0]==net.minecraft.world.level.Level.OVERWORLD ? f.overworld : f.nether),
+            new Answer(net.minecraft.server.MinecraftServer.class.getMethod("debugSubscribers"),args->new net.minecraft.util.debug.ServerDebugSubscribers(null))));
         for(var level:List.of(f.overworld,f.nether)) {
             var poi=stub(net.minecraft.world.entity.ai.village.poi.PoiManager.class,List.of(
                 new Answer(net.minecraft.world.level.chunk.storage.SectionStorage.class.getDeclaredMethod("getOrLoad",long.class),args->Optional.empty()),

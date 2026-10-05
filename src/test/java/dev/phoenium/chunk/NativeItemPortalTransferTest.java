@@ -313,8 +313,11 @@ class NativeItemPortalTransferTest {
                     owner(key); order.add(reason == Entity.RemovalReason.CHANGED_DIMENSION ? "source-retire" : "destination-cleanup");
                     visible.get((ServerLevel)entity.level()).remove(entity.getUUID(),entity);
                     if (!NativePortalTransfer.expectedRemoval(entity,reason)) {
-                        manager.onRemoval(entity,reason);
-                        identities.removed(entity.getUUID().toString(),key.world(),entity.getId());
+                        // The runtime chain stops at the first manager that owns the removal (a native tail may discard
+                        // the already retired source); only an unowned removal retires the identity.
+                        boolean owned = manager.onRemoval(entity,reason)
+                            || PortalDestinationTestHooks.entities != null && PortalDestinationTestHooks.entities.onRemoval(entity,reason);
+                        if (!owned) identities.removed(entity.getUUID().toString(),key.world(),entity.getId());
                     }
                 }
             });
@@ -348,6 +351,16 @@ class NativeItemPortalTransferTest {
                         : net.minecraft.world.level.dimension.BuiltinDimensionTypes.NETHER).value())),
                 new Answer(Level.class.getMethod("getBlockState",net.minecraft.core.BlockPos.class), args -> blockRead.apply((net.minecraft.core.BlockPos)args[0])),
                 new Answer(Level.class.getMethod("getBlockEntity",net.minecraft.core.BlockPos.class), args -> blockEntities.get(args[0])),
+                new Answer(java.util.Arrays.stream(ServerLevel.class.getDeclaredMethods())
+                    .filter(m -> m.getName().equals("playSeededSound") && m.getParameterCount() == 9
+                        && m.getParameterTypes()[4] == net.minecraft.core.Holder.class).findFirst().orElseThrow(), args -> null),
+                new Answer(Level.class.getMethod("broadcastEntityEvent",Entity.class,byte.class), args -> null),
+                new Answer(ServerLevel.class.getDeclaredMethod("getEntities"), args -> java.lang.reflect.Proxy.newProxyInstance(
+                    getClass().getClassLoader(), new Class<?>[]{net.minecraft.world.level.entity.LevelEntityGetter.class},
+                    (proxy, method, arguments) -> method.getName().equals("getAll") ? List.of()
+                        : method.getReturnType() == boolean.class ? Boolean.FALSE : null)),
+                new Answer(Level.class.getMethod("getFluidState",net.minecraft.core.BlockPos.class), args -> blockRead.apply((net.minecraft.core.BlockPos)args[0]).getFluidState()),
+                new Answer(Level.class.getMethod("getEntities",net.minecraft.world.level.entity.EntityTypeTest.class,net.minecraft.world.phys.AABB.class,java.util.function.Predicate.class), args -> List.of()),
                 new Answer(Level.class.getMethod("setBlock",net.minecraft.core.BlockPos.class,net.minecraft.world.level.block.state.BlockState.class,int.class), args -> {
                     owner(key);blockWrites++;blockStates.put(((net.minecraft.core.BlockPos)args[0]).immutable(),
                         (net.minecraft.world.level.block.state.BlockState)args[1]);return true;
@@ -385,6 +398,8 @@ class NativeItemPortalTransferTest {
                     return null;
                 })));
             set(level,Level.class,"dimension",dimension);
+            set(level,ServerLevel.class,"dragonParts",new it.unimi.dsi.fastutil.ints.Int2ObjectOpenHashMap<>());
+            set(level,Level.class,"soundSeedGenerator",net.minecraft.util.RandomSource.create(5L));
             set(level,Level.class,"registryAccess",RegistryAccess.fromRegistryOfRegistries(BuiltInRegistries.REGISTRY));
             visible.put(level,entities); return level;
         }

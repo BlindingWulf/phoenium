@@ -10,6 +10,7 @@ import org.objectweb.asm.tree.*;
 public final class PortalDestinationTestHooks {
     static ItemPortalTransitionManager items;
     static dev.phoenium.live.MobPortalTransitionManager mobs;
+    static dev.phoenium.live.EntityPortalTransitionManager entities;
     static dev.phoenium.live.FallingBlockPortalTransitionManager falling;
     static dev.phoenium.live.ArmorStandPortalTransitionManager armorStands;
     static java.util.function.Consumer<net.minecraft.world.entity.item.FallingBlockEntity> fallingTail;
@@ -75,6 +76,7 @@ public final class PortalDestinationTestHooks {
         if(falling!=null && entity instanceof net.minecraft.world.entity.item.FallingBlockEntity block)
             return falling.suspendDestination(block,block.portalProcess);
         if(mobs!=null && entity instanceof Mob mob) return mobs.suspendDestination(mob,mob.portalProcess);
+        if(entities!=null && dev.phoenium.live.EntityPortalTransitionManager.supports(entity)) return entities.suspendDestination(entity,entity.portalProcess);
         if(pearls!=null && entity instanceof net.minecraft.world.entity.projectile.throwableitemprojectile.ThrownEnderpearl)
             return (boolean)pearlCall("suspendDestination",entity,entity.portalProcess);
         if(items==null || !(entity instanceof ItemEntity item) || !itemCutIsEarly()) return false;
@@ -89,6 +91,7 @@ public final class PortalDestinationTestHooks {
         if(falling!=null && entity instanceof net.minecraft.world.entity.item.FallingBlockEntity block)
             return falling.suspended(block);
         if(mobs!=null && entity instanceof Mob mob) return mobs.suspended(mob);
+        if(entities!=null && dev.phoenium.live.EntityPortalTransitionManager.supports(entity)) return entities.suspended(entity);
         if(pearls!=null && entity instanceof net.minecraft.world.entity.projectile.throwableitemprojectile.ThrownEnderpearl) return (boolean)pearlCall("suspended",entity);
         return items!=null && entity instanceof ItemEntity item && items.suspended(item);
     }
