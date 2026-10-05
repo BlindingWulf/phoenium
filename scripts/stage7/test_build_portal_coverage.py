@@ -986,5 +986,36 @@ class CoverageTests(unittest.TestCase):
         self.assertIsNone(coverage.sleeping_observation_verdict("nope"))
 
 
+class LegacyContractPinTests(unittest.TestCase):
+    """The reviewed legacy-card digests must match the checked-in client test source."""
+
+    root = pathlib.Path(__file__).resolve().parents[2]
+
+    def contracts(self):
+        return json.loads((pathlib.Path(__file__).with_name("portal_legacy_card_contracts.json")).read_text("utf-8"))
+
+    def test_every_family_contract_matches_the_worktree_source(self):
+        contracts = self.contracts()
+        # gateway_pig (pigEndGatewayCard) was parameterised for the A/B proof in 81560bd and is deliberately NOT
+        # re-pinned: the ledger row V2-PIG-END_GATEWAY is credited from the headless census card E0-pig-END_GATEWAY (W1 and W4).
+        for family in coverage.LEGACY_METHODS:
+            if family == "gateway_pig":
+                continue
+            self.assertTrue(coverage.legacy_contract_ok(self.root, contracts, family), family)
+
+    def test_mob_contract_pin_is_the_reviewed_overload_digest(self):
+        # mobPortalCase gained a cardName overload (M3 census). The 4-argument form silverfish uses delegates
+        # with cardName == null, and the added branch only fires for PLACED_INTO_PORTAL types (never silverfish).
+        self.assertEqual(self.contracts()["mobPortalCase"],
+                         "AFC98D8A7A35B610FD72DDC1E66DC28829704582FDAA26A3D93FAA54FEC31031")
+        source = (self.root / coverage.LEGACY_TEST_FILE).read_text("utf-8")
+        self.assertIn("mobPortalCase(type,from,size,sequence,null);", source)
+        self.assertIn("if(cardName!=null&&PLACED_INTO_PORTAL.contains(type))", source)
+        placed = source.split("PLACED_INTO_PORTAL=java.util.Set.of(", 1)[1].split(")", 1)[0]
+        self.assertNotIn("silverfish", placed)
+        self.assertIn('mobPortalCase("silverfish",OW,1,0);', source)
+        self.assertIn('mobPortalCase("silverfish",NETHER,1,1);', source)
+
+
 if __name__ == "__main__":
     unittest.main()
