@@ -1130,3 +1130,9 @@ class HeadlessEffectsTests(unittest.TestCase):
         self.assertEqual(coverage.effects_kind_of_row({"entityType": "minecraft:tnt", "variant": None}), "tnt")
         self.assertIsNone(coverage.effects_kind_of_row({"entityType": "minecraft:tnt", "variant": "other"}))
         self.assertIsNone(coverage.effects_kind_of_row({"entityType": "minecraft:arrow", "graph": "boat+arrow"}))
+
+    def test_gateway_cooldown_capture_group_is_registered_with_its_own_script(self) -> None:
+        script, pattern = coverage.HEADLESS_GROUPS["headless-gateway-trident"]
+        self.assertEqual(script.name, "headless_gateway_trident.py")
+        self.assertIs(pattern, coverage.EFFECTS_CARD)
+        self.assertNotEqual(script, coverage.HEADLESS_GROUPS["headless-effects"][0])

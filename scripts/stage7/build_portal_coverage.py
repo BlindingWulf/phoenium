@@ -1191,6 +1191,7 @@ HEADLESS_GRAPH_SCRIPT = pathlib.Path("scripts/stage7/headless_graphs.py")
 HEADLESS_DYNAMIC_SCRIPT = pathlib.Path("scripts/stage7/headless_dynamic.py")
 EFFECTS_CARD = re.compile(r"D1-([a-z_]+)-(NETHER_ENTRY|NETHER_RETURN|END_ENTRY|END_EXIT|END_GATEWAY)")
 HEADLESS_EFFECTS_SCRIPT = pathlib.Path("scripts/stage7/headless_effects.py")
+HEADLESS_GATEWAY_TRIDENT_SCRIPT = pathlib.Path("scripts/stage7/headless_gateway_trident.py")
 VARIANT_CARD = re.compile(
     r"Y0-(creaking)-(heart_bound|heart_unbound)-(NETHER_ENTRY|NETHER_RETURN|END_ENTRY|END_EXIT|END_GATEWAY)")
 HEADLESS_VARIANTS_SCRIPT = pathlib.Path("scripts/stage7/headless_variants.py")
@@ -1201,7 +1202,8 @@ HEADLESS_GROUPS = {"headless-census": (HEADLESS_CENSUS_SCRIPT, HEADLESS_CARD),
                    "headless-variants": (HEADLESS_VARIANTS_SCRIPT, VARIANT_CARD),
                    "headless-graphs": (HEADLESS_GRAPH_SCRIPT, GRAPH_CARD),
                    "headless-dynamic": (HEADLESS_DYNAMIC_SCRIPT, DYNAMIC_CARD),
-                   "headless-effects": (HEADLESS_EFFECTS_SCRIPT, EFFECTS_CARD)}
+                   "headless-effects": (HEADLESS_EFFECTS_SCRIPT, EFFECTS_CARD),
+                   "headless-gateway-trident": (HEADLESS_GATEWAY_TRIDENT_SCRIPT, EFFECTS_CARD)}
 # Census directory: native-control receipt paths of the rows resolve against it (set by main / tests).
 CONTROL_ROOT: pathlib.Path | None = None
 # shape -> (root type, children); each child is again (type, children). Mirrors SHAPES in headless_graphs.py.
