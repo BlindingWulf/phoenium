@@ -1751,6 +1751,7 @@ public final class Stage7RepairClientTest implements FabricClientGameTest {
         }
         return found;
     }
+    static final java.util.Set<String> PLACED_INTO_PORTAL=java.util.Set.of("squid","glow_squid","tadpole","pufferfish","tropical_fish","salmon","shulker");
     /** Data-driven mob caller-profile census: one exact Nether-route observation per M3 card. */
     void mobCensus(String selected)throws Exception {
         cmd("gamemode creative "+USER);
@@ -1759,6 +1760,9 @@ public final class Stage7RepairClientTest implements FabricClientGameTest {
             var parts=java.util.regex.Pattern.compile("M3-([a-z_]+)-(NETHER_ENTRY|NETHER_RETURN)").matcher(card);
             require(parts.matches(),"bad census card "+card);
             mobPortalCase(parts.group(1),parts.group(2).equals("NETHER_ENTRY")?OW:NETHER,1,sequence++,card);
+            // Each census card is independent: arrivals from earlier cards must not hunt or crowd the next
+            // (for example an Axolotl hunting a Pufferfish). Cleanup follows the card's PASS record.
+            for(String world:List.of(OW,NETHER))cmd("execute in "+world+" run kill @e[tag=stage7_mob]");
         }
     }
     void mobPortalCase(String type,String from,int size,int sequence)throws Exception {
@@ -1776,6 +1780,11 @@ public final class Stage7RepairClientTest implements FabricClientGameTest {
             JsonObject before=taggedMob(snapshot(active+"-source"),tag);
             require(before.get("world").getAsString().equals(from),"mob must begin outside its source portal");
             if(cube)require(before.get("size").getAsInt()==size,"cube size setup changed");
+            if(cardName!=null&&PLACED_INTO_PORTAL.contains(type)) {
+                // Water-bound mobs (and the Shulker) cannot reach the portal on foot: local scene placement into the portal cell only.
+                // The dimension change that follows remains the native portal entry.
+                cmd("execute in "+from+" run tp @e[tag="+tag+",limit=1] 0.5 65 0.5");
+            } else
             // Initial scene velocity; no position/teleport or transfer helper is applied to this mob.
             cmd("execute in "+from+" run data merge entity @e[tag="+tag+",limit=1] {Motion:[0.0d,0.0d,-0.8d]}");
             JsonObject arrived=null;
