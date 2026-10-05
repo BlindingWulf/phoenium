@@ -7,7 +7,11 @@ control that observed TRANSFERRED on a cross-dimension route fixes the expected 
 row to that control run by hash. A STAYED control is never turned into a verdict here: choosing NO_NATIVE_ENTRY_PATH,
 REFUSAL or ROUTE_NOT_APPLICABLE needs a pinned-source proof, so those rows stay unresolved and are listed in the report.
 
+With --no-entry-proofs (output of no_entry_source_proofs.py) a type that has a pinned-source proof AND whose every control
+observation STAYED/GONE is classified NO_NATIVE_ENTRY_PATH; a type with such a proof whose control TRANSFERRED is a conflict.
+
 Usage: classify_census.py --census <v2.json> --control <run dir> [--control <run dir> ...] --out-dir <dir>
+                          [--no-entry-proofs <json>]
 Writes <out-dir>/PORTAL_BEHAVIOR_CENSUS_V3.json plus <out-dir>/native-controls/<run>/ copies and every artifact the v2
 census already referenced, so the importer can resolve every control path relative to the census directory.
 """
@@ -57,6 +61,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--census", type=pathlib.Path, required=True)
     parser.add_argument("--control", type=pathlib.Path, action="append", required=True)
     parser.add_argument("--out-dir", type=pathlib.Path, required=True)
+    parser.add_argument("--no-entry-proofs", type=pathlib.Path)
     args = parser.parse_args(argv)
     census = json.loads(args.census.read_text(encoding="utf-8"))
     source_sha, binary_sha = census["sourceJarSha256"], census["mappedBinarySha256"]
@@ -88,7 +93,14 @@ def main(argv: list[str] | None = None) -> int:
         for key, outcome in table.items():
             controls.setdefault(key, []).append((outcome, run.name))
 
-    classified, conflicts, pending = 0, [], []
+    proofs = {}
+    if args.no_entry_proofs:
+        document = json.loads(args.no_entry_proofs.read_text(encoding="utf-8"))
+        if document["sourceJarSha256"] != source_sha or document["mappedBinarySha256"] != binary_sha:
+            raise SystemExit("no-entry proofs were generated from different pinned sources")
+        proofs = document["proofs"]
+        shutil.copy2(args.no_entry_proofs, out / args.no_entry_proofs.name)
+    classified, conflicts, pending, classified_no_entry = 0, [], [], 0
     for row in census["rows"]:
         if row.get("graph", "standalone") != "standalone" or row.get("variant") not in (None, ""):
             continue
@@ -98,7 +110,17 @@ def main(argv: list[str] | None = None) -> int:
             continue
         outcomes = {outcome for outcome, _ in observed}
         expected = row.get("expectedNativeOutcome")
-        if expected is None:
+        proof = proofs.get(row["entityType"])
+        if expected is None and proof is not None:
+            if outcomes <= {"STAYED", "GONE"}:
+                row["expectedNativeOutcome"] = "NO_NATIVE_ENTRY_PATH"
+                row["sourceProof"] = proof
+                row["fixture"] = {"contactImpossible": True, "reason": "No native portal entry path"}
+                row["requiredAssertions"] = ["source_unchanged", "destination_absent", "portal_session_absent", "graph_unchanged"]
+                classified_no_entry += 1
+            else:
+                conflicts.append({"id": row["id"], "expected": "NO_NATIVE_ENTRY_PATH", "controlOutcomes": sorted(outcomes)})
+        elif expected is None:
             if outcomes == {"TRANSFERRED"} and row["route"] in CROSS_DIMENSION:
                 run_name = observed[0][1]
                 result_path = out / "native-controls" / run_name / "headless-result.json"
@@ -119,12 +141,14 @@ def main(argv: list[str] | None = None) -> int:
             conflicts.append({"id": row["id"], "expected": expected, "controlOutcomes": sorted(outcomes)})
     census["classification"] = {
         "tool": "scripts/stage7/classify_census.py", "controlRuns": sorted(run.name for run in args.control),
-        "rowsClassifiedTransfer": classified, "controlConflicts": conflicts, "stillUnclassified": len(pending),
+        "rowsClassifiedTransfer": classified, "rowsClassifiedNoEntry": classified_no_entry,
+        "controlConflicts": conflicts, "stillUnclassified": len(pending),
     }
     census_path = out / "PORTAL_BEHAVIOR_CENSUS_V3.json"
     census_path.write_text(json.dumps(census, indent=2) + "\n", encoding="utf-8")
     (out / "PORTAL_BEHAVIOR_CENSUS_V3.pending.json").write_text(json.dumps(pending, indent=2) + "\n", encoding="utf-8")
-    print(json.dumps({"classifiedTransfer": classified, "conflicts": conflicts, "stillUnclassified": len(pending)}, indent=2))
+    print(json.dumps({"classifiedTransfer": classified, "classifiedNoEntry": classified_no_entry,
+                      "conflicts": conflicts, "stillUnclassified": len(pending)}, indent=2))
     return 1 if conflicts else 0
 
 

@@ -51,11 +51,6 @@ NBT = {
 }
 
 
-def snapshot_contacts():
-    raw = rcon('stage7-probe snapshot', whole=True)
-    return json.loads(raw[raw.index('{'):]).get('noEntryContactEvents', [])
-
-
 def snapshot_body():
     raw = rcon('stage7-probe snapshot', whole=True)
     return json.loads(raw[raw.index('{'):])
@@ -207,6 +202,9 @@ try:
         for world in [OW, NETHER]:
             assert nether_fixture(world), world
         rcon('gamerule minecraft:mob_griefing false')
+        # Killing a wither drops a nether star that then sits in the portal; the observer cannot close a capture whose entity
+        # is removed externally, so no card may leave loot behind.
+        rcon('gamerule minecraft:mob_drops false')
         rcon('setworldspawn 8 65 5')
         rcon('gamerule minecraft:spawn_mobs false')
         for dbg in filter(None, os.environ.get('HC_DEBUG_CMDS', '').split(';;')):
@@ -250,6 +248,13 @@ try:
             outcome = 'GONE' if fixture_ok else 'FIXTURE_INVALID'; where = 'NONE'
             witness = {}
             if fixture_ok: witness['source'] = snapshot_members(tag)
+            def remember_settled():
+                body = snapshot_body()
+                members = snapshot_members(tag, body)
+                if members:
+                    witness['settled'] = members
+                    ids = {m.get('uuid', '').lower() for m in members}
+                    witness['noEntryContactEvents'] = [e for e in body.get('noEntryContactEvents', []) if e.get('uuid', '').lower() in ids]
             t0 = time.monotonic()
             while fixture_ok and time.monotonic() - t0 < 8:
                 if process.poll() is not None or failed(): raise RuntimeError('server failure during %s: %s' % (card, failed()))
@@ -258,11 +263,13 @@ try:
                     got = re.search(r'(-?[0-9.]+)d$', pos.strip())
                     if got and float(got.group(1)) > 18: outcome, where = 'TRANSFERRED', END; break
                     if got: outcome, where = 'STAYED', END
+                    if got and not vanilla: remember_settled()
                     time.sleep(.25); continue
                 if 'Test passed' in rcon('execute in %s positioned 0 64 0 if entity @e[tag=%s,distance=0..2000]' % (dst, tag)):
                     outcome, where = 'TRANSFERRED', dst; break
                 if 'Test passed' in rcon('execute in %s positioned 0 64 0 if entity @e[tag=%s,distance=0..2000]' % (src, tag)):
                     outcome, where = 'STAYED', src
+                    if not vanilla: remember_settled()
                 time.sleep(.25)
             if outcome == 'TRANSFERRED' and not vanilla:
                 arrival_body = snapshot_body()
@@ -276,9 +283,6 @@ try:
                     now = next((e['ticks'] for e in witness['later'] if e.get('world') == where), None)
                     if first is not None and now is not None and now > first + 20: break
                     time.sleep(.25)
-            elif fixture_ok and not vanilla:
-                witness['settled'] = snapshot_members(tag)
-                witness['noEntryContactEvents'] = [e for e in snapshot_contacts() if e.get('uuid', '').lower() in {m.get('uuid', '').lower() for m in witness['settled']}]
             info = ''
             if outcome != 'TRANSFERRED':
                 info = rcon('execute in %s positioned 0 64 0 run data get entity @e[tag=%s,distance=0..2000,limit=1] Pos' % (src, tag)).strip()[:120]
