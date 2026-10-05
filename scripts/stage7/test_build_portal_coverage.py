@@ -888,6 +888,34 @@ class CoverageTests(unittest.TestCase):
             self.assertFalse(coverage.observer_assertions(
                 fixture_card, "minecraft:fireball", "NETHER_RETURN"))
 
+    def test_client_gateway_union_is_deduplicated_and_noentry_comes_from_the_end_of_the_card(self) -> None:
+        contact = {"uuid": "u", "kind": "contact", "tick": 1}
+        witness = {
+            "source": {"events": {"contact": [contact], "ticket": [], "tracking": [{"uuid": "u", "n": 1}]}},
+            "later": {"events": {"contact": [contact, {"uuid": "u", "kind": "contact", "tick": 2}],
+                                 "ticket": [{"uuid": "u", "t": 1}], "tracking": [{"uuid": "u", "n": 1}]}},
+            "probeEvents": {"noEntry": [{"uuid": "u", "n": 9}, "junk"]},
+        }
+        merged = coverage._client_gateway(witness)
+        self.assertEqual([event["tick"] for event in merged["contact"]], [1, 2])
+        self.assertEqual(len(merged["tracking"]), 1)
+        self.assertEqual(len(merged["ticket"]), 1)
+        self.assertEqual(merged["noEntry"], [{"uuid": "u", "n": 9}])
+        self.assertEqual(coverage._client_gateway(None), {"contact": [], "ticket": [], "tracking": [], "noEntry": []})
+
+    def test_every_player_graph_card_kind_has_a_shape_and_a_ledger_row(self) -> None:
+        for kind in ("pboat", "pminecart", "pmob", "praft", "pcamel", "pchestboat"):
+            self.assertIn(kind, coverage.PGRAPH_SHAPES)
+            self.assertIn(kind, coverage.PLAYER_GRAPH_KIND_ROW)
+        root, members = coverage.PGRAPH_SHAPES["pchestboat"]
+        self.assertEqual(root, "minecraft:oak_chest_boat")
+        self.assertEqual([member[0] for member in members], ["minecraft:player", "minecraft:villager"])
+
+    def test_non_client_card_names_make_no_client_claims(self) -> None:
+        card = coverage.Card("E0-pig-NETHER_ENTRY", 1, "first", pathlib.Path("r"), pathlib.Path("r"), pathlib.Path("r"),
+                             {}, {}, {})
+        self.assertEqual(coverage.client_claims(card), [])
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -107,14 +107,11 @@ def tx_count():
     return int(json.loads(raw[raw.index('{'):])['events'])
 
 
-def probe_event_counts():
+def probe_events_all():
+    """The whole current ring of every probe event kind. The gateway rings hold 4/4/8 events and the no-entry ring 256, so a count
+    taken before a card is not a usable index afterwards; the importer filters these by the tracked entity's uuid."""
     body = snapshot_body()
-    return {name: len(body.get(key) or []) for name, key in PROBE_EVENT_KEYS}
-
-
-def probe_events_since(before):
-    body = snapshot_body()
-    return {name: (body.get(key) or [])[before[name]:] for name, key in PROBE_EVENT_KEYS}
+    return {name: list(body.get(key) or []) for name, key in PROBE_EVENT_KEYS}
 
 
 class Agent:
@@ -297,8 +294,19 @@ def probe_members(tag):
     return [e for e in snapshot_body()['entities'] if tag in e.get('tags', '')]
 
 
-def observe(tag, with_client=True):
+GATEWAY_TAG = 'stage7_gateway_pig'
+
+
+def gw(route):
+    """Extra summon tag: the probe records gateway contact/ticket/tracking events only for entities carrying it."""
+    return ',"%s"' % GATEWAY_TAG if route == 'END_GATEWAY' else ''
+
+
+def observe(tag, with_client=True, kinds=None):
     out = {'server': pstate(), 'probe': probe_members(tag)}
+    if not vanilla: out['events'] = probe_events_all()
+    if kinds is not None and not vanilla:
+        out['probe'] = [member for member in snapshot_body()['entities'] if member.get('type') in kinds]
     if with_client: out['client'] = agent.snapshot()
     return out
 
@@ -398,6 +406,7 @@ def player_card(route, tag):
     place(src, REST[route])
     rcon('gamemode survival ' + PLAYER)
     rcon('tag %s add %s' % (PLAYER, tag))
+    if route == 'END_GATEWAY': rcon('tag %s add %s' % (PLAYER, GATEWAY_TAG))
     witness['source'] = observe(tag)
     rcon('execute in %s run tp %s %s' % (src, PLAYER, CELL[route]))
     t0 = time.monotonic()
@@ -414,6 +423,7 @@ def player_card(route, tag):
         witness['settled'] = observe(tag)
     witness['seconds'] = round(time.monotonic() - t0, 2)
     rcon('tag %s remove %s' % (PLAYER, tag))
+    rcon('tag %s remove %s' % (PLAYER, GATEWAY_TAG))
     return outcome, witness
 
 
@@ -488,8 +498,8 @@ def graph_card(shape, route, tag):
     rcon('gamemode survival ' + PLAYER)
     rcon('tag %s add %s' % (PLAYER, tag))
     x, y, z = [float(v) for v in REST[route].split()]
-    summon = rcon('execute in %s run summon minecraft:%s %s %s %s {Tags:["stage7_mob","%s"],NoGravity:1b,NoAI:1b,Silent:1b%s}'
-                  % (src, vehicle, x + 1.5, y, z, tag, extra))
+    summon = rcon('execute in %s run summon minecraft:%s %s %s %s {Tags:["stage7_mob","%s"%s],NoGravity:1b,NoAI:1b,Silent:1b%s}'
+                  % (src, vehicle, x + 1.5, y, z, tag, gw(route), extra))
     pick = '@e[tag=%s,type=minecraft:%s,limit=1]' % (tag, vehicle)
     witness['ride'] = [rcon('ride %s mount %s' % (PLAYER, pick))]
     total = 2
@@ -647,7 +657,7 @@ def pearl_card(route, tag, override=False):
     if override:
         # the pearl rides a pig that itself never uses a portal: a throwable may use one while it is a passenger
         rcon('execute in %s run summon minecraft:pig %s %s %s {Tags:["stage7_mob","%s","k1_pig"],Silent:1b,PortalCooldown:1000000,NoGravity:1b,Age:-24000%s}' % (src, x, y - (0.4 if not route.startswith('NETHER') and route != 'END_GATEWAY' else 0), z, tag, motion.replace('0.2d', '0.4d')))
-    rcon('execute in %s run summon minecraft:ender_pearl %s %s %s {Tags:["stage7_mob","%s"],NoGravity:1b,Owner:%s%s}' % (src, x, y, z, tag, owner, motion))
+    rcon('execute in %s run summon minecraft:ender_pearl %s %s %s {Tags:["stage7_mob","%s"%s],NoGravity:1b,Owner:%s%s}' % (src, x, y, z, tag, gw(route), owner, motion))
     if override:
         witness['ride'] = rcon('ride @e[tag=%s,type=minecraft:ender_pearl,limit=1] mount @e[tag=k1_pig,limit=1]' % tag)
     witness['source'] = observe(tag)
@@ -704,7 +714,7 @@ def item_card(route, tag):
     rcon('tag %s add %s' % (PLAYER, tag))
     witness['inventoryBefore'] = agent.snapshot().get('inventory')
     x, y, z, motion = launch(route)
-    rcon('execute in %s run summon minecraft:item %s %s %s {Tags:["stage7_mob","%s"],NoGravity:1b,Item:{id:"minecraft:diamond",count:5},PickupDelay:32767s%s}' % (src, x, y, z, tag, motion))
+    rcon('execute in %s run summon minecraft:item %s %s %s {Tags:["stage7_mob","%s"%s],NoGravity:1b,Item:{id:"minecraft:diamond",count:5},PickupDelay:32767s%s}' % (src, x, y, z, tag, gw(route), motion))
     witness['source'] = observe(tag)
     t0 = time.monotonic(); outcome = 'STAYED'
     while time.monotonic() - t0 < 14:
@@ -768,7 +778,7 @@ def bobber_card(route, tag):
     if witness['cast']['source'] == 1:
         x, y, z = CELL[route].split()
         rcon('execute in %s run tp @e[type=minecraft:fishing_bobber,limit=1] %s %s %s' % (src, x, y, z))
-        witness['carried'] = observe(tag)
+        witness['carried'] = observe(tag, kinds=('minecraft:fishing_bobber',))
         t0 = time.monotonic()
         witness['series'] = []
         while time.monotonic() - t0 < 4:     # 80 ticks: far beyond the portal delay of a normal entity
@@ -776,7 +786,7 @@ def bobber_card(route, tag):
             time.sleep(.5)
         if any(s[2] for s in witness['series']): outcome = 'TRANSFERRED'
         elif not any(s[1] for s in witness['series']): outcome = 'VANISHED'
-        witness['settled'] = observe(tag)
+        witness['settled'] = observe(tag, kinds=('minecraft:fishing_bobber',))
         agent.call('press', key='use')
     else:
         witness['castFailed'] = True
@@ -793,7 +803,6 @@ def run_card(card):
     kind, route = m.groups()
     tag = 'k1_%d' % state['index']; state['index'] += 1
     tx0 = None if vanilla else tx_count()
-    ev0 = None if vanilla else probe_event_counts()
     if kind == 'player': outcome, witness = player_card(route, tag)
     elif kind == 'credits_unseen' and route == 'END_EXIT': outcome, witness = credits_unseen_card(tag)
     elif kind in PGRAPHS: outcome, witness = graph_card(kind, route, tag)
@@ -805,7 +814,7 @@ def run_card(card):
     else: raise NotImplementedError(card)
     rcon('kill @e[tag=stage7_mob]')
     if not vanilla:
-        witness['probeEvents'] = probe_events_since(ev0)
+        witness['probeEvents'] = probe_events_all()
     entry = dict(card=card, outcome=outcome, witness=witness)
     if not vanilla: entry['txRange'] = [tx0, tx_count()]
     members = (witness.get('arrival') or witness.get('source') or {}).get('probe') or []

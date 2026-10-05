@@ -1803,6 +1803,12 @@ def headless_graph_assertions(card: Card, shape: str, route: str) -> tuple[set[s
     for member in arrival:
         uuid = str(member["uuid"]).lower()
         if member["type"] == "minecraft:player":
+            if card.evidence == "real-client" and not client_player_generation_ok(card, member, route):
+                # A player riding the vehicle is carried by the vehicle's native transfer (ServerPlayer.teleport of the ejected rider),
+                # so the vehicle's generation is the player's transaction.
+                if not client_rider_ok(card, member, route, arrival):
+                    return assertions, False
+                continue
             if not client_player_generation_ok(card, member, route):
                 return assertions, False
             if not OWNER_ASSERTIONS <= observer_assertions(card, member["type"], route, uuid,
@@ -1827,6 +1833,27 @@ def headless_graph_assertions(card: Card, shape: str, route: str) -> tuple[set[s
             owners = False
     assertions |= {"source_retired", "tracking_unique", "uuid_preserved", "replacement_identity"}
     return assertions, owners
+
+
+def client_rider_ok(card: Card, member: dict[str, Any], route: str, arrival: list[dict[str, Any]]) -> bool:
+    """The connected player rode a transferred vehicle: its own native teleport ran inside the vehicle's generation, from the
+    source-owned eject to the destination-owned remount, and the SAME player object arrived."""
+    root = next((node for node in arrival if node.get("vehicleUuid") in (None, "UNAVAILABLE")), None)
+    witness = card.data.get("witness")
+    before = witness.get("source") if isinstance(witness, dict) else None
+    before = before if isinstance(before, list) else (_members(witness, "source") or [])
+    source = next((node for node in before if isinstance(node, dict) and node.get("type") == "minecraft:player"
+                   and str(node.get("uuid", "")).lower() == str(member.get("uuid", "")).lower()), None)
+    if root is None or source is None or source.get("object") != member.get("object") \
+            or source.get("nativeId") != member.get("nativeId") or source.get("world") != ROUTE_SOURCE_WORLD[route]:
+        return False
+    events = headless_generation(card, str(root.get("uuid", "")).lower(), root["type"], route)
+    if events is None or any(event.get("violation") for event in events):
+        return False
+    phases = [event.get("phase") for event in events]
+    riders = sum(1 for node in arrival if node.get("type") == "minecraft:player")
+    return (phases.count("PASSENGER_TRANSITION_ACCEPT") >= riders and phases.count("RIDER_TELEPORTED") == riders
+            and ("RIDER_REMOUNT_DEFERRED" in phases or "ATTACH_PASSENGER" in phases))
 
 
 def _validated_trace(card: Card) -> tuple[dict[str, Any], ...] | None:
@@ -2449,6 +2476,9 @@ PGRAPH_SHAPES = {
     "pmob": ("minecraft:pig", (("minecraft:player", ()),)),
     "praft": ("minecraft:bamboo_raft", (("minecraft:player", ()),)),
     "pcamel": ("minecraft:camel", (("minecraft:player", ()), ("minecraft:villager", ()))),
+    # A chest boat seats one passenger natively (AbstractChestBoat.getMaxPassengers() == 1), but /ride forces a second one aboard
+    # (startRiding(force = true)); the Phoenium-free control run builds the same forced graph, so the native outcome is observed.
+    "pchestboat": ("minecraft:oak_chest_boat", (("minecraft:player", ()), ("minecraft:villager", ()))),
 }
 CREDITS_GRAPH_VEHICLE = {"cboat": "minecraft:oak_boat", "cminecart": "minecraft:minecart", "ccamel": "minecraft:camel"}
 CLIENT_MOVE_MIN = 0.3          # blocks the real client must have walked once the hand-over is complete
@@ -2466,6 +2496,30 @@ def _members(witness: Any, key: str, entity_type: str | None = None) -> list[dic
     if not isinstance(probe, list) or not all(isinstance(item, dict) for item in probe):
         return None
     return [item for item in probe if entity_type is None or item.get("type") == entity_type]
+
+
+def _client_gateway(witness: Any) -> dict[str, list[dict[str, Any]]]:
+    """Probe gateway/no-entry events of a real-client card. The probe keeps tiny rings (4 contacts, 4 tickets, 8 tracking events,
+    256 no-entry contacts), so every observation carries the ring as it was then; the union over the card's observations is
+    de-duplicated by content, and the no-entry ring is the one read at the end of the card. Callers filter by entity uuid."""
+    merged: dict[str, list[dict[str, Any]]] = {"contact": [], "ticket": [], "tracking": [], "noEntry": []}
+    seen: set[str] = set()
+    if not isinstance(witness, dict):
+        return merged
+    for key in ("source", "arrival", "later", "final", "settled", "carried"):
+        events = (_obs(witness, key) or {}).get("events")
+        if not isinstance(events, dict):
+            continue
+        for kind in ("contact", "ticket", "tracking"):
+            for event in events.get(kind) or []:
+                marker = kind + json.dumps(event, sort_keys=True)
+                if isinstance(event, dict) and marker not in seen:
+                    seen.add(marker)
+                    merged[kind].append(event)
+    ending = witness.get("probeEvents")
+    if isinstance(ending, dict):
+        merged["noEntry"] = [event for event in ending.get("noEntry") or [] if isinstance(event, dict)]
+    return merged
 
 
 def _xz_distance(a: Any, b: Any) -> float | None:
@@ -2492,7 +2546,7 @@ def client_session_assertions(witness: dict[str, Any], uuid: str, destination: s
                 or str(probe.get("uuid", "")).lower() != uuid or probe.get("world") != destination
                 or probe.get("connectionObject") != source_player.get("connectionObject")
                 or probe.get("listenerPlayerObject") != probe.get("object")
-                or (_xz_distance(player, probe) or 99) > CLIENT_POSITION_TOLERANCE):
+                or _xz_distance(player, probe) is None or _xz_distance(player, probe) > CLIENT_POSITION_TOLERANCE):
             converged = False
     if converged:
         assertions.add("session_converged")
@@ -2516,10 +2570,51 @@ def _client_synthetic(card: Card, uuid: str, entity_type: str, route: str, witne
     return dataclasses.replace(card, data=dict(card.data, details="UUID=" + uuid, witness=shaped))
 
 
+def client_credits_assertions(card: Card, route: str) -> set[str]:
+    """The End exit of a player who has not seen the credits is native's respawn path, not a portal transfer: the exiting
+    ServerPlayer leaves every level (CHANGED_DIMENSION) while the real client shows WinScreen, and on the client's respawn
+    request the player list creates a REPLACEMENT ServerPlayer on the same connection in the respawn dimension. There are no
+    portal transaction events to read, so each assertion comes from the raw triple: server NBT, probe, real client."""
+    witness = card.data.get("witness")
+    if card.data.get("outcome") != "TRANSFERRED" or route != "END_EXIT" or not isinstance(witness, dict):
+        return set()
+    source, arrival, later = (_single(_members(witness, key, "minecraft:player")) for key in ("source", "arrival", "later"))
+    shown, server_before, in_credits = _obs(witness, "creditsShown"), _obs(witness, "source"), witness.get("creditsServer")
+    if (source is None or arrival is None or later is None or shown is None or server_before is None
+            or not isinstance(in_credits, dict) or witness.get("creditsProbe") != []):
+        return set()
+    uuid = str(source.get("uuid", "")).lower()
+    destination = ROUTE_DESTINATION_WORLD[route]
+    shown_player = shown.get("player") if isinstance(shown.get("player"), dict) else {}
+    if (not re.fullmatch(r"[0-9a-f-]{36}", uuid) or shown.get("screen") != "WinScreen"
+            or server_before.get("server", {}).get("seenCredits") != "0b" or in_credits.get("seenCredits") != "1b"
+            or str(shown_player.get("uuid", "")).lower() != uuid
+            or any(str(part.get("uuid", "")).lower() != uuid or part.get("removed") is not False for part in (arrival, later))
+            or source.get("world") != ROUTE_SOURCE_WORLD[route] or arrival.get("world") != destination
+            or later.get("world") != destination or arrival.get("object") != later.get("object")
+            or source.get("object") == arrival.get("object")
+            or arrival.get("connectionObject") != source.get("connectionObject")
+            or later.get("connectionObject") != source.get("connectionObject")
+            or arrival.get("listenerPlayerObject") != arrival.get("object")):
+        return set()
+    assertions = client_session_assertions(witness, uuid, destination, source)
+    assertions |= {"uuid_preserved", "source_retired", "destination_unique"}
+    if (isinstance(arrival.get("ticks"), int) and isinstance(later.get("ticks"), int) and later["ticks"] > arrival["ticks"] + 20):
+        assertions |= {"post_arrival_tick", "destination_owner"}
+    client = ((_obs(witness, "later") or {}).get("client") or {})
+    entities = client.get("entities")
+    if (isinstance(entities, list) and not any(isinstance(item, dict) and str(item.get("uuid", "")).lower() == uuid
+                                               for item in entities)):
+        assertions.add("tracking_unique")
+    return assertions
+
+
 def client_player_assertions(card: Card, route: str, credits_unseen: bool = False) -> set[str]:
     witness = card.data.get("witness")
     if card.data.get("outcome") != "TRANSFERRED" or not isinstance(witness, dict):
         return set()
+    if credits_unseen:
+        return client_credits_assertions(card, route)
     source, arrival, later = (_single(_members(witness, key, "minecraft:player")) for key in ("source", "arrival", "later"))
     if source is None or arrival is None or later is None:
         return set()
@@ -2531,17 +2626,12 @@ def client_player_assertions(card: Card, route: str, credits_unseen: bool = Fals
             or not all(part.get("object") == source.get("object") and part.get("nativeId") == source.get("nativeId")
                        for part in (arrival, later))):
         return set()
-    if credits_unseen:
-        shown, server_before = _obs(witness, "creditsShown"), _obs(witness, "source")
-        if (shown is None or shown.get("screen") != "WinScreen" or server_before is None
-                or server_before.get("server", {}).get("seenCredits") != "0b"):
-            return set()
     assertions = client_session_assertions(witness, uuid, destination, source)
     assertions.add("uuid_preserved")
     if (isinstance(arrival.get("ticks"), int) and isinstance(later.get("ticks"), int) and later["ticks"] > arrival["ticks"] + 20):
         assertions.add("post_arrival_tick")
     if route == "END_GATEWAY":
-        synthetic = _client_synthetic(card, uuid, "minecraft:player", route, witness, gateway=witness.get("probeEvents") or {})
+        synthetic = _client_synthetic(card, uuid, "minecraft:player", route, witness, gateway=_client_gateway(witness))
         assertions |= headless_gateway_assertions(synthetic, "minecraft:player", rest_source=True)
         return assertions
     if not client_player_generation_ok(card, arrival, route):
@@ -2592,7 +2682,7 @@ def client_graph_assertions(card: Card, shape: str, route: str) -> tuple[set[str
     if any(value is None for value in members.values()):
         return set(), False
     synthetic = dataclasses.replace(card, data=dict(
-        card.data, witness=dict(members, counts=witness.get("counts"), gateway=witness.get("probeEvents") or {})))
+        card.data, witness=dict(members, counts=witness.get("counts"), gateway=_client_gateway(witness))))
     assertions, owners = headless_graph_assertions(synthetic, shape, route)
     player = next((member for member in members["arrival"] if member.get("type") == "minecraft:player"), None)
     if player is None:
@@ -2620,7 +2710,7 @@ def client_item_assertions(card: Card, route: str) -> set[str]:
     uuid = str((arrival or {}).get("uuid", "")).lower()
     if arrival is None or not uuid:
         return set()
-    synthetic = _client_synthetic(card, uuid, "minecraft:item", route, witness, gateway=witness.get("probeEvents") or {})
+    synthetic = _client_synthetic(card, uuid, "minecraft:item", route, witness, gateway=_client_gateway(witness))
     if route == "END_GATEWAY":
         assertions = headless_gateway_assertions(synthetic, "minecraft:item", rest_source=True)
     else:
@@ -2645,7 +2735,7 @@ def client_pearl_assertions(card: Card, route: str) -> set[str]:
     uuid = str((arrival or {}).get("uuid", "")).lower()
     if arrival is None or not uuid:
         return set()
-    synthetic = _client_synthetic(card, uuid, "minecraft:ender_pearl", route, witness, gateway=witness.get("probeEvents") or {})
+    synthetic = _client_synthetic(card, uuid, "minecraft:ender_pearl", route, witness, gateway=_client_gateway(witness))
     if route == "END_GATEWAY":
         assertions = headless_gateway_assertions(synthetic, "minecraft:ender_pearl", rest_source=True, ends_on_impact=True,
                                                  later_optional=True)
@@ -2674,11 +2764,21 @@ def client_bobber_assertions(card: Card, route: str) -> set[str]:
         return set()
     carried = _single(_members(witness, "carried", "minecraft:fishing_bobber"))
     settled = _single(_members(witness, "settled", "minecraft:fishing_bobber"))
-    if carried is None or settled is None:
+    series = witness.get("series")
+    if carried is None or settled is None or not isinstance(series, list) or len(series) < 6:
         return set()
     uuid = str(carried.get("uuid", "")).lower()
+    # The rod is the native cast of the connected player: exactly one bobber in the source world, none in the destination, at
+    # every sample of the dwell (a bobber that had used the portal would be counted on the destination side or twice).
+    if any(not isinstance(sample, list) or len(sample) != 3 or sample[1] != 1 or sample[2] not in (0, None)
+           for sample in series) or witness.get("cast", {}).get("destination") not in (0, None):
+        return set()
+    # The bobber is the same live object at the portal cell throughout, and (like any entity that cannot use portals) it was
+    # still visited by the portal block.
     synthetic = dataclasses.replace(card, data=dict(card.data, details="UUID=" + uuid, outcome="STAYED", witness={
-        "source": [carried], "settled": [settled], "noEntryContactEvents": (witness.get("probeEvents") or {}).get("noEntry", [])}))
+        "source": [dict(carried, vehicleUuid=None, passengerUuids=[])],
+        "settled": [dict(settled, vehicleUuid=None, passengerUuids=[])],
+        "noEntryContactEvents": _client_gateway(witness)["noEntry"]}))
     return headless_negative_assertions(synthetic, "minecraft:fishing_bobber", route)
 
 
@@ -2789,7 +2889,13 @@ def client_credits_graph_claims(card: Card, kind: str, route: str, row_graph: st
         return []
     events = client_window_events(card)
     uuids = {str(member.get("uuid", "")).lower() for member in settled}
-    if events is None or any(str(event.get("uuid", "")).lower() in uuids and event.get("generation", 0) > 0 for event in events):
+    mine = [event for event in events or [] if str(event.get("uuid", "")).lower() in uuids and event.get("generation", 0) > 0]
+    # The vehicle visits the exit portal and Phoenium settles it as the native no-transfer: the attempt is on record and never
+    # reaches a source retirement, a destination insertion or a restore.
+    if (events is None or any(event.get("violation") for event in mine)
+            or any(event.get("phase") in ("SOURCE_RETIRING", "SOURCE_RETIRED", "ADD_DURING_TELEPORT_HEAD", "CREATE", "RESTORE",
+                                          "DESTINATION_INSERTING", "DESTINATION_ADMITTED") for event in mine)
+            or sum(1 for event in mine if event.get("phase") == "SETTLED_NATIVE_NO_TRANSFER") != 1):
         return []
     assertions = {"source_unchanged_or_safely_retired", "no_destination_entity", "no_stuck_session", "graph_unchanged"}
     return [dict(card=card, route=route, basicObservation=True, scope="row", entityType=None, variant=None, graph=row_graph,
