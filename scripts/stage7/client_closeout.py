@@ -523,7 +523,12 @@ def graph_card(shape, route, tag):
     else:
         time.sleep(3)
         witness['settled'] = observe(tag)
-        rcon('ride %s dismount' % PLAYER)
+        if credits:
+            # A dismounted player standing in the live exit portal would take the End exit and, with the credits unseen, sit on the
+            # credits screen (natively too) until the client answers it. tp stops the riding and leaves the portal cell first.
+            rcon('execute in %s run tp %s %s' % (src, PLAYER, REST[route]))
+        else:
+            rcon('ride %s dismount' % PLAYER)
     witness['seconds'] = round(time.monotonic() - t0, 2)
     rcon('tag %s remove %s' % (PLAYER, tag))
     rcon('execute in %s run kill @e[tag=%s,type=!minecraft:player]' % (src, tag))

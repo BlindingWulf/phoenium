@@ -9,10 +9,10 @@ import net.minecraft.world.entity.vehicle.boat.AbstractBoat;
 import net.minecraft.world.entity.vehicle.minecart.AbstractMinecart;
 
 /**
- * The one player-rider shape Phoenium carries through a portal: a mob, boat or minecart whose direct
- * passengers are all connected players with no passengers of their own. Native then ejects every rider,
- * teleports each player (which Phoenium retains across its source/destination authority cut), creates the
- * replacement vehicle and remounts. Any other graph that carries a player is declined, see
+ * The player-rider shapes Phoenium carries through a portal: a mob, boat or minecart whose passengers include
+ * connected players with no passengers of their own, alone or beside other members of a native passenger graph.
+ * Native then ejects every rider, teleports each player (which Phoenium retains across its source/destination
+ * authority cut), creates the replacement vehicle and remounts. A player that is not such a leaf is declined, see
  * {@link PortalRiderRefusal}.
  */
 public final class PortalRiders {
@@ -30,6 +30,25 @@ public final class PortalRiders {
         for (Entity passenger : passengers)
             if (!(passenger instanceof ServerPlayer) || passenger.isVehicle()) return List.of();
         return passengers.stream().map(ServerPlayer.class::cast).toList();
+    }
+
+    /** The connected players among the vehicle's direct passengers, in native passenger order. */
+    public static List<ServerPlayer> directPlayers(Entity vehicle) {
+        return vehicle.getPassengers().stream().filter(ServerPlayer.class::isInstance).map(ServerPlayer.class::cast).toList();
+    }
+
+    /**
+     * True when every player in the passenger tree is a connected leaf passenger of a vehicle that can carry one natively
+     * (mixed riders, a player on a mob that rides a boat, ...). Such a graph is captured with its players bound as retained
+     * riders of their own vehicle; the remaining members are an ordinary native graph.
+     */
+    public static boolean playersAreLeaves(Entity vehicle) {
+        for (Entity passenger : vehicle.getPassengers()) {
+            if (passenger instanceof Player) {
+                if (!(passenger instanceof ServerPlayer) || passenger.isVehicle() || !carriesPlayersNatively(vehicle)) return false;
+            } else if (!playersAreLeaves(passenger)) return false;
+        }
+        return true;
     }
 
     /** True when a player sits anywhere in the passenger tree. */

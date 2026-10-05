@@ -59,6 +59,10 @@ public final class NativePortalGraphTransferPlan {
                 entity, binding, transition, live));
         }
         for (Entity entity : graph.preorder()) {
+            var players = graph.member(entity).players();
+            if (!players.isEmpty()) transfers.get(entity).bindPlayerRiders(players);
+        }
+        for (Entity entity : graph.preorder()) {
             List<Entity> children = graph.member(entity).children();
             if (children.isEmpty()) continue;
             IdentityHashMap<Entity, NativePortalTransfer> childTransfers = new IdentityHashMap<>();
@@ -91,7 +95,7 @@ public final class NativePortalGraphTransferPlan {
         // Reject an unprepared cross-region graph before native ejection can occur.
         var rootKey = transfers.get(graph.root()).destinationKey();
         for (Entity entity : graph.preorder())
-            if (!transfers.get(entity).destinationKey().equals(rootKey))
+            if (!authority.sameOwner(transfers.get(entity).destinationKey(), rootKey))
                 throw new IllegalStateException("passenger graph destination spans region owners");
         for (Entity entity : graph.preorder()) {
             if (entity == graph.root()) continue;

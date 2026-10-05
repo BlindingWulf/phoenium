@@ -122,10 +122,6 @@ public final class MobPortalTransitionManager implements AutoCloseable {
         List<net.minecraft.server.level.ServerPlayer> riders = mob.isVehicle() ? PortalRiders.leafPlayerRiders(mob) : List.of();
         PortalPassengerGraphSnapshot graph = mob.isVehicle() && riders.isEmpty()
             ? PortalPassengerGraphSnapshot.capture(mob, objects) : null;
-        if (graph != null)
-            for (Entity node : graph.preorder())
-                if (node instanceof net.minecraft.server.level.ServerPlayer)
-                    throw new IllegalStateException("player passenger requires session convergence before graph reattachment");
         ObjectOwnership binding = objects.current(mob.getUUID().toString()).orElseThrow();
         objects.requireCurrentOwner(binding.objectId(), binding.objectEpoch(), OwnershipContext.current().orElseThrow().region());
         var token = replacements.begin(new CrossDimensionReplacementBoundary.SourceIdentity(binding.objectId(),

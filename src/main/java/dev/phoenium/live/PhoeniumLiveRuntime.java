@@ -237,6 +237,13 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
             @Override public boolean deferRiderRemount(ServerPlayer rider, Entity vehicle) {
                 return PhoeniumLiveRuntime.this.playerDimensionTransitions.deferRemount(rider, vehicle);
             }
+            @Override public boolean sameOwner(RoutingKey a, RoutingKey b) {
+                if (a.equals(b)) return true;
+                if (!a.world().equals(b.world())) return false;
+                var routeA = directory.resolve(a);
+                var routeB = directory.resolve(b);
+                return routeA.isPresent() && routeB.isPresent() && routeA.get().region().equals(routeB.get().region());
+            }
             @Override public void execute(RoutingKey key, RegionalServiceKind kind, Runnable body) {
                 if (OwnershipContext.current().isPresent())
                     throw new IllegalStateException("portal authority stage entered with retained owner authority");

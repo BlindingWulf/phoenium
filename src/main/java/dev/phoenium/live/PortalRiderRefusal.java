@@ -7,8 +7,9 @@ import org.slf4j.LoggerFactory;
 
 /**
  * Conservative policy for the player-carrying graphs Phoenium cannot sequence yet: a non-player vehicle whose
- * passenger tree holds a player in any shape other than "vehicle + leaf players" (see {@link PortalRiders},
- * which is carried natively) does not take a portal. The managers fail the server when they meet such a graph. Declining the lookup is native's own null-destination path (Entity.handlePortal skips the
+ * passenger tree holds a player that is not a connected leaf rider of a mount, boat or minecart (see
+ * {@link PortalRiders}, which carries the leaf shapes natively) does not take a portal. The managers fail the server
+ * when they meet such a graph. Declining the lookup is native's own null-destination path (Entity.handlePortal skips the
  * teleport, the portal cooldown is already set and the tick continues), so no tail needs unwinding. This is a
  * known behavioural limitation, counted and logged, and is not accepted portal behaviour.
  */
@@ -30,8 +31,9 @@ public final class PortalRiderRefusal {
             return true;
         }
         if (entity instanceof Player || !entity.isVehicle() || !PortalRiders.carriesPlayer(entity)) return false;
-        // "Vehicle + leaf player riders" is carried natively (see PortalRiders); everything else is declined.
-        if (!PortalRiders.leafPlayerRiders(entity).isEmpty()) return false;
+        // Leaf player riders, alone or inside a native passenger graph, are carried natively (see PortalRiders); a player
+        // that carries passengers or rides a vehicle that cannot carry one is declined.
+        if (PortalRiders.carriesPlayersNatively(entity) && PortalRiders.playersAreLeaves(entity)) return false;
         long count = REFUSED.incrementAndGet();
         if (Boolean.getBoolean("phoenium.test.diagnostics")) {
             try {

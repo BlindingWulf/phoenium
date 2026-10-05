@@ -33,6 +33,8 @@ public final class NativePortalTransfer {
         boolean worldActive(ServerLevel level);
         WorldId worldId(ServerLevel level);
         void execute(RoutingKey key, RegionalServiceKind kind, Runnable body);
+        /** True when both keys route to one owner region: a passenger graph needs one destination owner, not one chunk. */
+        default boolean sameOwner(RoutingKey a, RoutingKey b) { return a.equals(b); }
         BooleanSupplier prepare(Entity source, TeleportTransition transition, RoutingKey destination);
         default BooleanSupplier demandDestinationEntityVisibility(Entity source, TeleportTransition transition) {
             return () -> true;
@@ -97,7 +99,7 @@ public final class NativePortalTransfer {
         marker("BEFORE_DESTINATION_PREPARATION");
         if (readiness == null) readiness = authority.prepare(source, transition, destinationKey);
         checkSource(); checkReady();
-        if (riders != null && !source.getPassengers().equals(riders))
+        if (riders != null && !PortalRiders.directPlayers(source).equals(riders))
             throw new IllegalStateException("native portal rider list changed after capture");
         ACTIVE.set(this);
         try {
@@ -137,8 +139,8 @@ public final class NativePortalTransfer {
      */
     public void bindPlayerRiders(java.util.List<net.minecraft.server.level.ServerPlayer> players) {
         ownerFree();
-        if (riders != null || graphChildren != null || players == null || players.isEmpty()
-                || !source.getPassengers().equals(players))
+        if (riders != null || players == null || players.isEmpty()
+                || !PortalRiders.directPlayers(source).equals(players))
             throw new IllegalStateException("native portal rider list already bound, absent or stale");
         riders = java.util.List.copyOf(players);
     }
@@ -273,7 +275,7 @@ public final class NativePortalTransfer {
                     || child.isRemoved() || child.getVehicle() != null)
                 throw new IllegalStateException("native portal passenger not ready to reattach");
             var binding = transfer.objects.current(child.getUUID().toString()).orElseThrow();
-            if (!binding.routingKey().equals(transfer.destinationKey))
+            if (!transfer.authority.sameOwner(binding.routingKey(), transfer.destinationKey))
                 throw new IllegalStateException("native portal passenger destination spans owners");
             transfer.objects.requireCurrentOwner(binding.objectId(), binding.objectEpoch(),
                 OwnershipContext.current().orElseThrow().region());
@@ -500,9 +502,12 @@ public final class NativePortalTransfer {
     /** A graph member still carries exactly its captured children (native ejects them at its own teleport). */
     private boolean ownPassengersMatchGraph() {
         var passengers = source.getPassengers();
-        if (graphChildren == null) return passengers.isEmpty();
-        if (passengers.size() != graphChildren.size()) return false;
-        for (Entity passenger : passengers) if (!graphChildren.containsKey(passenger)) return false;
+        int members = graphChildren == null ? 0 : graphChildren.size(), players = riders == null ? 0 : riders.size();
+        if (passengers.size() != members + players) return false;
+        for (Entity passenger : passengers)
+            if (!(graphChildren != null && graphChildren.containsKey(passenger))
+                    && !(riders != null && passenger instanceof net.minecraft.server.level.ServerPlayer rider && riders.contains(rider)))
+                return false;
         return true;
     }
 

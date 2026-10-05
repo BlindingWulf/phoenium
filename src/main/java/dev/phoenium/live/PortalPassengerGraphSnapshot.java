@@ -14,6 +14,7 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.function.Function;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.Relative;
 import net.minecraft.world.level.portal.TeleportTransition;
@@ -24,6 +25,9 @@ import net.minecraft.world.phys.Vec3;
  * This class only records and validates inputs. It does not detach, teleport, or publish nodes.
  * The native order is children in list order (recursively), then the root, followed by
  * reattachment of successfully transferred children to each replacement root.
+ * <p>A connected leaf player is not a graph node: its session crosses worlds through the player dimension
+ * boundary, so it is recorded as a retained rider of its vehicle (see {@link Member#players()}) and the
+ * topology holds only the non-player members.
  */
 public final class PortalPassengerGraphSnapshot {
     private final Topology<Entity> topology;
@@ -45,7 +49,7 @@ public final class PortalPassengerGraphSnapshot {
             () -> new IllegalStateException("passenger graph capture lacks source authority"));
         if (!(root.level() instanceof ServerLevel sourceLevel))
             throw new IllegalStateException("passenger graph source is not a server world");
-        Topology<Entity> topology = Topology.capture(root, Entity::getPassengers);
+        Topology<Entity> topology = Topology.capture(root, PortalPassengerGraphSnapshot::nonPlayerPassengers);
         IdentityHashMap<Entity, Member> members = new IdentityHashMap<>();
         for (Entity entity : topology.preorder()) {
             if (entity.isRemoved() || entity.level() != sourceLevel
@@ -58,9 +62,11 @@ public final class PortalPassengerGraphSnapshot {
             if (!physicalRoute(entity, binding).equals(binding.routingKey()))
                 throw new IllegalStateException("passenger graph member route differs from physical chunk");
             objects.requireCurrentOwner(binding.objectId(), binding.objectEpoch(), context.region());
+            List<ServerPlayer> players = PortalRiders.directPlayers(entity);
+            requirePlayerLeaves(entity, players, topology.children(entity).size(), sourceLevel);
             members.put(entity, new Member(entity, topology.parent(entity), entity.getUUID(), entity.getId(),
                 access.phoenium$entityIncarnation(), binding, entity.position(), entity.getDeltaMovement(),
-                entity.getYRot(), entity.getXRot(), topology.children(entity)));
+                entity.getYRot(), entity.getXRot(), topology.children(entity), players));
         }
         PortalPassengerGraphSnapshot snapshot = new PortalPassengerGraphSnapshot(topology, members, sourceLevel);
         snapshot.validateIntact(objects);
@@ -82,9 +88,13 @@ public final class PortalPassengerGraphSnapshot {
         Objects.requireNonNull(objects, "objects");
         var context = OwnershipContext.current().orElseThrow(
             () -> new IllegalStateException("passenger graph validation lacks source authority"));
-        topology.validate(Entity::getPassengers);
+        topology.validate(PortalPassengerGraphSnapshot::nonPlayerPassengers);
         for (Entity entity : topology.preorder()) {
             Member member = member(entity);
+            List<ServerPlayer> players = PortalRiders.directPlayers(entity);
+            if (!players.equals(member.players()))
+                throw new IllegalStateException("passenger graph player riders changed after capture");
+            requirePlayerLeaves(entity, players, member.children().size(), sourceLevel);
             if (entity.isRemoved() || entity.level() != sourceLevel
                     || entity.getVehicle() != member.parent()
                     || !entity.getUUID().equals(member.uuid()) || entity.getId() != member.runtimeId()
@@ -100,6 +110,20 @@ public final class PortalPassengerGraphSnapshot {
                 throw new IllegalStateException("passenger graph member moved outside captured route");
             objects.requireCurrentOwner(current.objectId(), current.objectEpoch(), context.region());
         }
+    }
+
+    /** The graph's own members: every direct passenger that is not a player. */
+    private static List<Entity> nonPlayerPassengers(Entity entity) {
+        return entity.getPassengers().stream().filter(passenger -> !(passenger instanceof net.minecraft.world.entity.player.Player)).toList();
+    }
+
+    /** Every direct passenger is a graph member or a connected leaf player that still rides this vehicle in the source world. */
+    private static void requirePlayerLeaves(Entity vehicle, List<ServerPlayer> players, int members, ServerLevel sourceLevel) {
+        if (vehicle.getPassengers().size() != members + players.size())
+            throw new IllegalStateException("passenger graph carries a player that is not a connected leaf rider");
+        for (ServerPlayer player : players)
+            if (player.isVehicle() || player.isRemoved() || player.level() != sourceLevel || player.getVehicle() != vehicle)
+                throw new IllegalStateException("passenger graph player rider is not a live leaf of its vehicle");
     }
 
     private static RoutingKey physicalRoute(Entity entity, ObjectOwnership binding) {
@@ -183,7 +207,7 @@ public final class PortalPassengerGraphSnapshot {
 
     public record Member(Entity entity, Entity parent, UUID uuid, int runtimeId, long nativeIncarnation,
                          ObjectOwnership binding, Vec3 position, Vec3 movement, float yRot, float xRot,
-                         List<Entity> children) { }
+                         List<Entity> children, List<ServerPlayer> players) { }
     public record PassengerPlacement(Vec3 position, float yRot, float xRot) { }
 
     /** Identity-based topology useful for both the native graph and deterministic controls. */

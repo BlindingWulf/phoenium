@@ -17,7 +17,7 @@ import org.junit.jupiter.api.Test;
 import static dev.phoenium.chunk.FullDecisionWitnessSupport.set;
 import static org.junit.jupiter.api.Assertions.*;
 
-/** The rider policy: a non-player vehicle carrying a player in an unsupported shape (nested or mixed) declines the portal exactly as native does for null. */
+/** The rider policy: a non-player vehicle carrying a player that itself carries a passenger declines the portal exactly as native does for null. */
 class PortalRiderRefusalTest {
     @BeforeAll static void bootstrap() { NativeItemPortalTransferTest.bootstrap(); }
     @AfterEach void reset() { if (PortalDestinationTestHooks.mobs != null) PortalDestinationTestHooks.mobs.close(); PortalDestinationTestHooks.mobs = null; }
@@ -48,9 +48,14 @@ class PortalRiderRefusalTest {
         ride(pig, player, allocatedPlayer());
         assertFalse(PortalRiderRefusal.refuses(pig), "several leaf players");
         ride(pig, inner); ride(inner, player);
-        assertTrue(PortalRiderRefusal.refuses(pig), "nested rider");
+        assertFalse(PortalRiderRefusal.refuses(pig), "a leaf player on a mount that itself rides is bound as that mount's rider");
         ride(pig, player, inner); ride(inner);
-        assertTrue(PortalRiderRefusal.refuses(pig), "player mixed with a non-player passenger");
+        assertFalse(PortalRiderRefusal.refuses(pig), "a leaf player beside a non-player passenger is bound beside the graph");
+        ride(pig, inner); ride(inner);
+        ride(player, inner);
+        ride(pig, player);
+        assertTrue(PortalRiderRefusal.refuses(pig), "a player that carries a passenger has no retained shape");
+        ride(player);
         assertFalse(PortalRiderRefusal.refuses(player), "a player is never refused here; it uses its own manager");
         var pearl = EntityTypes.ENDER_PEARL.create(f.overworld, EntitySpawnReason.COMMAND);
         ride(pig); ride(inner);
@@ -74,7 +79,8 @@ class PortalRiderRefusalTest {
         Pig pig = (Pig) EntityTypes.PIG.create(f.overworld, EntitySpawnReason.COMMAND);
         pig.setPos(.4, 65, .1); f.publish(pig, f.from);
         Pig inner = (Pig) EntityTypes.PIG.create(f.overworld, EntitySpawnReason.COMMAND);
-        ride(pig, inner); ride(inner, allocatedPlayer());
+        var carrier = allocatedPlayer();
+        ride(pig, carrier); ride(carrier, inner);
         var lookups = new AtomicInteger();
         NativePortalDestinationPreparationTest.setPortal(pig, args -> { lookups.incrementAndGet(); return f.transition(f.nether); });
         long cooldownBefore = pig.getPortalCooldown();
