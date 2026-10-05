@@ -179,6 +179,7 @@
     "MobPortalCubeMixin",
     "MobPortalHorseMixin",
     "MobPortalVillagerMixin",
+    "MobPortalOuterTailMixin",
     "HurtingProjectilePortalAccess",
     "HurtingProjectilePortalEntityMixin",
     "HurtingProjectilePortalProjectileMixin",

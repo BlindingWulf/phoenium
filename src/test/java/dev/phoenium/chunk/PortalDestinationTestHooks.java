@@ -27,6 +27,13 @@ public final class PortalDestinationTestHooks {
     public static void horseTail(net.minecraft.world.entity.animal.equine.AbstractHorse horse) {
         if(horseTail!=null)horseTail.accept(horse);
     }
+    /** Lifted reviewed outer tail observed at its first instruction: (receiver, "Owner.resumeName", captured int or -1). */
+    static java.util.function.BiConsumer<Object,String> outerTail;
+    static java.util.List<Object[]> outerTails;
+    public static void outerTail(Object self,String id,int captured) {
+        if(outerTails!=null)outerTails.add(new Object[]{self,id,captured});
+        if(outerTail!=null)outerTail.accept(self,id);
+    }
     public static void beginMob(Mob mob) { if (mobs != null) mobs.begin(mob); }
     public static void beginFalling(net.minecraft.world.entity.item.FallingBlockEntity block) {
         if(falling!=null)falling.begin(block);

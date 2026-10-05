@@ -37,6 +37,9 @@ dynamic_arrow=(group=='arrow-trident' and len(cards)==1
                and re.fullmatch(r'P2-(arrow|spectral_arrow|trident)-(NETHER_ENTRY|NETHER_RETURN)',cards[0])
                and 'arrowTridentMatrix(selectedCards)' in client_source
                and 'selectedCards.matches("P2-' in client_source)
+dynamic_mob_census=(group=='mob-census' and len(cards)>=1
+                    and all(re.fullmatch(r'M3-[a-z_]+-(NETHER_ENTRY|NETHER_RETURN)',card) for card in cards)
+                    and 'mobCensus(selectedCards)' in client_source)
 dynamic_vehicle=(group=='vehicle-empty' and len(cards)==1
                  and re.fullmatch(r'V0-(acacia_boat|birch_boat|cherry_boat|dark_oak_boat|jungle_boat|mangrove_boat|oak_boat|pale_oak_boat|spruce_boat|bamboo_raft|minecart)-(NETHER_ENTRY|NETHER_RETURN)',cards[0])
                  and 'emptyVehicleMatrix(selectedCards)' in client_source
@@ -49,7 +52,7 @@ dynamic_chest_minecart=(group=='vehicle-minecart-chest' and len(cards)==1
                         and re.fullmatch(r'V2-chest_minecart-(items|loot)-(NETHER_ENTRY|NETHER_RETURN)',cards[0])
                         and 'chestMinecartMatrix(selectedCards)' in client_source
                         and 'selectedCards.matches("V2-chest_minecart-' in client_source)
-if cards and ('phoenium.repair.cards' not in client_source or len(cards)!=1
+if cards and not dynamic_mob_census and ('phoenium.repair.cards' not in client_source or len(cards)!=1
               or ((group,cards[0]) not in exact_pairs and not dynamic_no_entry and not dynamic_arrow
                   and not dynamic_vehicle and not dynamic_chest_vehicle and not dynamic_chest_minecart)):
     raise RuntimeError('--cards unavailable: client has no matching exact selection branch')
@@ -164,7 +167,7 @@ try:
             for dimension in ['minecraft:overworld','minecraft:the_nether']:
                 command='execute in '+dimension+' run gamerule minecraft:keep_inventory'
                 setup.append([command,rcon(command)])
-        if not restart and not snapshot_probe and group in ('legacy','selection-holes','merchant-holes','armor-stand','projectile-fireball','hurting-projectiles','arrow-trident','throwable-projectiles','passenger-graph','vehicle-empty','vehicle-chest','vehicle-minecart-chest','mob-prefix','no-native-entry'):
+        if not restart and not snapshot_probe and group in ('legacy','selection-holes','merchant-holes','armor-stand','projectile-fireball','hurting-projectiles','arrow-trident','throwable-projectiles','passenger-graph','vehicle-empty','vehicle-chest','vehicle-minecart-chest','mob-prefix','mob-census','no-native-entry'):
             for world in ['minecraft:overworld','minecraft:the_nether']:
                 prefix='execute in '+world+' run '
                 for c in ['forceload add -16 -16 16 16','fill -12 64 -12 12 64 12 minecraft:sea_lantern',

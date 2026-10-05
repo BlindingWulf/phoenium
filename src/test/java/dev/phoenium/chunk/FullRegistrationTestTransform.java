@@ -8,6 +8,13 @@ public final class FullRegistrationTestTransform {
     public static byte[] transform(String name, byte[] bytes) {
         ClassNode node = new ClassNode(); new ClassReader(bytes).accept(node, ClassReader.EXPAND_FRAMES);
         MobPortalTestTransform.install(node);
+        if (MobPortalTestTransform.outerTail(name)) {
+            // Vex is also a native-restore target: keep that transform, then write once with computed frames.
+            if (NativePortalTestTransform.supports(name) && !name.equals("net/minecraft/world/entity/Entity"))
+                NativePortalTestTransform.install(node);
+            ClassWriter tailWriter = MobPortalTestTransform.frameWriter();
+            node.accept(tailWriter); return tailWriter.toByteArray();
+        }
         FallingBlockPortalTestTransform.install(node);
         BoatPortalTestTransform.install(node);
         if (name.equals(BoatPortalTestTransform.TARGET)) {

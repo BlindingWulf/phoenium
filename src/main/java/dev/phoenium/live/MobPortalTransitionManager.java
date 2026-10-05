@@ -28,7 +28,9 @@ public final class MobPortalTransitionManager implements AutoCloseable {
     public MobPortalTransitionManager(NativePortalTransfer.Authority authority, ObjectOwnershipRegistry objects) {
         this.authority = Objects.requireNonNull(authority); this.objects = Objects.requireNonNull(objects);
     }
-    private enum NativeProfile { DIRECT_MOB_TICK, ENDERMITE_PREFIX, SILVERFISH_PREFIX, ZOMBIE_PREFIX, CUBE_OUTER_TAIL, HORSE_OUTER_TAIL, VILLAGER_OUTER_TAIL }
+    private enum NativeProfile { DIRECT_MOB_TICK, ENDERMITE_PREFIX, SILVERFISH_PREFIX, ZOMBIE_PREFIX, CUBE_OUTER_TAIL, HORSE_OUTER_TAIL, VILLAGER_OUTER_TAIL,
+        /** Any other Mob whose every tick()/baseTick() override is a reviewed MobPortalOuterTails pin. */
+        REVIEWED_OUTER_TAILS }
     /** Exact vanilla classes with Mob.tick and Mob.baseTick as their declaring callers. */
     private static final Set<Class<?>> DIRECT_MOB_TICK = Set.of(
         net.minecraft.world.entity.monster.Blaze.class,
@@ -75,8 +77,8 @@ public final class MobPortalTransitionManager implements AutoCloseable {
         net.minecraft.world.entity.animal.equine.TraderLlama.class);
     private static final Set<Class<?>> VILLAGER_OUTER_TAIL = Set.of(
         net.minecraft.world.entity.npc.villager.Villager.class);
-    private static NativeProfile profile(Entity entity) {
-        Class<?> type = entity.getClass();
+    private static NativeProfile profile(Entity entity) { return profile(entity.getClass()); }
+    private static NativeProfile profile(Class<?> type) {
         if (DIRECT_MOB_TICK.contains(type)) return NativeProfile.DIRECT_MOB_TICK;
         // Endermite.tick sets yBodyRot before super.tick and has no suffix after it.
         // The Mob.tick suspension point therefore retains its exact already-run prefix.
@@ -88,9 +90,12 @@ public final class MobPortalTransitionManager implements AutoCloseable {
         if (VILLAGER_OUTER_TAIL.contains(type)) return NativeProfile.VILLAGER_OUTER_TAIL;
         if (type == net.minecraft.world.entity.monster.cubemob.MagmaCube.class
                 || type == net.minecraft.world.entity.monster.cubemob.Slime.class) return NativeProfile.CUBE_OUTER_TAIL;
+        if (Mob.class.isAssignableFrom(type) && MobPortalTailPlans.plan(type) != null) return NativeProfile.REVIEWED_OUTER_TAILS;
         return null;
     }
     public static boolean supports(Entity entity) { return profile(entity) != null; }
+    /** Class-level selection used by the completeness gate; identical to the per-instance decision. */
+    public static boolean supportsClass(Class<?> type) { return profile(type) != null; }
     public void begin(Mob mob) {
         if (closed || !authority.running() || !supports(mob)) return;
         if (ticking.get() != null) throw new IllegalStateException("nested mob portal tick");
@@ -125,6 +130,8 @@ public final class MobPortalTransitionManager implements AutoCloseable {
         var token = replacements.begin(new CrossDimensionReplacementBoundary.SourceIdentity(binding.objectId(),
             ((FullEntityFacts.Access) mob).phoenium$entityIncarnation(), binding.incarnation()));
         Entry entry = new Entry(mob, level, processor, null, binding, token, profile);
+        // The one reviewed caller local (int airSupply = getAirSupply()) is unchanged until the cut.
+        if (profile == NativeProfile.REVIEWED_OUTER_TAILS) entry.airSupply = mob.getAirSupply();
         if (graph != null) {
             entry.graph = graph;
             entry.graphTokens.put(mob, token);
@@ -268,6 +275,8 @@ public final class MobPortalTransitionManager implements AutoCloseable {
                     ((PearlPortalNativeAccess.EntitySuffix) entry.mob).phoenium$resumePearlPortalBaseTickSuffix();
                     ((MobPortalNativeAccess.LivingSuffix) entry.mob).phoenium$resumeMobLivingBaseSuffix();
                     ((MobPortalNativeAccess.MobSuffix) entry.mob).phoenium$resumeMobBaseSuffix();
+                    if (entry.profile == NativeProfile.REVIEWED_OUTER_TAILS)
+                        MobPortalTailPlans.plan(entry.mob.getClass()).resumeBase(entry.mob, entry.airSupply);
                     ((MobPortalNativeAccess.LivingSuffix) entry.mob).phoenium$resumeMobLivingTickSuffix();
                     ((MobPortalNativeAccess.MobSuffix) entry.mob).phoenium$resumeMobTickSuffix();
                     if (entry.mob instanceof net.minecraft.world.entity.monster.cubemob.AbstractCubeMob cube)
@@ -276,6 +285,8 @@ public final class MobPortalTransitionManager implements AutoCloseable {
                         ((MobPortalNativeAccess.HorseSuffix) entry.mob).phoenium$resumeMobHorseTickSuffix();
                     if (entry.profile == NativeProfile.VILLAGER_OUTER_TAIL)
                         ((MobPortalNativeAccess.VillagerSuffix) entry.mob).phoenium$resumeMobVillagerTickSuffix();
+                    if (entry.profile == NativeProfile.REVIEWED_OUTER_TAILS)
+                        MobPortalTailPlans.plan(entry.mob.getClass()).resumeTick(entry.mob);
                 });
                 replacements.settle(suffix);
                 if (graphPlan != null) {
@@ -360,6 +371,7 @@ public final class MobPortalTransitionManager implements AutoCloseable {
         final IdentityHashMap<Entity, CrossDimensionReplacementBoundary.Token> graphTokens = new IdentityHashMap<>();
         NativePortalGraphTransferPlan graphPlan;
         volatile boolean retained, consumed, destinationPending, advancing;
+        int airSupply;
         int visibilityWaits;
         java.util.function.BooleanSupplier visibilityReady;
         Entry(Mob mob, ServerLevel level, PortalProcessor processor, TeleportTransition transition,

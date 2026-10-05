@@ -51,6 +51,8 @@ public final class Stage7RepairClientTest implements FabricClientGameTest {
                     && selectedCards.equals("I0-item-END_ENTRY"))
                     && !(group.equals("same-dimension-gateway")
                     && selectedCards.equals("G1-pig-END_GATEWAY"))
+                    && !(group.equals("mob-census")
+                    && selectedCards.matches("M3-[a-z_]+-(NETHER_ENTRY|NETHER_RETURN)(,M3-[a-z_]+-(NETHER_ENTRY|NETHER_RETURN))*"))
                     && !(group.equals("same-dimension-gateway-ab")
                     && selectedCards.equals("G2-pig-END_GATEWAY-AB"))
                     && !(group.equals("mob-prefix")
@@ -71,6 +73,7 @@ public final class Stage7RepairClientTest implements FabricClientGameTest {
             else if(group.equals("vehicle-chest")){chestVehicleMatrix(selectedCards);}
             else if(group.equals("vehicle-minecart-chest")){chestMinecartMatrix(selectedCards);}
             else if(group.equals("item-end-platform")){itemEndPlatformScopeCard();}
+            else if(group.equals("mob-census")){mobCensus(selectedCards);}
             else if(group.equals("same-dimension-gateway")){pigEndGatewayCard(false);}
             else if(group.equals("same-dimension-gateway-ab")){pigEndGatewayCard(true);}
             else if(group.equals("mob-prefix")){
@@ -1748,8 +1751,21 @@ public final class Stage7RepairClientTest implements FabricClientGameTest {
         }
         return found;
     }
+    /** Data-driven mob caller-profile census: one exact Nether-route observation per M3 card. */
+    void mobCensus(String selected)throws Exception {
+        cmd("gamemode creative "+USER);
+        int sequence=0;
+        for(String card:selected.split(",")) {
+            var parts=java.util.regex.Pattern.compile("M3-([a-z_]+)-(NETHER_ENTRY|NETHER_RETURN)").matcher(card);
+            require(parts.matches(),"bad census card "+card);
+            mobPortalCase(parts.group(1),parts.group(2).equals("NETHER_ENTRY")?OW:NETHER,1,sequence++,card);
+        }
+    }
     void mobPortalCase(String type,String from,int size,int sequence)throws Exception {
-            active=type.equals("silverfish") ? "M2-silverfish-"+(from.equals(OW)?"NETHER_ENTRY":"NETHER_RETURN")
+        mobPortalCase(type,from,size,sequence,null);
+    }
+    void mobPortalCase(String type,String from,int size,int sequence,String cardName)throws Exception {
+            active=cardName!=null ? cardName : type.equals("silverfish") ? "M2-silverfish-"+(from.equals(OW)?"NETHER_ENTRY":"NETHER_RETURN")
                 : "M0-"+type+"-size"+size+"-"+from;
             String to=from.equals(OW)?NETHER:OW;
             position(from,8.5,65,5.5,180,0);
