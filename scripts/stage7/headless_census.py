@@ -38,6 +38,8 @@ server = run / 'server'
 java = pathlib.Path(r'C:\Program Files\Eclipse Adoptium\jdk-25.0.4.101-hotspot\bin\java.exe')
 
 OW, NETHER, END = 'minecraft:overworld', 'minecraft:the_nether', 'minecraft:the_end'
+# NoAI keeps wandering/flying mobs in the portal cell so the outcome is decided by the portal, not by a random walk
+# (portal handling and block effects live in Entity.baseTick / LivingEntity.aiStep, not in goal selection).
 # Types whose native behaviour depends on gravity (ArmorStand.hasPhysics() = !marker && !noGravity -> noPhysics).
 GRAVITY_TYPES = {'armor_stand'}
 NBT = {
@@ -244,7 +246,7 @@ try:
                     end_ready.add((src, y))
                 at = '8.5 %d.25 8.5' % y
             summon = rcon('execute in %s run summon minecraft:%s %s {Tags:["stage7_mob"%s%s,"%s"]%s%s}' % (src, etype, at, ',"stage7_noentry_h"' if (etype, route) in noentry_pairs else '',
-                  ',"stage7_gateway_pig"' if route == 'END_GATEWAY' else '', tag, '' if etype in GRAVITY_TYPES else ',NoGravity:1b', NBT.get(etype, '')))
+                  ',"stage7_gateway_pig"' if route == 'END_GATEWAY' else '', tag, '' if etype in GRAVITY_TYPES else ',NoGravity:1b', ',NoAI:1b' + NBT.get(etype, '')))
             outcome = 'GONE' if fixture_ok else 'FIXTURE_INVALID'; where = 'NONE'
             witness = {}
             if fixture_ok: witness['source'] = snapshot_members(tag)
@@ -271,6 +273,8 @@ try:
                     outcome, where = 'STAYED', src
                     if not vanilla: remember_settled()
                 time.sleep(.25)
+            if outcome == 'GONE' and fixture_ok and not vanilla:
+                witness['afterWindow'] = snapshot_members(tag)   # [] proves nothing is left anywhere
             if outcome == 'TRANSFERRED' and not vanilla:
                 arrival_body = snapshot_body()
                 witness['arrival'] = snapshot_members(tag, arrival_body)

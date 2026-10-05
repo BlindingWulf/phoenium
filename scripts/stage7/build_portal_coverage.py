@@ -1358,7 +1358,8 @@ def headless_transfer_assertions(card: Card, entity_type: str, route: str) -> se
 HEADLESS_PORTAL_CELL = {"NETHER_ENTRY": (0, 65, 0), "NETHER_RETURN": (0, 65, 0), "END_ENTRY": (8, 65, 8),
                         "END_EXIT": (8, 70, 8), "END_GATEWAY": (12, 66, 8)}
 HEADLESS_MIN_DWELL_TICKS = 40
-HEADLESS_SHORT_LIVED = {"minecraft:lightning_bolt"}   # discards itself within a few ticks
+HEADLESS_SHORT_LIVED = {"minecraft:lightning_bolt", "minecraft:evoker_fangs"}   # discard themselves within ~10-25 ticks
+HEADLESS_SHORT_DWELL_TICKS = 8
 HEADLESS_CONTACT_TYPES = {"minecraft:wither"}         # canUsePortal(false) rejects it AFTER the portal block visited it
 
 
@@ -1383,7 +1384,7 @@ def headless_negative_assertions(card: Card, entity_type: str, route: str) -> se
     if (source.get("object") != settled.get("object") or source.get("nativeId") != settled.get("nativeId")
             or not isinstance(source.get("ticks"), int) or not isinstance(settled.get("ticks"), int)):
         return set()
-    dwell = 1 if entity_type in HEADLESS_SHORT_LIVED else HEADLESS_MIN_DWELL_TICKS
+    dwell = HEADLESS_SHORT_DWELL_TICKS if entity_type in HEADLESS_SHORT_LIVED else HEADLESS_MIN_DWELL_TICKS
     if settled["ticks"] < dwell or settled["ticks"] <= source["ticks"]:
         return set()
     cell = HEADLESS_PORTAL_CELL[route]
@@ -1424,6 +1425,33 @@ def headless_negative_assertions(card: Card, entity_type: str, route: str) -> se
         return assertions
     assertions.add("portal_session_absent")
     return assertions
+
+
+def headless_discard_assertions(card: Card, entity_type: str, route: str) -> set[str]:
+    """A native self-discard inside the portal: alive in the portal cell, then absent everywhere, with no portal activity."""
+    witness = card.data.get("witness")
+    uuid = _snapshot_uuid(card.data)
+    if card.data.get("outcome") != "GONE" or not isinstance(witness, dict) or uuid is None:
+        return set()
+    source = _single(witness.get("source"))
+    if (source is None or witness.get("afterWindow") != [] or witness.get("settled") or witness.get("arrival")
+            or str(source.get("uuid", "")).lower() != uuid or source.get("type") != entity_type
+            or source.get("world") != ROUTE_SOURCE_WORLD[route] or source.get("removed") is not False
+            or any(not isinstance(source.get(axis), (int, float)) for axis in ("x", "y", "z"))
+            or tuple(int(source[axis] // 1) for axis in ("x", "y", "z")) != HEADLESS_PORTAL_CELL[route]):
+        return set()
+    result = card.result_data
+    status = result.get("txStatus")
+    trace_value = result.get("txTracePath")
+    if (result.get("txPass") is not True or not isinstance(status, dict) or status.get("pending") != 0
+            or status.get("violations") != 0 or not isinstance(trace_value, str)):
+        return set()
+    trace_path = pathlib.Path(trace_value)
+    if (not trace_path.is_file() or trace_path.resolve().parent != card.result_path.resolve().parent
+            or digest(trace_path) != result.get("txTraceSha256")
+            or any(str(event.get("uuid", "")).lower() == uuid for event in _trace_events(trace_path))):
+        return set()
+    return {"destination_absent", "portal_session_absent", "native_discard"}
 
 
 def _region(value: Any) -> str | None:
@@ -1485,8 +1513,12 @@ def headless_gateway_assertions(card: Card, entity_type: str) -> set[str]:
             and _region(ticket.get("ownerContext")) == destination_region):
         assertions.add("gateway_ticket")
     # Same native object: tracking may only ever UPDATE it (no add/remove pair, which would mean a replacement).
-    if (destination_updates and not any(event.get("phase") in ("TRACKING_ADD_RETURN", "TRACKING_REMOVE_RETURN")
-                                        for event in every_tracking)
+    # The spawn itself is tracked once (ADD in the source chunk); an ADD in the destination chunk or any REMOVE would mean
+    # a replacement object.
+    if (destination_updates and not any(
+            event.get("phase") == "TRACKING_REMOVE_RETURN"
+            or (event.get("phase") == "TRACKING_ADD_RETURN" and (event.get("chunkX"), event.get("chunkZ")) == arrival_chunk)
+            for event in every_tracking)
             and all(event.get("object") == source["object"] and event.get("nativeId") == source["nativeId"]
                     and event.get("world") == end and event.get("ownerWorld") == end
                     and event.get("ownerContext") not in (None, "NONE")
@@ -1523,15 +1555,18 @@ def headless_claims(card: Card, rows: list[dict[str, Any]] | None = None) -> lis
             return [dict(card=card, entityType=entity_type, route=route, variant=None, graph="standalone",
                          observedOutcome="TRANSFER", assertions=assertions, basicObservation=True, scope="row")]
         return []
-    if outcome == "STAYED":
+    if outcome in ("STAYED", "GONE"):
         row = next((candidate for candidate in rows or [] if candidate.get("entityType") == entity_type
                     and candidate.get("route") == route and candidate.get("variant") in (None, "")
                     and candidate.get("graph", "standalone") == "standalone"), None)
         proof = row.get("sourceProof") if isinstance(row, dict) else None
         if not isinstance(proof, dict) or row.get("expectedNativeOutcome") != "NO_NATIVE_ENTRY_PATH":
             return []
-        assertions = headless_negative_assertions(card, entity_type, route)
-        if {"source_unchanged", "destination_absent", "portal_session_absent", "graph_unchanged"} <= assertions:
+        assertions = (headless_negative_assertions(card, entity_type, route) if outcome == "STAYED"
+                      else headless_discard_assertions(card, entity_type, route))
+        needed = ({"source_unchanged", "destination_absent", "portal_session_absent", "graph_unchanged"}
+                  if outcome == "STAYED" else {"destination_absent", "portal_session_absent", "native_discard"})
+        if needed <= assertions:
             cell = HEADLESS_PORTAL_CELL[route]
             applicability = {
                 "sourceWorld": ROUTE_SOURCE_WORLD[route], "destinationWorld": ROUTE_DESTINATION_WORLD[route],

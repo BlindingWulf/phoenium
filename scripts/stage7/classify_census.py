@@ -116,7 +116,8 @@ def main(argv: list[str] | None = None) -> int:
                 row["expectedNativeOutcome"] = "NO_NATIVE_ENTRY_PATH"
                 row["sourceProof"] = proof
                 row["fixture"] = {"contactImpossible": True, "reason": "No native portal entry path"}
-                row["requiredAssertions"] = ["source_unchanged", "destination_absent", "portal_session_absent", "graph_unchanged"]
+                row["requiredAssertions"] = proof.get(
+                    "requiredAssertions", ["source_unchanged", "destination_absent", "portal_session_absent", "graph_unchanged"])
                 classified_no_entry += 1
             else:
                 conflicts.append({"id": row["id"], "expected": "NO_NATIVE_ENTRY_PATH", "controlOutcomes": sorted(outcomes)})

@@ -154,6 +154,14 @@ def main() -> int:
             "eligibilityPredicate": PREDICATES[kind], "applicabilityDemonstrated": True,
             "artifact": args.output.name,
         }
+        if entity_type == "minecraft:llama_spit":
+            # LlamaSpit.tick discards the spit whenever every block its box touches is non-air, so a spit inside a portal
+            # block is removed natively on its first tick; the observation is GONE, not STAYED.
+            tick_text = method_at(leaf_lines, line_number)
+            if "noneMatch(BlockBehaviour.BlockStateBase::isAir)" not in tick_text or "this.discard();" not in tick_text:
+                raise SystemExit("LlamaSpit.tick no longer discards inside non-air")
+            proofs[entity_type]["observation"] = "native_discard"
+            proofs[entity_type]["requiredAssertions"] = ["destination_absent", "portal_session_absent", "native_discard"]
     args.output.write_text(json.dumps({"schemaVersion": 1, "sourceJarSha256": source_sha, "mappedBinarySha256": binary_sha,
                                        "proofs": proofs}, indent=2) + "\n", encoding="utf-8")
     print(f"wrote {len(proofs)} proofs to {args.output}")
