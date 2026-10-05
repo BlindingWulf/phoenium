@@ -656,7 +656,7 @@ def pearl_card(route, tag, override=False):
     x, y, z, motion = launch(route)
     if override:
         # the pearl rides a pig that itself never uses a portal: a throwable may use one while it is a passenger
-        rcon('execute in %s run summon minecraft:pig %s %s %s {Tags:["stage7_mob","%s","k1_pig"],Silent:1b,PortalCooldown:1000000,NoGravity:1b,Age:-24000%s}' % (src, x, y - (0.4 if not route.startswith('NETHER') and route != 'END_GATEWAY' else 0), z, tag, motion.replace('0.2d', '0.4d')))
+        rcon('execute in %s run summon minecraft:pig %s %s %s {Tags:["stage7_mob","%s","k1_pig"],Silent:1b,PortalCooldown:1000000,NoGravity:1b,Age:-24000%s}' % (src, x, y - (0.5 if route == 'END_GATEWAY' else 0 if route.startswith('NETHER') else 0.4), z, tag, motion.replace('0.2d', '0.4d')))
     rcon('execute in %s run summon minecraft:ender_pearl %s %s %s {Tags:["stage7_mob","%s"%s],NoGravity:1b,Owner:%s%s}' % (src, x, y, z, tag, gw(route), owner, motion))
     if override:
         witness['ride'] = rcon('ride @e[tag=%s,type=minecraft:ender_pearl,limit=1] mount @e[tag=k1_pig,limit=1]' % tag)
@@ -777,6 +777,12 @@ def bobber_card(route, tag):
     outcome = 'STAYED'
     if witness['cast']['source'] == 1:
         x, y, z = CELL[route].split()
+        # the End portal block only reaches 6/16..12/16 of its cell: a bobber must overlap that band to be visited by it
+        if route in ('END_ENTRY', 'END_EXIT'): y = str(round(float(y) + 0.3, 2))
+        if route == 'END_GATEWAY':
+            # the gateway cell is open air and a bobber has its own gravity: a stone block under the cell holds it there
+            rcon('tag @e[type=minecraft:fishing_bobber,limit=1] add ' + GATEWAY_TAG)
+            rcon('execute in %s run setblock %s %s %s minecraft:stone' % (src, int(float(x)), int(float(y)) - 1, int(float(z))))
         rcon('execute in %s run tp @e[type=minecraft:fishing_bobber,limit=1] %s %s %s' % (src, x, y, z))
         witness['carried'] = observe(tag, kinds=('minecraft:fishing_bobber',))
         t0 = time.monotonic()
@@ -793,6 +799,9 @@ def bobber_card(route, tag):
     rcon('tag %s remove %s' % (PLAYER, tag))
     rcon('clear ' + PLAYER)
     rcon('kill @e[type=minecraft:fishing_bobber]')
+    if route == 'END_GATEWAY':
+        x, y, z = CELL[route].split()
+        rcon('execute in %s run setblock %s %s %s minecraft:air' % (src, int(float(x)), int(float(y)) - 1, int(float(z))))
     return outcome, witness
 
 

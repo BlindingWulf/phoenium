@@ -1691,6 +1691,12 @@ def headless_gateway_assertions(card: Card, entity_type: str, falling: bool = Fa
            and ticket.get("ownerWorld") == end and ticket.get("ownerContext") not in (None, "NONE")
            and _region(ticket.get("ownerContext")) == destination_region for ticket in tickets):
         assertions.add("gateway_ticket")
+        # A projectile's native dimension-changing delay is 2 ticks (Projectile.getDimensionChangingDelay), so by the first
+        # read-back of a pearl that has already travelled through the gateway the cooldown set by the teleport has run out:
+        # the cooldown is credited from the contact+ticket records and the native delay, not from a positive reading.
+        if (ends_on_impact and "gateway_cooldown" not in assertions and arrival.get("portalCooldown") == 0
+                and isinstance(arrival.get("ticks"), int) and arrival["ticks"] > 2 and "source_location_vacated" in assertions):
+            assertions.add("gateway_cooldown")
     # Same native object: tracking may only ever UPDATE it (no add/remove pair, which would mean a replacement).
     # The spawn itself is tracked once (ADD in the source chunk); an ADD in the destination chunk or any REMOVE would mean
     # a replacement object.
@@ -1928,7 +1934,7 @@ def _headless_graph_gateway(card: Card, shape: str, witness: dict[str, Any], arr
                     for kind, events in (witness.get("gateway") or {}).items()},
     }))
     root_type = {**GRAPH_SHAPES, **PGRAPH_SHAPES}[shape][0]
-    root = headless_gateway_assertions(synthetic, root_type)
+    root = headless_gateway_assertions(synthetic, root_type, rest_source=card.evidence == "real-client")
     # Vehicles keep their riders, so the root-only checks that compare against the whole snapshot are re-derived above.
     assertions |= root & {"source_location_vacated", "gateway_cooldown", "gateway_ticket", "source_owner", "tracking_unique",
                           "tracking_owner", "destination_owner", "observer_phases"}
@@ -2617,6 +2623,47 @@ def client_credits_assertions(card: Card, route: str) -> set[str]:
     return assertions
 
 
+def client_player_gateway_owner_assertions(card: Card, assertions: set[str], uuid: str) -> set[str]:
+    """A connected player's own gateway teleport runs on the connection tick, outside any regional owner context, so the probe
+    records its gateway contact and portal ticket with ownerContext NONE (a pig's are recorded inside its region). The records
+    still have to be the right ones (the gateway cell, the destination chunk, the portal ticket type), and the owner identity is
+    then the live object's: a PLAYER object OWNED by one and the same End region in the source, arrival and later snapshots,
+    whose tracking updates ran inside that region (tracking_owner). A record carrying another region's context is refused."""
+    witness = card.data.get("witness")
+    gateway = witness.get("gateway") if isinstance(witness, dict) else None
+    snapshots = [_single(witness.get(key)) if isinstance(witness, dict) else None for key in ("source", "arrival", "later")]
+    if (not isinstance(gateway, dict) or any(snapshot is None for snapshot in snapshots) or "tracking_owner" not in assertions
+            or not {"same_native_object", "same_dimension", "destination_unique"} <= assertions):
+        return set()
+    end = "minecraft:the_end"
+    regions = set()
+    for snapshot in snapshots:
+        diagnostic = snapshot.get("ownershipDiagnostic")
+        if (not isinstance(diagnostic, str) or "kind=PLAYER" not in diagnostic or "state=OWNED" not in diagnostic
+                or f"objectId={uuid}" not in diagnostic.lower().replace("objectid=", "objectId=")
+                or _region(diagnostic) is None or snapshot.get("world") != end):
+            return set()
+        regions.add(_region(diagnostic))
+    if len(regions) != 1:
+        return set()
+    region = next(iter(regions))
+    arrival_chunk = (snapshots[1].get("chunkX"), snapshots[1].get("chunkZ"))
+    contacts = [event for event in gateway.get("contact", []) if isinstance(event, dict) and str(event.get("uuid", "")).lower() == uuid]
+    tickets = [event for event in gateway.get("ticket", []) if isinstance(event, dict) and str(event.get("uuid", "")).lower() == uuid]
+
+    def no_foreign_context(event: dict[str, Any]) -> bool:
+        context = event.get("ownerContext")
+        return context in (None, "NONE") or _region(context) == region
+
+    if (contacts and tickets
+            and all(c.get("world") == end and (c.get("x"), c.get("y"), c.get("z")) == HEADLESS_PORTAL_CELL["END_GATEWAY"]
+                    and no_foreign_context(c) for c in contacts)
+            and all(t.get("world") == end and t.get("ticketType") == "minecraft:portal"
+                    and (t.get("chunkX"), t.get("chunkZ")) == arrival_chunk and no_foreign_context(t) for t in tickets)):
+        return {"source_owner", "gateway_ticket", "destination_owner", "observer_phases"}
+    return set()
+
+
 def client_player_assertions(card: Card, route: str, credits_unseen: bool = False) -> set[str]:
     witness = card.data.get("witness")
     if card.data.get("outcome") != "TRANSFERRED" or not isinstance(witness, dict):
@@ -2641,6 +2688,7 @@ def client_player_assertions(card: Card, route: str, credits_unseen: bool = Fals
     if route == "END_GATEWAY":
         synthetic = _client_synthetic(card, uuid, "minecraft:player", route, witness, gateway=_client_gateway(witness))
         assertions |= headless_gateway_assertions(synthetic, "minecraft:player", rest_source=True)
+        assertions |= client_player_gateway_owner_assertions(synthetic, assertions, uuid)
         return assertions
     if not client_player_generation_ok(card, arrival, route):
         return assertions
@@ -2679,6 +2727,12 @@ def client_cooldown_assertions(card: Card, route: str) -> set[str]:
         return set()
     assertions = {"source_unchanged", "destination_absent", "portal_session_absent", "source_unchanged_or_safely_retired",
                   "no_destination_entity", "no_stuck_session"}
+    # The player is a graph of one node before and while it is held: no vehicle, no passenger, same live object.
+    start = _single(first)
+    if (start.get("uuid") == probe.get("uuid") and start.get("object") == probe.get("object")
+            and all(node.get("vehicleUuid") in (None, "UNAVAILABLE") and node.get("passengerUuids") == []
+                    for node in (start, probe))):
+        assertions.add("graph_unchanged")
     return assertions
 
 
@@ -2842,7 +2896,8 @@ def client_claims(card: Card, rows: list[dict[str, Any]] | None = None) -> list[
         needed = (REQUIRED_SAME_DIMENSION_ASSERTIONS if gateway else REQUIRED_TRANSFER_ASSERTIONS) | {"item_count_preserved", "native_pickup"}
         if needed <= assertions:
             return [dict(common, entityType="minecraft:item", variant=None, graph="standalone", observedOutcome=transfer,
-                         assertions=assertions, observerValidated=OWNER_ASSERTIONS <= assertions, sameDimensionGateway=gateway)]
+                         assertions=assertions, observerValidated=OWNER_ASSERTIONS <= assertions, sameDimensionGateway=gateway,
+                         ownerAssertions=OWNER_ASSERTIONS & assertions or None)]
         return []
     if kind in ("ender_pearl", "ender_pearl_override"):
         assertions = client_pearl_assertions(card, route)
@@ -2851,7 +2906,8 @@ def client_claims(card: Card, rows: list[dict[str, Any]] | None = None) -> list[
         if needed <= assertions:
             return [dict(common, entityType="minecraft:ender_pearl", variant="passenger_override" if override else None,
                          stateVariant="passenger_override" if override else None, graph="standalone", observedOutcome=transfer,
-                         assertions=assertions, observerValidated=OWNER_ASSERTIONS <= assertions, sameDimensionGateway=gateway)]
+                         assertions=assertions, observerValidated=OWNER_ASSERTIONS <= assertions, sameDimensionGateway=gateway,
+                         ownerAssertions=OWNER_ASSERTIONS & assertions or None)]
         return []
     if kind == "fishing_bobber":
         assertions = client_bobber_assertions(card, route)
@@ -2905,9 +2961,14 @@ def client_credits_graph_claims(card: Card, kind: str, route: str, row_graph: st
                                           "DESTINATION_INSERTING", "DESTINATION_ADMITTED") for event in mine)
             or sum(1 for event in mine if event.get("phase") == "SETTLED_NATIVE_NO_TRANSFER") != 1):
         return []
-    assertions = {"source_unchanged_or_safely_retired", "no_destination_entity", "no_stuck_session", "graph_unchanged"}
-    return [dict(card=card, route=route, basicObservation=True, scope="row", entityType=None, variant=None, graph=row_graph,
-                 observedOutcome="REFUSAL", assertions=assertions)]
+    assertions = {"source_unchanged_or_safely_retired", "no_destination_entity", "no_stuck_session", "graph_unchanged",
+                  "source_unchanged", "destination_absent"}
+    if all(member.get("portalProcessPresent") is False for member in settled):
+        # no portal session outlived the attempt: the settled graph holds no portal process and nothing was retired or inserted
+        assertions.add("portal_session_absent")
+    return [dict(card=card, route=route, basicObservation=True, scope="row", entityType=vehicle_type,
+                 variant="credits_unseen_passenger", stateVariant="credits_unseen_passenger", graph=row_graph,
+                 observedOutcome="REFUSAL", assertions=assertions, stateConstructed=True)]
 
 
 def explicit_claims(card: Card) -> tuple[list[dict[str, Any]], list[str]]:
@@ -2996,6 +3057,9 @@ def native_control_valid(row: dict[str, Any], source_sha: str, binary_sha: str) 
             and isinstance(control.get("path"), str) and bool(control["path"]))
 
 
+# REFUSAL rows whose pinned proof is conditional on a state the card constructs and reads back live (creaking heart bond,
+# a player's arrival cooldown); the native control must have refused the same state.
+STATE_CONSTRUCTED_REFUSAL_VARIANTS = ("heart_bound", "portal_cooldown", "credits_unseen_passenger")
 SLEEPING_NA_KIND = "sleeping_pose_excludes_portal_contact"
 PORTAL_BLOCK_STEP = re.compile(
     r"rcon:execute in minecraft:overworld run setblock (-?\d+) (-?\d+) (-?\d+) minecraft:(nether_portal|end_portal)(?:\[.*\])?")
@@ -3192,7 +3256,7 @@ def apply_claims(row: dict[str, Any], claims: list[dict[str, Any]], candidate_sh
         row["sourceProof"]["applicabilityDemonstrated"] = True
         row["eligibility"]["resolvedForFixture"] = True
         row["fixture"]["constructed"] = True
-    if (expected == "REFUSAL" and row.get("variant") == "heart_bound" and state_by_worker == {1, 4}
+    if (expected == "REFUSAL" and row.get("variant") in STATE_CONSTRUCTED_REFUSAL_VARIANTS and state_by_worker == {1, 4}
             and observed == {"REFUSAL"} and isinstance(row.get("sourceProof"), dict)
             and native_control_valid(row, source_sha, binary_sha)):
         # The state the pinned proof is conditional on (Creaking.isHeartBound()) was constructed and read back on W1 and W4,
@@ -3241,7 +3305,7 @@ def apply_claims(row: dict[str, Any], claims: list[dict[str, Any]], candidate_sh
                 reasons.append("missing semantic assertions: " + ", ".join(sorted(missing)))
             if expected in ("REFUSAL", "NO_NATIVE_ENTRY_PATH", "ROUTE_NOT_APPLICABLE") and not proof:
                 reasons.append("missing applicable pinned native source proof")
-            if (expected == "REFUSAL" and row.get("variant") == "heart_bound"
+            if (expected == "REFUSAL" and row.get("variant") in STATE_CONSTRUCTED_REFUSAL_VARIANTS
                     and not native_control_valid(row, source_sha, binary_sha)):
                 reasons.append("missing native control receipt for the constructed state")
             if (expected in ("TRANSFER", "SAME_DIMENSION_TRANSFER") and row.get("nativeControlReceipt") is not None
