@@ -117,12 +117,13 @@ def item_ids(world):
     return sorted(re.findall(r'id: "([^"]+)"', text))
 
 
-def observables(spec, targets):
+def observables(spec, targets, item):
     result = {}
     for world, label in ((OW, 'overworld'), (NETHER, 'nether'), (END, 'end')):
         entry = {'regions': count_blocks(world, spec),
                  'items': count_entities(world, '@e[type=item,distance=0..2000]'),
                  'itemIds': item_ids(world),
+                 'carriedItems': count_entities(world, '@e[type=item,distance=0..2000,nbt={Item:{id:"minecraft:%s"}}]' % item),
                  'fallingBlocks': count_entities(world, '@e[type=falling_block,distance=0..2000]')}
         if targets:
             entry['targets'] = count_entities(world, '@e[tag=stage7_target,distance=0..2000]')
@@ -314,8 +315,12 @@ try:
         for dbg in filter(None, os.environ.get('HC_DEBUG_CMDS', '').split(';;')):
             print('DEBUG', dbg, '=>', rcon(dbg), flush=True)
         end_ready = set()
-        for world in (END,):
-            rcon('execute in %s run forceload add 90 -10 110 10' % world)   # the spawn platform must stay loaded for the block counts
+        # Every counted region must be loaded and free of natural blocks of the carried type (the world copy has natural sand), so
+        # the overworld counting region is cleared once and the End regions are forceloaded before the first baseline.
+        for c in ['forceload add -16 -16 16 16', 'fill -12 60 -12 12 90 12 minecraft:air']:
+            rcon('execute in %s run %s' % (OW, c))
+        for c in ['forceload add 90 -10 110 10', 'forceload add 0 0 24 20']:
+            rcon('execute in %s run %s' % (END, c))
         for card in census.split(','):
             m = re.fullmatch(r'D0-falling-([a-z0-9_]+)-(NETHER_ENTRY|NETHER_RETURN|END_ENTRY|END_EXIT|END_GATEWAY)', card)
             assert m, card
@@ -360,7 +365,7 @@ try:
                              % (dst, cx + dx, cy, cz + dz))
             witness = {'carriedSpec': spec, 'variant': variant}
             if fixture_ok:
-                witness['baseline'] = observables(spec, landing)
+                witness['baseline'] = observables(spec, landing, block)
             at, motion = LAUNCH[route]
             summon = rcon('execute in %s run summon minecraft:falling_block %s {Tags:["stage7_mob","%s"%s],BlockState:%s,Time:1%s%s}'
                           % (src, at, tag, ',"stage7_gateway_pig"' if route == 'END_GATEWAY' else '', state_nbt, extra, motion))
@@ -387,7 +392,7 @@ try:
                     if route == 'END_GATEWAY': witness['gateway'] = gateway_events(witness['arrival'], arrival_body)
             if fixture_ok:
                 time.sleep(6)   # let the native landing / drop / damage behaviour play out
-                witness['observables'] = observables(spec, landing)
+                witness['observables'] = observables(spec, landing, block)
                 witness['observablesSettledTicks'] = 120
                 after, before = witness['observables'], witness['baseline']
                 def delta(world, label, area=None):
