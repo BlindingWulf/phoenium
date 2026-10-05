@@ -164,6 +164,7 @@
     "EntityLifecycleMixin",
     "PlayerDimensionEntityAccess",
     "NativePortalTransferMixin",
+    "PortalTicketEntityMixin",
     "ItemPortalRestoreMixin",
     "TntPortalRestoreMixin",
     "VexPortalRestoreMixin",

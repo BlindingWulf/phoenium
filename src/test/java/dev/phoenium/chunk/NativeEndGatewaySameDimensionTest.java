@@ -30,7 +30,6 @@ import net.minecraft.world.phys.Vec3;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
 import static dev.phoenium.chunk.FullDecisionWitnessSupport.set;
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -39,10 +38,12 @@ class NativeEndGatewaySameDimensionTest {
     @BeforeAll static void bootstrap() { NativeItemPortalTransferTest.bootstrap(); }
     @AfterEach void resetTicket() {
         NativePortalTestHooks.ticket = entity -> entity.placePortalTicket(BlockPos.containing(entity.position()));
+        NativePortalTestHooks.tickets = null;
     }
 
     @Test void sameOwnerNativeGatewayKeepsOneObjectAndPlacesTicketAfterMove() throws Exception {
-        var result = nativeGateway(false, false);
+        var result = nativeGateway(false, false, true);
+        assertEquals(0, result.deferredTickets(), "a ticket for the caller's own chunk must stay inline");
         assertEquals(List.of("move", "ticket"), result.events());
         assertSame(result.pig(), result.returned());
         assertEquals(result.uuid(), result.returned().getUUID());
@@ -55,8 +56,9 @@ class NativeEndGatewaySameDimensionTest {
         assertEquals(1, result.ticketCalls());
     }
 
-    @Test void nativeCrossOwnerGatewayTicketPrecedesOwnerFreeRelocationCut() throws Exception {
-        var result = nativeGateway(true, false);
+    /** Historical pre-repair control: with the ticket boundary absent native A/B runs it under A. */
+    @Test void unrepairedCrossOwnerGatewayControlDocumentsHistoricalWrongOwnerTicket() throws Exception {
+        var result = nativeGateway(true, false, false);
         assertEquals(List.of("move", "ticket"), result.events());
         assertSame(result.pig(), result.returned(), "native same-dimension teleport returns this");
         assertEquals(result.uuid(), result.returned().getUUID());
@@ -64,7 +66,7 @@ class NativeEndGatewaySameDimensionTest {
         assertEquals(new Vec3(160.5, 65.0, 160.5), result.returned().position());
         assertEquals(1, result.ticketCalls(), "the exact PLACE_PORTAL_TICKET callback ran");
         assertEquals(result.sourceOwner(), result.ownerAtTicket(),
-            "native callback still runs inside the source owner turn");
+            "without the boundary the native callback runs inside the source owner turn");
         assertNotEquals(result.destinationOwner(), result.ownerAtTicket(),
             "explicit A/B topology exposes a wrong-owner native gateway callback");
         assertEquals(result.sourceKey(), result.bindingAtTicket(),
@@ -72,17 +74,43 @@ class NativeEndGatewaySameDimensionTest {
         assertEquals(1, result.pendingRelocations());
     }
 
-    /** Intentionally red opt-in acceptance assertion; keep its XML outside the default suite. */
-    @Test
-    @EnabledIfEnvironmentVariable(named = "PHOENIUM_GATEWAY_STRICT", matches = "true")
-    void strictCrossOwnerGatewayTicketMustRunUnderDestinationOwner() throws Exception {
-        var result = nativeGateway(true, false);
+    /**
+     * Required gate (formerly the opt-in PHOENIUM_GATEWAY_STRICT red): the exact native
+     * PLACE_PORTAL_TICKET callback for a chunk B owns must run under B, not under the source owner A.
+     */
+    @Test void strictCrossOwnerGatewayTicketMustRunUnderDestinationOwner() throws Exception {
+        var result = nativeGateway(true, false, true);
         assertEquals(result.destinationOwner(), result.ownerAtTicket(),
-            "native End gateway fires PLACE_PORTAL_TICKET under A before the same-object A/B relocation cut");
+            "native End gateway PLACE_PORTAL_TICKET for a chunk B owns must run under B");
+        assertNotEquals(result.sourceOwner(), result.ownerAtTicket());
+        assertEquals(List.of("move", "ticket"), result.events());
+        assertEquals(1, result.ticketCalls(), "the native callback ran exactly once");
+    }
+
+    @Test void repairedCrossOwnerGatewayKeepsOneObjectAndSettlesWithoutLeakingState() throws Exception {
+        var result = nativeGateway(true, false, true);
+        // Same native object: no retirement, replacement, new UUID or new runtime id.
+        assertSame(result.pig(), result.returned());
+        assertEquals(result.uuid(), result.returned().getUUID());
+        assertEquals(result.runtimeId(), result.returned().getId());
+        assertEquals(new Vec3(160.5, 65.0, 160.5), result.returned().position());
+        // The callback is retained, not run inline, and not replayed or lost.
+        assertEquals(1, result.deferredTickets());
+        assertEquals(1, result.placedTickets());
+        assertEquals(0, result.droppedTickets());
+        assertEquals(0, result.pendingTickets());
+        // The owner-free relocation cut stays the only authority move for the object itself.
+        assertEquals(1, result.pendingRelocationsBeforeCut());
+        assertEquals(0, result.pendingRelocationsAfterCut());
+        assertEquals(result.destinationOwner(), result.ownerAfterCut(),
+            "the same object ends owned by the destination region after the cut");
+        assertEquals(result.destination(), result.bindingAfterCut());
+        assertEquals(result.destinationOwner(), result.unrelatedOwnerAfterEnclosure(),
+            "no unrelated region ownership moved");
     }
 
     @Test void ownerFreeTopologyEnclosureMakesTicketOwnedButMigratesUnrelatedRegion() throws Exception {
-        var result = nativeGateway(true, true);
+        var result = nativeGateway(true, true, false);
         assertEquals(List.of("move", "ticket"), result.events());
         assertSame(result.pig(), result.returned());
         assertEquals(result.uuid(), result.returned().getUUID());
@@ -96,7 +124,7 @@ class NativeEndGatewaySameDimensionTest {
             "FullRegionalEnclosure moves an unrelated B-region route into A; it is not a narrow gateway handoff");
     }
 
-    private static Control nativeGateway(boolean crossOwner, boolean enclose) throws Exception {
+    private static Control nativeGateway(boolean crossOwner, boolean enclose, boolean repaired) throws Exception {
         var f = new NativeItemPortalTransferTest.Fixture(Level.END);
         NativePortalDestinationPreparationTest.installNativeLookup(f);
         var source = f.nether;
@@ -168,6 +196,10 @@ class NativeEndGatewaySameDimensionTest {
             events.add("ticket");
         };
 
+        var boundary = new dev.phoenium.live.PortalTicketBoundary(f.authority,
+            key -> f.directory.resolve(key).map(RegionRoute::region),
+            (entity, position) -> NativePortalTestHooks.ticket.accept(entity));
+        if (repaired) NativePortalTestHooks.tickets = boundary;
         AtomicReference<Entity> returned = new AtomicReference<>();
         var manager = new dev.phoenium.live.MobPortalTransitionManager(f.authority, f.objects);
         f.dispatcher.executeAndDrain(sourceKey, RegionalServiceKind.ENTITY_PORTAL_SOURCE, ignored -> {
@@ -182,10 +214,19 @@ class NativeEndGatewaySameDimensionTest {
         });
         manager.close();
         if (enclose) destinationOwner = f.br;
+        int pendingAtReturn = f.identities.pendingRelocationCount();
+        // Owner-free boundary: replay any retained foreign-owner ticket, then commit relocations.
+        boundary.advance();
+        int pendingBefore = f.identities.pendingRelocationCount();
+        f.identities.advancePendingRelocations(f.runtimes);
+        var after = f.objects.current(uuid.toString()).orElseThrow();
         return new Control(pig, returned.get(), uuid, runtimeId, sourceKey, destination,
             f.br, destinationOwner, ticketOwner.get(), ticketBinding.get(),
-            f.identities.pendingRelocationCount(), ticketCalls.get(), List.copyOf(events),
-            f.directory.resolve(unrelated).orElseThrow().region());
+            pendingAtReturn, ticketCalls.get(), List.copyOf(events),
+            f.directory.resolve(unrelated).orElseThrow().region(),
+            (int) boundary.deferredCount(), (int) boundary.placedCount(), (int) boundary.droppedCount(),
+            boundary.pendingCount(), pendingBefore, f.identities.pendingRelocationCount(),
+            after.owner(), after.routingKey());
     }
 
     private record Control(Pig pig, Entity returned, UUID uuid, int runtimeId,
@@ -193,5 +234,8 @@ class NativeEndGatewaySameDimensionTest {
                            RegionId sourceOwner, RegionId destinationOwner,
                            RegionId ownerAtTicket, RoutingKey bindingAtTicket,
                            int pendingRelocations, int ticketCalls, List<String> events,
-                           RegionId unrelatedOwnerAfterEnclosure) { }
+                           RegionId unrelatedOwnerAfterEnclosure,
+                           int deferredTickets, int placedTickets, int droppedTickets, int pendingTickets,
+                           int pendingRelocationsBeforeCut, int pendingRelocationsAfterCut,
+                           RegionId ownerAfterCut, RoutingKey bindingAfterCut) { }
 }

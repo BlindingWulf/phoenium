@@ -47,8 +47,14 @@ public final class NativePortalTestHooks {
     public static void mergeWithNeighbours(ItemEntity entity) {
         NativePortalTransfer.destinationEffect(entity,"ITEM_TELEPORT_SUFFIX",() -> invoke(ItemEntity.class,entity,"mergeWithNeighbours"));
     }
+    /** Mirrors PortalTicketEntityMixin's head cut; null means the repair is not installed. */
+    static dev.phoenium.live.PortalTicketBoundary tickets;
     public static void placePortalTicket(Entity entity, BlockPos pos) {
-        if (dev.phoenium.ownership.OwnershipContext.current().isPresent()) { ticket.accept(entity); return; }
+        if (dev.phoenium.ownership.OwnershipContext.current().isPresent()) {
+            var boundary = tickets;
+            if (boundary != null && boundary.place(entity, pos)) return;
+            ticket.accept(entity); return;
+        }
         NativePortalTransfer.destinationEffect(entity,"PEARL_TELEPORT_SUFFIX",() -> ticket.accept(entity));
     }
     private static void invoke(Class<?> owner, Object value, String name) {
