@@ -2996,6 +2996,81 @@ def native_control_valid(row: dict[str, Any], source_sha: str, binary_sha: str) 
             and isinstance(control.get("path"), str) and bool(control["path"]))
 
 
+SLEEPING_NA_KIND = "sleeping_pose_excludes_portal_contact"
+PORTAL_BLOCK_STEP = re.compile(
+    r"rcon:execute in minecraft:overworld run setblock (-?\d+) (-?\d+) (-?\d+) minecraft:(nether_portal|end_portal)(?:\[.*\])?")
+
+
+def sleeping_observation_verdict(entries: Any) -> list[dict[str, Any]] | None:
+    """Read a real-client exploration (`explore-output.json`) of the sleeping state.
+
+    For each `setblock ... nether_portal|end_portal` step: the read-backs since the previous such step must show that the
+    player really slept in exactly that cell (SleepTimer > 0, sleeping_pos = the cell, Pos = the bed height inside it), and
+    the read-backs after it (up to the next bed being built) that the player woke at once (SleepTimer 0). Returns one verdict per
+    replaced bed cell, or None when the transcript is not that exploration."""
+    if not isinstance(entries, list) or not all(isinstance(entry, dict) for entry in entries):
+        return None
+
+    def values(first: int, last: int, name: str, pattern: str) -> list[str]:
+        found = []
+        for item in entries[first:last]:
+            step, value = item.get("step"), item.get("value")
+            if isinstance(step, str) and step == "rcon:data get entity PhoeniumTest0 " + name and isinstance(value, str):
+                data = re.fullmatch(r"PhoeniumTest0 has the following entity data: (.*)", value.strip())
+                if data and re.fullmatch(pattern, data.group(1)):
+                    found.append(data.group(1))
+        return found
+
+    stops = [(index, match) for index, match in
+             ((index, PORTAL_BLOCK_STEP.fullmatch(str(entry.get("step")))) for index, entry in enumerate(entries)) if match]
+    verdicts: list[dict[str, Any]] = []
+    previous = 0
+    for position, (index, match) in enumerate(stops):
+        following = next((later for later in range(index + 1, len(entries)) if "red_bed" in str(entries[later].get("step"))),
+                         len(entries))   # the read-backs after the portal block end where the next bed is built
+        cell = [int(part) for part in match.groups()[:3]]
+        timer = values(previous, index, "SleepTimer", r"\d+s")
+        sleeping_pos = values(previous, index, "sleeping_pos", r"\[I; -?\d+, -?\d+, -?\d+\]")
+        at = values(previous, index, "Pos", r"\[-?[\d.]+d, -?[\d.]+d, -?[\d.]+d\]")
+        awake = values(index + 1, following, "SleepTimer", r"\d+s")
+        dimension = values(index + 1, following, "Dimension", r'"minecraft:[a-z_]+"')
+        previous = index + 1   # the latest read-back before the next portal block is the one taken while that bed slept
+        if not (timer and sleeping_pos and at and len(awake) >= 2 and dimension):
+            return None
+        slept_cell = [int(part) for part in re.findall(r"-?\d+", sleeping_pos[-1])]
+        x, y, z = (float(part.rstrip("d")) for part in re.findall(r"-?[\d.]+d", at[-1]))
+        verdicts.append({
+            "block": match.group(4), "cell": cell,
+            "asleepBefore": int(timer[-1].rstrip("s")) > 0 and slept_cell == cell,
+            "positionInCell": [math.floor(x), math.floor(y), math.floor(z)] == cell and abs(y - (cell[1] + 0.6875)) < 1e-6,
+            "wokeAtOnce": all(int(item.rstrip("s")) == 0 for item in awake[-2:]),
+            "dimensionAfter": dimension[-1].strip('"'),
+        })
+    if sorted(verdict["block"] for verdict in verdicts) != ["end_portal", "nether_portal"]:
+        return None
+    return verdicts
+
+
+def sleeping_na_proof_ok(row: dict[str, Any], source_sha: str, binary_sha: str) -> bool:
+    """The ROUTE_NOT_APPLICABLE proof of a sleeping-player row: pinned source plus the same native observation on the
+    Phoenium-free control and on W1 and W4, every verdict constructed and identical."""
+    proof = row.get("sourceProof")
+    if not isinstance(proof, dict) or proof.get("kind") != SLEEPING_NA_KIND or not proof_valid(row, source_sha, binary_sha):
+        return False
+    observations = proof.get("observations")
+    if (not isinstance(observations, list) or not all(isinstance(item, dict) for item in observations)
+            or sorted(str(item.get("mode")) for item in observations) != ["W1", "W4", "vanilla"]):
+        return False
+    reference = observations[0].get("verdicts")
+    for item in observations:
+        verdicts = item.get("verdicts")
+        if (not isinstance(verdicts, list) or len(verdicts) != 2 or not valid_sha(item.get("sha256")) or verdicts != reference
+                or not all(isinstance(v, dict) and v.get("asleepBefore") is True and v.get("positionInCell") is True
+                           and v.get("wokeAtOnce") is True for v in verdicts)):
+            return False
+    return True
+
+
 def exact_source_only_no_entry(row: dict[str, Any]) -> bool:
     proof = row.get("sourceProof")
     return (row.get("id") in LEASH_IDS
@@ -3149,6 +3224,13 @@ def apply_claims(row: dict[str, Any], claims: list[dict[str, Any]], candidate_sh
               and not proof_only_assertions and native_control_valid(row, source_sha, binary_sha)):
             row["observedPhoeniumResult"] = expected
             row["disposition"] = DISPOSITIONS[expected]
+        elif (expected == "ROUTE_NOT_APPLICABLE" and proof and contact_impossible and not proof_only_assertions
+              and sleeping_na_proof_ok(row, source_sha, binary_sha)):
+            row["observedPhoeniumResult"] = expected
+            row["disposition"] = DISPOSITIONS[expected]
+            row["finalCandidateSha256"] = candidate_sha
+            row["evidenceScope"] = "pinned_source_and_native_W1_W4_observation; sleeping pose cannot be in portal contact"
+            row["witnessedAssertions"] = ["sleeping_pose_excludes_portal_contact"]
         else:
             if basic_by_worker != {1, 4}:
                 reasons.append("missing basic final-byte W1/W4 observation")
@@ -3221,6 +3303,16 @@ def validate_census(census: dict[str, Any], frozen: dict[str, Any], source_sha: 
                     or proof.get("coverageCreditedByThisArtifact") is not False):
                 raise ValueError("leash-knot source-only proof content mismatch")
         for row in rows:
+            proof = row.get("sourceProof")
+            if isinstance(proof, dict) and proof.get("kind") == SLEEPING_NA_KIND:
+                for item in proof.get("observations", []):
+                    relative = pathlib.Path(str(item.get("path", "")))
+                    if relative.is_absolute() or not relative.parts or ".." in relative.parts:
+                        raise ValueError(f"unsafe sleeping observation path: {row.get('id')}")
+                    observed = (root / relative).resolve(strict=True)
+                    if (not observed.is_relative_to(root) or digest(observed) != item.get("sha256")
+                            or sleeping_observation_verdict(read_json(observed)) != item.get("verdicts")):
+                        raise ValueError(f"sleeping observation changed or does not show the state: {row.get('id')}")
             control = row.get("nativeControlReceipt")
             if control is None:
                 continue

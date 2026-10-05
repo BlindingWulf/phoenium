@@ -11,13 +11,16 @@ With --no-entry-proofs (output of no_entry_source_proofs.py) a type that has a p
 observation STAYED/GONE is classified NO_NATIVE_ENTRY_PATH; a type with such a proof whose control TRANSFERRED is a conflict.
 
 Usage: classify_census.py --census <v2.json> --control <run dir> [--control <run dir> ...] --out-dir <dir>
-                          [--no-entry-proofs <json>]
+                          [--no-entry-proofs <json>] [--route-na-proofs <json>]
+With --route-na-proofs (output of sleeping_na_proof.py) the player `sleeping` rows become ROUTE_NOT_APPLICABLE: the proof and the
+three native observations it hashes are copied next to the census, where the importer re-verifies them.
 Writes <out-dir>/PORTAL_BEHAVIOR_CENSUS_V3.json plus <out-dir>/native-controls/<run>/ copies and every artifact the v2
 census already referenced, so the importer can resolve every control path relative to the census directory.
 """
 from __future__ import annotations
 
 import argparse
+import copy
 import build_portal_coverage as coverage
 import hashlib
 import json
@@ -79,6 +82,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--control", type=pathlib.Path, action="append", required=True)
     parser.add_argument("--out-dir", type=pathlib.Path, required=True)
     parser.add_argument("--no-entry-proofs", type=pathlib.Path)
+    parser.add_argument("--route-na-proofs", type=pathlib.Path)
     args = parser.parse_args(argv)
     census = json.loads(args.census.read_text(encoding="utf-8"))
     source_sha, binary_sha = census["sourceJarSha256"], census["mappedBinarySha256"]
@@ -117,6 +121,14 @@ def main(argv: list[str] | None = None) -> int:
             raise SystemExit("no-entry proofs were generated from different pinned sources")
         proofs = document["proofs"]
         shutil.copy2(args.no_entry_proofs, out / args.no_entry_proofs.name)
+    sleeping_proof = None
+    if args.route_na_proofs:
+        document = json.loads(args.route_na_proofs.read_text(encoding="utf-8"))
+        if document["sourceJarSha256"] != source_sha or document["mappedBinarySha256"] != binary_sha:
+            raise SystemExit("route-not-applicable proof was generated from different pinned sources")
+        sleeping_proof = dict(document["proof"], observations=document["observations"])
+        shutil.copy2(args.route_na_proofs, out / args.route_na_proofs.name)
+        shutil.copytree(args.route_na_proofs.parent / "sleeping-observations", out / "sleeping-observations", dirs_exist_ok=True)
     classified, conflicts, pending, classified_no_entry = 0, [], [], 0
 
     def receipt_of(run_name: str, card: str, verdict: str) -> dict:
@@ -127,6 +139,13 @@ def main(argv: list[str] | None = None) -> int:
                 "inputsSha256": digest(result_path.with_name("inputs.json"))}
 
     for row in census["rows"]:
+        if sleeping_proof is not None and row.get("entityType") == "minecraft:player" and row.get("variant") == "sleeping":
+            row["expectedNativeOutcome"] = "ROUTE_NOT_APPLICABLE"
+            row["sourceProof"] = copy.deepcopy(sleeping_proof)
+            row["fixture"] = {"contactImpossible": True, "reason": "A sleeping pose is never in portal contact"}
+            row["requiredAssertions"] = []
+            classified_no_entry += 1
+            continue
         fx = coverage.effects_kind_of_row(row)
         fx_observed = controls.get(("effects:" + fx, row["route"])) if fx else None
         if fx_observed and {outcome for outcome, _ in fx_observed} == {"TRANSFERRED"}:

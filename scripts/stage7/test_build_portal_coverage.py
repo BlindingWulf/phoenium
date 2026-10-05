@@ -933,5 +933,39 @@ class CoverageTests(unittest.TestCase):
         self.assertEqual(coverage._effect_links("arrow", {"nbtSource": "No entity was found"}, run(0)), set())
 
 
+    @staticmethod
+    def _sleeping_transcript(timer_after: str = "0s", slept_at: str = "[I; -4, 65, -6]") -> list[dict[str, str]]:
+        def get(name: str, value: str) -> dict[str, str]:
+            return {"step": "rcon:data get entity PhoeniumTest0 " + name,
+                    "value": "PhoeniumTest0 has the following entity data: " + value}
+
+        def sleeper(z: int, pos: str, dim: str, block: str, extra: str) -> list[dict[str, str]]:
+            return [{"step": f"rcon:execute in minecraft:overworld run setblock -5 65 {z} minecraft:red_bed[part=head]", "value": ""},
+                    get("SleepTimer", "25s"), get("sleeping_pos", pos), get("Pos", f"[-3.5d, 65.6875d, {z + 0.5}d]"),
+                    {"step": f"rcon:execute in minecraft:overworld run setblock -4 65 {z} minecraft:{block}{extra}", "value": ""},
+                    get("SleepTimer", timer_after), get("SleepTimer", timer_after), get("Dimension", dim)]
+        return (sleeper(-6, slept_at, '"minecraft:overworld"', "nether_portal", "[axis=x]")
+                + sleeper(-12, "[I; -4, 65, -12]", '"minecraft:the_end"', "end_portal", ""))
+
+    def test_sleeping_observation_needs_the_state_and_the_wake_up(self) -> None:
+        # the bed cell is -5..-4; the helper builds the head at x=-5 only to keep the transcript short, so use matching cells
+        transcript = self._sleeping_transcript()
+        for entry in transcript:
+            entry["step"] = entry["step"].replace("setblock -5 65", "setblock -4 65")
+        verdicts = coverage.sleeping_observation_verdict(transcript)
+        self.assertEqual([v["block"] for v in verdicts], ["nether_portal", "end_portal"])
+        self.assertTrue(all(v["asleepBefore"] and v["positionInCell"] and v["wokeAtOnce"] for v in verdicts))
+        self.assertEqual([v["dimensionAfter"] for v in verdicts], ["minecraft:overworld", "minecraft:the_end"])
+        # still asleep after the portal block: not a wake-up
+        asleep = self._sleeping_transcript(timer_after="25s")
+        self.assertFalse(all(v["wokeAtOnce"] for v in coverage.sleeping_observation_verdict(asleep)))
+        # slept in another cell than the one that was replaced
+        elsewhere = coverage.sleeping_observation_verdict(self._sleeping_transcript(slept_at="[I; 0, 65, 0]"))
+        self.assertFalse(elsewhere[0]["asleepBefore"])
+        # a transcript without the two portal blocks is not this exploration
+        self.assertIsNone(coverage.sleeping_observation_verdict(transcript[:8]))
+        self.assertIsNone(coverage.sleeping_observation_verdict("nope"))
+
+
 if __name__ == "__main__":
     unittest.main()
