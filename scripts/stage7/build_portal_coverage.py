@@ -1570,28 +1570,33 @@ def headless_gateway_assertions(card: Card, entity_type: str) -> set[str]:
     if (isinstance(arrival.get("ticks"), int) and isinstance(later.get("ticks"), int) and later["ticks"] > arrival["ticks"] + 20
             and later.get("chunkX") == arrival.get("chunkX") and later.get("chunkZ") == arrival.get("chunkZ")):
         assertions.add("post_arrival_tick")
-    if (isinstance(arrival.get("portalCooldown"), int) and isinstance(later.get("portalCooldown"), int)
-            and arrival["portalCooldown"] > 0 and later["portalCooldown"] > 0):
+    # The native gateway teleport sets a portal cooldown on the teleported entity (a vehicle's is short, so only the value
+    # right after arrival is required to be positive).
+    if isinstance(arrival.get("portalCooldown"), int) and arrival["portalCooldown"] > 0:
         assertions.add("gateway_cooldown")
-    contact = _single(gateway.get("contact"))
-    ticket = _single(gateway.get("ticket"))
+    # A retained vehicle may visit the gateway block on more than one tick before the teleport settles: every record must
+    # agree, and at least one must exist.
+    contacts = [event for event in gateway.get("contact", []) if isinstance(event, dict)
+                and str(event.get("uuid", "")).lower() == uuid]
+    tickets = [event for event in gateway.get("ticket", []) if isinstance(event, dict)
+               and str(event.get("uuid", "")).lower() == uuid]
     every_tracking = [event for event in gateway.get("tracking", []) if isinstance(event, dict)
                       and str(event.get("uuid", "")).lower() == uuid]
     source_region, destination_region = _region(source.get("ownershipDiagnostic")), _region(arrival.get("ownershipDiagnostic"))
-    if contact is None or ticket is None or not every_tracking or source_region is None or destination_region is None:
+    if not contacts or not tickets or not every_tracking or source_region is None or destination_region is None:
         return assertions
     arrival_chunk = (arrival.get("chunkX"), arrival.get("chunkZ"))
     destination_updates = [event for event in every_tracking if event.get("phase") == "TRACKING_UPDATE_RETURN"
                            and (event.get("chunkX"), event.get("chunkZ")) == arrival_chunk]
-    if (str(contact.get("uuid", "")).lower() == uuid and contact.get("world") == end
-            and (contact.get("x"), contact.get("y"), contact.get("z")) == HEADLESS_PORTAL_CELL["END_GATEWAY"]
-            and contact.get("ownerWorld") == end and contact.get("ownerContext") not in (None, "NONE")
-            and _region(contact.get("ownerContext")) == source_region):
+    if all(contact.get("world") == end
+           and (contact.get("x"), contact.get("y"), contact.get("z")) == HEADLESS_PORTAL_CELL["END_GATEWAY"]
+           and contact.get("ownerWorld") == end and contact.get("ownerContext") not in (None, "NONE")
+           and _region(contact.get("ownerContext")) == source_region for contact in contacts):
         assertions.add("source_owner")
-    if (str(ticket.get("uuid", "")).lower() == uuid and ticket.get("world") == end
-            and ticket.get("ticketType") == "minecraft:portal" and (ticket.get("chunkX"), ticket.get("chunkZ")) == arrival_chunk
-            and ticket.get("ownerWorld") == end and ticket.get("ownerContext") not in (None, "NONE")
-            and _region(ticket.get("ownerContext")) == destination_region):
+    if all(ticket.get("world") == end and ticket.get("ticketType") == "minecraft:portal"
+           and (ticket.get("chunkX"), ticket.get("chunkZ")) == arrival_chunk
+           and ticket.get("ownerWorld") == end and ticket.get("ownerContext") not in (None, "NONE")
+           and _region(ticket.get("ownerContext")) == destination_region for ticket in tickets):
         assertions.add("gateway_ticket")
     # Same native object: tracking may only ever UPDATE it (no add/remove pair, which would mean a replacement).
     # The spawn itself is tracked once (ADD in the source chunk); an ADD in the destination chunk or any REMOVE would mean

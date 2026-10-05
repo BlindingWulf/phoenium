@@ -277,6 +277,17 @@ class HeadlessGatewayTests(unittest.TestCase):
         removed["gateway"]["tracking"].append(dict(removed["source"][0], phase="TRACKING_REMOVE_RETURN"))
         self.assertNotIn("tracking_unique", self.gateway(removed))
 
+    def test_repeated_gateway_contact_and_a_short_vehicle_cooldown_are_credited(self) -> None:
+        witness = gateway_witness()
+        witness["gateway"]["contact"].append(dict(witness["gateway"]["contact"][0]))
+        witness["arrival"][0]["portalCooldown"] = 5
+        witness["later"][0]["portalCooldown"] = 0
+        assertions = self.gateway(witness)
+        self.assertTrue(coverage.REQUIRED_SAME_DIMENSION_ASSERTIONS | {"post_arrival_tick"} <= assertions, assertions)
+        mismatched = gateway_witness()
+        mismatched["gateway"]["contact"].append(dict(mismatched["gateway"]["contact"][0], x=99))
+        self.assertNotIn("source_owner", self.gateway(mismatched))
+
     def test_missing_ticket_or_vacancy_or_cooldown_removes_the_matching_credit(self) -> None:
         witness = gateway_witness()
         witness["gateway"]["ticket"] = []
@@ -360,6 +371,104 @@ class HeadlessVehicleTests(unittest.TestCase):
         witness["source"] = [member("minecraft:overworld"), member("minecraft:overworld")]
         card = self.card("E0-oak_boat-NETHER_ENTRY", "oak_boat", witness)
         self.assertEqual(coverage.headless_vehicle_extras(card, "minecraft:oak_boat"), set())
+
+
+BOAT_UUID = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
+VILLAGER_UUID = "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"
+
+
+def graph_members(world: str, ticks: int, boat_object: str = "boat-new", rider_object: str = "villager-new") -> list[dict]:
+    boat = member(world, uuid=BOAT_UUID, type="minecraft:oak_boat", object=boat_object, nativeId=21, ticks=ticks,
+                  passengerUuids=[VILLAGER_UUID])
+    villager = member(world, uuid=VILLAGER_UUID, type="minecraft:villager", object=rider_object, nativeId=22, ticks=ticks,
+                      vehicleUuid=BOAT_UUID)
+    return [boat, villager]
+
+
+def node_trace(uuid: str, kind: str, old: tuple, new: tuple, generation: int) -> list[dict]:
+    events = transfer_trace()
+    for event in events:
+        event.update(uuid=uuid, type=f"entity.minecraft.{kind}", generation=generation)
+        if event["phase"] in ("SOURCE_RETIRING", "SOURCE_RETIRED"):
+            event.update(object=old[0], nativeId=old[1])
+        else:
+            event.update(object=new[0], nativeId=new[1])
+    return events
+
+
+def graph_witness() -> dict:
+    source = [dict(m, world="minecraft:overworld", object=o, nativeId=n, ticks=0)
+              for m, (o, n) in zip(graph_members("minecraft:overworld", 0), (("boat-old", 11), ("villager-old", 12)))]
+    return {"nodes": 2, "counts": {"source": 0, "destination": 2, "total": 2}, "source": source,
+            "arrival": graph_members("minecraft:the_nether", 4), "later": graph_members("minecraft:the_nether", 30)}
+
+
+def graph_events() -> list[dict]:
+    return (node_trace(VILLAGER_UUID, "villager", ("villager-old", 12), ("villager-new", 22), 1)
+            + node_trace(BOAT_UUID, "oak_boat", ("boat-old", 11), ("boat-new", 21), 2))
+
+
+class HeadlessGraphTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.temp = tempfile.TemporaryDirectory()
+        self.dir = pathlib.Path(self.temp.name)
+
+    def tearDown(self) -> None:
+        self.temp.cleanup()
+
+    def card(self, witness: dict, events: list[dict], name: str = "G0-boat_mob-NETHER_ENTRY") -> coverage.Card:
+        return make_card(self.dir, name, "TRANSFERRED", witness, events)
+
+    def test_boat_with_villager_is_credited_exactly_and_claims_the_ledger_graph_name(self) -> None:
+        card = self.card(graph_witness(), graph_events())
+        assertions, owners = coverage.headless_graph_assertions(card, "boat_mob", "NETHER_ENTRY")
+        self.assertTrue({"graph_nodes_exact", "graph_edges_exact", "no_dual_addressability", "source_retired",
+                         "tracking_unique", "destination_unique", "post_arrival_tick"} <= assertions, assertions)
+        self.assertTrue(owners)
+        claims = coverage.headless_claims(card, [])
+        self.assertEqual((claims[0]["graph"], claims[0]["entityType"], claims[0]["observedOutcome"]),
+                         ("boat with mob rider", None, "TRANSFER"))
+
+    def test_wrong_shape_or_broken_edges_or_missing_node_are_refused(self) -> None:
+        card = self.card(graph_witness(), graph_events())
+        self.assertNotIn("graph_nodes_exact", coverage.headless_graph_assertions(card, "boat_two", "NETHER_ENTRY")[0])
+        broken = graph_witness()
+        broken["arrival"][1]["vehicleUuid"] = "UNAVAILABLE"
+        card = self.card(broken, graph_events())
+        self.assertEqual(coverage.headless_graph_assertions(card, "boat_mob", "NETHER_ENTRY"), (set(), False))
+        missing = graph_witness()
+        missing["arrival"] = missing["arrival"][:1]
+        self.assertEqual(coverage.headless_graph_assertions(self.card(missing, graph_events()), "boat_mob", "NETHER_ENTRY"),
+                         (set(), False))
+        stuck = graph_witness()
+        stuck["arrival"][0]["world"] = "minecraft:overworld"
+        self.assertEqual(coverage.headless_graph_assertions(self.card(stuck, graph_events()), "boat_mob", "NETHER_ENTRY"),
+                         (set(), False))
+
+    def test_every_node_needs_its_own_complete_generation_and_owner_phases(self) -> None:
+        only_boat = node_trace(BOAT_UUID, "oak_boat", ("boat-old", 11), ("boat-new", 21), 2)
+        assertions, owners = coverage.headless_graph_assertions(self.card(graph_witness(), only_boat),
+                                                                 "boat_mob", "NETHER_ENTRY")
+        self.assertNotIn("source_retired", assertions)
+        self.assertFalse(owners)
+        wrong_owner = [dict(e, ownerWorld="minecraft:the_nether") if e["phase"] == "SOURCE_RETIRED" and e["uuid"] == VILLAGER_UUID
+                       else e for e in graph_events()]
+        assertions, owners = coverage.headless_graph_assertions(self.card(graph_witness(), wrong_owner),
+                                                                 "boat_mob", "NETHER_ENTRY")
+        self.assertNotIn("source_retired", assertions)
+        self.assertEqual(coverage.headless_claims(self.card(graph_witness(), wrong_owner), []), [])
+
+    def test_stalled_child_ticks_remove_post_arrival_tick_and_the_claim(self) -> None:
+        stalled = graph_witness()
+        stalled["later"][1]["ticks"] = 10
+        card = self.card(stalled, graph_events())
+        self.assertNotIn("post_arrival_tick", coverage.headless_graph_assertions(card, "boat_mob", "NETHER_ENTRY")[0])
+
+    def test_player_graph_names_have_no_headless_shape(self) -> None:
+        for name in ("boat with player rider", "minecart with player rider", "player riding mob",
+                     "boat with player rider credits unseen"):
+            self.assertNotIn(name, coverage.GRAPH_ROW_SHAPE)
+        self.assertEqual(set(coverage.GRAPH_SHAPES), set(coverage.GRAPH_SHAPE_ROW))
 
 
 class ScanHeadlessTests(unittest.TestCase):
