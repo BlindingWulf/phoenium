@@ -1672,6 +1672,11 @@ def headless_gateway_assertions(card: Card, entity_type: str, falling: bool = Fa
         assertions.add("tracking_unique")
     if {"source_owner", "gateway_ticket", "tracking_owner"} <= assertions:
         assertions.update(("destination_owner", "observer_phases"))
+    elif (ends_on_impact and later is not None and {"source_owner", "gateway_ticket", "post_arrival_tick", "tracking_unique"} <= assertions
+          and _region(later.get("ownershipDiagnostic")) == destination_region):
+        # The tracker never updated the destination chunk (the effect projectile settles at once), but the live entity itself
+        # was read back owned by the destination region after it had ticked there for 20+ ticks. tracking_owner stays unproven.
+        assertions.add("destination_owner")
     return assertions
 
 
@@ -1989,7 +1994,9 @@ def _landing_damage_exhibited(control_witness: dict[str, Any], route: str) -> bo
     try:
         before = control_witness["baseline"][destination]
         after = control_witness["observables"][destination]
-        return (before["targets"] > 0 and before["targetsUndamaged"] == before["targets"]
+        # The destination fixture's transient portal fire can scorch the one target standing on its cell before the baseline is
+        # read (the Phoenium-free control does it too), so the baseline need not be pristine: the block must hurt a further target.
+        return (before["targets"] > 0 and before["targetsUndamaged"] > 0
                 and after["targetsUndamaged"] < before["targetsUndamaged"])
     except (KeyError, TypeError):
         return False
@@ -2042,11 +2049,13 @@ def effects_kind_of_row(row: dict[str, Any]) -> str | None:
 EFFECT_RANDOM_MAGNITUDE = {"firework_rocket"}
 
 
-def _effects_comparable(witness: dict[str, Any], coarse: bool = False) -> Any:
+def _effects_comparable(witness: dict[str, Any], coarse: bool = False, orbs_anywhere: bool = False) -> Any:
     """What a native effect leaves behind, normalised: target health to one decimal, fire/orbs as flags, the random hen of an egg dropped.
 
     `coarse` is for an effect whose native magnitude is itself random (a firework's burst): health becomes "was damaged"
-    positions are floored and the projectile's own position is ignored, so only the exhibited outcome has to match."""
+    positions are floored and the projectile's own position is ignored, so only the exhibited outcome has to match.
+    `orbs_anywhere` is for an experience bottle: its orbs drift at random, so one may end in either dimension (an orb can
+    natively re-enter the portal it was released beside); only whether orbs were released at all is compared."""
     effects = witness.get("effects")
     if not isinstance(effects, dict) or not effects:
         return None
@@ -2066,13 +2075,16 @@ def _effects_comparable(witness: dict[str, Any], coarse: bool = False) -> Any:
                 "targets": targets,
                 "owner": (owner.get("alive"), None if owner.get("health") is None else round(float(owner["health"]), 1)),
                 "counts": {key: (value > 0 if key == "experience_orb" else value)
-                           for key, value in sorted(entry["counts"].items()) if key != "chicken"},
+                           for key, value in sorted(entry["counts"].items())
+                           if key != "chicken" and not (orbs_anywhere and key == "experience_orb")},
                 # a rocket's flight length is random too, so only whether it is still flying is compared
                 "projectile": (projectile.get("alive"),) if coarse
                 else (projectile.get("alive"), tuple(round(value, 1) for value in projectile.get("pos") or ())),
             }
         except (KeyError, TypeError, AttributeError, ValueError):
             return None
+    if orbs_anywhere:
+        result["orbs_anywhere"] = any(entry["counts"].get("experience_orb", 0) > 0 for entry in effects.values())
     return result
 
 
@@ -2181,7 +2193,8 @@ def headless_effects_claims(card: Card, rows: list[dict[str, Any]] | None) -> li
     if not isinstance(control_witness, dict) or control.get("outcome") != "TRANSFERRED" or uuid is None:
         return []
     coarse = kind in EFFECT_RANDOM_MAGNITUDE
-    own, native = _effects_comparable(witness, coarse), _effects_comparable(control_witness, coarse)
+    orbs = kind == "experience_bottle"
+    own, native = _effects_comparable(witness, coarse, orbs), _effects_comparable(control_witness, coarse, orbs)
     if own is None or native is None or own != native:
         return []
     own_armed, native_armed = witness.get("armedAt"), control_witness.get("armedAt")
@@ -2210,7 +2223,8 @@ def headless_effects_claims(card: Card, rows: list[dict[str, Any]] | None) -> li
         return []
     return [dict(card=card, entityType=entity_type, route=route, variant=row_variant, graph="standalone",
                  observedOutcome=expected, assertions=assertions, basicObservation=True, scope="row",
-                 sameDimensionGateway=gateway, headlessOwner=gateway and OWNER_ASSERTIONS <= assertions)]
+                 sameDimensionGateway=gateway, headlessOwner=gateway and OWNER_ASSERTIONS <= assertions,
+                 ownerAssertions=(OWNER_ASSERTIONS & assertions) if gateway and not OWNER_ASSERTIONS <= assertions else None)]
 
 
 def headless_claims(card: Card, rows: list[dict[str, Any]] | None = None) -> list[dict[str, Any]]:
@@ -2684,6 +2698,7 @@ def build_report(census: dict[str, Any], frozen: dict[str, Any], candidate_sha: 
                 ancillary.append(card.reference(scope=family))
     for claim in claims:
         observed_owner = (OWNER_ASSERTIONS.copy() if claim.get("headlessOwner") else
+                          set(claim["ownerAssertions"]) if claim.get("ownerAssertions") else
                           OWNER_ASSERTIONS.copy() if claim.get("sameDimensionGateway")
                           and OWNER_ASSERTIONS <= gateway_pig_assertions(claim["card"]) else
                           set() if claim.get("observedOutcome") in ("NO_NATIVE_ENTRY_PATH", "REFUSAL") else

@@ -395,7 +395,11 @@ class HeadlessGatewayTests(unittest.TestCase):
         impact = coverage.headless_gateway_assertions(card, "minecraft:pig", ends_on_impact=True)
         self.assertIn("tracking_unique", impact)
         self.assertNotIn("tracking_owner", impact)
-        self.assertNotIn("destination_owner", impact)
+        # destination_owner is then proven only by the live entity's later ownership read-back in the destination region.
+        self.assertIn("destination_owner", impact)
+        elsewhere = dict(witness, later=[dict(witness["later"][0], ownershipDiagnostic="NONE")])
+        card = make_card(self.dir, "D1-egg-END_GATEWAY", "TRANSFERRED", elsewhere, [])
+        self.assertNotIn("destination_owner", coverage.headless_gateway_assertions(card, "minecraft:pig", ends_on_impact=True))
         replaced = dict(witness, gateway=dict(witness["gateway"], tracking=witness["gateway"]["tracking"] + [
             dict(witness["source"][0], phase="TRACKING_REMOVE_RETURN")]))
         card = make_card(self.dir, "D1-egg-END_GATEWAY", "TRANSFERRED", replaced, [])
@@ -896,6 +900,20 @@ class HeadlessDynamicTests(unittest.TestCase):
         self.assertEqual(claims[0]["variant"], "landing_damage")
         self.assertEqual(self.claims(name, quiet, hurt, variant="landing_damage"), [])
 
+    def test_a_fixture_scorched_target_in_the_baseline_does_not_hide_the_landing_damage(self) -> None:
+        landed = {("nether", "main"): 1}
+        name = "D0-falling-landing_damage-NETHER_ENTRY"
+
+        def scorched(damage: bool) -> dict:
+            witness = dyn_witness("landing_damage", landed, damage=damage)
+            for entry in witness["baseline"].values():
+                entry["targetsUndamaged"] = 8
+            for entry in witness["observables"].values():
+                entry["targetsUndamaged"] = 7 if damage else 8
+            return witness
+        self.assertEqual(len(self.claims(name, scorched(True), scorched(True), variant="landing_damage")), 1)
+        self.assertEqual(self.claims(name, scorched(False), scorched(False), variant="landing_damage"), [])
+
     def test_end_entry_must_land_on_the_spawn_platform(self) -> None:
         name = "D0-falling-block-END_ENTRY"
         on_platform = dyn_witness(landed={("end", "platform"): 1})
@@ -1052,6 +1070,17 @@ class HeadlessEffectsTests(unittest.TestCase):
             self.assertEqual(self.claims("firework_rocket", native, burst, route=route), [], route)
         nether = fx_witness("firework_rocket", owner="", damage=False, projectile_alive=True)
         self.assertEqual(self.claims("firework_rocket", nether, nether), [])
+
+    def test_experience_orbs_may_end_in_either_dimension_but_must_be_released(self) -> None:
+        native = fx_witness("experience_bottle", damage=False, counts={"experience_orb": 2})
+        native["effects"]["overworld"] = fx_dimension(False)
+        drifted = fx_witness("experience_bottle", damage=False)
+        drifted["effects"]["overworld"] = fx_dimension(False, counts={"experience_orb": 1})
+        self.assertEqual(len(self.claims("experience_bottle", drifted, native)), 1)
+        none = fx_witness("experience_bottle", damage=False)
+        none["effects"]["overworld"] = fx_dimension(False)
+        self.assertEqual(self.claims("experience_bottle", none, native), [])
+        self.assertEqual(self.claims("experience_bottle", drifted, none), [])
 
     def test_tnt_fuse_must_continue_not_reset(self) -> None:
         good = fx_witness("tnt", owner="", fuse=(160, 158, 118), counts={"tnt": 0})
