@@ -193,9 +193,10 @@ public final class ThrowableProjectilePortalTransitionManager implements AutoClo
             && (entry.transition == null || authority.worldActive(entry.transition.newLevel()))
             && !entry.projectile.isRemoved() && entry.projectile.level() == entry.level
             && entry.projectile.portalProcess == entry.processor
-            && entry.projectile.position().equals(entry.position)
-            && entry.projectile.getDeltaMovement().equals(entry.motion)
-            && entry.projectile.getYRot() == entry.yRot && entry.projectile.getXRot() == entry.xRot
+            && (entry.projectile.isPassenger()
+                || entry.projectile.position().equals(entry.position)
+                    && entry.projectile.getDeltaMovement().equals(entry.motion)
+                    && entry.projectile.getYRot() == entry.yRot && entry.projectile.getXRot() == entry.xRot)
             && entry.projectile.getPose() == entry.pose
             && ((FullEntityFacts.Access) entry.projectile).phoenium$entityIncarnation() == entry.token.source().nativeIncarnation()
             && entry.projectile.getUUID().toString().equals(entry.token.source().objectId())
@@ -205,7 +206,14 @@ public final class ThrowableProjectilePortalTransitionManager implements AutoClo
             && entry.processor.isInsidePortalThisTick() == entry.insidePortal
             && current != null && current.incarnation() == entry.binding.incarnation()
             && current.objectEpoch().equals(entry.binding.objectEpoch())
-            && current.routingKey().equals(entry.binding.routingKey());
+            && routeCurrent(entry, current);
+    }
+    /** A throwable that rides a vehicle is carried by it between capture and this turn: its chunk may change, its owner may not. */
+    private boolean routeCurrent(Entry entry, ObjectOwnership current) {
+        if (current.routingKey().equals(entry.binding.routingKey())) return true;
+        if (!entry.projectile.isPassenger() || !authority.sameOwner(current.routingKey(), entry.binding.routingKey())) return false;
+        entry.binding = current;
+        return true;
     }
     public boolean onRemoval(Entity entity, Entity.RemovalReason reason) {
         if (!(entity instanceof ThrowableProjectile projectile)) return false;
@@ -251,7 +259,7 @@ public final class ThrowableProjectilePortalTransitionManager implements AutoClo
         final ServerLevel level;
         final PortalProcessor processor;
         final Portal portal;
-        final ObjectOwnership binding;
+        ObjectOwnership binding;
         final CrossDimensionReplacementBoundary.Token token;
         final HitResult hitResult;
         final BlockPos entryPosition;

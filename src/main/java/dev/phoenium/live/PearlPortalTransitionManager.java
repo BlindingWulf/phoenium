@@ -295,7 +295,13 @@ final class PearlPortalTransitionManager implements AutoCloseable {
         if (binding == null || binding.kind() != OwnedObjectKind.ENTITY
                 || binding.incarnation() != entry.token.source().registryIncarnation()
                 || !binding.objectEpoch().equals(entry.binding.objectEpoch())
-                || !binding.routingKey().equals(entry.binding.routingKey())) return null;
+                ) return null;
+        if (!binding.routingKey().equals(entry.binding.routingKey())) {
+            // A pearl that rides a vehicle is carried by it between capture and this turn (the vehicle keeps moving, native
+            // transfers in the same tick), so its chunk may change; the owner may not.
+            if (!entry.source.isPassenger() || !authority.sameOwner(binding.routingKey(), entry.binding.routingKey())) return null;
+            entry.binding = binding;
+        }
         return binding;
     }
 
@@ -388,7 +394,7 @@ final class PearlPortalTransitionManager implements AutoCloseable {
         final PortalProcessor processor;
         final Portal portal;
         final BlockPos entryPosition;
-        final ObjectOwnership binding;
+        ObjectOwnership binding;
         final int portalTime;
         final boolean insidePortal;
         volatile boolean advancing;
