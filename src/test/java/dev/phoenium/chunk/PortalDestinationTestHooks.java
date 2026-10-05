@@ -70,6 +70,7 @@ public final class PortalDestinationTestHooks {
         throw new AssertionError("production invocation selector absent");
     }
     public static boolean capture(Entity entity) {
+        if(dev.phoenium.live.PortalRiderRefusal.refuses(entity)) return true;   // production cut order: declined before any capture
         if(armorStands!=null && (entity instanceof net.minecraft.world.entity.decoration.ArmorStand
                 || entity instanceof net.minecraft.world.entity.decoration.Mannequin))
             return armorStands.suspendDestination((net.minecraft.world.entity.LivingEntity)entity,entity.portalProcess);

@@ -51,6 +51,8 @@ public final class Stage7RepairClientTest implements FabricClientGameTest {
                     && selectedCards.equals("I0-item-END_ENTRY"))
                     && !(group.equals("same-dimension-gateway")
                     && selectedCards.equals("G1-pig-END_GATEWAY"))
+                    && !(group.equals("graph-probe")
+                    && selectedCards.matches("GP-[a-z_]+-(NETHER_ENTRY|NETHER_RETURN)(,GP-[a-z_]+-(NETHER_ENTRY|NETHER_RETURN))*"))
                     && !(group.equals("entity-probe")
                     && selectedCards.matches("E0-[a-z_]+-(NETHER_ENTRY|NETHER_RETURN)(,E0-[a-z_]+-(NETHER_ENTRY|NETHER_RETURN))*"))
                     && !(group.equals("mob-census")
@@ -81,6 +83,7 @@ public final class Stage7RepairClientTest implements FabricClientGameTest {
             else if(group.equals("item-end-platform")){itemEndPlatformScopeCard();}
             else if(group.equals("mob-census")){mobCensus(selectedCards);}
             else if(group.equals("entity-probe")){entityProbe(selectedCards);}
+            else if(group.equals("graph-probe")){graphProbe(selectedCards);}
             else if(group.equals("same-dimension-gateway")){pigEndGatewayCard(false);}
             else if(group.equals("same-dimension-gateway-ab")){pigEndGatewayCard(true);}
             else if(group.equals("same-dimension-gateway-natural")){naturalGatewayCard();}
@@ -1878,6 +1881,39 @@ public final class Stage7RepairClientTest implements FabricClientGameTest {
             receipt.addProperty(card+"-outcome",outcome);receipt.addProperty(card+"-world",world);
             health(card);pass(card,"entity-family probe outcome="+outcome+" world="+world);
             for(String w:List.of(OW,NETHER))cmd("execute in "+w+" run kill @e[tag=stage7_mob]");
+        }
+    }
+    /**
+     * Defect-finding probe: the connected test player rides a vehicle that is carried into a Nether portal.
+     * The vehicle ticks the portal; the rider travels with it natively. Only server health is required.
+     */
+    void graphProbe(String selected)throws Exception {
+        cmd("gamemode creative "+USER);
+        int sequence=0;
+        for(String card:selected.split(",")) {
+            var parts=java.util.regex.Pattern.compile("GP-([a-z_]+)-(NETHER_ENTRY|NETHER_RETURN)").matcher(card);
+            require(parts.matches(),"bad graph probe card "+card);
+            active=card;String type=parts.group(1),from=parts.group(2).equals("NETHER_ENTRY")?OW:NETHER,to=from.equals(OW)?NETHER:OW;
+            String tag="stage7_probe_g"+sequence++;
+            position(from,8.5,65,5.5,180,0);
+            cmd("execute in "+from+" run summon minecraft:"+type+" 4.5 65 5.5 {Tags:[\"stage7_mob\",\""+tag+"\"],PersistenceRequired:1b}");
+            receipt.addProperty(card+"-ride",cmd("ride "+USER+" mount @e[tag="+tag+",limit=1]"));
+            receipt.addProperty(card+"-carry",cmd("execute in "+from+" run tp @e[tag="+tag+",limit=1] 0.5 65 0.5"));
+            String outcome="NO_TRANSFER",vehicleWorld="UNKNOWN",playerWorld="UNKNOWN";
+            for(int i=0;i<120;i++) {
+                context.waitTick();
+                JsonObject state=snapshot(card+"-wait-"+i);
+                playerWorld=player().get("world").getAsString();
+                for(var e:state.getAsJsonArray("entities")) {var o=e.getAsJsonObject();
+                    if(o.has("tags")&&o.get("tags").getAsString().contains(tag))vehicleWorld=o.get("world").getAsString();}
+                if(playerWorld.equals(to)){outcome="PLAYER_TRANSFERRED";break;}
+            }
+            receipt.addProperty(card+"-outcome",outcome);receipt.addProperty(card+"-playerWorld",playerWorld);
+            receipt.addProperty(card+"-vehicleWorld",vehicleWorld);
+            health(card);pass(card,"graph probe outcome="+outcome+" player="+playerWorld+" vehicle="+vehicleWorld);
+            cmd("ride "+USER+" dismount");
+            for(String w:List.of(OW,NETHER))cmd("execute in "+w+" run kill @e[tag=stage7_mob]");
+            position(OW,8.5,65,5.5,180,0);
         }
     }
     static final java.util.Set<String> PLACED_INTO_PORTAL=java.util.Set.of("squid","glow_squid","tadpole","pufferfish","tropical_fish","salmon","shulker");

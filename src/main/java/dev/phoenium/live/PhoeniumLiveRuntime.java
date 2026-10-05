@@ -93,6 +93,7 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
     private static final String PLAYER_ACTION_OPERATION = "player-block-action";
     private static final String USE_ITEM_ON_OPERATION = "player-use-item-on";
     private static final String USE_ITEM_OPERATION = "player-use-item";
+    private static final String VEHICLE_MOVE_OPERATION = "player-vehicle-move";
     private static final String CONTAINER_CLOSE_OPERATION = "player-container-close";
     private long closeIngress, closeAdmitted, closeCompleted, closeRetired, closeFailed;
     private final java.util.concurrent.atomic.AtomicBoolean firstCloseFailure = new java.util.concurrent.atomic.AtomicBoolean();
@@ -1216,6 +1217,11 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
         if (match) useItemOnReplay++;
         return match;
     }
+    public boolean matchesVehicleMoveReplay(ServerGamePacketListenerImpl connection,
+                                            net.minecraft.network.protocol.game.ServerboundMoveVehiclePacket packet) {
+        ReplayIdentity active = replayIdentity.get();
+        return active != null && active.kind == ReplayKind.VEHICLE_MOVE && active.connection == connection && active.packet == packet;
+    }
     public boolean matchesUseItemReplay(ServerGamePacketListenerImpl connection, ServerboundUseItemPacket packet) {
         ReplayIdentity active = replayIdentity.get();
         boolean match = active != null && active.kind == ReplayKind.USE_ITEM
@@ -1286,6 +1292,25 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
                     "player-movement", current, AdmissionPolicy.REJECT);
                 if (admission.admitted() && transition != null) movementTransitionFences.remove(objectId, transition);
             } catch (RuntimeException rejected) { packetRejections++; movementFootprintRejected++; }
+    }
+
+    /** Vehicle-move packets from a riding player replay under the player's owner, like every other player packet. */
+    public void admitVehicleMovePacket(ServerGamePacketListenerImpl connection,
+                                       net.minecraft.network.protocol.game.ServerboundMoveVehiclePacket packet) {
+        movementIngress++;
+        if (!acceptsGameplay()) { packetRejections++; return; }
+        ServerPlayer player = connection.player;
+        if (player == null) { packetRejections++; return; }
+        try {
+            PlayerPacketAdmission admission = preparePlayerPacketAdmission(player);
+            admitPacket(connection, player,
+                new PendingVehicleMove(this, connection, packet, player.level(), admission.binding().objectId(),
+                    admission.binding().incarnation(), admission.transitionEpoch(), admission.ticket()),
+                VEHICLE_MOVE_OPERATION, admission.binding(), AdmissionPolicy.REJECT);
+        } catch (RuntimeException rejected) {
+            packetRejections++;
+            logger.warn("PHOENIUM_VEHICLE_MOVE admission rejected reason={}", rejected.toString());
+        }
     }
 
     /** Resolves an immutable derived target reference, without calling ServerLevel.getEntityOrPart. */
@@ -1770,6 +1795,26 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
                         new BlockPacketAdmission(executingPlayer, useItemOn.transitionEpoch(), useItemOn.ticket()),
                         useItemOn.packet(), stale);
                 }
+            }
+            return;
+        }
+        if (packet instanceof PendingVehicleMove vehicleMove) {
+            try {
+                if (executingPlayer.incarnation() != vehicleMove.playerIncarnation())
+                    throw new IllegalStateException("stale vehicle-move player incarnation");
+                if (movementTransitionEpochs.getOrDefault(vehicleMove.objectId(), 0L) != vehicleMove.transitionEpoch())
+                    throw new IllegalStateException("stale vehicle-move transition epoch");
+                if (vehicleMove.playerLevel() != vehicleMove.connection().player.level()
+                        || !runtime.id().world().equals(worldId(vehicleMove.connection().player.level())))
+                    throw new IllegalStateException("stale vehicle-move player world");
+                vehicleMove.ticket().requireCurrent(directory, objects, runtime.id());
+            } catch (RuntimeException stale) { movementStaleTicketRejected++; return; }
+            try (PacketExecutionScope ignored = enterPacketExecution(operation.correlationId(), ReplayKind.VEHICLE_MOVE,
+                    vehicleMove.connection(), vehicleMove.packet())) {
+                try {
+                    vehicleMove.execute();
+                    packetExecutions++;
+                } catch (ChunkProtocolException stale) { movementStaleTicketRejected++; }
             }
             return;
         }
@@ -2919,7 +2964,7 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
         logger.info("PHOENIUM_STAGE2 {} {} packets={}", event, diagnostics().toLogLine(), packetDiagnostics().toLogLine() + " " + containerCloseDiagnostics());
     }
 
-    private sealed interface PendingPacket permits PendingMove, PendingInteract, PendingBlockPacket, PendingUseItem {
+    private sealed interface PendingPacket permits PendingMove, PendingInteract, PendingBlockPacket, PendingUseItem, PendingVehicleMove {
         void execute();
     }
     private record PendingMove(PhoeniumLiveRuntime runtime, ServerGamePacketListenerImpl connection, ServerboundMovePlayerPacket packet,
@@ -2983,6 +3028,16 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
     }
     private record BlockPacketAdmission(ObjectOwnership binding, long transitionEpoch,
                                         LiveBlockPacketAdmission.Ticket ticket) { }
+    /** A player driving a vehicle: the native handler moves the vehicle (and the player with it) under the player's owner. */
+    private record PendingVehicleMove(PhoeniumLiveRuntime runtime, ServerGamePacketListenerImpl connection,
+                                      net.minecraft.network.protocol.game.ServerboundMoveVehiclePacket packet,
+                                      ServerLevel playerLevel, String objectId, long playerIncarnation, long transitionEpoch,
+                                      LivePlayerPacketAdmission.Ticket ticket) implements PendingPacket {
+        @Override public void execute() {
+            ((ServerGamePacketListenerInvoker) connection).phoenium$invokeMoveVehicle(packet);
+            runtime.reconcileAfterMove(objectId, connection.player);
+        }
+    }
     private record PlayerPacketAdmission(ObjectOwnership binding, long transitionEpoch,
                                          LivePlayerPacketAdmission.Ticket ticket) { }
     private record PacketAdmissionResult(boolean admitted, ObjectOwnerGateway.Delivery delivery) { }
@@ -3021,7 +3076,7 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
             closed = true;
         }
     }
-    private enum ReplayKind { CONTAINER_CLOSE, MOVE, INTERACT, PLAYER_ACTION, USE_ITEM_ON, USE_ITEM }
+    private enum ReplayKind { CONTAINER_CLOSE, MOVE, INTERACT, PLAYER_ACTION, USE_ITEM_ON, USE_ITEM, VEHICLE_MOVE }
     private record ReplayIdentity(TaskCorrelationId correlation, ReplayKind kind, ServerGamePacketListenerImpl connection, Object packet) { }
     private record LiveRegion(ServerLevel level, RegionId id, RoutingKey key, RegionRuntime runtime,
                               long worldInstanceSequence) { }

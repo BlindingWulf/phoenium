@@ -182,6 +182,7 @@
     "MobPortalHorseMixin",
     "MobPortalVillagerMixin",
     "MobPortalOuterTailMixin",
+    "RiderPortalRefusalMixin",
     "EntityPortalEntityMixin",
     "EntityPortalTickMixin",
     "HurtingProjectilePortalAccess",

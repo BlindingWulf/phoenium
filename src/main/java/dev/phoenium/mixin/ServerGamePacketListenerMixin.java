@@ -4,6 +4,7 @@ import dev.phoenium.Phoenium;
 import net.minecraft.network.protocol.game.ServerboundInteractPacket;
 import net.minecraft.network.protocol.game.ServerboundContainerClosePacket;
 import net.minecraft.network.protocol.game.ServerboundMovePlayerPacket;
+import net.minecraft.network.protocol.game.ServerboundMoveVehiclePacket;
 import net.minecraft.network.protocol.game.ServerboundPlayerActionPacket;
 import net.minecraft.network.protocol.game.ServerboundUseItemPacket;
 import net.minecraft.network.protocol.game.ServerboundUseItemOnPacket;
@@ -54,6 +55,17 @@ abstract class ServerGamePacketListenerMixin {
         if (Phoenium.liveRuntime().matchesMoveReplay(connection, packet)) return;
         Phoenium.liveRuntime().admitMovePacket(connection, packet, lastGoodX, lastGoodY, lastGoodZ,
             awaitingPositionFromClient != null);
+        ci.cancel();
+    }
+
+    /** After the thread check and invalid-value disconnect, before any vehicle or player effect. */
+    @Inject(method = "handleMoveVehicle(Lnet/minecraft/network/protocol/game/ServerboundMoveVehiclePacket;)V",
+        at = @At(value = "INVOKE", target = "Lnet/minecraft/server/network/ServerGamePacketListenerImpl;updateAwaitingTeleport()Z", ordinal = 0),
+        require = 1, expect = 1, cancellable = true)
+    private void phoenium$routeVehicleMove(ServerboundMoveVehiclePacket packet, CallbackInfo ci) {
+        ServerGamePacketListenerImpl connection = (ServerGamePacketListenerImpl) (Object) this;
+        if (Phoenium.liveRuntime().matchesVehicleMoveReplay(connection, packet)) return;
+        Phoenium.liveRuntime().admitVehicleMovePacket(connection, packet);
         ci.cancel();
     }
 

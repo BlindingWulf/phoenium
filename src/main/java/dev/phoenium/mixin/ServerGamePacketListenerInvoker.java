@@ -3,6 +3,7 @@ package dev.phoenium.mixin;
 import net.minecraft.network.protocol.game.ServerboundInteractPacket;
 import net.minecraft.network.protocol.game.ServerboundContainerClosePacket;
 import net.minecraft.network.protocol.game.ServerboundMovePlayerPacket;
+import net.minecraft.network.protocol.game.ServerboundMoveVehiclePacket;
 import net.minecraft.network.protocol.game.ServerboundPlayerActionPacket;
 import net.minecraft.network.protocol.game.ServerboundUseItemPacket;
 import net.minecraft.network.protocol.game.ServerboundUseItemOnPacket;
@@ -17,6 +18,8 @@ public interface ServerGamePacketListenerInvoker {
     void phoenium$invokeContainerClose(ServerboundContainerClosePacket packet);
     @Invoker("handleMovePlayer")
     void phoenium$invokeMovePlayer(ServerboundMovePlayerPacket packet);
+    @Invoker("handleMoveVehicle")
+    void phoenium$invokeMoveVehicle(ServerboundMoveVehiclePacket packet);
     @Invoker("handleInteract")
     void phoenium$invokeInteract(ServerboundInteractPacket packet);
     @Invoker("handlePlayerAction")

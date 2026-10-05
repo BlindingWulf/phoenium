@@ -205,6 +205,8 @@ class NativeItemPortalTransferTest {
         boolean enforceOwners=true, running=true, ready=true, entityVisible=true, cleanupFailure;
         int visibilityDemands;
         long gameTime = 100L;
+        net.minecraft.server.ServerScoreboard scoreboard;
+        net.minecraft.server.ServerScoreboard scoreboard() { if (scoreboard == null) scoreboard = new net.minecraft.server.ServerScoreboard(server); return scoreboard; }
         final Map<net.minecraft.resources.ResourceKey<Level>,net.minecraft.world.level.dimension.DimensionType> dimensionTypes = new HashMap<>();
         FailurePoint failAt;
         final IllegalStateException failure=new IllegalStateException("controlled native endpoint");
@@ -355,6 +357,7 @@ class NativeItemPortalTransferTest {
                     .filter(m -> m.getName().equals("playSeededSound") && m.getParameterCount() == 9
                         && m.getParameterTypes()[4] == net.minecraft.core.Holder.class).findFirst().orElseThrow(), args -> null),
                 new Answer(Level.class.getMethod("broadcastEntityEvent",Entity.class,byte.class), args -> null),
+                new Answer(ServerLevel.class.getMethod("getScoreboard"), args -> scoreboard()),
                 new Answer(ServerLevel.class.getDeclaredMethod("getEntities"), args -> java.lang.reflect.Proxy.newProxyInstance(
                     getClass().getClassLoader(), new Class<?>[]{net.minecraft.world.level.entity.LevelEntityGetter.class},
                     (proxy, method, arguments) -> method.getName().equals("getAll") ? List.of()
