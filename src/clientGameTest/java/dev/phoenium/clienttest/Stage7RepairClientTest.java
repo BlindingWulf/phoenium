@@ -51,6 +51,8 @@ public final class Stage7RepairClientTest implements FabricClientGameTest {
                     && selectedCards.equals("I0-item-END_ENTRY"))
                     && !(group.equals("same-dimension-gateway")
                     && selectedCards.equals("G1-pig-END_GATEWAY"))
+                    && !(group.equals("same-dimension-gateway-ab")
+                    && selectedCards.equals("G2-pig-END_GATEWAY-AB"))
                     && !(group.equals("mob-prefix")
                     && selectedCards.equals("M2-silverfish-NETHER_ENTRY"))
                     && !(group.equals("mob-prefix")
@@ -69,7 +71,8 @@ public final class Stage7RepairClientTest implements FabricClientGameTest {
             else if(group.equals("vehicle-chest")){chestVehicleMatrix(selectedCards);}
             else if(group.equals("vehicle-minecart-chest")){chestMinecartMatrix(selectedCards);}
             else if(group.equals("item-end-platform")){itemEndPlatformScopeCard();}
-            else if(group.equals("same-dimension-gateway")){pigEndGatewayCard();}
+            else if(group.equals("same-dimension-gateway")){pigEndGatewayCard(false);}
+            else if(group.equals("same-dimension-gateway-ab")){pigEndGatewayCard(true);}
             else if(group.equals("mob-prefix")){
                 cmd("gamemode creative "+USER);
                 if(selectedCards.isBlank()||selectedCards.equals("M2-silverfish-NETHER_ENTRY"))
@@ -649,19 +652,31 @@ public final class Stage7RepairClientTest implements FabricClientGameTest {
         receipt.add(active+"-looseItems",loose);
         health(active);pass(active,"three-wide portal; native minecart inventory or latent loot persistence; no loose item duplication; one replacement UUID/new object; empty graph, later ticks and client tracking");
     }
-    void pigEndGatewayCard()throws Exception {
-        active="G1-pig-END_GATEWAY";
+    /**
+     * G1 keeps the normal one-region End and exits to chunk (10,10). G2 runs under the explicit
+     * A/B fixture (server flag phoenium.stage3.explicitTopology): the entry chunk (0,0) belongs to
+     * stage3-fixture-a and the exit chunk (60,0) to stage3-fixture-b, so the three native
+     * callbacks must show two genuinely different region owners.
+     */
+    void pigEndGatewayCard(boolean ab)throws Exception {
+        active=ab?"G2-pig-END_GATEWAY-AB":"G1-pig-END_GATEWAY";
+        final int exitX=ab?968:160,exitZ=ab?8:160,exitChunkX=exitX>>4,exitChunkZ=exitZ>>4;
+        if(ab) {
+            // Natural spawning over the large artificial B block is unrelated load for this owner proof.
+            for(String rule:List.of("minecraft:spawn_mobs","minecraft:do_mob_spawning","doMobSpawning"))
+                receipt.addProperty(active+"-gamerule-"+rule,cmd("execute in "+END+" run gamerule "+rule+" false"));
+        }
         cmd("gamemode creative "+USER);
         for(String command:List.of("forceload add 0 0 16 16",
-                "forceload add 160 160 160 160",
+                "forceload add "+exitX+" "+exitZ+" "+exitX+" "+exitZ,
                 "fill 8 64 4 16 64 16 minecraft:end_stone",
                 "fill 8 65 4 16 73 16 minecraft:air",
-                "fill 158 64 158 162 64 162 minecraft:end_stone",
-                "fill 158 65 158 162 73 162 minecraft:air",
+                "fill "+(exitX-2)+" 64 "+(exitZ-2)+" "+(exitX+2)+" 64 "+(exitZ+2)+" minecraft:end_stone",
+                "fill "+(exitX-2)+" 65 "+(exitZ-2)+" "+(exitX+2)+" 73 "+(exitZ+2)+" minecraft:air",
                 "setblock 12 66 8 minecraft:end_gateway"))
             cmd("execute in "+END+" run "+command);
         String configured=cmd("execute in "+END+" run data merge block 12 66 8 "
-            +"{exit_portal:[I;160,65,160],ExactTeleport:1b,Age:200L}");
+            +"{exit_portal:[I;"+exitX+",65,"+exitZ+"],ExactTeleport:1b,Age:200L}");
         require(configured.contains("Modified")||configured.contains("modified"),
             "exact End gateway exit could not be configured: "+configured);
         require(cmd("execute in "+END+" run execute if block 12 66 8 minecraft:end_gateway")
@@ -692,8 +707,8 @@ public final class Stage7RepairClientTest implements FabricClientGameTest {
             JsonObject state=snapshot(active+"-wait-"+i);
             JsonObject pig=taggedMob(state,tag);
             if(pig.get("world").getAsString().equals(END)
-                    &&Math.abs(pig.get("x").getAsDouble()-160.5)<1
-                    &&Math.abs(pig.get("z").getAsDouble()-160.5)<1) {
+                    &&Math.abs(pig.get("x").getAsDouble()-(exitX+.5))<1
+                    &&Math.abs(pig.get("z").getAsDouble()-(exitZ+.5))<1) {
                 arrivalState=state;arrival=pig;break;
             }
         }
@@ -707,7 +722,7 @@ public final class Stage7RepairClientTest implements FabricClientGameTest {
         for(JsonElement element:arrivalState.getAsJsonArray("entities"))
             if(element.getAsJsonObject().get("uuid").getAsString().equals(uuid))count++;
         require(count==1,"gateway pig UUID duplicated or absent");
-        require(arrival.get("ownershipDiagnostic").getAsString().contains("x=10, z=10")
+        require(arrival.get("ownershipDiagnostic").getAsString().contains("x="+exitChunkX+", z="+exitChunkZ)
             &&arrival.get("ownershipDiagnostic").getAsString().contains("state=OWNED"),
             "gateway same-object ownership route did not move to destination chunk: "
                 +arrival.get("ownershipDiagnostic"));
@@ -729,7 +744,7 @@ public final class Stage7RepairClientTest implements FabricClientGameTest {
             if(event.get("uuid").getAsString().equals(uuid)
                     &&event.get("world").getAsString().equals(END)
                     &&event.get("ticketType").getAsString().equals("minecraft:portal")
-                    &&event.get("chunkX").getAsInt()==10&&event.get("chunkZ").getAsInt()==10
+                    &&event.get("chunkX").getAsInt()==exitChunkX&&event.get("chunkZ").getAsInt()==exitChunkZ
                     &&event.get("radius").getAsInt()==3
                     &&event.get("ownerWorld").getAsString().equals(END))ticket=event;
         }
@@ -737,8 +752,20 @@ public final class Stage7RepairClientTest implements FabricClientGameTest {
         require(ticket!=null,"native gateway callback lacked exact destination PORTAL ticket witness");
         receipt.add(active+"-gatewayContact",contact.deepCopy());
         receipt.add(active+"-gatewayTicket",ticket.deepCopy());
+        if(ab) {
+            // The native ticket for chunk B must run under B, never under the entry chunk's owner A.
+            require(contact.get("ownerContext").getAsString().contains("stage3-fixture-a"),
+                "A/B gateway contact did not run under the entry owner A: "+contact.get("ownerContext"));
+            require(ticket.get("ownerContext").getAsString().contains("stage3-fixture-b"),
+                "A/B gateway PORTAL ticket did not run under the destination owner B: "+ticket.get("ownerContext"));
+            require(!ticket.get("ownerContext").getAsString().contains("stage3-fixture-a"),
+                "A/B gateway PORTAL ticket still ran under source owner A: "+ticket.get("ownerContext"));
+            receipt.addProperty(active+"-sourceOwnerDiffersFromTicketOwner",true);
+        }
         receipt.add(active+"-arrival",arrival.deepCopy());
-        position(END,160.5,65,163.5,180,0);
+        // The A/B card keeps the player in A: command-teleporting a session across fixture regions is
+        // not the player-movement protocol. Client tracking is covered by the one-region G1 card.
+        if(!ab)position(END,exitX+.5,65,exitZ+3.5,180,0);
         JsonObject laterState=null,later=null;
         for(int i=0;i<100;i++) {
             context.waitTicks(2);
@@ -757,12 +784,26 @@ public final class Stage7RepairClientTest implements FabricClientGameTest {
             JsonObject event=element.getAsJsonObject();
             if(event.get("uuid").getAsString().equals(uuid)
                     &&event.get("phase").getAsString().equals("TRACKING_UPDATE_RETURN")
-                    &&event.get("chunkX").getAsInt()==10&&event.get("chunkZ").getAsInt()==10
+                    &&event.get("chunkX").getAsInt()==exitChunkX&&event.get("chunkZ").getAsInt()==exitChunkZ
                     &&event.get("ownerWorld").getAsString().equals(END))tracking=event;
+        }
+        if(ab) {
+            // Same object at the destination chunk and ticking natively. Which region owns it after
+            // the owner-free cut is not asserted here: the tracking service converges any entity
+            // with a connected player's region. The runner checks the ordered owner sequence
+            // (ticket deferred under A, placed under B, relocation committed to B) from the log.
+            String diagnostic=later.get("ownershipDiagnostic").getAsString();
+            require(diagnostic.contains("x="+exitChunkX+", z="+exitChunkZ)&&diagnostic.contains("state=OWNED"),
+                "A/B gateway pig binding is not at the destination chunk: "+diagnostic);
+            receipt.addProperty(active+"-pigBoundAtDestinationChunk",true);
+            health(active);
+            pass(active,"same native object/UUID at the destination chunk; PORTAL ticket deferred from owner A and "
+                +"placed under destination owner B; later native ticks (ordered owner sequence is verified from the server log)");
+            return;
         }
         require(tracking!=null,"gateway destination tracking lacked exact End owner witness");
         receipt.add(active+"-destinationTracking",tracking.deepCopy());
-        require(context.computeOnClient(c->{for(var entity:c.level.entitiesForRendering())
+        if(!ab)require(context.computeOnClient(c->{for(var entity:c.level.entitiesForRendering())
             if(entity.getUUID().toString().equals(uuid))return true;return false;}),
             "connected Java client did not track same-object gateway pig at destination");
         receipt.addProperty(active+"-clientTracking",true);

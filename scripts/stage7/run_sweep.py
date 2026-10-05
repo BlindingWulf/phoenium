@@ -15,7 +15,8 @@ SCRIPT_PATH = pathlib.Path(__file__).resolve()
 WORK = (SCRIPT_PATH.parents[2] if SCRIPT_PATH.parent.name == 'stage7' else
         SCRIPT_PATH.parents[2] / '.candidate-worktrees' / 'stage7-final-sol-ultra')
 ROOT = WORK.parent.parent
-AUDIT = ROOT / '.audit' / 'sol-ultra-final-campaign-20260923'
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
+from campaign_paths import AUDIT, BASE_AUDIT
 RUNNER = WORK / 'scripts' / 'stage7' / 'run_installed.py'
 CLIENT_SOURCE = WORK / 'src/clientGameTest/java/dev/phoenium/clienttest/Stage7RepairClientTest.java'
 RESTART = {'legacy', 'end-falling', 'bed-anchor'}
@@ -23,7 +24,7 @@ DEFAULT_GROUPS = ('end-falling', 'selection-holes', 'merchant-holes', 'armor-sta
 CARD_PATTERN = re.compile(r'[A-Za-z0-9:_-]+')
 
 def planned_no_entry_card(card):
-    plan_path = AUDIT / 'NO_NATIVE_ENTRY_MATRIX_PLAN.json'
+    plan_path = BASE_AUDIT / 'NO_NATIVE_ENTRY_MATRIX_PLAN.json'
     if not plan_path.is_file():
         return False
     plan = json.loads(plan_path.read_text(encoding='utf-8'))

@@ -156,6 +156,13 @@ public final class EntityIndexLifecycleAdapter {
                 }
                 if (!reservation.stable() || pendingRelocations.get(pending.objectId()) != pending) continue;
                 ObjectOwnership moved = objects.transitionOwner(pending.objectId(), pending.destination(), pending.observedObjectEpoch());
+                if (Boolean.getBoolean("phoenium.test.diagnostics")) {
+                    try {
+                        org.slf4j.LoggerFactory.getLogger(EntityIndexLifecycleAdapter.class).info(
+                            "PHOENIUM_ENTITY_RELOCATION object={} from={} to={} destination={} epoch={}",
+                            moved.objectId(), rechecked.owner(), moved.owner(), pending.destination(), moved.objectEpoch());
+                    } catch (Throwable ignored) { /* Diagnostics never replace the relocation outcome. */ }
+                }
                 pendingRelocations.remove(pending.objectId(), pending);
                 index.publish(pending.world(), pending.entityId(), moved);
                 entityIds.put(moved.objectId(), pending.entityId());

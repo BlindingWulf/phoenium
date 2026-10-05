@@ -66,7 +66,10 @@ public final class PortalTicketBoundary implements AutoCloseable {
         ChunkPos chunk = ChunkPos.containing(position);
         RoutingKey key = new RoutingKey(authority.worldId(level), chunk.x(), chunk.z());
         RegionId owner = owners.apply(key).orElse(null);
-        if (owner == null || owner.equals(context.region())) return false;
+        if (owner == null || owner.equals(context.region())) {
+            traceInline(entity, key, position, context.region(), owner);
+            return false;
+        }
         if (pending.size() >= LIMIT)
             throw new IllegalStateException("foreign portal ticket backlog exceeded " + LIMIT);
         Pending request = new Pending(sequence.incrementAndGet(), entity, level, key, position, context.region());
@@ -143,6 +146,16 @@ public final class PortalTicketBoundary implements AutoCloseable {
             trace("DROPPED_WORLD_CLOSED", request, null);
             return true;
         });
+    }
+
+    private static void traceInline(Entity entity, RoutingKey key, BlockPos position, RegionId caller, RegionId owner) {
+        if (!Boolean.getBoolean("phoenium.test.diagnostics")) return;
+        try {
+            LoggerFactory.getLogger(PortalTicketBoundary.class).info(
+                "PHOENIUM_PORTAL_TICKET phase=INLINE uuid={} world={} chunk={},{} position={} callerOwner={} chunkOwner={}",
+                entity.getUUID(), key.world(), key.x(), key.z(), position.toShortString(), caller,
+                owner == null ? "UNROUTED" : owner);
+        } catch (Throwable ignored) { /* Diagnostics never replace the native outcome. */ }
     }
 
     private static void trace(String phase, Pending request, RegionId destinationOwner) {

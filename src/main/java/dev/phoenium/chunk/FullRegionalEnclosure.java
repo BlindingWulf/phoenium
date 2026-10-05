@@ -42,6 +42,17 @@ public final class FullRegionalEnclosure {
         }
         if (participants.size() <= 1) return true;
         var destination = participants.first();
+        if (Boolean.getBoolean("phoenium.test.diagnostics")) {
+            try {
+                org.slf4j.LoggerFactory.getLogger(FullRegionalEnclosure.class).info(
+                    "PHOENIUM_REGION_ENCLOSURE participants={} destination={} keys={} sample={}",
+                    participants, destination, keys.size(), keys.stream().limit(6).toList());
+                var frames = new Throwable().getStackTrace();
+                StringBuilder stack = new StringBuilder();
+                for (int i = 1; i < Math.min(frames.length, 16); i++) stack.append(" | at ").append(frames[i]);
+                org.slf4j.LoggerFactory.getLogger(FullRegionalEnclosure.class).info("PHOENIUM_REGION_ENCLOSURE_STACK{}", stack);
+            } catch (Throwable ignored) { /* Diagnostics never replace the topology outcome. */ }
+        }
         if (participants.stream().anyMatch(region -> !region.world().equals(destination.world())))
             throw new ChunkProtocolException("regional FULL enclosure cannot cross world identity");
         var owners = new LinkedHashMap<RoutingKey, RegionId>();

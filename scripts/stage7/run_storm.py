@@ -40,11 +40,12 @@ import uuid
 
 WORK = Path(__file__).resolve().parents[2]
 ROOT = WORK.parent.parent
-AUDIT = ROOT / '.audit/sol-ultra-final-campaign-20260923'
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from campaign_paths import AUDIT, BASE_AUDIT
 PINNED = ROOT / '.audit/container-close-admission-20260922/PINNED_PROFILE_MANIFEST.json'
 ORACLE = ROOT / '.candidate-worktrees/respawn-lifecycle-repair/.gradle/loom-cache/minecraftMaven/net/minecraft/minecraft-merged-043a8b3edf/26.2/minecraft-merged-043a8b3edf-26.2-sources.jar'
 DEFAULT_WORLD_SEED = ROOT / '.audit/astra-max-stage7-20260922/manual-ready/server/STAGE7-LUNA-FINAL'
-END_W4_WORLD_SEED = (AUDIT / 'installed/no-entry-full-scoped-75d6-no-native-entry-w4'
+END_W4_WORLD_SEED = (BASE_AUDIT / 'installed/no-entry-full-scoped-75d6-no-native-entry-w4'
                      / 'server/STAGE7-REPAIR-W4')
 END_W4_SEED_RECEIPT = END_W4_WORLD_SEED.parent.parent / 'first-result.json'
 END_W4_SEED_RECEIPT_SHA = '6039822E48A137412BDD8675B2FEEF3B5FDC83C8B626C78FB00A5D88B8F7DC90'

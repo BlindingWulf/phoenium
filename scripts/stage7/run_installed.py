@@ -3,7 +3,9 @@ import pathlib,subprocess,hashlib,json,shutil,socket,struct,time,sys,datetime,os
 script_path=pathlib.Path(__file__).resolve()
 work=(script_path.parents[2] if script_path.parent.name=='stage7' else
       script_path.parents[2]/'.candidate-worktrees/stage7-final-sol-ultra')
-root=work.parent.parent; audit=root/'.audit/sol-ultra-final-campaign-20260923'
+sys.path.insert(0,str(script_path.parent))
+from campaign_paths import AUDIT as audit, BASE_AUDIT as base_audit
+root=work.parent.parent
 pinned_path=root/'.audit/container-close-admission-20260922/PINNED_PROFILE_MANIFEST.json'
 pinned=json.loads(pinned_path.read_text(encoding='utf-8-sig'));template=pathlib.Path(pinned['template'])
 name=sys.argv[1];workers=int(sys.argv[2]);assert workers in (1,4)
@@ -14,6 +16,9 @@ group=next((arg.partition('=')[2] for arg in sys.argv if arg.startswith('--group
 cards_arg=next((arg.partition('=')[2] for arg in sys.argv if arg.startswith('--cards=')),None)
 cards=cards_arg.split(',') if cards_arg else []
 negative_unretained='--negative-unretained-fireball' in sys.argv
+explicit_topology='--explicit-topology' in sys.argv  # A/B regions inside a dimension (dev fixture)
+explicit_separate_b=next((arg.partition('=')[2] for arg in sys.argv if arg.startswith('--explicit-separate-b=')),None)
+explicit_b_width=next((arg.partition('=')[2] for arg in sys.argv if arg.startswith('--explicit-b-width=')),None)
 if negative_unretained and (group!='projectile-fireball' or cards!=['P0-fireball-nether-return'] or restart):
     raise RuntimeError('negative unretained control requires first-run exact P0 fireball selection')
 assert not cards or (len(set(cards))==len(cards) and all(cards))
@@ -21,7 +26,7 @@ client_source=(work/'src/clientGameTest/java/dev/phoenium/clienttest/Stage7Repai
 known_groups={'legacy'}|set(re.findall(r'group\.equals\("([^"]+)"\)',client_source))
 if group not in known_groups:raise RuntimeError('unbound client group: '+group)
 exact_pairs=set(re.findall(r'group\.equals\("([^"]+)"\)\s*&&\s*selectedCards\.equals\("([^"]+)"\)',client_source))
-no_entry_plan=audit/'NO_NATIVE_ENTRY_MATRIX_PLAN.json'
+no_entry_plan=base_audit/'NO_NATIVE_ENTRY_MATRIX_PLAN.json'
 no_entry_allowed=(no_entry_plan.is_file() and
                   {item['card'] for item in json.loads(no_entry_plan.read_text(encoding='utf-8')).get('cards',[])
                    if item.get('fixtureState')=='PLANNED'} or set())
@@ -113,13 +118,15 @@ if not restart:
         propertySha256=sha(server/'server.properties'),
         overrides=['isolated TCP/UDP/RCON ports','RCON enabled for fixture setup and read-only observations','fresh level-name and test motd','separate test-only observer JAR'],
         javaVersion=subprocess.check_output([str(java),'-version'],stderr=subprocess.STDOUT,text=True),
-        group=group,cards=cards,seed=seed,negativeUnretainedFireballControl=negative_unretained)
+        group=group,cards=cards,seed=seed,negativeUnretainedFireballControl=negative_unretained,
+        explicitTopology=explicit_topology,explicitBWidth=explicit_b_width,explicitSeparateB=explicit_separate_b)
     manifest['testSourceHashes']={str(p.relative_to(work)):sha(p) for base in [work/'src/clientGameTest',work/'src/test/java/dev/phoenium/stage7repair',work/'src/stage7RepairHarness'] for p in base.rglob('*') if p.is_file()}
     (run/'inputs.json').write_text(json.dumps(manifest,indent=2))
 else:
     manifest=json.loads((run/'inputs.json').read_text());digest=manifest['candidateSha256']
     assert group==manifest.get('group','legacy') and cards==manifest.get('cards',[]) and seed==manifest.get('seed',0)
     assert not manifest.get('negativeUnretainedFireballControl',False)
+    assert explicit_topology==manifest.get('explicitTopology',False),'restart topology mode must match the first phase'
     assert workers==manifest['workers'];assert all(sha(server/'mods'/n)==h for n,h in pinned['providers'].items())
     assert sha(server/'mods'/pathlib.Path(manifest['candidate']).name)==digest
     assert sha(server/'mods'/'stage7-repair-probe.jar')==manifest['probeSha256']
@@ -131,7 +138,11 @@ command=[str(java),'-Xmx2G','-Dphoenium.test.diagnostics=true','-Dphoenium.gamep
     '-Djava.net.useSystemProxies=false','-Dminecraft.api.session.host=http://127.0.0.1:9','-Dminecraft.api.services.host=http://127.0.0.1:9','-jar','fabric-server-launch.jar','nogui']
 if negative_unretained:
     command.insert(2,'-Dphoenium.stage7.negativeUnretainedFireball=true')
-result={'command':command,'phase':phase,'startUtc':datetime.datetime.now(datetime.timezone.utc).isoformat(),'candidateSha256':digest}
+if explicit_topology:
+    command[2:2]=['-Dphoenium.stage3.explicitTopology=true','-Dphoenium.test.chunkFixtureSupport=true']
+    if explicit_b_width:command.insert(2,'-Dphoenium.stage3.explicitBWidth='+explicit_b_width)
+    if explicit_separate_b:command.insert(2,'-Dphoenium.stage3.explicitSeparateBX='+explicit_separate_b)
+result={'command':command,'explicitTopology':explicit_topology,'phase':phase,'startUtc':datetime.datetime.now(datetime.timezone.utc).isoformat(),'candidateSha256':digest}
 process=None;client=None
 def logtext():return console.read_text(errors='replace') if console.exists() else ''
 def failed_log(text):
@@ -234,11 +245,26 @@ try:
         # Restart cards verify the saved world and client/session health. Some (including
         # legacy I8) intentionally make no new portal contact after the server restarts.
         # Still reject any violation or pending transaction observed in this phase.
-        if not restart and group not in ('bed-anchor','no-native-entry','same-dimension-gateway') and tx.get('events',0)==0:
+        if not restart and group not in ('bed-anchor','no-native-entry','same-dimension-gateway','same-dimension-gateway-ab') and tx.get('events',0)==0:
             result['txPass']=False
             raise RuntimeError('stage7-tx observed no portal transaction events')
         if not result['txPass']:
             raise RuntimeError('stage7-tx violation or pending transaction: '+repr(tx))
+        if group=='same-dimension-gateway-ab':
+            # Ordered owner witnesses for the foreign-owned gateway ticket (see PortalTicketBoundary).
+            lines=logtext().splitlines()
+            def first(pattern):
+                return next((i for i,line in enumerate(lines) if re.search(pattern,line)),None)
+            deferred=first(r'PHOENIUM_PORTAL_TICKET phase=DEFERRED .*requestedUnder=.*stage3-fixture-a\] destinationOwner=.*stage3-fixture-b')
+            placed=first(r'PHOENIUM_PORTAL_TICKET phase=PLACED .*destinationOwner=.*stage3-fixture-b')
+            replay=first(r'PHOENIUM_PORTAL_TICKET phase=INLINE .*callerOwner=.*stage3-fixture-b\] chunkOwner=.*stage3-fixture-b')
+            moved=first(r'PHOENIUM_ENTITY_RELOCATION .*from=.*stage3-fixture-a\] to=.*stage3-fixture-b')
+            result['gatewayAbSequence']=dict(deferredUnderA=deferred,replayUnderB=replay,placed=placed,relocatedToB=moved)
+            ordered=None not in (deferred,replay,placed,moved) and deferred<replay<=placed
+            result['gatewayAbOrdered']=ordered
+            if not ordered:
+                result['txPass']=False
+                raise RuntimeError('A/B gateway owner sequence not observed: '+repr(result['gatewayAbSequence']))
 except SnapshotComplete:pass
 except BaseException as error:
     result['failure']=str(error);print('FAILED',error,flush=True)

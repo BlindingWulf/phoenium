@@ -17,6 +17,7 @@ import java.util.Map;
 public final class ExplicitLiveTopologyFixture {
     public static final String PROPERTY = "phoenium.stage3.explicitTopology";
     public static final int A_RADIUS = 4;
+    public static final int B_SEPARATED_RADIUS = 16;
     public static final int B_WIDTH = 4;
     /** The gated trace target sits outside the server's persistent spawn area. */
     public static final int TRACE_B_WIDTH = 28;
@@ -51,11 +52,27 @@ public final class ExplicitLiveTopologyFixture {
             for (int x = initialSpawn.x() - CHUNK_SUPPORT_RADIUS; x <= initialSpawn.x() + CHUNK_SUPPORT_RADIUS; x++)
                 for (int z = initialSpawn.z() - CHUNK_SUPPORT_RADIUS; z <= initialSpawn.z() + CHUNK_SUPPORT_RADIUS; z++)
                     routes.put(new RoutingKey(world, x, z), new RegionRoute(a, generation, aEpoch));
-            for (int x = spawnAnchor.x() + supportRadius + 1; x <= spawnAnchor.x() + A_RADIUS + TRACE_B_WIDTH + CHUNK_SUPPORT_RADIUS; x++)
+            if (Integer.getInteger("phoenium.stage3.explicitSeparateBX") == null)
+            for (int x = spawnAnchor.x() + supportRadius + 1; x <= spawnAnchor.x() + A_RADIUS
+                    + Math.max(TRACE_B_WIDTH, Integer.getInteger("phoenium.stage3.explicitBWidth", 0)) + CHUNK_SUPPORT_RADIUS; x++)
                 for (int z = spawnAnchor.z() - supportRadius; z <= spawnAnchor.z() + supportRadius; z++)
                     routes.put(new RoutingKey(world, x, z), new RegionRoute(a, generation, aEpoch));
         }
-        int bWidth = Boolean.getBoolean("phoenium.stage3.chunkTrace") ? TRACE_B_WIDTH : B_WIDTH;
+        // Development-only: a wider B strip keeps its far end beyond regional-closure convergence.
+        Integer separated = Integer.getInteger("phoenium.stage3.explicitSeparateBX");
+        if (separated != null) {
+            // Development-only: B is a B_SEPARATED_RADIUS square around chunk (separated, anchor.z),
+            // fully disjoint from A and from every A support strip, so no footprint can span both
+            // regions and regional enclosure has nothing to converge.
+            routes.keySet().removeIf(key -> Math.abs(key.x() - separated) <= B_SEPARATED_RADIUS + 1
+                && Math.abs(key.z() - spawnAnchor.z()) <= B_SEPARATED_RADIUS + 1);
+            for (int x = separated - B_SEPARATED_RADIUS; x <= separated + B_SEPARATED_RADIUS; x++)
+                for (int z = spawnAnchor.z() - B_SEPARATED_RADIUS; z <= spawnAnchor.z() + B_SEPARATED_RADIUS; z++)
+                    routes.put(new RoutingKey(world, x, z), new RegionRoute(b, generation, bEpoch));
+            return new Plan(a, b, spawnAnchor, Map.copyOf(routes));
+        }
+        int bWidth = Integer.getInteger("phoenium.stage3.explicitBWidth",
+            Boolean.getBoolean("phoenium.stage3.chunkTrace") ? TRACE_B_WIDTH : B_WIDTH);
         for (int x = spawnAnchor.x() + A_RADIUS + 1; x <= spawnAnchor.x() + A_RADIUS + bWidth; x++) {
             for (int z = spawnAnchor.z() - A_RADIUS; z <= spawnAnchor.z() + A_RADIUS; z++) {
                 RoutingKey key = new RoutingKey(world, x, z);
