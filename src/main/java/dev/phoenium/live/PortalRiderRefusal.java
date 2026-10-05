@@ -18,6 +18,17 @@ public final class PortalRiderRefusal {
     private PortalRiderRefusal() { }
 
     public static boolean refuses(Entity entity) {
+        // A throwable that carries a rider has no retained-continuation shape (a riding throwable does: it is dismounted).
+        if (entity instanceof net.minecraft.world.entity.projectile.ThrowableProjectile && entity.isVehicle()) {
+            long count = REFUSED.incrementAndGet();
+            if (Boolean.getBoolean("phoenium.test.diagnostics")) {
+                try {
+                    LoggerFactory.getLogger(PortalRiderRefusal.class).info(
+                        "PHOENIUM_PORTAL_LIMITATION reason=THROWABLE_CARRIES_RIDER type={} uuid={} total={}", entity.getType(), entity.getUUID(), count);
+                } catch (Throwable ignored) { /* Diagnostics never replace the native outcome. */ }
+            }
+            return true;
+        }
         if (entity instanceof Player || !entity.isVehicle() || !PortalRiders.carriesPlayer(entity)) return false;
         // "Vehicle + leaf player riders" is carried natively (see PortalRiders); everything else is declined.
         if (!PortalRiders.leafPlayerRiders(entity).isEmpty()) return false;

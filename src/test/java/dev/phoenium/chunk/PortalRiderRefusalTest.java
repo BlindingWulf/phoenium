@@ -52,6 +52,13 @@ class PortalRiderRefusalTest {
         ride(pig, player, inner); ride(inner);
         assertTrue(PortalRiderRefusal.refuses(pig), "player mixed with a non-player passenger");
         assertFalse(PortalRiderRefusal.refuses(player), "a player is never refused here; it uses its own manager");
+        var pearl = EntityTypes.ENDER_PEARL.create(f.overworld, EntitySpawnReason.COMMAND);
+        ride(pig); ride(inner);
+        assertFalse(PortalRiderRefusal.refuses(pearl), "a free pearl keeps the retained continuation");
+        ride(pig, pearl);
+        assertFalse(PortalRiderRefusal.refuses(pearl), "a pearl that RIDES is a native portal user and is dismounted at its transfer");
+        ride(pig); ride(pearl, inner);
+        assertTrue(PortalRiderRefusal.refuses(pearl), "a pearl that carries a rider has no continuation shape and is declined");
     }
 
     @Test void aMountCarryingAPlayerKeepsTickingWithoutLookupOrTransfer() throws Exception {

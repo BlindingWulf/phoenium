@@ -67,8 +67,9 @@ final class PearlPortalTransitionManager implements AutoCloseable {
                 || pearl.getClass() != ThrownEnderpearl.class) return false;
         Portal portal = ((PearlPortalProcessorAccess) processor).phoenium$portal();
         if (!(portal instanceof NetherPortalBlock) && !(portal instanceof EndPortalBlock)) return false;
-        if (pearl.isPassenger() || pearl.isVehicle())
-            throw new IllegalStateException("ridden pearl cannot use the retained portal continuation");
+        // A pearl that carries a passenger is declined before this point (PortalRiderRefusal); one that RIDES
+        // a vehicle is a native portal user (ThrowableProjectile.canUsePortal) and is dismounted at its transfer.
+        if (pearl.isVehicle()) return false;
         FullEntityFacts.Access access = access(pearl);
         ObjectOwnership binding = objects.current(pearl.getUUID().toString()).orElse(null);
         if (binding == null || binding.kind() != OwnedObjectKind.ENTITY) return false;
@@ -197,7 +198,31 @@ final class PearlPortalTransitionManager implements AutoCloseable {
                 throw new IllegalStateException("pearl destination entity visibility deadline: " + entry.visibilityReady);
             return;
         }
+        if (entry.source.isPassenger() && !dismountForTransfer(entry, sourceBinding)) {
+            resumeUnchanged(entry, sourceBinding);
+            return;
+        }
         replaceCrossDimension(entry, sourceBinding, transition);
+    }
+
+    /**
+     * Native {@code Entity.teleport} stops riding before it replaces the entity, and a throwable may use a portal
+     * while it is a passenger. The same dismount runs here under the pearl's source owner just before the
+     * replacement. A vehicle owned by another region cannot be edited from this owner turn, so that (rare,
+     * command-built) shape keeps the pearl where it is.
+     */
+    private boolean dismountForTransfer(Entry entry, ObjectOwnership sourceBinding) {
+        boolean[] dismounted = new boolean[1];
+        authority.execute(sourceBinding.routingKey(), RegionalServiceKind.ENTITY_PORTAL_SOURCE, () -> {
+            requireCurrentSourceAuthority(entry);
+            Entity vehicle = entry.source.getVehicle();
+            if (vehicle == null) { dismounted[0] = true; return; }
+            ObjectOwnership vehicleBinding = objects.current(vehicle.getUUID().toString()).orElse(null);
+            if (vehicleBinding == null || !vehicleBinding.owner().equals(sourceBinding.owner())) return;
+            entry.source.stopRiding();
+            dismounted[0] = entry.source.getVehicle() == null;
+        });
+        return dismounted[0];
     }
 
     private void resumeUnchanged(Entry entry, ObjectOwnership sourceBinding) {

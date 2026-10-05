@@ -69,8 +69,9 @@ public final class ThrowableProjectilePortalTransitionManager implements AutoClo
             throw new IllegalStateException("throwable projectile portal suspension lacks source owner");
         Portal portal = ((PearlPortalProcessorAccess) processor).phoenium$portal();
         if (!(portal instanceof NetherPortalBlock) && !(portal instanceof EndPortalBlock)) return false;
-        if (projectile.isPassenger() || projectile.isVehicle())
-            throw new IllegalStateException("throwable projectile graph requires its own native continuation");
+        // A throwable that carries a rider is declined earlier (PortalRiderRefusal); one that rides a vehicle is a
+        // native portal user (ThrowableProjectile.canUsePortal) and is dismounted at its transfer.
+        if (projectile.isVehicle()) return false;
         if (active.containsKey(key(projectile))) throw new IllegalStateException("projectile portal captured twice");
         ObjectOwnership binding = objects.current(projectile.getUUID().toString()).orElseThrow();
         objects.requireCurrentOwner(binding.objectId(), binding.objectEpoch(), OwnershipContext.current().orElseThrow().region());
@@ -136,6 +137,7 @@ public final class ThrowableProjectilePortalTransitionManager implements AutoClo
                         continue;
                     }
                 }
+                if (permitted && entry.projectile.isPassenger() && !dismountForTransfer(entry)) permitted = false;
                 var transfer = permitted ? new NativePortalTransfer(authority, objects, replacements, entry.token,
                     entry.projectile, entry.binding, entry.transition, () -> active.get(key(entry.projectile)) == entry
                         && entry.visibilityReady.getAsBoolean()) : null;
@@ -167,6 +169,22 @@ public final class ThrowableProjectilePortalTransitionManager implements AutoClo
             } finally { entry.advancing = false; }
         }
         return settled;
+    }
+
+    /** Native Entity.teleport stops riding first; the same dismount runs here under the projectile's source owner. */
+    private boolean dismountForTransfer(Entry entry) {
+        boolean[] dismounted = new boolean[1];
+        authority.execute(entry.binding.routingKey(), RegionalServiceKind.ENTITY_PORTAL_SOURCE, () -> {
+            objects.requireCurrentOwner(entry.binding.objectId(), entry.binding.objectEpoch(),
+                OwnershipContext.current().orElseThrow().region());
+            Entity vehicle = entry.projectile.getVehicle();
+            if (vehicle == null) { dismounted[0] = true; return; }
+            ObjectOwnership vehicleBinding = objects.current(vehicle.getUUID().toString()).orElse(null);
+            if (vehicleBinding == null || !vehicleBinding.owner().equals(entry.binding.owner())) return;
+            entry.projectile.stopRiding();
+            dismounted[0] = entry.projectile.getVehicle() == null;
+        });
+        return dismounted[0];
     }
 
     private boolean current(Entry entry) {
