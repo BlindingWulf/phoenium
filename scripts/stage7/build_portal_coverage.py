@@ -1605,6 +1605,9 @@ def apply_claims(row: dict[str, Any], claims: list[dict[str, Any]], candidate_sh
                 reasons.append("missing semantic assertions: " + ", ".join(sorted(missing)))
             if expected in ("REFUSAL", "NO_NATIVE_ENTRY_PATH", "ROUTE_NOT_APPLICABLE") and not proof:
                 reasons.append("missing applicable pinned native source proof")
+            if (expected == "TRANSFER" and row.get("nativeControlReceipt") is not None
+                    and not native_control_valid(row, source_sha, binary_sha)):
+                reasons.append("native control receipt does not match the native outcome")
             if silverfish and not (silverfish_source_chain_ok(row, source_sha, binary_sha) and proof):
                 reasons.append("missing exact applicable Silverfish pinned native source proof")
             if contact_impossible and proof_only_assertions and not (receipts["W1"] and receipts["W4"]):
@@ -1678,6 +1681,16 @@ def validate_census(census: dict[str, Any], frozen: dict[str, Any], source_sha: 
                     or control.get("sourceJarSha256") != source_sha
                     or control.get("mappedBinarySha256") != binary_sha):
                 raise ValueError(f"native control oracle mismatch: {row.get('id')}")
+            if control.get("card") is not None:
+                # Headless control: the named census card in the sibling receipt must show exactly this outcome.
+                receipt_path = receipt.with_name("headless-receipt.json")
+                if (digest(receipt_path) != control.get("receiptSha256")
+                        or digest(receipt.with_name("inputs.json")) != control.get("inputsSha256")
+                        or inputs.get("vanilla") is not True):
+                    raise ValueError(f"headless native control files changed: {row.get('id')}")
+                cards = {item.get("card"): item.get("outcome") for item in read_json(receipt_path).get("cards", [])}
+                if {"TRANSFER": "TRANSFERRED"}.get(control.get("observedOutcome")) != cards.get(control["card"]):
+                    raise ValueError(f"headless native control card outcome mismatch: {row.get('id')}")
 
 
 def build_report(census: dict[str, Any], frozen: dict[str, Any], candidate_sha: str,

@@ -38,6 +38,8 @@ server = run / 'server'
 java = pathlib.Path(r'C:\Program Files\Eclipse Adoptium\jdk-25.0.4.101-hotspot\bin\java.exe')
 
 OW, NETHER, END = 'minecraft:overworld', 'minecraft:the_nether', 'minecraft:the_end'
+# Types whose native behaviour depends on gravity (ArmorStand.hasPhysics() = !marker && !noGravity -> noPhysics).
+GRAVITY_TYPES = {'armor_stand'}
 NBT = {
     'area_effect_cloud': ',Duration:1200,Radius:2.0f,Particle:{type:"minecraft:effect",color:16711680}',
     'experience_orb': ',Value:5s',
@@ -54,12 +56,22 @@ def snapshot_contacts():
     return json.loads(raw[raw.index('{'):]).get('noEntryContactEvents', [])
 
 
-def snapshot_members(tag):
+def snapshot_body():
+    raw = rcon('stage7-probe snapshot', whole=True)
+    return json.loads(raw[raw.index('{'):])
+
+
+def snapshot_members(tag, body=None):
     """Raw probe entities carrying this card's tag, from every dimension (Phoenium runs only)."""
     if vanilla: return None
-    raw = rcon('stage7-probe snapshot', whole=True)
-    body = json.loads(raw[raw.index('{'):])
+    body = body or snapshot_body()
     return [e for e in body['entities'] if tag in e.get('tags', '')]
+
+
+def gateway_events(members, body):
+    ids = {m.get('uuid', '').lower() for m in members}
+    return {k: [e for e in body.get(key, []) if e.get('uuid', '').lower() in ids]
+            for k, key in (('contact', 'gatewayContactEvents'), ('ticket', 'gatewayTicketEvents'), ('tracking', 'gatewayTrackingEvents'))}
 
 
 def sha(p):
@@ -233,7 +245,8 @@ try:
                         rcon('execute in ' + src + ' run ' + c)
                     end_ready.add((src, y))
                 at = '8.5 %d.25 8.5' % y
-            summon = rcon('execute in %s run summon minecraft:%s %s {Tags:["stage7_mob"%s,"%s"],NoGravity:1b%s}' % (src, etype, at, ',"stage7_noentry_h"' if (etype, route) in noentry_pairs else '', tag, NBT.get(etype, '')))
+            summon = rcon('execute in %s run summon minecraft:%s %s {Tags:["stage7_mob"%s%s,"%s"]%s%s}' % (src, etype, at, ',"stage7_noentry_h"' if (etype, route) in noentry_pairs else '',
+                  ',"stage7_gateway_pig"' if route == 'END_GATEWAY' else '', tag, '' if etype in GRAVITY_TYPES else ',NoGravity:1b', NBT.get(etype, '')))
             outcome = 'GONE' if fixture_ok else 'FIXTURE_INVALID'; where = 'NONE'
             witness = {}
             if fixture_ok: witness['source'] = snapshot_members(tag)
@@ -252,7 +265,9 @@ try:
                     outcome, where = 'STAYED', src
                 time.sleep(.25)
             if outcome == 'TRANSFERRED' and not vanilla:
-                witness['arrival'] = snapshot_members(tag)
+                arrival_body = snapshot_body()
+                witness['arrival'] = snapshot_members(tag, arrival_body)
+                if route == 'END_GATEWAY': witness['gateway'] = gateway_events(witness['arrival'], arrival_body)
                 # post_arrival_tick evidence: the destination object must keep ticking for more than twenty ticks.
                 first = next((e['ticks'] for e in witness['arrival'] if e.get('world') == where), None)
                 deadline_later = time.monotonic() + 10
