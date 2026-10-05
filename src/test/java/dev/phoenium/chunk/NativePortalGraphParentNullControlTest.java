@@ -37,7 +37,46 @@ class NativePortalGraphParentNullControlTest {
         System.out.println("STAGE7_GRAPH_PARENT_NULL_CONTROL " + observed);
     }
 
-    /** Run with PHOENIUM_GRAPH_STRICT=true for the known red no-orphan campaign gate. */
+    /**
+     * Required native-parity gate. Pinned 26.2 {@code Entity.teleportCrossDimension} ejects the
+     * passengers, runs each child's complete {@code teleport} (source removal, destination
+     * insertion, post callback) and only then asks {@code EntityType.create} for the parent, so a
+     * null parent leaves the child admitted. Native has no rollback; Phoenium must reproduce that
+     * exact per-member outcome and keep every identity, edge and publication consistent.
+     */
+    @Test void parentNullMatchesPinnedNativePerMemberOutcomeAndStaysSafe() throws Exception {
+        Observation o = runParentNullControl();
+        // Exact native per-member outcome.
+        assertTrue(o.sourceParent(), "Ghast replacement returned null: the source Ghast must remain");
+        assertFalse(o.destinationParent(), "no destination Ghast may exist");
+        assertFalse(o.sourceChild(), "Chicken's native transfer completed before the parent factory");
+        assertTrue(o.destinationChild(), "Chicken was admitted at the destination");
+        assertEquals(java.util.List.of("source-retire", "insert", "post"), o.nativeEffects(),
+            "native effects are exactly one child retire -> insert -> callback; no parent effects");
+        // Native ejects before the child recursion: neither the source nor destination edge survives.
+        assertFalse(o.originalEdge()); assertFalse(o.destinationEdge());
+        assertTrue(o.parentPassengersEmpty(), "source Ghast kept a dangling passenger pointer");
+        assertFalse(o.parentHasVehicle());
+        assertFalse(o.destinationChildHasVehicle(), "destination Chicken kept a dangling vehicle pointer");
+        assertTrue(o.destinationChildPassengersEmpty());
+        // Identity: one addressable incarnation per UUID, never tracked in two worlds.
+        assertTrue(o.parentUniquelyInSource() && o.childUniquelyInDestination(),
+            "a UUID is addressable in both worlds");
+        assertEquals(2, o.livePublicationCount());
+        assertTrue(o.parentPublicationUnchanged(), "unchanged source parent must keep its exact publication");
+        assertTrue(o.childPublicationReplaced(), "child needs a newer destination publication");
+        assertTrue(o.sourceChildRetiredAsChangedDimension());
+        assertEquals(0, o.pendingBoundaryCount(), "parent-null graph left a pending retained generation");
+        assertFalse(o.cleanupDisturbedState(), "repeated cleanup mutated the settled graph");
+    }
+
+    /**
+     * Superseded historical contract (preserved red). It demanded an all-or-unchanged graph, but
+     * pinned native ordering admits the child before the parent outcome is known and has no rollback
+     * (see {@link #parentNullMatchesPinnedNativePerMemberOutcomeAndStaysSafe}). It is not a native
+     * refusal and is not part of the acceptance gate; the receipts remain in the audit directory.
+     * Run with PHOENIUM_GRAPH_STRICT=true to reproduce the historical red.
+     */
     @EnabledIfEnvironmentVariable(named = "PHOENIUM_GRAPH_STRICT", matches = "true")
     @Test void strictGraphAtomicityRejectsParentNullChildAdmission() throws Exception {
         Observation observed = runParentNullControl();
@@ -97,6 +136,17 @@ class NativePortalGraphParentNullControlTest {
         Entity childSource = fixture.visible.get(fixture.overworld).get(chicken.getUUID());
         Entity parentDestination = fixture.visible.get(fixture.nether).get(ghast.getUUID());
         Entity childDestination = fixture.visible.get(fixture.nether).get(chicken.getUUID());
+        var graph = graphHolder[0];
+        var parentBefore = graph.member(ghast).binding();
+        var childBefore = graph.member(chicken).binding();
+        var parentNow = fixture.objects.current(ghast.getUUID().toString()).orElse(null);
+        var childNow = fixture.objects.current(chicken.getUUID().toString()).orElse(null);
+        var effects = fixture.order.stream().filter(NATIVE_EFFECTS::contains).toList();
+        var beforeCleanup = shape(fixture);
+        // Repeated cleanup after settlement must be inert: no cancellation, no state change.
+        plan.cancelUnsettled();
+        boolean cancelled = boundary.cancel(tokens.get(chicken)) | boundary.cancel(tokens.get(ghast));
+        boolean disturbed = cancelled || !beforeCleanup.equals(shape(fixture));
         return new Observation(parentSource == ghast, childSource == chicken,
             parentDestination != null, childDestination != null,
             childSource != null && childSource.getVehicle() == parentSource,
@@ -105,7 +155,26 @@ class NativePortalGraphParentNullControlTest {
             Collections.frequency(fixture.order, "source-retire"),
             Collections.frequency(fixture.order, "insert"),
             Collections.frequency(fixture.order, "post"),
-            boundary.pendingCount(), fixture.objects.liveCount());
+            boundary.pendingCount(), fixture.objects.liveCount(),
+            effects, ghast.getPassengers().isEmpty(), ghast.getVehicle() != null,
+            childDestination != null && childDestination.getVehicle() != null,
+            childDestination == null || childDestination.getPassengers().isEmpty(),
+            parentSource == ghast && parentDestination == null,
+            childDestination != null && childSource == null,
+            parentNow != null && parentNow.equals(parentBefore),
+            childNow != null && childNow.incarnation() > childBefore.incarnation()
+                && childNow.routingKey().world().equals(fixture.to.world()),
+            chicken.getRemovalReason() == Entity.RemovalReason.CHANGED_DIMENSION && !ghast.isRemoved(),
+            disturbed);
+    }
+
+    private static final java.util.Set<String> NATIVE_EFFECTS =
+        java.util.Set.of("source-retire", "insert", "post", "destination-cleanup", "merge");
+
+    private static java.util.List<Object> shape(NativeItemPortalTransferTest.Fixture fixture) {
+        return java.util.List.of(fixture.visible.get(fixture.overworld).keySet(),
+            fixture.visible.get(fixture.nether).keySet(), fixture.objects.liveCount(),
+            java.util.List.copyOf(fixture.order));
     }
 
     private static ServerLevelData data(Difficulty difficulty) {
@@ -122,5 +191,11 @@ class NativePortalGraphParentNullControlTest {
             boolean destinationParent, boolean destinationChild,
             boolean originalEdge, boolean destinationEdge,
             int sourceRetirements, int destinationInsertions, int postCallbacks,
-            int pendingBoundaryCount, int livePublicationCount) { }
+            int pendingBoundaryCount, int livePublicationCount,
+            java.util.List<String> nativeEffects, boolean parentPassengersEmpty,
+            boolean parentHasVehicle, boolean destinationChildHasVehicle,
+            boolean destinationChildPassengersEmpty, boolean parentUniquelyInSource,
+            boolean childUniquelyInDestination, boolean parentPublicationUnchanged,
+            boolean childPublicationReplaced, boolean sourceChildRetiredAsChangedDimension,
+            boolean cleanupDisturbedState) { }
 }
