@@ -1354,23 +1354,194 @@ def headless_transfer_assertions(card: Card, entity_type: str, route: str) -> se
     return assertions
 
 
-def headless_claims(card: Card) -> list[dict[str, Any]]:
-    """Generic server-headless claims for entity types without family-specific semantics."""
+# Portal block cell of the headless fixture per route (the entity is summoned inside this exact cell).
+HEADLESS_PORTAL_CELL = {"NETHER_ENTRY": (0, 65, 0), "NETHER_RETURN": (0, 65, 0), "END_ENTRY": (8, 65, 8),
+                        "END_EXIT": (8, 70, 8), "END_GATEWAY": (12, 66, 8)}
+HEADLESS_MIN_DWELL_TICKS = 40
+HEADLESS_SHORT_LIVED = {"minecraft:lightning_bolt"}   # discards itself within a few ticks
+HEADLESS_CONTACT_TYPES = {"minecraft:wither"}         # canUsePortal(false) rejects it AFTER the portal block visited it
+
+
+def _single(members: Any) -> dict[str, Any] | None:
+    return members[0] if (isinstance(members, list) and len(members) == 1 and isinstance(members[0], dict)) else None
+
+
+def headless_negative_assertions(card: Card, entity_type: str, route: str) -> set[str]:
+    """Server-side negative witness: the entity sat in the portal cell, was never visited/processed, and never left."""
+    witness = card.data.get("witness")
+    uuid = _snapshot_uuid(card.data)
+    if card.data.get("outcome") != "STAYED" or not isinstance(witness, dict) or uuid is None:
+        return set()
+    source, settled = _single(witness.get("source")), _single(witness.get("settled"))
+    if source is None or settled is None:
+        return set()
+    source_world = ROUTE_SOURCE_WORLD[route]
+    if any(str(part.get("uuid", "")).lower() != uuid or part.get("type") != entity_type
+           or part.get("world") != source_world or part.get("removed") is not False
+           or part.get("portalProcessPresent") is not False for part in (source, settled)):
+        return set()
+    if (source.get("object") != settled.get("object") or source.get("nativeId") != settled.get("nativeId")
+            or not isinstance(source.get("ticks"), int) or not isinstance(settled.get("ticks"), int)):
+        return set()
+    dwell = 1 if entity_type in HEADLESS_SHORT_LIVED else HEADLESS_MIN_DWELL_TICKS
+    if settled["ticks"] < dwell or settled["ticks"] <= source["ticks"]:
+        return set()
+    cell = HEADLESS_PORTAL_CELL[route]
+    for part in (source, settled):
+        if any(not isinstance(part.get(axis), (int, float)) for axis in ("x", "y", "z")):
+            return set()
+    if (tuple(int(source[axis] // 1) for axis in ("x", "y", "z")) != cell
+            or tuple(int(settled[axis] // 1) for axis in ("x", "y", "z")) != cell):
+        return set()
+    # The tagged entity is unique in the whole server, so one settled member also proves the destination stayed empty.
+    assertions = {"source_unchanged", "destination_absent"}
+    if (settled.get("vehicleUuid") == source.get("vehicleUuid") and settled.get("passengerUuids") == source.get("passengerUuids")
+            and "vehicleUuid" in source and "passengerUuids" in source):
+        assertions.add("graph_unchanged")
+    contacts = witness.get("noEntryContactEvents")
+    if not isinstance(contacts, list):
+        return assertions
+    mine = [event for event in contacts if isinstance(event, dict) and str(event.get("uuid", "")).lower() == uuid]
+    expected_contact = entity_type in HEADLESS_CONTACT_TYPES
+    visited = any(event.get("type") == entity_type and event.get("world") == source_world
+                  and event.get("block") == ROUTE_PORTAL_BLOCK[route]
+                  and (event.get("x"), event.get("y"), event.get("z")) == cell for event in mine)
+    if expected_contact != visited or (not expected_contact and mine):
+        return assertions
+    result = card.result_data
+    status = result.get("txStatus")
+    trace_value = result.get("txTracePath")
+    if (result.get("txPass") is not True or not isinstance(status, dict) or status.get("pending") != 0
+            or status.get("violations") != 0 or status.get("candidateSha256") != result.get("candidateSha256")
+            or status.get("testSourceSha256") != card.inputs_data.get("probeSha256")
+            or not isinstance(trace_value, str)):
+        return assertions
+    trace_path = pathlib.Path(trace_value)
+    if (not trace_path.is_file() or trace_path.resolve().parent != card.result_path.resolve().parent
+            or digest(trace_path) != result.get("txTraceSha256")):
+        return assertions
+    if any(str(event.get("uuid", "")).lower() == uuid for event in _trace_events(trace_path)):
+        return assertions
+    assertions.add("portal_session_absent")
+    return assertions
+
+
+def _region(value: Any) -> str | None:
+    if not isinstance(value, str):
+        return None
+    match = re.search(r"(?:region|owner)=(RegionId\[world=WorldId\[value=[^\]]+\], value=[^\]]+\])", value)
+    return match.group(1) if match else None
+
+
+def headless_gateway_assertions(card: Card, entity_type: str) -> set[str]:
+    """Same-dimension End gateway witness from raw snapshots plus the probe's contact/ticket/tracking records."""
+    witness = card.data.get("witness")
+    uuid = _snapshot_uuid(card.data)
+    if card.data.get("outcome") != "TRANSFERRED" or not isinstance(witness, dict) or uuid is None:
+        return set()
+    source, arrival, later = (_single(witness.get(key)) for key in ("source", "arrival", "later"))
+    gateway = witness.get("gateway")
+    if source is None or arrival is None or later is None or not isinstance(gateway, dict):
+        return set()
+    end = "minecraft:the_end"
+    parts = (source, arrival, later)
+    if any(str(part.get("uuid", "")).lower() != uuid or part.get("type") != entity_type or part.get("world") != end
+           or part.get("removed") is not False for part in parts):
+        return set()
+    if not (isinstance(source.get("object"), str) and source["object"] == arrival.get("object") == later.get("object")
+            and isinstance(source.get("nativeId"), int)
+            and source["nativeId"] == arrival.get("nativeId") == later.get("nativeId")):
+        return set()
+    if tuple(int(source[axis] // 1) for axis in ("x", "y", "z")) != HEADLESS_PORTAL_CELL["END_GATEWAY"]:
+        return set()
+    assertions = {"same_native_object", "same_dimension", "destination_unique"}
+    if all(isinstance(arrival.get(axis), (int, float)) for axis in ("x", "z")) and \
+            ((arrival["x"] - source["x"]) ** 2 + (arrival["z"] - source["z"]) ** 2) > 8.0 ** 2:
+        assertions.add("source_location_vacated")
+    if (isinstance(arrival.get("ticks"), int) and isinstance(later.get("ticks"), int) and later["ticks"] > arrival["ticks"] + 20
+            and later.get("chunkX") == arrival.get("chunkX") and later.get("chunkZ") == arrival.get("chunkZ")):
+        assertions.add("post_arrival_tick")
+    if (isinstance(arrival.get("portalCooldown"), int) and isinstance(later.get("portalCooldown"), int)
+            and arrival["portalCooldown"] > 0 and later["portalCooldown"] > 0):
+        assertions.add("gateway_cooldown")
+    contact = _single(gateway.get("contact"))
+    ticket = _single(gateway.get("ticket"))
+    every_tracking = [event for event in gateway.get("tracking", []) if isinstance(event, dict)
+                      and str(event.get("uuid", "")).lower() == uuid]
+    source_region, destination_region = _region(source.get("ownershipDiagnostic")), _region(arrival.get("ownershipDiagnostic"))
+    if contact is None or ticket is None or not every_tracking or source_region is None or destination_region is None:
+        return assertions
+    arrival_chunk = (arrival.get("chunkX"), arrival.get("chunkZ"))
+    destination_updates = [event for event in every_tracking if event.get("phase") == "TRACKING_UPDATE_RETURN"
+                           and (event.get("chunkX"), event.get("chunkZ")) == arrival_chunk]
+    if (str(contact.get("uuid", "")).lower() == uuid and contact.get("world") == end
+            and (contact.get("x"), contact.get("y"), contact.get("z")) == HEADLESS_PORTAL_CELL["END_GATEWAY"]
+            and contact.get("ownerWorld") == end and contact.get("ownerContext") not in (None, "NONE")
+            and _region(contact.get("ownerContext")) == source_region):
+        assertions.add("source_owner")
+    if (str(ticket.get("uuid", "")).lower() == uuid and ticket.get("world") == end
+            and ticket.get("ticketType") == "minecraft:portal" and (ticket.get("chunkX"), ticket.get("chunkZ")) == arrival_chunk
+            and ticket.get("ownerWorld") == end and ticket.get("ownerContext") not in (None, "NONE")
+            and _region(ticket.get("ownerContext")) == destination_region):
+        assertions.add("gateway_ticket")
+    # Same native object: tracking may only ever UPDATE it (no add/remove pair, which would mean a replacement).
+    if (destination_updates and not any(event.get("phase") in ("TRACKING_ADD_RETURN", "TRACKING_REMOVE_RETURN")
+                                        for event in every_tracking)
+            and all(event.get("object") == source["object"] and event.get("nativeId") == source["nativeId"]
+                    and event.get("world") == end and event.get("ownerWorld") == end
+                    and event.get("ownerContext") not in (None, "NONE")
+                    and _region(event.get("ownerContext")) == destination_region for event in destination_updates)):
+        assertions.update(("tracking_unique", "tracking_owner"))
+    if {"source_owner", "gateway_ticket", "tracking_owner"} <= assertions:
+        assertions.update(("destination_owner", "observer_phases"))
+    return assertions
+
+
+def headless_claims(card: Card, rows: list[dict[str, Any]] | None = None) -> list[dict[str, Any]]:
+    """Server-headless claims for entity types without family-specific semantics (plain entities)."""
     match = HEADLESS_CARD.fullmatch(card.name)
     if card.evidence != "server-headless" or match is None:
         return []
     kind, route = match.groups()
     entity_type = "minecraft:" + kind
-    if route == "END_GATEWAY" or headless_family(entity_type) != "plain":
+    if headless_family(entity_type) != "plain":
         return []
-    if card.data.get("outcome") == "TRANSFERRED":
+    outcome = card.data.get("outcome")
+    if route == "END_GATEWAY":
+        if outcome != "TRANSFERRED":
+            return []
+        assertions = headless_gateway_assertions(card, entity_type)
+        if REQUIRED_SAME_DIMENSION_ASSERTIONS | {"post_arrival_tick"} <= assertions:
+            return [dict(card=card, entityType=entity_type, route=route, variant=None, graph="standalone",
+                         observedOutcome="SAME_DIMENSION_TRANSFER", assertions=assertions, basicObservation=True,
+                         scope="row", sameDimensionGateway=True, headlessOwner=OWNER_ASSERTIONS <= assertions)]
+        return []
+    if outcome == "TRANSFERRED":
         assertions = headless_transfer_assertions(card, entity_type, route)
         if {"source_retired", "destination_unique", "tracking_unique", "post_arrival_tick",
             "uuid_preserved", "replacement_identity"} <= assertions:
             return [dict(card=card, entityType=entity_type, route=route, variant=None, graph="standalone",
                          observedOutcome="TRANSFER", assertions=assertions, basicObservation=True, scope="row")]
+        return []
+    if outcome == "STAYED":
+        row = next((candidate for candidate in rows or [] if candidate.get("entityType") == entity_type
+                    and candidate.get("route") == route and candidate.get("variant") in (None, "")
+                    and candidate.get("graph", "standalone") == "standalone"), None)
+        proof = row.get("sourceProof") if isinstance(row, dict) else None
+        if not isinstance(proof, dict) or row.get("expectedNativeOutcome") != "NO_NATIVE_ENTRY_PATH":
+            return []
+        assertions = headless_negative_assertions(card, entity_type, route)
+        if {"source_unchanged", "destination_absent", "portal_session_absent", "graph_unchanged"} <= assertions:
+            cell = HEADLESS_PORTAL_CELL[route]
+            applicability = {
+                "sourceWorld": ROUTE_SOURCE_WORLD[route], "destinationWorld": ROUTE_DESTINATION_WORLD[route],
+                "portalBlock": ROUTE_PORTAL_BLOCK[route], "sourceProofKind": proof.get("kind"),
+                "portalX": cell[0], "portalY": cell[1], "portalZ": cell[2],
+                "sourceJarSha256": proof.get("sourceJarSha256"), "mappedBinarySha256": proof.get("mappedBinarySha256")}
+            return [dict(card=card, entityType=entity_type, route=route, variant=None, graph="standalone",
+                         observedOutcome="NO_NATIVE_ENTRY_PATH", applicability=applicability, assertions=assertions,
+                         basicObservation=True, scope="row")]
     return []
-
 
 def explicit_claims(card: Card) -> tuple[list[dict[str, Any]], list[str]]:
     metadata = card.data.get("coverage")
@@ -1700,7 +1871,8 @@ def build_report(census: dict[str, Any], frozen: dict[str, Any], candidate_sha: 
     metadata_errors: list[dict[str, str]] = []
     ancillary: list[dict[str, Any]] = []
     for card in cards:
-        legacy = headless_claims(card) if card.evidence == "server-headless" else legacy_claims(card, worktree, contracts)
+        legacy = (headless_claims(card, census["rows"]) if card.evidence == "server-headless"
+                  else legacy_claims(card, worktree, contracts))
         explicit, errors = explicit_claims(card) if card.evidence != "server-headless" else ([], [])
         claims.extend(legacy)
         claims.extend(explicit)
@@ -1713,8 +1885,10 @@ def build_report(census: dict[str, Any], frozen: dict[str, Any], candidate_sha: 
             if family and legacy_contract_ok(worktree, contracts, family):
                 ancillary.append(card.reference(scope=family))
     for claim in claims:
-        observed_owner = (OWNER_ASSERTIONS.copy() if claim.get("sameDimensionGateway")
+        observed_owner = (OWNER_ASSERTIONS.copy() if claim.get("headlessOwner") else
+                          OWNER_ASSERTIONS.copy() if claim.get("sameDimensionGateway")
                           and OWNER_ASSERTIONS <= gateway_pig_assertions(claim["card"]) else
+                          set() if claim.get("observedOutcome") == "NO_NATIVE_ENTRY_PATH" else
                           observer_assertions(claim["card"], claim["entityType"], claim["route"])
                           if isinstance(claim["entityType"], str) else
                           graph_observer_assertions(claim["card"], claim["route"])
