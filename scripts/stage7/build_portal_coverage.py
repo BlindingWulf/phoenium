@@ -1194,10 +1194,53 @@ HEADLESS_SPECIAL_TYPES = {"minecraft:player", "minecraft:item", "minecraft:falli
 
 
 def headless_family(entity_type: str) -> str | None:
+    """'plain' needs only the generic witnesses; 'vehicle' adds state/inventory; anything else has no headless contract."""
     name = entity_type.rsplit(":", 1)[-1]
-    if entity_type in HEADLESS_SPECIAL_TYPES or "boat" in name or "raft" in name or "minecart" in name:
+    if "boat" in name or "raft" in name or "minecart" in name:
+        return "vehicle"
+    if entity_type in HEADLESS_SPECIAL_TYPES:
         return None
     return "plain"
+
+
+def is_chest_vehicle(entity_type: str) -> bool:
+    name = entity_type.rsplit(":", 1)[-1]
+    return "chest_boat" in name or "chest_raft" in name or name == "chest_minecart"
+
+
+def headless_vehicle_extras(card: Card, entity_type: str) -> set[str]:
+    """vehicle_state_preserved / inventory_preserved / no_loose_item_duplication from the raw checkpoints.
+
+    The source checkpoint is optional (an immediate End-exit transfer can finish before the first RCON snapshot); when it
+    exists it must agree. The harness itself fills chest vehicles with the fixed stacks below, so arrival and later are
+    compared with that known content rather than with the receipt's own claim.
+    """
+    witness = card.data.get("witness")
+    if not isinstance(witness, dict):
+        return set()
+    arrival, later = _single(witness.get("arrival")), _single(witness.get("later"))
+    source_list = witness.get("source")
+    source = _single(source_list) if source_list else None
+    if arrival is None or later is None or (source_list and source is None):
+        return set()
+    stages = [part for part in (source, arrival, later) if part is not None]
+    extras: set[str] = set()
+    if (all(part.get("vehicleUuid") == "UNAVAILABLE" and part.get("passengerUuids") == [] for part in stages)
+            and len({part.get("tags") for part in stages}) == 1):
+        extras.add("vehicle_state_preserved")
+    if is_chest_vehicle(entity_type):
+        minecart = entity_type == "minecraft:chest_minecart"
+        second_item, second_count = ("minecraft:iron_ingot", 13) if minecart else ("minecraft:sugar_cane", 3)
+        expected = [{"slot": 0, "item": "minecraft:diamond", "count": 7},
+                    {"slot": 26, "item": second_item, "count": second_count}]
+        if all(part.get("vehicleSlotCount") == 27 and part.get("vehicleItems") == expected
+               and part.get("vehicleLootTable") == "UNAVAILABLE" and part.get("vehicleLootSeed") == 0 for part in stages):
+            extras.add("inventory_preserved")
+        loose = [witness.get(key) for key in ("looseSource", "looseArrival", "looseLater")
+                 if witness.get(key) is not None]
+        if len(loose) >= 2 and all(value == {} for value in loose):
+            extras.add("no_loose_item_duplication")
+    return extras
 
 
 def _snapshot_uuid(card_data: dict[str, Any]) -> str | None:
@@ -1538,19 +1581,30 @@ def headless_claims(card: Card, rows: list[dict[str, Any]] | None = None) -> lis
     entity_type = "minecraft:" + kind
     outcome = card.data.get("outcome")
     # Negative (no-entry) claims are gated by the row's pinned-source proof; transfers need a plain family contract.
-    if outcome in ("TRANSFERRED",) and headless_family(entity_type) != "plain":
+    family = headless_family(entity_type)
+    if outcome in ("TRANSFERRED",) and family is None:
         return []
     if route == "END_GATEWAY" and outcome == "TRANSFERRED":
         assertions = headless_gateway_assertions(card, entity_type)
-        if REQUIRED_SAME_DIMENSION_ASSERTIONS | {"post_arrival_tick"} <= assertions:
+        if family == "vehicle":
+            assertions |= headless_vehicle_extras(card, entity_type)
+        needed = REQUIRED_SAME_DIMENSION_ASSERTIONS | {"post_arrival_tick"}
+        if family == "vehicle":
+            needed |= required_assertions({"entityType": entity_type, "route": route}, "SAME_DIMENSION_TRANSFER")
+        if needed <= assertions:
             return [dict(card=card, entityType=entity_type, route=route, variant=None, graph="standalone",
                          observedOutcome="SAME_DIMENSION_TRANSFER", assertions=assertions, basicObservation=True,
                          scope="row", sameDimensionGateway=True, headlessOwner=OWNER_ASSERTIONS <= assertions)]
         return []
     if outcome == "TRANSFERRED":
         assertions = headless_transfer_assertions(card, entity_type, route)
-        if {"source_retired", "destination_unique", "tracking_unique", "post_arrival_tick",
-            "uuid_preserved", "replacement_identity"} <= assertions:
+        needed = {"source_retired", "destination_unique", "tracking_unique", "post_arrival_tick",
+                  "uuid_preserved", "replacement_identity"}
+        if family == "vehicle":
+            assertions |= headless_vehicle_extras(card, entity_type)
+            needed |= required_assertions({"entityType": entity_type, "route": route}, "TRANSFER") - OWNER_ASSERTIONS \
+                - {"destination_owner"}
+        if needed <= assertions:
             return [dict(card=card, entityType=entity_type, route=route, variant=None, graph="standalone",
                          observedOutcome="TRANSFER", assertions=assertions, basicObservation=True, scope="row")]
         return []

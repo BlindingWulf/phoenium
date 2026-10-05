@@ -137,7 +137,7 @@ class HeadlessTransferTests(unittest.TestCase):
         self.assertEqual(coverage.headless_transfer_assertions(card, "minecraft:pig", "NETHER_ENTRY") & {"source_retired"}, set())
 
     def test_special_families_never_get_generic_transfer_claims(self) -> None:
-        for kind in ("item", "falling_block", "tnt", "oak_boat", "chest_minecart", "arrow", "player"):
+        for kind in ("item", "falling_block", "tnt", "arrow", "player"):
             card = make_card(self.dir, f"E0-{kind}-NETHER_ENTRY", "TRANSFERRED", good_transfer_witness(), transfer_trace())
             self.assertEqual(coverage.headless_claims(card, []), [], kind)
 
@@ -291,6 +291,75 @@ class HeadlessGatewayTests(unittest.TestCase):
         foreign = gateway_witness()
         foreign["gateway"]["ticket"][0]["ownerContext"] = "Active[region=RegionId[world=WorldId[value=minecraft:the_end], value=other]]"
         self.assertNotIn("gateway_ticket", self.gateway(foreign))
+
+
+def vehicle_witness(chest: bool = False, minecart: bool = False, loose: dict | None = None) -> dict:
+    items = ([{"slot": 0, "item": "minecraft:diamond", "count": 7},
+              {"slot": 26, "item": "minecraft:iron_ingot" if minecart else "minecraft:sugar_cane",
+               "count": 13 if minecart else 3}] if chest else [])
+    extra = ({"vehicleSlotCount": 27, "vehicleItems": items, "vehicleLootTable": "UNAVAILABLE", "vehicleLootSeed": 0}
+             if chest else {})
+    tags = "[stage7_h_0, stage7_mob]"
+    name = "minecraft:chest_minecart" if minecart else "minecraft:oak_chest_boat" if chest else "minecraft:oak_boat"
+    return {"source": [member("minecraft:overworld", type=name, object="old", nativeId=8, ticks=0, tags=tags, **extra)],
+            "arrival": [member("minecraft:the_nether", type=name, ticks=5, tags=tags, **extra)],
+            "later": [member("minecraft:the_nether", type=name, ticks=30, tags=tags, **extra)],
+            "looseSource": loose or {}, "looseArrival": loose or {}, "looseLater": loose or {}}
+
+
+class HeadlessVehicleTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.temp = tempfile.TemporaryDirectory()
+        self.dir = pathlib.Path(self.temp.name)
+
+    def tearDown(self) -> None:
+        self.temp.cleanup()
+
+    def card(self, name: str, entity: str, witness: dict) -> coverage.Card:
+        events = [dict(e, type=f"entity.minecraft.{entity}") for e in transfer_trace()]
+        return make_card(self.dir, name, "TRANSFERRED", witness, events)
+
+    def test_empty_boat_gets_state_and_a_claim(self) -> None:
+        card = self.card("E0-oak_boat-NETHER_ENTRY", "oak_boat", vehicle_witness())
+        self.assertEqual(coverage.headless_vehicle_extras(card, "minecraft:oak_boat"), {"vehicle_state_preserved"})
+        claims = coverage.headless_claims(card, [])
+        self.assertEqual(len(claims), 1)
+        self.assertIn("vehicle_state_preserved", claims[0]["assertions"])
+
+    def test_chest_vehicle_needs_exact_contents_and_no_loose_stacks(self) -> None:
+        for entity, minecart in (("oak_chest_boat", False), ("chest_minecart", True)):
+            card = self.card(f"E0-{entity}-NETHER_ENTRY", entity, vehicle_witness(chest=True, minecart=minecart))
+            self.assertEqual(coverage.headless_vehicle_extras(card, f"minecraft:{entity}"),
+                             {"vehicle_state_preserved", "inventory_preserved", "no_loose_item_duplication"}, entity)
+            self.assertEqual(len(coverage.headless_claims(card, [])), 1, entity)
+        dropped = self.card("E0-oak_chest_boat-NETHER_ENTRY", "oak_chest_boat",
+                            vehicle_witness(chest=True, loose={"minecraft:diamond": 7}))
+        self.assertNotIn("no_loose_item_duplication", coverage.headless_vehicle_extras(dropped, "minecraft:oak_chest_boat"))
+        self.assertEqual(coverage.headless_claims(dropped, []), [])
+        altered = vehicle_witness(chest=True)
+        altered["later"][0]["vehicleItems"][0]["count"] = 6
+        card = self.card("E0-oak_chest_boat-NETHER_ENTRY", "oak_chest_boat", altered)
+        self.assertNotIn("inventory_preserved", coverage.headless_vehicle_extras(card, "minecraft:oak_chest_boat"))
+        self.assertEqual(coverage.headless_claims(card, []), [])
+
+    def test_passenger_or_changed_tags_break_vehicle_state(self) -> None:
+        ridden = vehicle_witness()
+        ridden["arrival"][0]["passengerUuids"] = [UUID]
+        card = self.card("E0-oak_boat-NETHER_ENTRY", "oak_boat", ridden)
+        self.assertNotIn("vehicle_state_preserved", coverage.headless_vehicle_extras(card, "minecraft:oak_boat"))
+        retagged = vehicle_witness()
+        retagged["later"][0]["tags"] = "[stage7_mob]"
+        card = self.card("E0-oak_boat-NETHER_ENTRY", "oak_boat", retagged)
+        self.assertNotIn("vehicle_state_preserved", coverage.headless_vehicle_extras(card, "minecraft:oak_boat"))
+
+    def test_missing_source_checkpoint_is_tolerated_but_a_malformed_one_is_not(self) -> None:
+        witness = vehicle_witness()
+        witness["source"] = []
+        card = self.card("E0-oak_boat-NETHER_ENTRY", "oak_boat", witness)
+        self.assertEqual(coverage.headless_vehicle_extras(card, "minecraft:oak_boat"), {"vehicle_state_preserved"})
+        witness["source"] = [member("minecraft:overworld"), member("minecraft:overworld")]
+        card = self.card("E0-oak_boat-NETHER_ENTRY", "oak_boat", witness)
+        self.assertEqual(coverage.headless_vehicle_extras(card, "minecraft:oak_boat"), set())
 
 
 class ScanHeadlessTests(unittest.TestCase):
