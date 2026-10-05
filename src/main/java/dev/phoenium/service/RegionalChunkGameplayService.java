@@ -145,12 +145,17 @@ public final class RegionalChunkGameplayService implements NaturalSpawnContinuat
 
     public void forEachBlockTickingChunk(ChunkMap expected, Consumer<LevelChunk> output) {
         requireCycle(); requireMap(expected);
-        map.getDistanceManager().forEachEntityTickingChunk(packed -> {
-            ChunkHolder holder = ((RegionalVisibleChunkAccess) map).phoenium$visible(packed);
-            if (holder == null) return;
+        // The distance manager's level map is a fastutil open-hash map: a callback that adds or removes a ticket (a
+        // portal arrival, a forceload, a player joining) while it is being iterated corrupts the iterator and fails
+        // with a NullPointerException inside next(). Select the keys first, then run the callbacks over the copy.
+        var keys = new it.unimi.dsi.fastutil.longs.LongArrayList();
+        map.getDistanceManager().forEachEntityTickingChunk(keys::add);
+        for (int i = 0; i < keys.size(); i++) {
+            ChunkHolder holder = ((RegionalVisibleChunkAccess) map).phoenium$visible(keys.getLong(i));
+            if (holder == null) continue;
             LevelChunk chunk = holder.getTickingChunk();
             if (chunk != null) blockTickCallback(chunk, () -> output.accept(chunk));
-        });
+        }
     }
 
     /** The pinned built-in NaturalSpawner groups reach three chunk keys from their selected source.

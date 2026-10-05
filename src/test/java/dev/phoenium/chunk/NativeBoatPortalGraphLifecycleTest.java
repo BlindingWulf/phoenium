@@ -103,7 +103,8 @@ class NativeBoatPortalGraphLifecycleTest {
         assertTrue(fixture.order.indexOf("base-suffix") < fixture.order.indexOf("boat-suffix"));
     }
 
-    @Test void chestBoatPassengerGraphRemainsStrictlyOutsideFirstBound() throws Exception {
+    /** The first reviewed bound (one oak boat, one pig) is gone: any non-player graph is captured like the original. */
+    @Test void chestBoatPassengerGraphIsCapturedAndCancelsCleanlyWhenUnretained() throws Exception {
         var fixture = new NativeItemPortalTransferTest.Fixture();
         installWorldFacts(fixture);
         var boat = EntityTypes.OAK_CHEST_BOAT.create(fixture.overworld, EntitySpawnReason.COMMAND);
@@ -118,11 +119,11 @@ class NativeBoatPortalGraphLifecycleTest {
             assertTrue(pig.startRiding(boat, true, false));
             manager.begin(boat);
             try {
-                assertThrows(IllegalStateException.class,
-                    () -> manager.suspendDestination(boat, boat.portalProcess));
+                assertTrue(manager.suspendDestination(boat, boat.portalProcess));
+                assertEquals(1, manager.pendingCount());
             } finally { manager.finish(boat); }
         });
-        assertEquals(0, manager.pendingCount());
+        assertEquals(0, manager.pendingCount(), "an unretained prefix is cancelled by finish");
         assertSame(boat, pig.getVehicle());
         assertFalse(boat.isRemoved()); assertFalse(pig.isRemoved());
     }

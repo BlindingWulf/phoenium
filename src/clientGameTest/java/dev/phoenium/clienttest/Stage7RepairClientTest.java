@@ -52,7 +52,7 @@ public final class Stage7RepairClientTest implements FabricClientGameTest {
                     && !(group.equals("same-dimension-gateway")
                     && selectedCards.equals("G1-pig-END_GATEWAY"))
                     && !(group.equals("graph-probe")
-                    && selectedCards.matches("GP-[a-z_]+-(NETHER_ENTRY|NETHER_RETURN|END_ENTRY|END_EXIT)(,GP-[a-z_]+-(NETHER_ENTRY|NETHER_RETURN|END_ENTRY|END_EXIT))*"))
+                    && selectedCards.matches("(GP-[a-z_]+|GM-[a-z_]+\\+[a-z_+@0-9]+)-(NETHER_ENTRY|NETHER_RETURN|END_ENTRY|END_EXIT)(,(GP-[a-z_]+|GM-[a-z_]+\\+[a-z_+@0-9]+)-(NETHER_ENTRY|NETHER_RETURN|END_ENTRY|END_EXIT))*"))
                     && !(group.equals("entity-probe")
                     && selectedCards.matches("E0-[a-z_]+-(NETHER_ENTRY|NETHER_RETURN|END_ENTRY|END_EXIT)(,E0-[a-z_]+-(NETHER_ENTRY|NETHER_RETURN|END_ENTRY|END_EXIT))*"))
                     && !(group.equals("mob-census")
@@ -1923,10 +1923,75 @@ public final class Stage7RepairClientTest implements FabricClientGameTest {
         health(active);creditsSeen=true;
         receipt.addProperty(active,"credits shown, client respawned the player in "+player().get("world").getAsString());
     }
+    /**
+     * Defect-finding probe: a vehicle carrying non-player passengers (villager in a boat, skeleton on a horse...) is carried
+     * into a portal. The player stays beside the scene. Outcome is data; the server must stay healthy.
+     */
+    void graphMobCard(String card,int sequence)throws Exception {
+        var parts=java.util.regex.Pattern.compile("GM-([a-z_]+)\\+([a-z_+@0-9]+)-(NETHER_ENTRY|NETHER_RETURN|END_ENTRY|END_EXIT)").matcher(card);
+        require(parts.matches(),"bad graph mob card "+card);
+        String vehicleType=parts.group(1),route=parts.group(3);String[] riders=parts.group(2).split("\\+");
+        active=card;String from,to;
+        switch(route){
+            case "NETHER_ENTRY"->{from=OW;to=NETHER;}
+            case "NETHER_RETURN"->{from=NETHER;to=OW;}
+            case "END_ENTRY"->{from=OW;to=END;}
+            default->{from=END;to=OW;}
+        }
+        String tag="stage7_probe_m"+sequence;
+        int y=route.equals("END_EXIT")?70:65;
+        String carry="0.5 65 0.5";
+        if(route.startsWith("END")) {
+            for(String c:List.of("forceload add 0 0 15 15","fill 4 "+(y-1)+" 4 12 "+(y-1)+" 12 minecraft:obsidian",
+                    "fill 4 "+y+" 4 12 "+(y+6)+" 12 minecraft:air","setblock 8 "+y+" 8 minecraft:end_portal"))
+                cmd("execute in "+from+" run "+c);
+            carry="8.5 "+y+".25 8.5";
+        }
+        position(from,route.startsWith("END")?5.5:8.5,y,5.5,180,0);
+        cmd("execute in "+from+" run summon minecraft:"+vehicleType+" 4.5 "+y+" 5.5 {Tags:[\"stage7_mob\",\""+tag+"\"],PersistenceRequired:1b}");
+        for(int i=0;i<riders.length;i++) {
+            String[] spec=riders[i].split("@");   // "zombie@0": rides rider 0 instead of the vehicle
+            String mount=spec.length>1?tag+"_p"+spec[1]:tag;
+            cmd("execute in "+from+" run summon minecraft:"+spec[0]+" 4.5 "+y+" 5.5 {Tags:[\"stage7_mob\",\""+tag+"_p"+i+"\"],PersistenceRequired:1b}");
+            receipt.addProperty(card+"-ride"+i,cmd("ride @e[tag="+tag+"_p"+i+",limit=1] mount @e[tag="+mount+",limit=1]"));
+        }
+        receipt.addProperty(card+"-carry",cmd("execute in "+from+" run tp @e[tag="+tag+",limit=1] "+carry));
+        String vehicleWorld="UNKNOWN";String[] riderWorld=new String[riders.length];java.util.Arrays.fill(riderWorld,"UNKNOWN");
+        boolean transferred=false;
+        for(int i=0;i<160&&!transferred;i++) {
+            context.waitTick();
+            JsonObject state=snapshot(card+"-wait-"+i);
+            for(var e:state.getAsJsonArray("entities")) {var o=e.getAsJsonObject();
+                if(!o.has("tags"))continue;String tags=o.get("tags").getAsString();
+                if(tags.contains(tag+"_p")){for(int r=0;r<riders.length;r++)if((tags.contains(tag+"_p"+r+"]")||tags.contains(tag+"_p"+r+",")))riderWorld[r]=o.get("world").getAsString();}
+                else if(tags.contains(tag))vehicleWorld=o.get("world").getAsString();}
+            if(vehicleWorld.equals(to))transferred=true;
+        }
+        int riding=0;
+        if(transferred) {
+            context.waitTicks(30);
+            JsonObject state=snapshot(card+"-after");
+            for(var e:state.getAsJsonArray("entities")) {var o=e.getAsJsonObject();
+                if(!o.has("tags"))continue;String tags=o.get("tags").getAsString();
+                if(tags.contains(tag+"_p")){for(int r=0;r<riders.length;r++)if((tags.contains(tag+"_p"+r+"]")||tags.contains(tag+"_p"+r+",")))riderWorld[r]=o.get("world").getAsString();}
+                else if(tags.contains(tag))vehicleWorld=o.get("world").getAsString();}
+            for(int r=0;r<riders.length;r++)
+                if(riders[r].contains("@")?cmd("execute as @e[tag="+tag+"_p"+riders[r].split("@")[1]+",limit=1] on passengers if entity @s[tag="+tag+"_p"+r+"]").contains("Test passed")
+                    :cmd("execute as @e[tag="+tag+",limit=1] on passengers if entity @s[tag="+tag+"_p"+r+"]").contains("Test passed"))riding++;
+        }
+        receipt.addProperty(card+"-outcome",transferred?"TRANSFERRED":"STAYED");
+        receipt.addProperty(card+"-vehicleWorld",vehicleWorld);receipt.addProperty(card+"-riderWorlds",String.join(",",riderWorld));
+        receipt.addProperty(card+"-riding",riding+"/"+riders.length);
+        health(card);pass(card,"graph mob probe outcome="+(transferred?"TRANSFERRED":"STAYED")+" vehicle="+vehicleWorld
+            +" riders="+String.join(",",riderWorld)+" riding="+riding+"/"+riders.length);
+        for(String w:List.of(OW,NETHER,END))cmd("execute in "+w+" run kill @e[tag=stage7_mob]");
+        position(OW,8.5,65,5.5,180,0);
+    }
     void graphProbe(String selected)throws Exception {
         cmd("gamemode creative "+USER);
         int sequence=0;
         for(String card:selected.split(",")) {
+            if(card.startsWith("GM-")){graphMobCard(card,sequence++);continue;}
             var parts=java.util.regex.Pattern.compile("GP-([a-z_]+)-(NETHER_ENTRY|NETHER_RETURN|END_ENTRY|END_EXIT)").matcher(card);
             require(parts.matches(),"bad graph probe card "+card);
             String route=parts.group(2);

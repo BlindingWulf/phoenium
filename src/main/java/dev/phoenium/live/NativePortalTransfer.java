@@ -497,11 +497,20 @@ public final class NativePortalTransfer {
                 + " chunk=" + source.chunkPosition() + " vehicle=" + source.getVehicle());
     }
 
+    /** A graph member still carries exactly its captured children (native ejects them at its own teleport). */
+    private boolean ownPassengersMatchGraph() {
+        var passengers = source.getPassengers();
+        if (graphChildren == null) return passengers.isEmpty();
+        if (passengers.size() != graphChildren.size()) return false;
+        for (Entity passenger : passengers) if (!graphChildren.containsKey(passenger)) return false;
+        return true;
+    }
+
     /** Native stopRiding may move this exact graph leaf to another chunk in the same source owner. */
     private void acceptNativePassengerDismount(NativePortalTransfer parent) {
         if (OwnershipContext.current().isEmpty() || parent.graphChildren == null
                 || parent.graphChildren.get(source) != this || parent.source == source
-                || graphChildren != null || !source.getPassengers().isEmpty()
+                || !ownPassengersMatchGraph()
                 || source.getVehicle() != null || parent.source.getPassengers().contains(source)
                 || source.getId() != sourceRuntimeId || effectiveSource != capturedSource)
             throw new IllegalStateException("native portal passenger ejection changed graph identity");

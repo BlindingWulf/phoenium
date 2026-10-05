@@ -33,6 +33,7 @@ public final class MinecartPortalTransitionManager implements AutoCloseable {
     private final ObjectOwnershipRegistry objects;
     private final CrossDimensionReplacementBoundary replacements = new CrossDimensionReplacementBoundary();
     private final ConcurrentHashMap<IdentityKey, Entry> active = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<EntityKey, Entry> graphPending = new ConcurrentHashMap<>();
     private final ThreadLocal<Capture> ticking = new ThreadLocal<>();
     private volatile boolean closed;
 
@@ -61,8 +62,10 @@ public final class MinecartPortalTransitionManager implements AutoCloseable {
         Portal portal = ((PearlPortalProcessorAccess) processor).phoenium$portal();
         if (!(portal instanceof NetherPortalBlock) && !(portal instanceof EndPortalBlock)) return false;
         List<net.minecraft.server.level.ServerPlayer> riders = cart.isVehicle() ? PortalRiders.leafPlayerRiders(cart) : List.of();
-        if (cart.isPassenger() || cart.isVehicle() && riders.isEmpty())
-            throw new IllegalStateException("minecart graph requires its own native continuation");
+        if (cart.isPassenger())
+            throw new IllegalStateException("minecart passenger cannot be a native portal root");
+        PortalPassengerGraphSnapshot graph = cart.isVehicle() && riders.isEmpty()
+            ? PortalPassengerGraphSnapshot.capture(cart, objects) : null;
         if (active.containsKey(key(cart))) throw new IllegalStateException("minecart portal captured twice");
         ObjectOwnership binding = objects.current(cart.getUUID().toString()).orElseThrow();
         objects.requireCurrentOwner(binding.objectId(), binding.objectEpoch(),
@@ -71,13 +74,41 @@ public final class MinecartPortalTransitionManager implements AutoCloseable {
             ((FullEntityFacts.Access) cart).phoenium$entityIncarnation(), binding.incarnation()));
         Entry entry = new Entry(cart, level, processor, portal, binding, token, capture);
         entry.riders = riders;
-        if (active.putIfAbsent(key(cart), entry) != null) {
-            replacements.cancel(token);
-            throw new IllegalStateException("minecart portal captured twice");
+        entry.graph = graph;
+        entry.graphTokens.put(cart, token);
+        try {
+            if (graph != null) {
+                for (Entity member : graph.preorder()) {
+                    if (member == cart) continue;
+                    var captured = graph.member(member);
+                    var childToken = replacements.begin(new CrossDimensionReplacementBoundary.SourceIdentity(
+                        captured.uuid().toString(), captured.nativeIncarnation(), captured.binding().incarnation()));
+                    entry.graphTokens.put(member, childToken);
+                    NativePortalTransfer.retained(member, captured.binding(), childToken, null, "CAPTURED_GRAPH_PASSENGER");
+                }
+            }
+            if (active.putIfAbsent(key(cart), entry) != null)
+                throw new IllegalStateException("minecart portal captured twice");
+            if (graph != null)
+                for (Entity member : graph.preorder())
+                    if (graphPending.putIfAbsent(new EntityKey(member), entry) != null)
+                        throw new IllegalStateException("minecart portal graph member already pending");
+        } catch (RuntimeException | Error failure) {
+            active.remove(key(cart), entry);
+            releaseGraphMembers(entry);
+            for (var captured : entry.graphTokens.values()) replacements.cancel(captured);
+            throw failure;
         }
         capture.entry = entry;
         NativePortalTransfer.retained(cart, binding, token, null, "CAPTURED_MINECART_DIRECT_TICK");
         return true;
+    }
+
+    /** Same pinned ServerLevel root/passenger tick fence used by captured mob and boat graphs. */
+    public boolean graphTickSuspended(Entity entity, boolean passenger) {
+        Entry entry = graphPending.get(new EntityKey(entity));
+        return entry != null && entry.retained && !entry.consumed
+            && active.get(key(entry.cart)) == entry && (entry.cart != entity) == passenger;
     }
 
     public boolean suspended(AbstractMinecart cart) { return active.containsKey(key(cart)); }
@@ -125,7 +156,7 @@ public final class MinecartPortalTransitionManager implements AutoCloseable {
                         || entry.cart.canTeleport(entry.level, entry.transition.newLevel()));
                 if (permitted && entry.level.dimension() == entry.transition.newLevel().dimension())
                     throw new IllegalStateException("same-dimension minecart portal needs a separate adapter");
-                if (permitted) {
+                if (permitted && entry.graph == null) {
                     if (entry.visibilityReady == null)
                         entry.visibilityReady = authority.demandDestinationEntityVisibility(entry.cart, entry.transition);
                     if (!entry.visibilityReady.getAsBoolean()) {
@@ -134,11 +165,29 @@ public final class MinecartPortalTransitionManager implements AutoCloseable {
                         continue;
                     }
                 }
-                var transfer = permitted ? new NativePortalTransfer(authority, objects, replacements, entry.token,
-                    entry.cart, entry.binding, entry.transition, () -> active.get(key(entry.cart)) == entry
-                        && entry.visibilityReady.getAsBoolean()) : null;
-                if (transfer != null && !entry.riders.isEmpty()) transfer.bindPlayerRiders(entry.riders);
-                Entity result = transfer == null ? null : transfer.run();
+                NativePortalTransfer transfer = null;
+                NativePortalGraphTransferPlan graphPlan = null;
+                if (permitted && entry.graph != null) {
+                    if (entry.graphPlan == null)
+                        entry.graphPlan = new NativePortalGraphTransferPlan(authority, objects, replacements,
+                            entry.graph, entry.graphTokens, entry.transition,
+                            () -> active.get(key(entry.cart)) == entry && authority.running()
+                                && entry.graphPlan != null && entry.graphPlan.visibilityCurrent());
+                    graphPlan = entry.graphPlan;
+                    if (!graphPlan.ready()) {
+                        if (++entry.visibilityWaits > 200)
+                            throw new IllegalStateException("minecart graph destination visibility deadline");
+                        continue;
+                    }
+                    authority.execute(entry.binding.routingKey(), RegionalServiceKind.ENTITY_PORTAL_SOURCE,
+                        () -> entry.graph.validateIntact(objects));
+                } else if (permitted) {
+                    transfer = new NativePortalTransfer(authority, objects, replacements, entry.token,
+                        entry.cart, entry.binding, entry.transition, () -> active.get(key(entry.cart)) == entry
+                            && entry.visibilityReady.getAsBoolean());
+                    if (!entry.riders.isEmpty()) transfer.bindPlayerRiders(entry.riders);
+                }
+                Entity result = graphPlan != null ? graphPlan.invoke() : transfer == null ? null : transfer.run();
                 var continuation = result == null
                     ? replacements.authorizeUnchangedSourceContinuation(entry.token, entry.token.source())
                     : replacements.authorizeReplacementContinuation(entry.token);
@@ -157,10 +206,17 @@ public final class MinecartPortalTransitionManager implements AutoCloseable {
                             .phoenium$resumeMinecartPortalSuffix(entry.lastKnownYRot, entry.lastKnownPos);
                 });
                 replacements.settle(continuation);
-                if (transfer != null) transfer.settled();
-                else NativePortalTransfer.retained(entry.cart, entry.binding, entry.token, null,
-                    "SETTLED_NATIVE_NO_TRANSFER");
+                if (graphPlan != null) {
+                    graphPlan.settleChildren();
+                    graphPlan.settleRoot(result);
+                } else {
+                    if (entry.graph != null) settleUnchangedChildren(entry);
+                    if (transfer != null) transfer.settled();
+                    else NativePortalTransfer.retained(entry.cart, entry.binding, entry.token, null,
+                        "SETTLED_NATIVE_NO_TRANSFER");
+                }
                 active.remove(key(entry.cart), entry);
+                releaseGraphMembers(entry);
                 settled++;
             } catch (RuntimeException | Error failure) {
                 cancel(entry, "FAILED:" + failure.getClass().getSimpleName());
@@ -210,10 +266,46 @@ public final class MinecartPortalTransitionManager implements AutoCloseable {
     }
 
     private void cancel(Entry entry, String reason) {
+        IllegalStateException partial = null;
+        if (entry.graphPlan != null) {
+            try { entry.graphPlan.restoreUncommittedSourceGraph(); }
+            catch (RuntimeException | Error repairFailure) {
+                partial = new IllegalStateException("PARTIAL_PORTAL_GRAPH: exact source graph was not restored", repairFailure);
+            }
+        }
         NativePortalTransfer.retained(entry.cart, entry.binding, entry.token,
             entry.transition == null ? null : entry.transition.newLevel(), reason);
+        if (entry.graphPlan != null) entry.graphPlan.cancelUnsettled();
+        else if (entry.graph != null) {
+            for (var member : entry.graphTokens.entrySet()) {
+                if (member.getKey() == entry.cart) continue;
+                if (replacements.cancel(member.getValue()))
+                    NativePortalTransfer.retained(member.getKey(), entry.graph.member(member.getKey()).binding(),
+                        member.getValue(), entry.transition == null ? null : entry.transition.newLevel(), reason);
+            }
+        }
         replacements.cancel(entry.token);
         active.remove(key(entry.cart), entry);
+        releaseGraphMembers(entry);
+        if (partial != null) throw partial;
+    }
+
+    private void settleUnchangedChildren(Entry entry) {
+        for (Entity member : entry.graph.postorder()) {
+            if (member == entry.cart) continue;
+            var childToken = entry.graphTokens.get(member);
+            if (replacements.phase(childToken) == CrossDimensionReplacementBoundary.Phase.CAPTURED)
+                replacements.prepared(childToken);
+            var continuation = replacements.authorizeUnchangedSourceContinuation(childToken, childToken.source());
+            replacements.settle(continuation);
+            NativePortalTransfer.retained(member, entry.graph.member(member).binding(), childToken,
+                entry.transition == null ? null : entry.transition.newLevel(), "SETTLED_NATIVE_NO_TRANSFER");
+        }
+    }
+
+    private void releaseGraphMembers(Entry entry) {
+        if (entry.graph == null) return;
+        for (Entity member : entry.graph.preorder()) graphPending.remove(new EntityKey(member), entry);
     }
 
     public int pendingCount() { return active.size(); }
@@ -242,6 +334,13 @@ public final class MinecartPortalTransitionManager implements AutoCloseable {
 
     private static IdentityKey key(AbstractMinecart cart) { return new IdentityKey(cart); }
 
+    private record EntityKey(Entity entity) {
+        @Override public int hashCode() { return System.identityHashCode(entity); }
+        @Override public boolean equals(Object other) {
+            return other instanceof EntityKey key && entity == key.entity;
+        }
+    }
+
     private record IdentityKey(AbstractMinecart cart) {
         @Override public int hashCode() { return System.identityHashCode(cart); }
         @Override public boolean equals(Object other) {
@@ -264,6 +363,9 @@ public final class MinecartPortalTransitionManager implements AutoCloseable {
     private static final class Entry {
         final AbstractMinecart cart;
         List<net.minecraft.server.level.ServerPlayer> riders = List.of();
+        PortalPassengerGraphSnapshot graph;
+        final java.util.IdentityHashMap<Entity, CrossDimensionReplacementBoundary.Token> graphTokens = new java.util.IdentityHashMap<>();
+        NativePortalGraphTransferPlan graphPlan;
         final ServerLevel level;
         final PortalProcessor processor;
         final Portal portal;

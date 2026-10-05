@@ -44,7 +44,7 @@ dynamic_probe=(group=='entity-probe' and len(cards)>=1
                 and all(re.fullmatch(r'E0-[a-z_]+-(NETHER_ENTRY|NETHER_RETURN|END_ENTRY|END_EXIT)',card) for card in cards)
                 and 'entityProbe(selectedCards)' in client_source)
 dynamic_graph_probe=(group=='graph-probe' and len(cards)>=1
-                and all(re.fullmatch(r'GP-[a-z_]+-(NETHER_ENTRY|NETHER_RETURN|END_ENTRY|END_EXIT)',card) for card in cards)
+                and all(re.fullmatch(r'(GP-[a-z_]+|GM-[a-z_]+\+[a-z_+@0-9]+)-(NETHER_ENTRY|NETHER_RETURN|END_ENTRY|END_EXIT)',card) for card in cards)
                 and 'graphProbe(selectedCards)' in client_source)
 dynamic_vehicle=(group=='vehicle-empty' and len(cards)==1
                  and re.fullmatch(r'V0-(acacia_boat|birch_boat|cherry_boat|dark_oak_boat|jungle_boat|mangrove_boat|oak_boat|pale_oak_boat|spruce_boat|bamboo_raft|minecart)-(NETHER_ENTRY|NETHER_RETURN)',cards[0])

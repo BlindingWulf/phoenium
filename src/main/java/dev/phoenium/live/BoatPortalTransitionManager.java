@@ -84,15 +84,7 @@ public final class BoatPortalTransitionManager implements AutoCloseable {
             throw new IllegalStateException("boat passenger cannot be a native portal root");
         PortalPassengerGraphSnapshot graph = null;
         List<net.minecraft.server.level.ServerPlayer> riders = boat.isVehicle() ? PortalRiders.leafPlayerRiders(boat) : List.of();
-        if (boat.isVehicle() && riders.isEmpty()) {
-            if (boat.getClass() != Boat.class || boat.getType() != EntityTypes.OAK_BOAT)
-                throw new IllegalStateException("boat portal passenger graph type is not bound");
-            graph = PortalPassengerGraphSnapshot.capture(boat, objects);
-            if (graph.preorder().size() != 2 || graph.member(boat).children().size() != 1
-                    || graph.member(graph.member(boat).children().get(0)).children().size() != 0
-                    || graph.member(boat).children().get(0).getClass() != Pig.class)
-                throw new IllegalStateException("boat portal graph requires one exact pig passenger");
-        }
+        if (boat.isVehicle() && riders.isEmpty()) graph = PortalPassengerGraphSnapshot.capture(boat, objects);
         var context = OwnershipContext.current().orElseThrow(
             () -> new IllegalStateException("boat portal cut lacks source authority"));
         ObjectOwnership binding = objects.current(boat.getUUID().toString()).orElseThrow();
