@@ -615,7 +615,7 @@ def dyn_regions(landed: dict | None = None, targets: bool = False) -> dict:
     result = {}
     for dimension, labels in coverage.FALLING_REGION_LABELS.items():
         entry = {"regions": {label: {"blocks": 0, "loaded": True} for label in labels},
-                 "items": 0, "itemIds": [], "fallingBlocks": 0}
+                 "items": 0, "itemIds": [], "carriedItems": 0, "fallingBlocks": 0}
         if targets:
             entry["targets"], entry["targetsUndamaged"] = 9, 9
         result[dimension] = entry
@@ -692,8 +692,15 @@ class HeadlessDynamicTests(unittest.TestCase):
     def test_a_different_world_than_the_control_removes_the_claim(self) -> None:
         own = dyn_witness(landed={("nether", "main"): 1})
         control = dyn_witness(landed={("nether", "main"): 1})
-        control["observables"]["overworld"]["items"] = 1
+        control["observables"]["overworld"]["carriedItems"] = 1
         self.assertEqual(self.claims("D0-falling-block-NETHER_ENTRY", own, control), [])
+
+    def test_world_wide_loose_items_are_not_compared_but_carried_drops_are(self) -> None:
+        landed = {("nether", "main"): 1}
+        own, control = dyn_witness(landed=landed), dyn_witness(landed=landed)
+        own["observables"]["overworld"]["items"] = 4      # random leaf-decay drops far from the fixture
+        own["baseline"]["end"]["items"] = 2
+        self.assertEqual(len(self.claims("D0-falling-block-NETHER_ENTRY", own, control)), 1)
 
     def test_landing_in_the_wrong_place_or_twice_or_with_a_leftover_is_not_credited(self) -> None:
         for landed in ({("overworld", "main"): 1}, {("nether", "main"): 2}, {("nether", "main"): 0},

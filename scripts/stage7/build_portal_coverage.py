@@ -1798,6 +1798,15 @@ def _dynamic_deltas(witness: dict[str, Any]) -> dict[str, dict[str, int]] | None
     return deltas
 
 
+def _dynamic_comparable(observables: Any) -> Any:
+    """Observables without the world-wide loose-item totals: the overworld copy drops items at random (leaf decay, crops), in the
+    native control as well. What a fall leaves behind is still compared through `carriedItems`, `fallingBlocks` and the block counts."""
+    if not isinstance(observables, dict):
+        return observables
+    return {dimension: ({key: value for key, value in entry.items() if key not in ("items", "itemIds")}
+                        if isinstance(entry, dict) else entry) for dimension, entry in observables.items()}
+
+
 def _dynamic_landing(witness: dict[str, Any], route: str) -> dict[str, Any] | None:
     """Where the carried block ended up, or None when the observables are malformed or not a single clean landing."""
     deltas = _dynamic_deltas(witness)
@@ -1893,7 +1902,9 @@ def headless_dynamic_claims(card: Card, rows: list[dict[str, Any]] | None) -> li
         return []
     assertions: set[str] = set()
     # native_landing: the same world as the Phoenium-free control (every block count, drop, leftover entity and target health).
-    if all(witness.get(key) == control_witness.get(key) for key in ("baseline", "observables", "carriedSpec")):
+    if (witness.get("carriedSpec") == control_witness.get("carriedSpec")
+            and all(_dynamic_comparable(witness.get(key)) == _dynamic_comparable(control_witness.get(key))
+                    for key in ("baseline", "observables"))):
         if variant != "landing_damage" or _landing_damage_exhibited(control_witness, route):
             assertions.add("native_landing")
     if _carried_state_matches(witness, variant) and "native_landing" in assertions:
