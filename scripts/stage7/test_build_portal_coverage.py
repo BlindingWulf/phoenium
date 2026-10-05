@@ -916,6 +916,22 @@ class CoverageTests(unittest.TestCase):
                              {}, {}, {})
         self.assertEqual(coverage.client_claims(card), [])
 
+    def test_effect_owner_link_is_read_relative_to_each_runs_own_source(self) -> None:
+        def nbt(owner: str) -> str:
+            return "Arrow has the following entity data: {Tags: [], Owner: " + owner + ", life: 3}"
+
+        def run(index: int, drop_on_arrival: bool = False) -> dict[str, str]:
+            owner = "[I; 9100, %d, 0, 2]" % index
+            return {"nbtSource": nbt(owner), "nbtArrival": nbt("[I; 0, 0, 0, 9]" if drop_on_arrival else owner),
+                    "nbtLater": nbt(owner)}
+
+        # the fixture derives the owner uuid from the card's index in its run: a control run with another index is still the same link
+        self.assertEqual(coverage._effect_links("arrow", run(2), run(0)), {"projectile_owner_preserved"})
+        # a control that drops the link at arrival where this run keeps it is a difference, and vice versa
+        self.assertEqual(coverage._effect_links("arrow", run(2), run(0, drop_on_arrival=True)), set())
+        self.assertEqual(coverage._effect_links("arrow", run(2, drop_on_arrival=True), run(0, drop_on_arrival=True)), set())
+        self.assertEqual(coverage._effect_links("arrow", {"nbtSource": "No entity was found"}, run(0)), set())
+
 
 if __name__ == "__main__":
     unittest.main()

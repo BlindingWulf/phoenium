@@ -2271,13 +2271,21 @@ def _effect_links(kind: str, witness: dict[str, Any], control_witness: dict[str,
     if kind not in EFFECT_OWNER_KINDS:
         return result
     stages = ("nbtSource", "nbtArrival", "nbtLater")
-    own = {stage: {key: _nbt_value(witness.get(stage), key, UUID_ARRAY) for key in ("Owner", "Target")} for stage in stages}
-    native = {stage: {key: _nbt_value(control_witness.get(stage), key, UUID_ARRAY) for key in ("Owner", "Target")} for stage in stages}
-    if own["nbtSource"]["Owner"] is None or own["nbtSource"] != native["nbtSource"]:
+
+    def links(source: dict[str, Any]) -> dict[str, dict[str, str | None]]:
+        # The fixture derives the owner/target uuids from the card's index inside its run, so two runs name the same link with
+        # different uuids: each stage is read relative to that run's own source (SOURCE = the link as it was when the card started).
+        raw = {stage: {key: _nbt_value(source.get(stage), key, UUID_ARRAY) for key in ("Owner", "Target")} for stage in stages}
+        return {stage: {key: ("SOURCE" if value is not None and value == raw["nbtSource"][key] else value)
+                        for key, value in raw[stage].items()} for stage in stages}
+
+    raw_owner = _nbt_value(witness.get("nbtSource"), "Owner", UUID_ARRAY)
+    own, native = links(witness), links(control_witness)
+    if raw_owner is None or own["nbtSource"] != native["nbtSource"]:
         return result
     if own["nbtArrival"] != native["nbtArrival"] or own["nbtLater"] != native["nbtLater"]:
         return result
-    if own["nbtArrival"]["Owner"] == own["nbtSource"]["Owner"]:
+    if own["nbtArrival"]["Owner"] == "SOURCE":
         result.add("owner_target_preserved" if kind == "shulker_bullet" else "projectile_owner_preserved")
     return result
 
