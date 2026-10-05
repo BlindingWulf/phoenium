@@ -193,6 +193,40 @@ final class PlayerDimensionTransitionManager implements AutoCloseable {
         return true;
     }
 
+    /**
+     * Takes over the native "newPassenger.startRiding(newVehicle)" that follows a vehicle's replacement. The
+     * player's destination suffix has not run yet, so the remount waits for it inside the same destination turn.
+     */
+    boolean deferRemount(ServerPlayer rider, Entity vehicle) {
+        Entry entry = active.get(key(rider));
+        if (entry == null || !entry.suspended || entry.remount != null
+                || transitions.phase(entry.token) != PlayerDimensionTransitionBoundary.Phase.SOURCE_RETIRED)
+            return false;
+        if (vehicle.isRemoved() || vehicle.level() != entry.destinationLevel)
+            throw new IllegalStateException("rider remount vehicle is not in the player destination world");
+        entry.remount = vehicle;
+        return true;
+    }
+
+    private void remount(Entry entry, RoutingKey destinationKey) {
+        Entity vehicle = entry.remount;
+        entry.remount = null;
+        var context = OwnershipContext.current().orElseThrow();
+        ObjectOwnership binding = objects.current(vehicle.getUUID().toString()).orElse(null);
+        boolean mounted = false;
+        if (!vehicle.isRemoved() && vehicle.level() == entry.destinationLevel && binding != null
+                && binding.owner().equals(context.region()) && entry.player.getVehicle() == null)
+            mounted = entry.player.startRiding(vehicle, true, false);
+        remountMarker(entry, mounted ? "REMOUNTED" : "REMOUNT_SKIPPED");
+    }
+    private void remountMarker(Entry entry, String phase) {
+        if (!Boolean.getBoolean("phoenium.test.diagnostics")) return;
+        try { org.slf4j.LoggerFactory.getLogger(PlayerDimensionTransitionManager.class).info(
+            "PHOENIUM_PORTAL_RIDER player={} generation={} destinationWorld={} phase={}",
+            entry.token.source().objectId(), entry.token.generation(), entry.destinationLevel.dimension().identifier(), phase);
+        } catch (Throwable ignored) { }
+    }
+
     boolean pending(ServerPlayer player) {
         Entry entry = active.get(key(player));
         return entry != null && transitions.isCurrent(entry.token);
@@ -265,6 +299,7 @@ final class PlayerDimensionTransitionManager implements AutoCloseable {
                             access(entry.player).phoenium$entityIncarnation(), admitted.incarnation(),
                             authority.worldId(entry.destinationLevel)));
                     if (entry.pearlHit != null) resumePearlDamage(entry, entry.pearlHit);
+                    if (entry.remount != null) remount(entry, destinationKey);
                 });
                 var continuation = transitions.authorizeContinuation(entry.token);
                 if (entry.pearlHit != null) {
@@ -414,6 +449,7 @@ final class PlayerDimensionTransitionManager implements AutoCloseable {
         final long session;
         volatile PlayerDimensionTransitionBoundary.SourceRemoval sourceRemoval;
         volatile PearlHit pearlHit;
+        volatile Entity remount;
         volatile boolean suspended;
         volatile boolean advancing;
 

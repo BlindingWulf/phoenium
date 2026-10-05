@@ -6,10 +6,9 @@ import net.minecraft.world.entity.player.Player;
 import org.slf4j.LoggerFactory;
 
 /**
- * Interim, deliberately conservative policy: a non-player vehicle that carries a player (anywhere in its passenger
- * tree) does not take a portal. Native moves the whole mount; Phoenium cannot yet sequence the rider's
- * asynchronous session transition around the vehicle's native transfer, and the managers fail the server when
- * they meet such a graph. Declining the lookup is native's own null-destination path (Entity.handlePortal skips the
+ * Conservative policy for the player-carrying graphs Phoenium cannot sequence yet: a non-player vehicle whose
+ * passenger tree holds a player in any shape other than "vehicle + leaf players" (see {@link PortalRiders},
+ * which is carried natively) does not take a portal. The managers fail the server when they meet such a graph. Declining the lookup is native's own null-destination path (Entity.handlePortal skips the
  * teleport, the portal cooldown is already set and the tick continues), so no tail needs unwinding. This is a
  * known behavioural limitation, counted and logged, and is not accepted portal behaviour.
  */
@@ -19,7 +18,9 @@ public final class PortalRiderRefusal {
     private PortalRiderRefusal() { }
 
     public static boolean refuses(Entity entity) {
-        if (entity instanceof Player || !entity.isVehicle() || !hasPlayerPassenger(entity)) return false;
+        if (entity instanceof Player || !entity.isVehicle() || !PortalRiders.carriesPlayer(entity)) return false;
+        // "Vehicle + leaf player riders" is carried natively (see PortalRiders); everything else is declined.
+        if (!PortalRiders.leafPlayerRiders(entity).isEmpty()) return false;
         long count = REFUSED.incrementAndGet();
         if (Boolean.getBoolean("phoenium.test.diagnostics")) {
             try {
@@ -31,10 +32,4 @@ public final class PortalRiderRefusal {
     }
 
     public static long refusedTotal() { return REFUSED.get(); }
-
-    private static boolean hasPlayerPassenger(Entity entity) {
-        for (Entity passenger : entity.getPassengers())
-            if (passenger instanceof Player || hasPlayerPassenger(passenger)) return true;
-        return false;
-    }
 }

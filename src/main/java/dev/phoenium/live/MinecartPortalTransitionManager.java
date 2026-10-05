@@ -60,7 +60,8 @@ public final class MinecartPortalTransitionManager implements AutoCloseable {
             throw new IllegalStateException("minecart portal suspension lacks source owner");
         Portal portal = ((PearlPortalProcessorAccess) processor).phoenium$portal();
         if (!(portal instanceof NetherPortalBlock) && !(portal instanceof EndPortalBlock)) return false;
-        if (cart.isPassenger() || cart.isVehicle())
+        List<net.minecraft.server.level.ServerPlayer> riders = cart.isVehicle() ? PortalRiders.leafPlayerRiders(cart) : List.of();
+        if (cart.isPassenger() || cart.isVehicle() && riders.isEmpty())
             throw new IllegalStateException("minecart graph requires its own native continuation");
         if (active.containsKey(key(cart))) throw new IllegalStateException("minecart portal captured twice");
         ObjectOwnership binding = objects.current(cart.getUUID().toString()).orElseThrow();
@@ -69,6 +70,7 @@ public final class MinecartPortalTransitionManager implements AutoCloseable {
         var token = replacements.begin(new CrossDimensionReplacementBoundary.SourceIdentity(binding.objectId(),
             ((FullEntityFacts.Access) cart).phoenium$entityIncarnation(), binding.incarnation()));
         Entry entry = new Entry(cart, level, processor, portal, binding, token, capture);
+        entry.riders = riders;
         if (active.putIfAbsent(key(cart), entry) != null) {
             replacements.cancel(token);
             throw new IllegalStateException("minecart portal captured twice");
@@ -135,6 +137,7 @@ public final class MinecartPortalTransitionManager implements AutoCloseable {
                 var transfer = permitted ? new NativePortalTransfer(authority, objects, replacements, entry.token,
                     entry.cart, entry.binding, entry.transition, () -> active.get(key(entry.cart)) == entry
                         && entry.visibilityReady.getAsBoolean()) : null;
+                if (transfer != null && !entry.riders.isEmpty()) transfer.bindPlayerRiders(entry.riders);
                 Entity result = transfer == null ? null : transfer.run();
                 var continuation = result == null
                     ? replacements.authorizeUnchangedSourceContinuation(entry.token, entry.token.source())
@@ -177,6 +180,7 @@ public final class MinecartPortalTransitionManager implements AutoCloseable {
             && entry.cart.getDeltaMovement().equals(entry.motion)
             && entry.cart.getYRot() == entry.yRot && entry.cart.getXRot() == entry.xRot
             && entry.cart.getPose() == entry.pose
+            && (entry.riders.isEmpty() || entry.riders.equals(PortalRiders.leafPlayerRiders(entry.cart)))
             && ((FullEntityFacts.Access) entry.cart).phoenium$entityIncarnation()
                 == entry.token.source().nativeIncarnation()
             && entry.cart.getUUID().toString().equals(entry.token.source().objectId())
@@ -259,6 +263,7 @@ public final class MinecartPortalTransitionManager implements AutoCloseable {
 
     private static final class Entry {
         final AbstractMinecart cart;
+        List<net.minecraft.server.level.ServerPlayer> riders = List.of();
         final ServerLevel level;
         final PortalProcessor processor;
         final Portal portal;

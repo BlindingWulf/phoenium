@@ -17,13 +17,18 @@ import org.junit.jupiter.api.Test;
 import static dev.phoenium.chunk.FullDecisionWitnessSupport.set;
 import static org.junit.jupiter.api.Assertions.*;
 
-/** The interim rider policy: a non-player vehicle carrying a player declines the portal exactly as native does for null. */
+/** The rider policy: a non-player vehicle carrying a player in an unsupported shape (nested or mixed) declines the portal exactly as native does for null. */
 class PortalRiderRefusalTest {
     @BeforeAll static void bootstrap() { NativeItemPortalTransferTest.bootstrap(); }
     @AfterEach void reset() { if (PortalDestinationTestHooks.mobs != null) PortalDestinationTestHooks.mobs.close(); PortalDestinationTestHooks.mobs = null; }
 
-    private static void ride(Entity vehicle, Entity passenger) throws Exception {
-        set(vehicle, Entity.class, "passengers", com.google.common.collect.ImmutableList.of(passenger));
+    private static void ride(Entity vehicle, Entity... passengers) throws Exception {
+        set(vehicle, Entity.class, "passengers", com.google.common.collect.ImmutableList.copyOf(passengers));
+    }
+    private static ServerPlayer allocatedPlayer() throws Exception {
+        var player = (ServerPlayer) MinecraftLightReadFixture.allocate(ServerPlayer.class);
+        set(player, Entity.class, "passengers", com.google.common.collect.ImmutableList.of());
+        return player;
     }
 
     @Test void policyRefusesOnlyNonPlayerVehiclesThatCarryAPlayerAnywhereInTheirTree() throws Exception {
@@ -34,14 +39,18 @@ class PortalRiderRefusalTest {
             net.minecraft.world.attribute.EnvironmentAttributeSystem.builder().build());
         Pig pig = (Pig) EntityTypes.PIG.create(f.overworld, EntitySpawnReason.COMMAND);
         Pig inner = (Pig) EntityTypes.PIG.create(f.overworld, EntitySpawnReason.COMMAND);
-        ServerPlayer player = (ServerPlayer) MinecraftLightReadFixture.allocate(ServerPlayer.class);
+        ServerPlayer player = allocatedPlayer();
         assertFalse(PortalRiderRefusal.refuses(pig), "an empty mount keeps the native path");
         ride(pig, inner);
         assertFalse(PortalRiderRefusal.refuses(pig), "non-player riders are handled by the graph machinery");
         ride(pig, player);
-        assertTrue(PortalRiderRefusal.refuses(pig));
+        assertFalse(PortalRiderRefusal.refuses(pig), "a mount carrying only leaf players is carried natively");
+        ride(pig, player, allocatedPlayer());
+        assertFalse(PortalRiderRefusal.refuses(pig), "several leaf players");
         ride(pig, inner); ride(inner, player);
         assertTrue(PortalRiderRefusal.refuses(pig), "nested rider");
+        ride(pig, player, inner); ride(inner);
+        assertTrue(PortalRiderRefusal.refuses(pig), "player mixed with a non-player passenger");
         assertFalse(PortalRiderRefusal.refuses(player), "a player is never refused here; it uses its own manager");
     }
 
@@ -57,7 +66,8 @@ class PortalRiderRefusalTest {
         set(f.nether, net.minecraft.server.level.ServerLevel.class, "environmentAttributes", attributes);
         Pig pig = (Pig) EntityTypes.PIG.create(f.overworld, EntitySpawnReason.COMMAND);
         pig.setPos(.4, 65, .1); f.publish(pig, f.from);
-        ride(pig, (ServerPlayer) MinecraftLightReadFixture.allocate(ServerPlayer.class));
+        Pig inner = (Pig) EntityTypes.PIG.create(f.overworld, EntitySpawnReason.COMMAND);
+        ride(pig, inner); ride(inner, allocatedPlayer());
         var lookups = new AtomicInteger();
         NativePortalDestinationPreparationTest.setPortal(pig, args -> { lookups.incrementAndGet(); return f.transition(f.nether); });
         long cooldownBefore = pig.getPortalCooldown();

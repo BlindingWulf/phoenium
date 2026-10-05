@@ -119,7 +119,8 @@ public final class MobPortalTransitionManager implements AutoCloseable {
             throw new IllegalStateException("mob passenger portal entry is not a native root");
         }
         if(active.containsKey(key(mob)))throw new IllegalStateException("mob portal was captured twice");
-        PortalPassengerGraphSnapshot graph = mob.isVehicle()
+        List<net.minecraft.server.level.ServerPlayer> riders = mob.isVehicle() ? PortalRiders.leafPlayerRiders(mob) : List.of();
+        PortalPassengerGraphSnapshot graph = mob.isVehicle() && riders.isEmpty()
             ? PortalPassengerGraphSnapshot.capture(mob, objects) : null;
         if (graph != null)
             for (Entity node : graph.preorder())
@@ -130,6 +131,7 @@ public final class MobPortalTransitionManager implements AutoCloseable {
         var token = replacements.begin(new CrossDimensionReplacementBoundary.SourceIdentity(binding.objectId(),
             ((FullEntityFacts.Access) mob).phoenium$entityIncarnation(), binding.incarnation()));
         Entry entry = new Entry(mob, level, processor, null, binding, token, profile);
+        entry.riders = riders;
         // The one reviewed caller local (int airSupply = getAirSupply()) is unchanged until the cut.
         if (profile == NativeProfile.REVIEWED_OUTER_TAILS) entry.airSupply = mob.getAirSupply();
         if (graph != null) {
@@ -260,6 +262,7 @@ public final class MobPortalTransitionManager implements AutoCloseable {
                     transfer = new NativePortalTransfer(authority, objects, replacements, entry.token,
                         entry.mob, entry.binding, entry.transition, () -> active.get(key(entry.mob)) == entry
                             && entry.visibilityReady.getAsBoolean());
+                    if (!entry.riders.isEmpty()) transfer.bindPlayerRiders(entry.riders);
                 }
                 Entity result = graphPlan != null ? graphPlan.invoke() : transfer == null ? null : transfer.run();
                 var suffix = result == null
@@ -307,6 +310,7 @@ public final class MobPortalTransitionManager implements AutoCloseable {
             && entry.mob.level() == entry.level && entry.mob.portalProcess == entry.processor
             && entry.mob.position().equals(entry.position) && entry.mob.getDeltaMovement().equals(entry.motion)
             && entry.mob.getYRot()==entry.yRot && entry.mob.getXRot()==entry.xRot && entry.mob.getPose()==entry.pose
+            && (entry.riders.isEmpty() || entry.riders.equals(PortalRiders.leafPlayerRiders(entry.mob)))
             && ((FullEntityFacts.Access) entry.mob).phoenium$entityIncarnation() == entry.token.source().nativeIncarnation()
             && entry.mob.getUUID().toString().equals(entry.token.source().objectId())
             && (entry.processor == null || entry.processor.getEntryPosition().equals(entry.entryPosition)
@@ -370,6 +374,7 @@ public final class MobPortalTransitionManager implements AutoCloseable {
         PortalPassengerGraphSnapshot graph;
         final IdentityHashMap<Entity, CrossDimensionReplacementBoundary.Token> graphTokens = new IdentityHashMap<>();
         NativePortalGraphTransferPlan graphPlan;
+        List<net.minecraft.server.level.ServerPlayer> riders = List.of();
         volatile boolean retained, consumed, destinationPending, advancing;
         int airSupply;
         int visibilityWaits;

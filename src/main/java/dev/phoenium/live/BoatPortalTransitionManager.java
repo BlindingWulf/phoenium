@@ -83,7 +83,8 @@ public final class BoatPortalTransitionManager implements AutoCloseable {
         if (boat.isPassenger())
             throw new IllegalStateException("boat passenger cannot be a native portal root");
         PortalPassengerGraphSnapshot graph = null;
-        if (boat.isVehicle()) {
+        List<net.minecraft.server.level.ServerPlayer> riders = boat.isVehicle() ? PortalRiders.leafPlayerRiders(boat) : List.of();
+        if (boat.isVehicle() && riders.isEmpty()) {
             if (boat.getClass() != Boat.class || boat.getType() != EntityTypes.OAK_BOAT)
                 throw new IllegalStateException("boat portal passenger graph type is not bound");
             graph = PortalPassengerGraphSnapshot.capture(boat, objects);
@@ -100,6 +101,7 @@ public final class BoatPortalTransitionManager implements AutoCloseable {
             binding.objectId(), ((FullEntityFacts.Access) boat).phoenium$entityIncarnation(),
             binding.incarnation()));
         Entry entry = new Entry(boat, level, processor, binding, token, graph);
+        entry.riders = riders;
         entry.graphTokens.put(boat, token);
         try {
             if (graph != null) {
@@ -213,6 +215,7 @@ public final class BoatPortalTransitionManager implements AutoCloseable {
                         entry.boat, entry.binding, entry.transition,
                         () -> active.get(new Key(entry.boat)) == entry
                             && entry.visibilityReady.getAsBoolean());
+                    if (!entry.riders.isEmpty()) transfer.bindPlayerRiders(entry.riders);
                 }
                 Entity result = graphPlan != null ? graphPlan.invoke()
                     : transfer == null ? null : transfer.run();
@@ -260,7 +263,9 @@ public final class BoatPortalTransitionManager implements AutoCloseable {
         return replacements.isCurrent(entry.token) && authority.worldActive(entry.level)
             && (entry.transition == null || authority.worldActive(entry.transition.newLevel()))
             && !entry.boat.isRemoved() && entry.boat.level() == entry.level
-            && !entry.boat.isPassenger() && (entry.graph != null || !entry.boat.isVehicle())
+            && !entry.boat.isPassenger()
+            && (entry.graph != null || (entry.riders.isEmpty() ? !entry.boat.isVehicle()
+                : entry.riders.equals(PortalRiders.leafPlayerRiders(entry.boat))))
             && entry.boat.portalProcess == entry.processor
             && entry.boat.position().equals(entry.position)
             && entry.boat.getDeltaMovement().equals(entry.motion)
@@ -365,6 +370,7 @@ public final class BoatPortalTransitionManager implements AutoCloseable {
         final ObjectOwnership binding;
         final CrossDimensionReplacementBoundary.Token token;
         final PortalPassengerGraphSnapshot graph;
+        List<net.minecraft.server.level.ServerPlayer> riders = List.of();
         final IdentityHashMap<Entity, CrossDimensionReplacementBoundary.Token> graphTokens = new IdentityHashMap<>();
         final Portal portal;
         final BlockPos entryPosition;

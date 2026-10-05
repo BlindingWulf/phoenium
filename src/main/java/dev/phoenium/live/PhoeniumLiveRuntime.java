@@ -234,6 +234,9 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
                 return false;
             }
             @Override public WorldId worldId(ServerLevel level) { return PhoeniumLiveRuntime.worldId(level); }
+            @Override public boolean deferRiderRemount(ServerPlayer rider, Entity vehicle) {
+                return PhoeniumLiveRuntime.this.playerDimensionTransitions.deferRemount(rider, vehicle);
+            }
             @Override public void execute(RoutingKey key, RegionalServiceKind kind, Runnable body) {
                 if (OwnershipContext.current().isPresent())
                     throw new IllegalStateException("portal authority stage entered with retained owner authority");

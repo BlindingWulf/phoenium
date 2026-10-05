@@ -42,6 +42,12 @@ public final class NativePortalTransfer {
             throw new IllegalStateException("destination platform service is not bound");
         }
         void retireExpectedSource(Entity source, Entity.RemovalReason reason, ObjectOwnership expected);
+        /**
+         * Native remounts a ridden vehicle's players right after the replacement vehicle is admitted, but a
+         * retained player's destination suffix has not run yet. True when the remount was taken over and will
+         * run after that suffix, under the destination owner; false when the caller must remount natively.
+         */
+        default boolean deferRiderRemount(net.minecraft.server.level.ServerPlayer rider, Entity vehicle) { return false; }
     }
     private static final ThreadLocal<NativePortalTransfer> ACTIVE = new ThreadLocal<>();
     private final Authority authority;
@@ -63,6 +69,8 @@ public final class NativePortalTransfer {
     private Runnable unpublishedCleanup;
     private PositionMoveRotation retiredSourcePosition;
     private IdentityHashMap<Entity, NativePortalTransfer> graphChildren;
+    private java.util.List<net.minecraft.server.level.ServerPlayer> riders;
+    private final IdentityHashMap<Entity, Entity> transferredRiders = new IdentityHashMap<>();
     private final IdentityHashMap<Entity, Entity> transferredChildren = new IdentityHashMap<>();
     private boolean callbackInstalled, inserting, cleaning, sourceRetired, inserted, returned;
     private String phase = "CAPTURED";
@@ -89,6 +97,8 @@ public final class NativePortalTransfer {
         marker("BEFORE_DESTINATION_PREPARATION");
         if (readiness == null) readiness = authority.prepare(source, transition, destinationKey);
         checkSource(); checkReady();
+        if (riders != null && !source.getPassengers().equals(riders))
+            throw new IllegalStateException("native portal rider list changed after capture");
         ACTIVE.set(this);
         try {
             marker("BEFORE_NATIVE_TRANSFER");
@@ -120,6 +130,19 @@ public final class NativePortalTransfer {
         return readiness.getAsBoolean();
     }
 
+    /**
+     * The vehicle's direct passengers are exactly these connected players (see {@link PortalRiders}). Native
+     * ejects them, teleports each one through the player dimension boundary and remounts them on the
+     * replacement; every other passenger shape needs a graph plan instead.
+     */
+    public void bindPlayerRiders(java.util.List<net.minecraft.server.level.ServerPlayer> players) {
+        ownerFree();
+        if (riders != null || graphChildren != null || players == null || players.isEmpty()
+                || !source.getPassengers().equals(players))
+            throw new IllegalStateException("native portal rider list already bound, absent or stale");
+        riders = java.util.List.copyOf(players);
+    }
+
     /** Bound only from a source-owned, identity-validated graph snapshot. */
     public void bindGraphChildren(Map<Entity, NativePortalTransfer> children) {
         ownerFree();
@@ -140,6 +163,9 @@ public final class NativePortalTransfer {
     public static Entity passenger(Entity child, TeleportTransition nativeTransition, Supplier<Entity> original) {
         NativePortalTransfer parent = ACTIVE.get();
         if (parent == null) return original.get();
+        if (parent.riders != null && child instanceof net.minecraft.server.level.ServerPlayer rider
+                && parent.riders.contains(rider))
+            return parent.riderTeleport(rider, nativeTransition, original);
         NativePortalTransfer transfer = parent.graphChildren == null ? null : parent.graphChildren.get(child);
         if (transfer == null || parent.transferredChildren.containsKey(child))
             throw new IllegalStateException("native portal passenger escaped retained graph: child="
@@ -177,10 +203,68 @@ public final class NativePortalTransfer {
         }
     }
 
+    /**
+     * Native ServerPlayer.teleport for one ejected rider. The player manager retains the destination suffix, so the
+     * call returns the same player and the rest of the vehicle's native transfer proceeds without it.
+     */
+    private Entity riderTeleport(net.minecraft.server.level.ServerPlayer rider, TeleportTransition nativeTransition,
+            Supplier<Entity> original) {
+        if (transferredRiders.containsKey(rider)) throw new IllegalStateException("native portal rider transferred twice");
+        source("PASSENGER_TRANSITION_ACCEPT", () -> {
+            var context = OwnershipContext.current().orElseThrow();
+            ObjectOwnership binding = objects.current(rider.getUUID().toString()).orElse(null);
+            var chunk = rider.chunkPosition();
+            if (binding == null || binding.kind() != OwnedObjectKind.PLAYER || rider.isRemoved()
+                    || rider.getVehicle() != null || rider.level() != sourceLevel
+                    || !binding.owner().equals(context.region())
+                    || !binding.routingKey().equals(new RoutingKey(binding.routingKey().world(), chunk.x(), chunk.z())))
+                throw new IllegalStateException("native portal rider ejection changed identity or ownership");
+            objects.requireCurrentOwner(binding.objectId(), binding.objectEpoch(), context.region());
+            var expected = PortalPassengerGraphSnapshot.calculatePassengerPlacement(transition, source.position(),
+                source.getYRot(), source.getXRot(), rider.position(), rider.getYRot(), rider.getXRot());
+            TeleportTransition exact = transition.withPosition(expected.position())
+                .withRotation(expected.yRot(), expected.xRot()).transitionAsPassenger();
+            if (!exact.equals(nativeTransition))
+                throw new IllegalStateException("native rider transition differs from source-owned value");
+            if (nativeTransition.relatives().contains(Relative.X) || nativeTransition.relatives().contains(Relative.Y)
+                    || nativeTransition.relatives().contains(Relative.Z))
+                throw new IllegalStateException("relative-position rider transition is not supported");
+            return null;
+        });
+        ACTIVE.remove();
+        try {
+            Entity result = original.get();
+            transferredRiders.put(rider, result);
+            marker("RIDER_TELEPORTED");
+            return result;
+        } finally {
+            if (ACTIVE.get() != null) throw new IllegalStateException("rider transfer retained nested context");
+            ACTIVE.set(this);
+        }
+    }
+
+    private boolean attachRider(net.minecraft.server.level.ServerPlayer rider, Entity vehicle, Supplier<Boolean> original) {
+        if (replacement != vehicle || transferredRiders.get(rider) != rider)
+            throw new IllegalStateException("native portal rider reattachment escaped its vehicle transfer");
+        if (authority.deferRiderRemount(rider, vehicle)) { marker("RIDER_REMOUNT_DEFERRED"); return true; }
+        // The rider's destination suffix already ran (or the player is not mid-transition): remount natively.
+        return destination("ATTACH_PASSENGER", () -> {
+            if (!inserted || rider.level() != destinationLevel || rider.isRemoved() || rider.getVehicle() != null)
+                throw new IllegalStateException("native portal rider not ready to reattach");
+            var binding = objects.current(rider.getUUID().toString()).orElseThrow();
+            objects.requireCurrentOwner(binding.objectId(), binding.objectEpoch(),
+                OwnershipContext.current().orElseThrow().region());
+            return original.get();
+        }, true);
+    }
+
     /** Exact native reattachment, after each parent replacement's destination admission. */
     public static boolean attachPassenger(Entity child, Entity parentEntity, Supplier<Boolean> original) {
         NativePortalTransfer transfer = ACTIVE.get();
         if (transfer == null) return original.get();
+        if (transfer.riders != null && child instanceof net.minecraft.server.level.ServerPlayer rider
+                && transfer.riders.contains(rider))
+            return transfer.attachRider(rider, parentEntity, original);
         if (transfer.replacement != parentEntity || transfer.graphChildren == null
                 || !transfer.transferredChildren.containsValue(child))
             throw new IllegalStateException("native portal reattachment escaped retained graph");
@@ -399,7 +483,7 @@ public final class NativePortalTransfer {
     }
     private void checkSource() {
         checkSourceIdentity();
-        if (source.isPassenger() || source.isVehicle() && graphChildren == null)
+        if (source.isPassenger() || source.isVehicle() && graphChildren == null && riders == null)
             throw new IllegalStateException("native portal source graph is not bound");
     }
     private void checkSourceIdentity() {
