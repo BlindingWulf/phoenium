@@ -38,6 +38,16 @@ server = run / 'server'
 java = pathlib.Path(r'C:\Program Files\Eclipse Adoptium\jdk-25.0.4.101-hotspot\bin\java.exe')
 
 OW, NETHER, END = 'minecraft:overworld', 'minecraft:the_nether', 'minecraft:the_end'
+CHEST_BOAT_ITEMS = ',Items:[{Slot:0b,id:"minecraft:diamond",count:7},{Slot:26b,id:"minecraft:sugar_cane",count:3}]'
+CHEST_MINECART_ITEMS = ',Items:[{Slot:0b,id:"minecraft:diamond",count:7},{Slot:26b,id:"minecraft:iron_ingot",count:13}]'
+
+
+def type_nbt(etype):
+    if etype == 'chest_minecart': return CHEST_MINECART_ITEMS
+    if 'chest_boat' in etype or 'chest_raft' in etype: return CHEST_BOAT_ITEMS
+    return NBT.get(etype, '')
+
+
 # NoAI keeps wandering/flying mobs in the portal cell so the outcome is decided by the portal, not by a random walk
 # (portal handling and block effects live in Entity.baseTick / LivingEntity.aiStep, not in goal selection).
 # Types whose native behaviour depends on gravity (ArmorStand.hasPhysics() = !marker && !noGravity -> noPhysics).
@@ -53,9 +63,21 @@ NBT = {
 }
 
 
+def nbt_of(world, tag):
+    return rcon('execute in %s positioned 0 64 0 run data get entity @e[tag=%s,distance=0..2000,limit=1]' % (world, tag), whole=True).strip()
+
+
 def snapshot_body():
     raw = rcon('stage7-probe snapshot', whole=True)
     return json.loads(raw[raw.index('{'):])
+
+
+def loose_items(body):
+    totals = {}
+    for e in body['entities']:
+        if e.get('type') == 'minecraft:item':
+            totals[e.get('item', '?')] = totals.get(e.get('item', '?'), 0) + e.get('count', 0)
+    return totals
 
 
 def snapshot_members(tag, body=None):
@@ -246,10 +268,14 @@ try:
                     end_ready.add((src, y))
                 at = '8.5 %d.25 8.5' % y
             summon = rcon('execute in %s run summon minecraft:%s %s {Tags:["stage7_mob"%s%s,"%s"]%s%s}' % (src, etype, at, ',"stage7_noentry_h"' if (etype, route) in noentry_pairs else '',
-                  ',"stage7_gateway_pig"' if route == 'END_GATEWAY' else '', tag, '' if etype in GRAVITY_TYPES else ',NoGravity:1b', ',NoAI:1b' + NBT.get(etype, '')))
+                  ',"stage7_gateway_pig"' if route == 'END_GATEWAY' else '', tag, '' if etype in GRAVITY_TYPES else ',NoGravity:1b', ',NoAI:1b' + type_nbt(etype)))
             outcome = 'GONE' if fixture_ok else 'FIXTURE_INVALID'; where = 'NONE'
             witness = {}
-            if fixture_ok: witness['source'] = snapshot_members(tag)
+            if fixture_ok:
+                witness['nbtSource'] = nbt_of(src, tag)
+                source_body = snapshot_body() if not vanilla else None
+                witness['source'] = snapshot_members(tag, source_body)
+                if source_body: witness['looseSource'] = loose_items(source_body)
             def remember_settled():
                 body = snapshot_body()
                 members = snapshot_members(tag, body)
@@ -273,25 +299,35 @@ try:
                     outcome, where = 'STAYED', src
                     if not vanilla: remember_settled()
                 time.sleep(.25)
+            if outcome == 'TRANSFERRED':
+                witness['nbtArrival'] = nbt_of(where, tag)
             if outcome == 'GONE' and fixture_ok and not vanilla:
                 witness['afterWindow'] = snapshot_members(tag)   # [] proves nothing is left anywhere
             if outcome == 'TRANSFERRED' and not vanilla:
                 arrival_body = snapshot_body()
                 witness['arrival'] = snapshot_members(tag, arrival_body)
+                witness['looseArrival'] = loose_items(arrival_body)
                 if route == 'END_GATEWAY': witness['gateway'] = gateway_events(witness['arrival'], arrival_body)
                 # post_arrival_tick evidence: the destination object must keep ticking for more than twenty ticks.
                 first = next((e['ticks'] for e in witness['arrival'] if e.get('world') == where), None)
                 deadline_later = time.monotonic() + 10
                 while time.monotonic() < deadline_later:
-                    witness['later'] = snapshot_members(tag)
+                    later_body = snapshot_body()
+                    witness['later'] = snapshot_members(tag, later_body)
+                    witness['looseLater'] = loose_items(later_body)
                     now = next((e['ticks'] for e in witness['later'] if e.get('world') == where), None)
                     if first is not None and now is not None and now > first + 20: break
                     time.sleep(.25)
+                witness['nbtLater'] = nbt_of(where, tag)
             info = ''
             if outcome != 'TRANSFERRED':
                 info = rcon('execute in %s positioned 0 64 0 run data get entity @e[tag=%s,distance=0..2000,limit=1] Pos' % (src, tag)).strip()[:120]
             result['cards'].append(dict(card=card, outcome=outcome, world=where, summon=summon.strip()[:80], info=info, witness=witness))
-            for w in (OW, NETHER, END): rcon('execute in %s run kill @e[tag=stage7_mob]' % w)
+            for w in (OW, NETHER, END):
+                # Empty chest vehicles first: killing one drops its stacks into the portal and would pollute the next card's
+                # loose-item counts (and re-enter the portal).
+                rcon('execute in %s run execute as @e[tag=stage7_mob] if data entity @s Items run data modify entity @s Items set value []' % w)
+                rcon('execute in %s run kill @e[tag=stage7_mob]' % w)
             if len(result['cards']) % 20 == 0: print('PROGRESS', len(result['cards']), flush=True)
         if vanilla:
             result['txPass'] = True
