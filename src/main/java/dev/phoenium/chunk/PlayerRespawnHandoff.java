@@ -80,16 +80,16 @@ public final class PlayerRespawnHandoff {
             && oldPlayer.getRemovalReason() == Entity.RemovalReason.CHANGED_DIMENSION
             && worldUuid == null && worldId == null && !worldListed;
         boolean retiredOpening = deathRetiredOpening || creditsRetiredOpening;
-        check(!retired(oldPlayer) && listed && directory.phoenium$respawnUuids().get(uuid) == oldPlayer
-            && service.scoreboard.lookupPlayer(uuid) == oldPlayer
-            && listener.player == oldPlayer && (nativePresent || retiredOpening),
-            "old publication is not current: retired=" + retired(oldPlayer) + " listed=" + listed
-                + " uuidMap=" + (directory.phoenium$respawnUuids().get(uuid) == oldPlayer)
+        if (!(!retired(oldPlayer) && listed && directory.phoenium$respawnUuids().get(uuid) == oldPlayer
+                && service.scoreboard.lookupPlayer(uuid) == oldPlayer
+                && listener.player == oldPlayer && (nativePresent || retiredOpening)))
+            throw new ChunkProtocolException("respawn handoff: old publication is not current: retired=" + retired(oldPlayer)
+                + " listed=" + listed + " uuidMap=" + (directory.phoenium$respawnUuids().get(uuid) == oldPlayer)
                 + " scoreboard=" + (service.scoreboard.lookupPlayer(uuid) == oldPlayer)
                 + " listener=" + (listener.player == oldPlayer) + " nativePresent=" + nativePresent
                 + " worldUuid=" + (worldUuid == oldPlayer) + " worldId=" + (worldId == oldPlayer)
                 + " worldListed=" + worldListed + " removal=" + oldPlayer.getRemovalReason()
-                + " deathRetiredOpening=" + deathRetiredOpening + " creditsRetiredOpening=" + creditsRetiredOpening + " world=" + oldWorld.dimension().identifier());
+                + " deathRetiredOpening=" + deathRetiredOpening + " creditsRetiredOpening=" + creditsRetiredOpening);
         if (retiredOpening) oldTrackingRemoved = true;
         this.retiredOpening = retiredOpening;
         marker();
