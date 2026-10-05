@@ -375,9 +375,16 @@ def ensure_credits_seen():
 
 def fresh_player():
     """Disconnect, drop the saved player data and reconnect: a brand-new player that has not seen the End credits."""
-    agent.call('disconnect', timeout=120)
-    for q in list((target_world / 'players').rglob('*.dat*')): q.unlink()
-    agent.call('connect', timeout=300)
+    for attempt in range(3):
+        agent.call('disconnect', timeout=120)
+        # the server saves the leaving player after the client has gone: delete the files only once it has finished
+        gone = time.monotonic() + 30
+        while time.monotonic() < gone and 'There are 0 of' not in rcon('list'): time.sleep(.3)
+        time.sleep(1.5)
+        for q in list((target_world / 'players').rglob('*.dat*')): q.unlink()
+        agent.call('connect', timeout=300)
+        if pstate().get('seenCredits') == '0b': break
+    else: raise RuntimeError('a reconnected player still has seen the End credits')
     state['credits_seen'] = False
     place(OW, REST['NETHER_ENTRY'])
 
