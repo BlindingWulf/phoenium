@@ -129,17 +129,21 @@ try:
             if 'Done (' in logtext() and (vanilla or 'Started Geyser on 127.0.0.1:' + str(ports['bedrock']) in logtext()): break
             time.sleep(.3)
         else: raise RuntimeError('bootstrap timeout')
-        for world in [OW, NETHER]:
+        def nether_fixture(world):
+            # Rebuilt before EVERY Nether-route card: a block-destroying entity (ender dragon, wither, end crystal, TNT...)
+            # in an earlier card would otherwise leave later cards without a portal and report a bogus STAYED.
             prefix = 'execute in ' + world + ' run '
             for c in ['forceload add -16 -16 16 16', 'fill -12 64 -12 12 64 12 minecraft:sea_lantern',
                       'fill -12 65 -12 12 76 12 minecraft:air', 'fill -12 76 -12 12 76 12 minecraft:glass',
                       'fill -12 65 -12 -12 75 12 minecraft:glass', 'fill 12 65 -12 12 75 12 minecraft:glass',
                       'fill -12 65 -12 12 75 -12 minecraft:glass', 'fill -12 65 12 12 75 12 minecraft:glass',
                       'fill -2 64 0 2 69 0 minecraft:obsidian', 'fill -1 65 0 1 68 0 minecraft:air',
-                      'setblock -1 65 0 minecraft:fire', 'fill -2 65 -10 2 69 -10 minecraft:stone',
-                      'execute if block 0 66 0 minecraft:nether_portal']:
-                response = rcon(prefix + c)
-                if 'execute if block' in c: assert 'Test passed' in response, (prefix + c, response)
+                      'setblock -1 65 0 minecraft:fire', 'fill -2 65 -10 2 69 -10 minecraft:stone']:
+                rcon(prefix + c)
+            return 'Test passed' in rcon(prefix + 'execute if block 0 66 0 minecraft:nether_portal')
+        for world in [OW, NETHER]:
+            assert nether_fixture(world), world
+        rcon('gamerule minecraft:mob_griefing false')
         rcon('setworldspawn 8 65 5')
         rcon('gamerule minecraft:spawn_mobs false')
         for dbg in filter(None, os.environ.get('HC_DEBUG_CMDS', '').split(';;')):
@@ -154,6 +158,13 @@ try:
             src, dst = {'NETHER_ENTRY': (OW, NETHER), 'NETHER_RETURN': (NETHER, OW), 'END_ENTRY': (OW, END), 'END_EXIT': (END, OW), 'END_GATEWAY': (END, END)}[route]
             tag = 'stage7_h_%d' % len(result['cards'])
             at = '0.5 65 0.5'
+            fixture_ok = True
+            if route.startswith('NETHER'):
+                for world in (OW, NETHER):
+                    rebuilt = nether_fixture(world)
+                    if world == src: fixture_ok = rebuilt
+            else:
+                end_ready.discard((src, 65)); end_ready.discard((src, 70)); end_ready.discard((END, 'gateway'))
             if route == 'END_GATEWAY':
                 # Same-dimension End gateway with an exact exit eight blocks east, inside the forceloaded square.
                 if (END, 'gateway') not in end_ready:
@@ -172,9 +183,9 @@ try:
                     end_ready.add((src, y))
                 at = '8.5 %d.25 8.5' % y
             summon = rcon('execute in %s run summon minecraft:%s %s {Tags:["stage7_mob","%s"],NoGravity:1b%s}' % (src, etype, at, tag, NBT.get(etype, '')))
-            outcome = 'GONE'; where = 'NONE'
+            outcome = 'GONE' if fixture_ok else 'FIXTURE_INVALID'; where = 'NONE'
             t0 = time.monotonic()
-            while time.monotonic() - t0 < 8:
+            while fixture_ok and time.monotonic() - t0 < 8:
                 if process.poll() is not None or failed(): raise RuntimeError('server failure during %s: %s' % (card, failed()))
                 if route == 'END_GATEWAY':
                     pos = rcon('execute in %s positioned 0 64 0 run data get entity @e[tag=%s,distance=0..2000,limit=1] Pos[0]' % (END, tag))
