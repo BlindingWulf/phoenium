@@ -52,7 +52,7 @@ public final class Stage7RepairClientTest implements FabricClientGameTest {
                     && !(group.equals("same-dimension-gateway")
                     && selectedCards.equals("G1-pig-END_GATEWAY"))
                     && !(group.equals("graph-probe")
-                    && selectedCards.matches("GP-[a-z_]+-(NETHER_ENTRY|NETHER_RETURN)(,GP-[a-z_]+-(NETHER_ENTRY|NETHER_RETURN))*"))
+                    && selectedCards.matches("GP-[a-z_]+-(NETHER_ENTRY|NETHER_RETURN|END_ENTRY|END_EXIT)(,GP-[a-z_]+-(NETHER_ENTRY|NETHER_RETURN|END_ENTRY|END_EXIT))*"))
                     && !(group.equals("entity-probe")
                     && selectedCards.matches("E0-[a-z_]+-(NETHER_ENTRY|NETHER_RETURN|END_ENTRY|END_EXIT)(,E0-[a-z_]+-(NETHER_ENTRY|NETHER_RETURN|END_ENTRY|END_EXIT))*"))
                     && !(group.equals("mob-census")
@@ -1906,20 +1906,53 @@ public final class Stage7RepairClientTest implements FabricClientGameTest {
      * Defect-finding probe: the connected test player rides a vehicle that is carried into a Nether portal.
      * The vehicle ticks the portal; the rider travels with it natively. Only server health is required.
      */
+    boolean creditsSeen;
+    /**
+     * Native: a vehicle carrying a player who has not seen the End credits cannot leave the End through the exit
+     * portal (Entity.canTeleport). The player's own first exit shows the credits and respawns them; this does that
+     * through the real client so the rider cards below observe the post-credits native behaviour.
+     */
+    void seeEndCredits(int y)throws Exception {
+        active=active+"-credits";
+        position(END,5.5,y,5.5,180,0);
+        cmd("execute in "+END+" run tp "+USER+" 8.5 "+(y+0.1)+" 8.5 180 0");
+        context.waitFor(c->c.gui.screen() instanceof net.minecraft.client.gui.screens.WinScreen,1200);
+        context.waitTicks(10);
+        context.runOnClient(c->{if(c.gui.screen() instanceof net.minecraft.client.gui.screens.WinScreen w)w.onClose();});
+        awaitWorld(OW,600);
+        health(active);creditsSeen=true;
+        receipt.addProperty(active,"credits shown, client respawned the player in "+player().get("world").getAsString());
+    }
     void graphProbe(String selected)throws Exception {
         cmd("gamemode creative "+USER);
         int sequence=0;
         for(String card:selected.split(",")) {
-            var parts=java.util.regex.Pattern.compile("GP-([a-z_]+)-(NETHER_ENTRY|NETHER_RETURN)").matcher(card);
+            var parts=java.util.regex.Pattern.compile("GP-([a-z_]+)-(NETHER_ENTRY|NETHER_RETURN|END_ENTRY|END_EXIT)").matcher(card);
             require(parts.matches(),"bad graph probe card "+card);
-            active=card;String type=parts.group(1),from=parts.group(2).equals("NETHER_ENTRY")?OW:NETHER,to=from.equals(OW)?NETHER:OW;
+            String route=parts.group(2);
+            active=card;String type=parts.group(1),from,to;
+            switch(route){
+                case "NETHER_ENTRY"->{from=OW;to=NETHER;}
+                case "NETHER_RETURN"->{from=NETHER;to=OW;}
+                case "END_ENTRY"->{from=OW;to=END;}
+                default->{from=END;to=OW;}
+            }
             String tag="stage7_probe_g"+sequence++;
-            position(from,8.5,65,5.5,180,0);
-            cmd("execute in "+from+" run summon minecraft:"+type+" 4.5 65 5.5 {Tags:[\"stage7_mob\",\""+tag+"\"],PersistenceRequired:1b}");
+            int y=route.equals("END_EXIT")?70:65;
+            String carry="0.5 65 0.5";
+            if(route.startsWith("END")) {
+                for(String c:List.of("forceload add 0 0 15 15","fill 4 "+(y-1)+" 4 12 "+(y-1)+" 12 minecraft:obsidian",
+                        "fill 4 "+y+" 4 12 "+(y+6)+" 12 minecraft:air","setblock 8 "+y+" 8 minecraft:end_portal"))
+                    cmd("execute in "+from+" run "+c);
+                carry="8.5 "+y+".25 8.5";
+            }
+            if(route.equals("END_EXIT")&&!creditsSeen) seeEndCredits(y);
+            position(from,route.startsWith("END")?5.5:8.5,y,5.5,180,0);
+            cmd("execute in "+from+" run summon minecraft:"+type+" 4.5 "+y+" 5.5 {Tags:[\"stage7_mob\",\""+tag+"\"],PersistenceRequired:1b}");
             receipt.addProperty(card+"-ride",cmd("ride "+USER+" mount @e[tag="+tag+",limit=1]"));
-            receipt.addProperty(card+"-carry",cmd("execute in "+from+" run tp @e[tag="+tag+",limit=1] 0.5 65 0.5"));
+            receipt.addProperty(card+"-carry",cmd("execute in "+from+" run tp @e[tag="+tag+",limit=1] "+carry));
             String outcome="NO_TRANSFER",vehicleWorld="UNKNOWN",playerWorld="UNKNOWN";
-            for(int i=0;i<120;i++) {
+            for(int i=0;i<160;i++) {
                 context.waitTick();
                 JsonObject state=snapshot(card+"-wait-"+i);
                 playerWorld=player().get("world").getAsString();
@@ -1927,11 +1960,21 @@ public final class Stage7RepairClientTest implements FabricClientGameTest {
                     if(o.has("tags")&&o.get("tags").getAsString().contains(tag))vehicleWorld=o.get("world").getAsString();}
                 if(playerWorld.equals(to)){outcome="PLAYER_TRANSFERRED";break;}
             }
+            String riding="UNKNOWN";
+            if(outcome.equals("PLAYER_TRANSFERRED")) {
+                for(int i=0;i<40;i++) {
+                    context.waitTick();
+                    riding=cmd("execute as @e[tag="+tag+",limit=1] on passengers if entity @s[name="+USER+"]").contains("Test passed")?"RIDING":"NOT_RIDING";
+                    if(riding.equals("RIDING"))break;
+                }
+                snapshot(card+"-after");
+                vehicleWorld=taggedMob(snapshot(card+"-vehicle"),tag).get("world").getAsString();
+            }
             receipt.addProperty(card+"-outcome",outcome);receipt.addProperty(card+"-playerWorld",playerWorld);
-            receipt.addProperty(card+"-vehicleWorld",vehicleWorld);
-            health(card);pass(card,"graph probe outcome="+outcome+" player="+playerWorld+" vehicle="+vehicleWorld);
+            receipt.addProperty(card+"-vehicleWorld",vehicleWorld);receipt.addProperty(card+"-riding",riding);
+            health(card);pass(card,"graph probe outcome="+outcome+" player="+playerWorld+" vehicle="+vehicleWorld+" riding="+riding);
             cmd("ride "+USER+" dismount");
-            for(String w:List.of(OW,NETHER))cmd("execute in "+w+" run kill @e[tag=stage7_mob]");
+            for(String w:List.of(OW,NETHER,END))cmd("execute in "+w+" run kill @e[tag=stage7_mob]");
             position(OW,8.5,65,5.5,180,0);
         }
     }

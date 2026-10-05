@@ -59,8 +59,10 @@ public final class FullFinishingScoreboard {
         if (session == null || session.player != player) return;
         order.remove(session); directoryRevision++;
         if (disconnect) {
-            if (player instanceof PlayerRespawnHandoff.Incarnation access)
+            if (player instanceof PlayerRespawnHandoff.Incarnation access) {
                 access.phoenium$deathRemovalCompleted(false);
+                access.phoenium$creditsRemovalCompleted(false);
+            }
             session.state = State.CLOSED; catchup -= session.catchup.size(); session.catchup.clear();
             sessions.remove(session.connection); session.player = null; session.listener = null;
         }

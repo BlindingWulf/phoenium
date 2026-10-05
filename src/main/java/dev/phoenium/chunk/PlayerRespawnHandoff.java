@@ -27,6 +27,9 @@ public final class PlayerRespawnHandoff {
         default void phoenium$deathPosition(FullEntityFacts.PublishedPosition position) { throw new IllegalStateException("death position binding absent"); }
         boolean phoenium$respawnPrecheckLogged();
         void phoenium$respawnPrecheckLogged(boolean logged);
+        /** ServerPlayer.showEndCredits' own removePlayerImmediately(CHANGED_DIMENSION) returned. */
+        default boolean phoenium$creditsRemovalCompleted() { return false; }
+        default void phoenium$creditsRemovalCompleted(boolean completed) { }
     }
     public interface Directory {
         List<ServerPlayer> phoenium$respawnPlayers();
@@ -52,7 +55,9 @@ public final class PlayerRespawnHandoff {
     private Tracking tracking;
     private Storage storage;
     private String oldRoute = "NONE", newRoute = "NONE";
+    /** Death completed natively, or the End credits removed the player (ServerPlayer.showEndCredits). */
     private final boolean deathRetiredOpening;
+    private final boolean retiredOpening;
 
     PlayerRespawnHandoff(FullFinishingServices service, Directory directory, ServerPlayer oldPlayer,
                          long generation, long sessionId, Connection connection) {
@@ -69,11 +74,24 @@ public final class PlayerRespawnHandoff {
         deathRetiredOpening = deathRemovalCompleted(oldPlayer) && oldPlayer.deathTime >= 20
             && oldPlayer.getRemovalReason() == Entity.RemovalReason.KILLED
             && worldUuid == null && worldId == null && !worldListed;
+        // ServerPlayer.showEndCredits removes the player with CHANGED_DIMENSION before PERFORM_RESPAWN arrives:
+        // native has already run the complete removal and tracking-end callbacks, exactly like a completed death.
+        boolean creditsRetiredOpening = oldPlayer instanceof Incarnation credits && credits.phoenium$creditsRemovalCompleted()
+            && oldPlayer.getRemovalReason() == Entity.RemovalReason.CHANGED_DIMENSION
+            && worldUuid == null && worldId == null && !worldListed;
+        boolean retiredOpening = deathRetiredOpening || creditsRetiredOpening;
         check(!retired(oldPlayer) && listed && directory.phoenium$respawnUuids().get(uuid) == oldPlayer
             && service.scoreboard.lookupPlayer(uuid) == oldPlayer
-            && listener.player == oldPlayer && (nativePresent || deathRetiredOpening),
-            "old publication is not current");
-        if (deathRetiredOpening) oldTrackingRemoved = true;
+            && listener.player == oldPlayer && (nativePresent || retiredOpening),
+            "old publication is not current: retired=" + retired(oldPlayer) + " listed=" + listed
+                + " uuidMap=" + (directory.phoenium$respawnUuids().get(uuid) == oldPlayer)
+                + " scoreboard=" + (service.scoreboard.lookupPlayer(uuid) == oldPlayer)
+                + " listener=" + (listener.player == oldPlayer) + " nativePresent=" + nativePresent
+                + " worldUuid=" + (worldUuid == oldPlayer) + " worldId=" + (worldId == oldPlayer)
+                + " worldListed=" + worldListed + " removal=" + oldPlayer.getRemovalReason()
+                + " deathRetiredOpening=" + deathRetiredOpening + " creditsRetiredOpening=" + creditsRetiredOpening + " world=" + oldWorld.dimension().identifier());
+        if (retiredOpening) oldTrackingRemoved = true;
+        this.retiredOpening = retiredOpening;
         marker();
     }
 
@@ -101,7 +119,7 @@ public final class PlayerRespawnHandoff {
     public boolean rollingBack() { return state == State.ROLLING_BACK; }
     /** Vanilla resolves/loads the respawn position before removing its old player. Until that
      * exact list edge, the old incarnation is still current for ordinary tracking recipients. */
-    public boolean stillCurrent(ServerPlayer player) { return state == State.OPEN && player == oldPlayer && !deathRetiredOpening && !abortRequested; }
+    public boolean stillCurrent(ServerPlayer player) { return state == State.OPEN && player == oldPlayer && !retiredOpening && !abortRequested; }
     /** Called only after the native tickDeath body and its removal callback returned normally. */
     public static void recordDeathRemovalCompleted(ServerPlayer player) {
         if (player.deathTime >= 20 && player.getRemovalReason() == Entity.RemovalReason.KILLED)
@@ -132,6 +150,7 @@ public final class PlayerRespawnHandoff {
         var access = (Incarnation) player;
         access.phoenium$respawnRetired(true);
         access.phoenium$deathRemovalCompleted(false);
+        access.phoenium$creditsRemovalCompleted(false);
         if(access.phoenium$deathPosition()!=null)access.phoenium$deathPosition(null);
     }
     private static long incarnation(ServerPlayer player) {
@@ -210,7 +229,7 @@ public final class PlayerRespawnHandoff {
         expect(State.OLD_RETIRING); check(world == oldWorld && player == oldPlayer, "foreign old-world removal");
         // The completed native death callback already retired storage, tracking, and identity.
         // Calling remove(KILLED) again would replay death effects and tracker removal.
-        if (!deathRetiredOpening) try (var turn = service.referenceAccess()) { original.run(); }
+        if (!retiredOpening) try (var turn = service.referenceAccess()) { original.run(); }
         check(oldTrackingRemoved && world.getEntity(uuid) != oldPlayer && world.getEntity(player.getId()) != oldPlayer
             && !containsExact(world.players(), oldPlayer), "old world/tracker did not retire");
         oldWorldRemoved = true; transition(State.OLD_RETIRED);
@@ -394,7 +413,7 @@ public final class PlayerRespawnHandoff {
             "PHOENIUM_PLAYER_RESPAWN_HANDOFF uuid={} generation={} session={} old={}@{} new={}@{} opening={} phase={} oldRoute={} newRoute={}",
             uuid, generation, sessionId, oldIncarnation, System.identityHashCode(oldPlayer),
             replacement == null ? "NONE" : replacementIncarnation, replacement == null ? "NONE" : System.identityHashCode(replacement),
-            deathRetiredOpening ? "DEATH_RETIRED" : "PRESENT", state, oldRoute, newRoute);
+            retiredOpening ? (deathRetiredOpening ? "DEATH_RETIRED" : "CREDITS_RETIRED") : "PRESENT", state, oldRoute, newRoute);
     }
     private static void check(boolean condition, String message) {
         if (!condition) throw new ChunkProtocolException("respawn handoff: " + message);
