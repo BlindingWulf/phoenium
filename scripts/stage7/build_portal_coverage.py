@@ -2860,7 +2860,7 @@ def client_claims(card: Card, rows: list[dict[str, Any]] | None = None) -> list[
             return [dict(common, entityType="minecraft:player", variant=None if kind == "player" else "credits_unseen",
                          stateVariant=None if kind == "player" else "credits_unseen", graph="standalone",
                          observedOutcome=transfer, assertions=assertions, observerValidated=OWNER_ASSERTIONS <= assertions,
-                         sameDimensionGateway=gateway)]
+                         sameDimensionGateway=gateway, ownerAssertions=OWNER_ASSERTIONS & assertions or None)]
         return []
     if kind == "player_cooldown":
         assertions = client_cooldown_assertions(card, route)

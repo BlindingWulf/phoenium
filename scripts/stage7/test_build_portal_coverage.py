@@ -916,6 +916,25 @@ class CoverageTests(unittest.TestCase):
                              {}, {}, {})
         self.assertEqual(coverage.client_claims(card), [])
 
+    def test_client_claims_carry_the_owner_assertions_their_card_witnessed(self) -> None:
+        card = coverage.Card("K1-player-END_GATEWAY", 1, "headless", pathlib.Path("r"), pathlib.Path("r"), pathlib.Path("r"),
+                             {"outcome": "TRANSFERRED"}, {}, {}, evidence="real-client")
+        gateway = (coverage.REQUIRED_SAME_DIMENSION_ASSERTIONS | {"session_converged", "client_playable"})
+        owners = {"source_owner", "destination_owner", "tracking_owner", "observer_phases"}
+        with patch.object(coverage, "client_player_assertions", return_value=set(gateway | owners)):
+            (claim,) = coverage.client_claims(card)
+        self.assertEqual(set(claim["ownerAssertions"]), owners)
+        self.assertTrue(claim["observerValidated"])
+        # a card that witnessed no owner assertion carries none (the importer then falls back to the observer trace)
+        with patch.object(coverage, "client_player_assertions", return_value=set(gateway - owners)):
+            claims = coverage.client_claims(card)
+        self.assertTrue(all(not claim["ownerAssertions"] for claim in claims))
+
+    def test_credits_graph_claim_names_the_row_it_refuses_for(self) -> None:
+        self.assertIn("credits_unseen_passenger", coverage.STATE_CONSTRUCTED_REFUSAL_VARIANTS)
+        for kind in coverage.CREDITS_GRAPH_VEHICLE:
+            self.assertIn(kind, coverage.PLAYER_GRAPH_KIND_ROW)
+
     def test_effect_owner_link_is_read_relative_to_each_runs_own_source(self) -> None:
         def nbt(owner: str) -> str:
             return "Arrow has the following entity data: {Tags: [], Owner: " + owner + ", life: 3}"
