@@ -147,7 +147,8 @@ def target_state(world, tag):
     health = re.search(r'Health: (-?[0-9.]+)f', text)
     fire = re.search(r'Fire: (-?\d+)s', text)
     pos = parse_pos(text)
-    return {'alive': True, 'health': float(health.group(1)) if health else None, 'fire': int(fire.group(1)) if fire else 0,
+    hurt = re.search(r'(?:HurtByTimestamp|last_hurt_by_mob_timestamp): (-?\d+)', text)
+    return {'alive': True, 'hurtBy': bool(hurt and int(hurt.group(1)) > 0), 'health': float(health.group(1)) if health else None, 'fire': int(fire.group(1)) if fire else 0,
             'effects': effect_ids(text), 'pos': [round(v, 1) for v in pos] if pos else None}
 
 
