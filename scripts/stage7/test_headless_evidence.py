@@ -611,5 +611,175 @@ class ClassifyTests(unittest.TestCase):
                 classify_census.load_control(run, "1" * 64, "2" * 64)
 
 
+def dyn_regions(landed: dict | None = None, targets: bool = False) -> dict:
+    result = {}
+    for dimension, labels in coverage.FALLING_REGION_LABELS.items():
+        entry = {"regions": {label: {"blocks": 0, "loaded": True} for label in labels},
+                 "items": 0, "itemIds": [], "fallingBlocks": 0}
+        if targets:
+            entry["targets"], entry["targetsUndamaged"] = 9, 9
+        result[dimension] = entry
+    for (dimension, label), blocks in (landed or {}).items():
+        result[dimension]["regions"][label]["blocks"] = blocks
+    return result
+
+
+def dyn_witness(variant: str = "block", landed: dict | None = None, damage: bool = False, spec: str | None = None,
+                nbt: str | None = None) -> dict:
+    block = coverage.FALLING_CARRIED_BLOCK.get(variant, variant)
+    landing = variant == "landing_damage"
+    observables = dyn_regions(landed, targets=landing)
+    if landing and damage:
+        for entry in observables.values():
+            entry["targetsUndamaged"] = 8
+    return {"carriedSpec": spec or "minecraft:" + block, "variant": variant, "baseline": dyn_regions(None, targets=landing),
+            "observables": observables,
+            "nbtSource": nbt if nbt is not None else 'BlockState: {Name: "minecraft:%s"}' % block,
+            "source": [member("minecraft:overworld", type="minecraft:falling_block", object="old", nativeId=8, ticks=0)]}
+
+
+def dyn_trace(route: str = "NETHER_ENTRY", destination: str = "minecraft:the_nether") -> list[dict]:
+    source = coverage.ROUTE_SOURCE_WORLD[route]
+    result = []
+    for event in transfer_trace():
+        retired = event["phase"] in ("SOURCE_RETIRING", "SOURCE_RETIRED")
+        result.append(dict(event, type="entity.minecraft.falling_block", route=route, sourceWorld=source,
+                           destinationWorld=destination, ownerWorld=source if retired else destination))
+    return result
+
+
+class HeadlessDynamicTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.temp = tempfile.TemporaryDirectory()
+        self.dir = pathlib.Path(self.temp.name)
+        self.previous_root = coverage.CONTROL_ROOT
+        coverage.CONTROL_ROOT = self.dir
+
+    def tearDown(self) -> None:
+        coverage.CONTROL_ROOT = self.previous_root
+        self.temp.cleanup()
+
+    def row(self, name: str, control_witness: dict, variant: str = "minecraft:block", route: str = "NETHER_ENTRY",
+            outcome: str = "TRANSFERRED") -> dict:
+        folder = self.dir / "native-controls" / "ctl"
+        folder.mkdir(parents=True, exist_ok=True)
+        (folder / "headless-result.json").write_text("{}", encoding="utf-8")
+        receipt = folder / "headless-receipt.json"
+        receipt.write_text(json.dumps({"cards": [{"card": name, "outcome": outcome, "witness": control_witness}]}),
+                           encoding="utf-8")
+        return {"id": "V2-FALLING_BLOCK-" + route, "entityType": "minecraft:falling_block", "route": route,
+                "variant": variant, "graph": "standalone", "expectedNativeOutcome": "TRANSFER",
+                "nativeControlReceipt": {"card": name, "path": "native-controls/ctl/headless-result.json",
+                                         "receiptSha256": coverage.digest(receipt)}}
+
+    def claims(self, name: str, witness: dict, control: dict, route: str = "NETHER_ENTRY",
+               variant: str = "minecraft:block", trace: list[dict] | None = None):
+        row = self.row(name, control, variant, route)
+        destination = coverage.ROUTE_DESTINATION_WORLD[route]
+        card = make_card(self.dir, name, "TRANSFERRED", witness,
+                         trace if trace is not None else dyn_trace(route, destination), "falling_block")
+        return coverage.headless_claims(card, [row])
+
+    def test_matching_landing_and_control_yield_a_full_row_claim(self) -> None:
+        landed = {("nether", "main"): 1}
+        claims = self.claims("D0-falling-block-NETHER_ENTRY", dyn_witness(landed=landed), dyn_witness(landed=landed))
+        self.assertEqual(len(claims), 1)
+        self.assertEqual(claims[0]["variant"], "minecraft:block")
+        self.assertEqual(claims[0]["observedOutcome"], "TRANSFER")
+        self.assertTrue({"source_retired", "destination_unique", "tracking_unique", "source_block_removed",
+                         "carried_state", "native_landing"} <= claims[0]["assertions"], claims[0]["assertions"])
+
+    def test_a_different_world_than_the_control_removes_the_claim(self) -> None:
+        own = dyn_witness(landed={("nether", "main"): 1})
+        control = dyn_witness(landed={("nether", "main"): 1})
+        control["observables"]["overworld"]["items"] = 1
+        self.assertEqual(self.claims("D0-falling-block-NETHER_ENTRY", own, control), [])
+
+    def test_landing_in_the_wrong_place_or_twice_or_with_a_leftover_is_not_credited(self) -> None:
+        for landed in ({("overworld", "main"): 1}, {("nether", "main"): 2}, {("nether", "main"): 0},
+                       {("nether", "main"): 1, ("overworld", "main"): 1}):
+            bad = dyn_witness(landed=landed)
+            self.assertEqual(self.claims("D0-falling-block-NETHER_ENTRY", bad, bad), [], landed)
+        leftover = dyn_witness(landed={("nether", "main"): 1})
+        leftover["observables"]["nether"]["fallingBlocks"] = 1
+        self.assertEqual(self.claims("D0-falling-block-NETHER_ENTRY", leftover, leftover), [])
+        good = dyn_witness(landed={("nether", "main"): 1})
+        self.assertEqual(len(self.claims("D0-falling-block-NETHER_ENTRY", good, good)), 1)
+
+    def test_unloaded_region_or_missing_baseline_is_not_credited(self) -> None:
+        unloaded = dyn_witness(landed={("nether", "main"): 1})
+        unloaded["observables"]["nether"]["regions"]["main"]["loaded"] = False
+        self.assertEqual(self.claims("D0-falling-block-NETHER_ENTRY", unloaded, unloaded), [])
+        no_base = dyn_witness(landed={("nether", "main"): 1})
+        del no_base["baseline"]
+        self.assertEqual(self.claims("D0-falling-block-NETHER_ENTRY", no_base, no_base), [])
+
+    def test_wrong_carried_state_is_not_credited(self) -> None:
+        landed = {("nether", "main"): 1}
+        wrong = dyn_witness(landed=landed, nbt='BlockState: {Name: "minecraft:stone"}')
+        self.assertEqual(self.claims("D0-falling-block-NETHER_ENTRY", wrong, dyn_witness(landed=landed)), [])
+        # anvil-like variants carry a block-state property that must appear in the entity NBT
+        spec = "minecraft:anvil[facing=east]"
+        props = dyn_witness("anvil", landed, spec=spec,
+                            nbt='BlockState: {Name: "minecraft:anvil", Properties: {facing: "east"}}')
+        self.assertEqual(len(self.claims("D0-falling-anvil-NETHER_ENTRY", props, props, variant="minecraft:anvil")), 1)
+        bare = dict(props, nbtSource='BlockState: {Name: "minecraft:anvil"}')
+        self.assertEqual(self.claims("D0-falling-anvil-NETHER_ENTRY", bare, props, variant="minecraft:anvil"), [])
+
+    def test_control_must_be_hash_bound_and_transfer_the_same_card(self) -> None:
+        landed = {("nether", "main"): 1}
+        name = "D0-falling-block-NETHER_ENTRY"
+        row = self.row(name, dyn_witness(landed=landed))
+        card = make_card(self.dir, name, "TRANSFERRED", dyn_witness(landed=landed), dyn_trace(), "falling_block")
+        self.assertEqual(len(coverage.headless_claims(card, [row])), 1)
+        stayed = self.row(name, dyn_witness(landed=landed), outcome="STAYED")
+        self.assertEqual(coverage.headless_claims(card, [stayed]), [])
+        other = self.row("D0-falling-sand-NETHER_ENTRY", dyn_witness(landed=landed))
+        self.assertEqual(coverage.headless_claims(card, [other]), [])
+        # tamper with the receipt after the row recorded its hash
+        row = self.row(name, dyn_witness(landed=landed))
+        (self.dir / "native-controls" / "ctl" / "headless-receipt.json").write_text(
+            json.dumps({"cards": [{"card": name, "outcome": "TRANSFERRED",
+                                   "witness": dyn_witness(landed={("nether", "main"): 3})}]}), encoding="utf-8")
+        self.assertEqual(coverage.headless_claims(card, [row]), [])
+
+    def test_trace_must_be_a_complete_generation_between_the_right_worlds(self) -> None:
+        landed = {("nether", "main"): 1}
+        name = "D0-falling-block-NETHER_ENTRY"
+        incomplete = [event for event in dyn_trace() if event["phase"] != "CHUNK_MAP_TRACKING_RETURN"]
+        self.assertEqual(self.claims(name, dyn_witness(landed=landed), dyn_witness(landed=landed), trace=incomplete), [])
+        wrong = dyn_trace(destination="minecraft:overworld")
+        self.assertEqual(self.claims(name, dyn_witness(landed=landed), dyn_witness(landed=landed), trace=wrong), [])
+        violating = dyn_trace()
+        violating[2]["violation"] = "x"
+        self.assertEqual(self.claims(name, dyn_witness(landed=landed), dyn_witness(landed=landed), trace=violating), [])
+
+    def test_landing_damage_needs_a_control_that_shows_the_damage(self) -> None:
+        landed = {("nether", "main"): 1}
+        name = "D0-falling-landing_damage-NETHER_ENTRY"
+        quiet = dyn_witness("landing_damage", landed, damage=False)
+        self.assertEqual(self.claims(name, quiet, quiet, variant="landing_damage"), [])
+        hurt = dyn_witness("landing_damage", landed, damage=True)
+        claims = self.claims(name, hurt, hurt, variant="landing_damage")
+        self.assertEqual(len(claims), 1)
+        self.assertEqual(claims[0]["variant"], "landing_damage")
+        self.assertEqual(self.claims(name, quiet, hurt, variant="landing_damage"), [])
+
+    def test_end_entry_must_land_on_the_spawn_platform(self) -> None:
+        name = "D0-falling-block-END_ENTRY"
+        on_platform = dyn_witness(landed={("end", "platform"): 1})
+        claims = self.claims(name, on_platform, on_platform, route="END_ENTRY")
+        self.assertEqual(len(claims), 1)
+        self.assertIn("end_platform", claims[0]["assertions"])
+        elsewhere = dyn_witness(landed={("end", "fixture"): 1})
+        self.assertEqual(self.claims(name, elsewhere, elsewhere, route="END_ENTRY"), [])
+
+    def test_variant_spelling_round_trips_between_card_names_and_ledger_rows(self) -> None:
+        for card_variant, row_variant in (("block", "minecraft:block"), ("sand", "minecraft:sand"),
+                                          ("landing_damage", "landing_damage")):
+            self.assertEqual(coverage.falling_row_variant(card_variant), row_variant)
+            self.assertEqual(coverage.falling_variant_name(row_variant), card_variant)
+
+
 if __name__ == "__main__":
     unittest.main()

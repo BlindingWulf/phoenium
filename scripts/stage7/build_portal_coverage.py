@@ -1184,10 +1184,15 @@ def legacy_claims(card: Card, worktree: pathlib.Path, contracts: dict[str, str])
 # ---------------------------------------------------------------------------------------------------------------
 HEADLESS_CARD = re.compile(r"E0-([a-z_]+)-(NETHER_ENTRY|NETHER_RETURN|END_ENTRY|END_EXIT|END_GATEWAY)")
 GRAPH_CARD = re.compile(r"G0-([a-z0-9_]+)-(NETHER_ENTRY|NETHER_RETURN|END_ENTRY|END_EXIT|END_GATEWAY)")
+DYNAMIC_CARD = re.compile(r"D0-falling-([a-z0-9_]+)-(NETHER_ENTRY|NETHER_RETURN|END_ENTRY|END_EXIT|END_GATEWAY)")
 HEADLESS_CENSUS_SCRIPT = pathlib.Path("scripts/stage7/headless_census.py")
 HEADLESS_GRAPH_SCRIPT = pathlib.Path("scripts/stage7/headless_graphs.py")
+HEADLESS_DYNAMIC_SCRIPT = pathlib.Path("scripts/stage7/headless_dynamic.py")
 HEADLESS_GROUPS = {"headless-census": (HEADLESS_CENSUS_SCRIPT, HEADLESS_CARD),
-                   "headless-graphs": (HEADLESS_GRAPH_SCRIPT, GRAPH_CARD)}
+                   "headless-graphs": (HEADLESS_GRAPH_SCRIPT, GRAPH_CARD),
+                   "headless-dynamic": (HEADLESS_DYNAMIC_SCRIPT, DYNAMIC_CARD)}
+# Census directory: native-control receipt paths of the rows resolve against it (set by main / tests).
+CONTROL_ROOT: pathlib.Path | None = None
 # shape -> (root type, children); each child is again (type, children). Mirrors SHAPES in headless_graphs.py.
 GRAPH_SHAPES = {
     "boat_empty": ("minecraft:oak_boat", ()),
@@ -1542,32 +1547,36 @@ def _region(value: Any) -> str | None:
     return match.group(1) if match else None
 
 
-def headless_gateway_assertions(card: Card, entity_type: str) -> set[str]:
-    """Same-dimension End gateway witness from raw snapshots plus the probe's contact/ticket/tracking records."""
+def headless_gateway_assertions(card: Card, entity_type: str, falling: bool = False) -> set[str]:
+    """Same-dimension End gateway witness from raw snapshots plus the probe's contact/ticket/tracking records.
+
+    `falling` is for a falling block: it is summoned above the gateway (the contact event proves it entered the gateway cell),
+    and it lands and discards itself soon after arriving, so only the source and arrival snapshots can exist.
+    """
     witness = card.data.get("witness")
     uuid = _snapshot_uuid(card.data)
     if card.data.get("outcome") != "TRANSFERRED" or not isinstance(witness, dict) or uuid is None:
         return set()
     source, arrival, later = (_single(witness.get(key)) for key in ("source", "arrival", "later"))
     gateway = witness.get("gateway")
-    if source is None or arrival is None or later is None or not isinstance(gateway, dict):
+    if source is None or arrival is None or (later is None and not falling) or not isinstance(gateway, dict):
         return set()
     end = "minecraft:the_end"
-    parts = (source, arrival, later)
+    parts = (source, arrival) if later is None else (source, arrival, later)
     if any(str(part.get("uuid", "")).lower() != uuid or part.get("type") != entity_type or part.get("world") != end
            or part.get("removed") is not False for part in parts):
         return set()
-    if not (isinstance(source.get("object"), str) and source["object"] == arrival.get("object") == later.get("object")
-            and isinstance(source.get("nativeId"), int)
-            and source["nativeId"] == arrival.get("nativeId") == later.get("nativeId")):
+    if not (isinstance(source.get("object"), str) and all(part.get("object") == source["object"] for part in parts)
+            and isinstance(source.get("nativeId"), int) and all(part.get("nativeId") == source["nativeId"] for part in parts)):
         return set()
-    if tuple(int(source[axis] // 1) for axis in ("x", "y", "z")) != HEADLESS_PORTAL_CELL["END_GATEWAY"]:
+    if not falling and tuple(int(source[axis] // 1) for axis in ("x", "y", "z")) != HEADLESS_PORTAL_CELL["END_GATEWAY"]:
         return set()
     assertions = {"same_native_object", "same_dimension", "destination_unique"}
     if all(isinstance(arrival.get(axis), (int, float)) for axis in ("x", "z")) and \
             ((arrival["x"] - source["x"]) ** 2 + (arrival["z"] - source["z"]) ** 2) > 8.0 ** 2:
         assertions.add("source_location_vacated")
-    if (isinstance(arrival.get("ticks"), int) and isinstance(later.get("ticks"), int) and later["ticks"] > arrival["ticks"] + 20
+    if (later is not None and isinstance(arrival.get("ticks"), int) and isinstance(later.get("ticks"), int)
+            and later["ticks"] > arrival["ticks"] + 20
             and later.get("chunkX") == arrival.get("chunkX") and later.get("chunkZ") == arrival.get("chunkZ")):
         assertions.add("post_arrival_tick")
     # The native gateway teleport sets a portal cooldown on the teleported entity (a vehicle's is short, so only the value
@@ -1741,8 +1750,191 @@ def _headless_graph_gateway(card: Card, shape: str, witness: dict[str, Any], arr
     return assertions, OWNER_ASSERTIONS <= root
 
 
+# ---------------------------------------------------------------------------------------------------------------
+# Falling blocks (scripts/stage7/headless_dynamic.py). The entity lands and discards itself, so the result is read from
+# block-count observables (before/after, per dimension and named region) that must equal a Phoenium-free control's.
+# ---------------------------------------------------------------------------------------------------------------
+WORLD_LABEL = {"minecraft:overworld": "overworld", "minecraft:the_nether": "nether", "minecraft:the_end": "end"}
+FALLING_ROW_VARIANT = {"block": "minecraft:block", "landing_damage": "landing_damage"}
+FALLING_CARRIED_BLOCK = {"block": "emerald_block", "landing_damage": "gold_block"}
+FALLING_STATE_PROPS = {"anvil": {"facing": "east"}, "chipped_anvil": {"facing": "east"}, "damaged_anvil": {"facing": "east"},
+                       "suspicious_sand": {"dusted": "2"}, "suspicious_gravel": {"dusted": "2"}}
+GATEWAY_LANDING_AREAS = ("gateway_exit",)
+GATEWAY_SOURCE_AREAS = ("fixture",)
+FALLING_REGION_LABELS = {"overworld": ("main",), "nether": ("main",), "end": ("platform", "fixture", "gateway_exit")}
+
+
+def falling_variant_name(row_variant: str) -> str:
+    """Card-name spelling of a ledger variant: 'minecraft:block' -> 'block', 'minecraft:sand' -> 'sand', 'landing_damage' stays."""
+    for name, value in FALLING_ROW_VARIANT.items():
+        if value == row_variant:
+            return name
+    return row_variant.removeprefix("minecraft:")
+
+
+def falling_row_variant(variant: str) -> str:
+    return FALLING_ROW_VARIANT.get(variant, "minecraft:" + variant)
+
+
+def _dynamic_deltas(witness: dict[str, Any]) -> dict[str, dict[str, int]] | None:
+    """Per dimension and region: blocks after minus blocks before. None unless the structure is complete and every region loaded."""
+    after, before = witness.get("observables"), witness.get("baseline")
+    if not isinstance(after, dict) or not isinstance(before, dict):
+        return None
+    deltas: dict[str, dict[str, int]] = {}
+    for dimension, labels in FALLING_REGION_LABELS.items():
+        try:
+            regions_after, regions_before = after[dimension]["regions"], before[dimension]["regions"]
+            if set(regions_after) != set(labels) or set(regions_before) != set(labels):
+                return None
+            entry = {}
+            for label in labels:
+                if regions_after[label].get("loaded") is not True or regions_before[label].get("loaded") is not True:
+                    return None
+                entry[label] = int(regions_after[label]["blocks"]) - int(regions_before[label]["blocks"])
+            deltas[dimension] = entry
+        except (KeyError, TypeError, ValueError):
+            return None
+    return deltas
+
+
+def _dynamic_landing(witness: dict[str, Any], route: str) -> dict[str, Any] | None:
+    """Where the carried block ended up, or None when the observables are malformed or not a single clean landing."""
+    deltas = _dynamic_deltas(witness)
+    if deltas is None:
+        return None
+    destination = WORLD_LABEL[ROUTE_DESTINATION_WORLD[route]]
+    source = WORLD_LABEL[ROUTE_SOURCE_WORLD[route]]
+    if route == "END_GATEWAY":
+        landed = {("end", label): deltas["end"][label] for label in GATEWAY_LANDING_AREAS}
+        vacated = {("end", label): deltas["end"][label] for label in GATEWAY_SOURCE_AREAS}
+    else:
+        landed = {(destination, label): value for label, value in deltas[destination].items()}
+        vacated = {(source, label): value for label, value in deltas[source].items()}
+    counted = set(landed) | set(vacated)
+    elsewhere = sum(value for dimension, entry in deltas.items() for label, value in entry.items()
+                    if (dimension, label) not in counted)
+    leftover = sum(int(witness["observables"][dimension].get("fallingBlocks", 1)) for dimension in deltas)
+    return {"landed": sum(landed.values()), "vacated": sum(vacated.values()), "elsewhere": elsewhere, "leftover": leftover,
+            "landedRegions": {label: value for (_, label), value in landed.items() if value}}
+
+
+def _control_card(row: dict[str, Any], name: str) -> dict[str, Any] | None:
+    """The native-control card for this exact card name, only through the hash-bound control receipt of the row."""
+    control = row.get("nativeControlReceipt")
+    if not isinstance(control, dict) or control.get("card") != name or CONTROL_ROOT is None:
+        return None
+    relative = pathlib.Path(str(control.get("path", "")))
+    if relative.is_absolute() or ".." in relative.parts or not relative.parts:
+        return None
+    receipt = (CONTROL_ROOT / relative).resolve().with_name("headless-receipt.json")
+    if not receipt.is_file() or digest(receipt) != control.get("receiptSha256"):
+        return None
+    return next((entry for entry in read_json(receipt).get("cards", []) if entry.get("card") == name), None)
+
+
+def _dynamic_trace_assertions(card: Card, route: str, uuid: str) -> set[str]:
+    """Transfer assertions for a falling block from the complete transaction trace (the entity may be gone before any arrival snapshot)."""
+    events = headless_generation(card, uuid, "minecraft:falling_block", route)
+    if events is None or any(event.get("violation") for event in events):
+        return set()
+    first = {phase: next(event for event in events if event.get("phase") == phase) for phase in HEADLESS_PHASES}
+    retiring, retired, head = first["SOURCE_RETIRING"], first["SOURCE_RETIRED"], first["ADD_DURING_TELEPORT_HEAD"]
+    if (retiring.get("sourceWorld") != ROUTE_SOURCE_WORLD[route] or retired.get("ownerWorld") != ROUTE_SOURCE_WORLD[route]
+            or head.get("destinationWorld") != ROUTE_DESTINATION_WORLD[route]):
+        return set()
+    assertions = {"source_retired", "uuid_preserved"}
+    if retiring.get("object") != head.get("object") and retiring.get("nativeId") != head.get("nativeId"):
+        assertions.add("replacement_identity")
+    if sum(1 for event in events if event.get("phase") == "ADD_DURING_TELEPORT_HEAD") == 1:
+        assertions.add("destination_unique")
+    tracking = [event["phase"] for event in events if event.get("object") == head.get("object")
+                and event.get("phase") in ("CHUNK_MAP_TRACKING_HEAD", "CHUNK_MAP_TRACKING_RETURN")]
+    if tracking.count("CHUNK_MAP_TRACKING_HEAD") == 1 and tracking.count("CHUNK_MAP_TRACKING_RETURN") == 1:
+        assertions.add("tracking_unique")
+    return assertions
+
+
+def _carried_state_matches(witness: dict[str, Any], variant: str) -> bool:
+    block = FALLING_CARRIED_BLOCK.get(variant, variant)
+    props = FALLING_STATE_PROPS.get(block, {})
+    spec = "minecraft:" + block + (("[" + ",".join(f"{key}={value}" for key, value in props.items()) + "]") if props else "")
+    nbt = witness.get("nbtSource")
+    if witness.get("carriedSpec") != spec or not isinstance(nbt, str) or f'Name: "minecraft:{block}"' not in nbt:
+        return False
+    return all(f'{key}: "{value}"' in nbt for key, value in props.items())
+
+
+def headless_dynamic_claims(card: Card, rows: list[dict[str, Any]] | None) -> list[dict[str, Any]]:
+    match = DYNAMIC_CARD.fullmatch(card.name)
+    witness = card.data.get("witness")
+    if card.evidence != "server-headless" or match is None or not isinstance(witness, dict):
+        return []
+    variant, route = match.groups()
+    if card.data.get("outcome") != "TRANSFERRED":
+        return []
+    row_variant = falling_row_variant(variant)
+    row = next((candidate for candidate in rows or [] if candidate.get("entityType") == "minecraft:falling_block"
+                and candidate.get("route") == route and candidate.get("variant") == row_variant
+                and candidate.get("graph", "standalone") == "standalone"), None)
+    gateway = route == "END_GATEWAY"
+    expected = "SAME_DIMENSION_TRANSFER" if gateway else "TRANSFER"
+    if row is None or row.get("expectedNativeOutcome") != expected:
+        return []
+    control = _control_card(row, card.name)
+    control_witness = control.get("witness") if isinstance(control, dict) else None
+    uuid = _snapshot_uuid(card.data)
+    if not isinstance(control_witness, dict) or control.get("outcome") != "TRANSFERRED" or uuid is None:
+        return []
+    own, native = _dynamic_landing(witness, route), _dynamic_landing(control_witness, route)
+    clean = lambda landing: (landing is not None and landing["landed"] == 1 and landing["vacated"] == 0
+                             and landing["elsewhere"] == 0 and landing["leftover"] == 0)
+    if not (clean(own) and clean(native)):
+        return []
+    assertions: set[str] = set()
+    # native_landing: the same world as the Phoenium-free control (every block count, drop, leftover entity and target health).
+    if all(witness.get(key) == control_witness.get(key) for key in ("baseline", "observables", "carriedSpec")):
+        if variant != "landing_damage" or _landing_damage_exhibited(control_witness, route):
+            assertions.add("native_landing")
+    if _carried_state_matches(witness, variant) and "native_landing" in assertions:
+        assertions.add("carried_state")
+    if own["vacated"] == 0 and own["leftover"] == 0:
+        assertions.add("source_block_removed")
+    if route == "END_ENTRY" and own["landedRegions"] == {"platform": 1}:
+        assertions.add("end_platform")
+    if gateway:
+        assertions |= headless_gateway_assertions(card, "minecraft:falling_block", falling=True)
+        needed = REQUIRED_SAME_DIMENSION_ASSERTIONS
+    else:
+        assertions |= _dynamic_trace_assertions(card, route, uuid)
+        needed = REQUIRED_TRANSFER_ASSERTIONS | {"uuid_preserved", "replacement_identity"}
+    # destination_owner (and the other owner assertions) come from the observer trace in build_report.
+    needed = (needed - OWNER_ASSERTIONS - {"destination_owner"}) | {"source_block_removed", "carried_state", "native_landing"}
+    if route == "END_ENTRY":
+        needed |= {"end_platform"}
+    if not needed <= assertions:
+        return []
+    return [dict(card=card, entityType="minecraft:falling_block", route=route, variant=row_variant, graph="standalone",
+                 observedOutcome=expected, assertions=assertions, basicObservation=True, scope="row",
+                 sameDimensionGateway=gateway, headlessOwner=gateway and OWNER_ASSERTIONS <= assertions)]
+
+
+def _landing_damage_exhibited(control_witness: dict[str, Any], route: str) -> bool:
+    """The native control must show the falling block hurting or killing a destination target; otherwise the row proves nothing about damage."""
+    destination = WORLD_LABEL[ROUTE_DESTINATION_WORLD[route]]
+    try:
+        before = control_witness["baseline"][destination]
+        after = control_witness["observables"][destination]
+        return (before["targets"] > 0 and before["targetsUndamaged"] == before["targets"]
+                and after["targetsUndamaged"] < before["targetsUndamaged"])
+    except (KeyError, TypeError):
+        return False
+
+
 def headless_claims(card: Card, rows: list[dict[str, Any]] | None = None) -> list[dict[str, Any]]:
     """Server-headless claims for entity types without family-specific semantics (plain entities) and passenger graphs."""
+    if DYNAMIC_CARD.fullmatch(card.name):
+        return headless_dynamic_claims(card, rows)
     graph_match = GRAPH_CARD.fullmatch(card.name)
     if card.evidence == "server-headless" and graph_match is not None:
         shape, route = graph_match.groups()
@@ -2256,6 +2448,8 @@ def main(argv: list[str] | None = None) -> int:
         binary_sha = digest(args.mapped_binary)
         census, frozen, contracts = map(read_json, (args.census, args.frozen, args.legacy_contracts))
         validate_census(census, frozen, source_sha, binary_sha, args.census.parent)
+        global CONTROL_ROOT
+        CONTROL_ROOT = args.census.parent.resolve()
         cards, rejected = scan_installed(args.installed_root, candidate_sha, args.worktree)
         headless_cards, headless_rejected = scan_headless(args.installed_root, candidate_sha, args.worktree)
         cards, rejected = cards + headless_cards, rejected + headless_rejected

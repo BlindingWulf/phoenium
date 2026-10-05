@@ -28,6 +28,7 @@ import sys
 
 CROSS_DIMENSION = {"NETHER_ENTRY", "NETHER_RETURN", "END_ENTRY", "END_EXIT"}
 CARD = re.compile(r"E0-([a-z_]+)-(NETHER_ENTRY|NETHER_RETURN|END_ENTRY|END_EXIT|END_GATEWAY)")
+FALLING_CARD = re.compile(r"D0-falling-([a-z0-9_]+)-(NETHER_ENTRY|NETHER_RETURN|END_ENTRY|END_EXIT|END_GATEWAY)")
 GRAPH_CARD = re.compile(r"G0-([a-z0-9_]+)-(NETHER_ENTRY|NETHER_RETURN|END_ENTRY|END_EXIT|END_GATEWAY)")
 CONTROL_FILES = ("headless-result.json", "headless-receipt.json", "inputs.json")
 
@@ -54,7 +55,11 @@ def load_control(run: pathlib.Path, source_sha: str, binary_sha: str) -> dict[tu
     table = {}
     for card in receipt["cards"]:
         graph = GRAPH_CARD.fullmatch(card["card"])
-        kind, route = (("graph:" + graph.group(1), graph.group(2)) if graph else CARD.fullmatch(card["card"]).groups())
+        falling = FALLING_CARD.fullmatch(card["card"])
+        if falling:
+            kind, route = "falling:" + falling.group(1), falling.group(2)
+        else:
+            kind, route = (("graph:" + graph.group(1), graph.group(2)) if graph else CARD.fullmatch(card["card"]).groups())
         table[(kind, route)] = card["outcome"]
     return table
 
@@ -105,9 +110,12 @@ def main(argv: list[str] | None = None) -> int:
         shutil.copy2(args.no_entry_proofs, out / args.no_entry_proofs.name)
     classified, conflicts, pending, classified_no_entry = 0, [], [], 0
     for row in census["rows"]:
-        if row.get("variant") not in (None, ""):
+        falling = row.get("entityType") == "minecraft:falling_block" and row.get("graph", "standalone") == "standalone"
+        if row.get("variant") not in (None, "") and not falling:
             continue
-        if row.get("graph", "standalone") != "standalone":
+        if falling:
+            key = ("falling:" + coverage.falling_variant_name(row["variant"]), row["route"])
+        elif row.get("graph", "standalone") != "standalone":
             shape = coverage.GRAPH_ROW_SHAPE.get(row["graph"])
             if shape is None:
                 continue
@@ -140,6 +148,7 @@ def main(argv: list[str] | None = None) -> int:
                     "sourceJarSha256": source_sha, "mappedBinarySha256": binary_sha, "observedOutcome": verdict,
                     "path": f"native-controls/{run_name}/headless-result.json", "sha256": digest(result_path),
                     "card": (f"G0-{key[0].removeprefix('graph:')}-{key[1]}" if key[0].startswith("graph:")
+                             else f"D0-falling-{key[0].removeprefix('falling:')}-{key[1]}" if key[0].startswith("falling:")
                              else f"E0-{key[0]}-{key[1]}"),
                     "receiptSha256": digest(result_path.with_name("headless-receipt.json")),
                     "inputsSha256": digest(result_path.with_name("inputs.json")),
