@@ -116,6 +116,7 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
     private final MinecartPortalTransitionManager minecartPortalTransitions;
     private final ArmorStandPortalTransitionManager armorStandPortalTransitions;
     private final PortalTicketBoundary portalTickets;
+    private final GatewayExitBoundary gatewayExits;
     private final PlayerDimensionTransitionManager playerDimensionTransitions;
     private final PearlPlayerHitHandoff pearlPlayerHits;
     private final Map<TaskCorrelationId, PendingPacket> packets = new ConcurrentHashMap<>();
@@ -360,6 +361,7 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
         this.armorStandPortalTransitions = new ArmorStandPortalTransitionManager(portalAuthority, objects);
         this.portalTickets = new PortalTicketBoundary(portalAuthority,
             key -> directory.resolve(key).map(RegionRoute::region), Entity::placePortalTicket);
+        this.gatewayExits = new GatewayExitBoundary(portalAuthority);
         this.playerDimensionTransitions = new PlayerDimensionTransitionManager(
             new PlayerDimensionTransitionManager.Authority() {
                 @Override public boolean running() { return PhoeniumLiveRuntime.this.isRunning(); }
@@ -577,6 +579,7 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
                 // for movement first observed during this tick's entity body.
                 entityIndexLifecycle.advancePendingRelocations(runtimes);
                 portalTickets.advance();
+                gatewayExits.advance();
                 mobPortalTransitions.advance();
                 hurtingProjectilePortalTransitions.advance();
                 shulkerBulletPortalTransitions.advance();
@@ -629,6 +632,7 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
                 // retain their bounded fact for the next tick instead of waiting on one another.
                 entityIndexLifecycle.advancePendingRelocations(runtimes);
                 portalTickets.advance();
+                gatewayExits.advance();
                 mobPortalTransitions.advance();
                 hurtingProjectilePortalTransitions.advance();
                 shulkerBulletPortalTransitions.advance();
@@ -807,6 +811,7 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
             failures.run(chunkBinding::shutdown);
             failures.run(playerDimensionTransitions::close);
             failures.run(portalTickets::close);
+            failures.run(gatewayExits::close);
             failures.run(pearlPortalTransitions::close);
             failures.run(itemPortalTransitions::close);
             failures.run(mobPortalTransitions::close);
@@ -2599,6 +2604,7 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
     /** Called after executeAndDrain returned, before the next entity consumes native RNG. */
     public void advanceMobPortalAfterEntityCallback() {
         portalTickets.advance();
+        gatewayExits.advance();
         mobPortalTransitions.advance();
         hurtingProjectilePortalTransitions.advance();
         shulkerBulletPortalTransitions.advance();
@@ -2761,9 +2767,20 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
         return portalTickets.place(entity, position);
     }
 
+    /** EndGatewayBlock.entityInside head; false defers arming until the native exit lookup is prepared. */
+    public boolean gatewayMayArm(net.minecraft.world.level.Level level, net.minecraft.core.BlockPos position, Entity entity) {
+        return gatewayExits.mayArm(level, position, entity);
+    }
+    /** EndGatewayBlock.getPortalDestination: the prepared exit under an owner, the native lookup otherwise. */
+    public net.minecraft.world.phys.Vec3 gatewayPortalPosition(net.minecraft.world.level.block.entity.TheEndGatewayBlockEntity gateway,
+            ServerLevel level, net.minecraft.core.BlockPos position, java.util.function.Supplier<net.minecraft.world.phys.Vec3> nativeCall) {
+        return gatewayExits.portalPosition(gateway, level, position, nativeCall);
+    }
+
     public void onWorldClosing(ServerLevel level) {
         dev.phoenium.chunk.FullFinishingServices.passengerWorldClosing(level);
         portalTickets.worldClosing(level);
+        gatewayExits.worldClosing(level);
         playerDimensionTransitions.worldClosing(level);
         pearlPortalTransitions.worldClosing(level);
         itemPortalTransitions.worldClosing(level);

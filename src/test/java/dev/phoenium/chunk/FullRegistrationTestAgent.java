@@ -32,6 +32,7 @@ public final class FullRegistrationTestAgent {
                         && !name.equals("net/minecraft/world/level/storage/PrimaryLevelData")
                         && !NativePortalTestTransform.supports(name)
                         && !MobPortalTestTransform.supports(name)
+                        && !GatewayExitTestTransform.supports(name)
                         && !name.equals(dev.phoenium.live.FallingBlockPortalNativeSuffix.OWNER)
                         && !name.equals("net/minecraft/world/entity/projectile/ShulkerBullet")
                         && !name.equals(BoatPortalTestTransform.TARGET)

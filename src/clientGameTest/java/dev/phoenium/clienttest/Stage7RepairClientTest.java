@@ -53,6 +53,8 @@ public final class Stage7RepairClientTest implements FabricClientGameTest {
                     && selectedCards.equals("G1-pig-END_GATEWAY"))
                     && !(group.equals("mob-census")
                     && selectedCards.matches("M3-[a-z_]+-(NETHER_ENTRY|NETHER_RETURN)(,M3-[a-z_]+-(NETHER_ENTRY|NETHER_RETURN))*"))
+                    && !(group.equals("same-dimension-gateway-natural")
+                    && selectedCards.equals("G3-pig-END_GATEWAY-NATURAL"))
                     && !(group.equals("same-dimension-gateway-ab")
                     && selectedCards.equals("G2-pig-END_GATEWAY-AB"))
                     && !(group.equals("mob-prefix")
@@ -76,6 +78,7 @@ public final class Stage7RepairClientTest implements FabricClientGameTest {
             else if(group.equals("mob-census")){mobCensus(selectedCards);}
             else if(group.equals("same-dimension-gateway")){pigEndGatewayCard(false);}
             else if(group.equals("same-dimension-gateway-ab")){pigEndGatewayCard(true);}
+            else if(group.equals("same-dimension-gateway-natural")){naturalGatewayCard();}
             else if(group.equals("mob-prefix")){
                 cmd("gamemode creative "+USER);
                 if(selectedCards.isBlank()||selectedCards.equals("M2-silverfish-NETHER_ENTRY"))
@@ -654,6 +657,50 @@ public final class Stage7RepairClientTest implements FabricClientGameTest {
         loose.addProperty("arrivalIron",arrivalIron);loose.addProperty("laterIron",laterIron);
         receipt.add(active+"-looseItems",loose);
         health(active);pass(active,"three-wide portal; native minecart inventory or latent loot persistence; no loose item duplication; one replacement UUID/new object; empty graph, later ticks and client tracking");
+    }
+    /**
+     * G3: a gateway the way worlds really have it. ExactTeleport is off, so native getPortalPosition runs
+     * findExitPosition and reads the exit's chunks, and nothing forceloads or builds the destination.
+     */
+    void naturalGatewayCard()throws Exception {
+        active="G3-pig-END_GATEWAY-NATURAL";
+        final int exitX=1000,exitZ=1000;
+        cmd("gamemode creative "+USER);
+        for(String command:List.of("forceload add 0 0 16 16","fill 8 64 4 16 64 16 minecraft:end_stone",
+                "fill 8 65 4 16 73 16 minecraft:air","setblock 12 66 8 minecraft:end_gateway"))
+            cmd("execute in "+END+" run "+command);
+        String configured=cmd("execute in "+END+" run data merge block 12 66 8 "
+            +"{exit_portal:[I;"+exitX+",65,"+exitZ+"],ExactTeleport:0b,Age:200L}");
+        require(configured.contains("Modified")||configured.contains("modified"),"natural gateway not configured: "+configured);
+        position(END,12.5,65,12.5,180,0);
+        String tag="stage7_gateway_pig";
+        cmd("tick freeze");
+        JsonObject source;
+        try {
+            String summoned=cmd("execute in "+END+" run summon minecraft:pig 12.5 66 8.5 "
+                +"{Tags:[\""+tag+"\"],NoAI:1b,NoGravity:1b,Invulnerable:1b,PersistenceRequired:1b}");
+            require(summoned.contains("Summoned")||summoned.contains("summoned"),"natural gateway pig summon failed: "+summoned);
+            source=taggedMob(snapshot(active+"-source"),tag);
+        } finally { cmd("tick unfreeze"); }
+        JsonObject arrival=null;
+        for(int i=0;i<400;i++) {
+            context.waitTick();
+            JsonObject pig=taggedMob(snapshot(active+"-wait-"+i),tag);
+            if(pig.get("world").getAsString().equals(END)&&Math.abs(pig.get("x").getAsDouble()-exitX)<24
+                    &&Math.abs(pig.get("z").getAsDouble()-exitZ)<24){arrival=pig;break;}
+        }
+        require(arrival!=null,"native pig did not reach the natural gateway exit");
+        require(arrival.get("uuid").equals(source.get("uuid"))&&arrival.get("object").equals(source.get("object"))
+            &&arrival.get("nativeId").equals(source.get("nativeId"))&&arrival.get("portalCooldown").getAsInt()>0,
+            "natural gateway same-object identity or cooldown changed");
+        JsonObject later=arrival;
+        for(int i=0;i<200&&later.get("ticks").getAsInt()<=arrival.get("ticks").getAsInt()+20;i++){
+            context.waitTicks(2);later=taggedMob(snapshot(active+"-later"),tag);
+        }
+        require(later.get("ticks").getAsInt()>arrival.get("ticks").getAsInt()+20,"natural gateway pig stopped ticking");
+        receipt.add(active+"-arrival",arrival.deepCopy());
+        health(active);
+        pass(active,"native non-exact gateway exit discovery with an unloaded unforced exit chunk; same object, cooldown, later ticks");
     }
     /**
      * G1 keeps the normal one-region End and exits to chunk (10,10). G2 runs under the explicit

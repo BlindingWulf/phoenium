@@ -248,7 +248,7 @@ try:
         # Restart cards verify the saved world and client/session health. Some (including
         # legacy I8) intentionally make no new portal contact after the server restarts.
         # Still reject any violation or pending transaction observed in this phase.
-        if not restart and group not in ('bed-anchor','no-native-entry','same-dimension-gateway','same-dimension-gateway-ab') and tx.get('events',0)==0:
+        if not restart and group not in ('bed-anchor','no-native-entry','same-dimension-gateway','same-dimension-gateway-ab','same-dimension-gateway-natural') and tx.get('events',0)==0:
             result['txPass']=False
             raise RuntimeError('stage7-tx observed no portal transaction events')
         if not result['txPass']:

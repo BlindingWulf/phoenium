@@ -165,6 +165,8 @@
     "PlayerDimensionEntityAccess",
     "NativePortalTransferMixin",
     "PortalTicketEntityMixin",
+    "EndGatewayBlockMixin",
+    "TheEndGatewayExitAccess",
     "ItemPortalRestoreMixin",
     "TntPortalRestoreMixin",
     "VexPortalRestoreMixin",

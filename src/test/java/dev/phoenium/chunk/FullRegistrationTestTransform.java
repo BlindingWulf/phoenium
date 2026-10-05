@@ -7,6 +7,11 @@ import org.objectweb.asm.tree.*;
 public final class FullRegistrationTestTransform {
     public static byte[] transform(String name, byte[] bytes) {
         ClassNode node = new ClassNode(); new ClassReader(bytes).accept(node, ClassReader.EXPAND_FRAMES);
+        if (GatewayExitTestTransform.supports(name)) {
+            GatewayExitTestTransform.install(node);
+            ClassWriter gatewayWriter = MobPortalTestTransform.frameWriter();
+            node.accept(gatewayWriter); return gatewayWriter.toByteArray();
+        }
         MobPortalTestTransform.install(node);
         if (MobPortalTestTransform.outerTail(name)) {
             // Vex is also a native-restore target: keep that transform, then write once with computed frames.

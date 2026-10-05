@@ -204,6 +204,8 @@ class NativeItemPortalTransferTest {
         Entity replacement;
         boolean enforceOwners=true, running=true, ready=true, entityVisible=true, cleanupFailure;
         int visibilityDemands;
+        long gameTime = 100L;
+        final Map<net.minecraft.resources.ResourceKey<Level>,net.minecraft.world.level.dimension.DimensionType> dimensionTypes = new HashMap<>();
         FailurePoint failAt;
         final IllegalStateException failure=new IllegalStateException("controlled native endpoint");
         Runnable preparation=() -> { };
@@ -337,11 +339,13 @@ class NativeItemPortalTransferTest {
                 new Answer(ServerLevel.class.getMethod("getPortalForcer"), args -> forcers.get(dimension == Level.OVERWORLD ? overworld : nether)),
                 new Answer(ServerLevel.class.getMethod("getPoiManager"), args -> pois.get(dimension == Level.OVERWORLD ? overworld : nether)),
                 new Answer(Level.class.getMethod("getWorldBorder"), args -> new net.minecraft.world.level.border.WorldBorder()),
-                new Answer(Level.class.getMethod("dimensionType"), args -> net.minecraft.data.registries.VanillaRegistries.createLookup()
+                // Memoized: native height scans (for example the End gateway exit search) call this tens of thousands of times.
+                new Answer(Level.class.getMethod("dimensionType"), args -> dimensionTypes.computeIfAbsent(dimension, ignored ->
+                    net.minecraft.data.registries.VanillaRegistries.createLookup()
                     .lookupOrThrow(net.minecraft.core.registries.Registries.DIMENSION_TYPE)
                     .getOrThrow(dimension == Level.OVERWORLD ? net.minecraft.world.level.dimension.BuiltinDimensionTypes.OVERWORLD
                         : dimension == Level.END ? net.minecraft.world.level.dimension.BuiltinDimensionTypes.END
-                        : net.minecraft.world.level.dimension.BuiltinDimensionTypes.NETHER).value()),
+                        : net.minecraft.world.level.dimension.BuiltinDimensionTypes.NETHER).value())),
                 new Answer(Level.class.getMethod("getBlockState",net.minecraft.core.BlockPos.class), args -> blockRead.apply((net.minecraft.core.BlockPos)args[0])),
                 new Answer(Level.class.getMethod("getBlockEntity",net.minecraft.core.BlockPos.class), args -> blockEntities.get(args[0])),
                 new Answer(Level.class.getMethod("setBlock",net.minecraft.core.BlockPos.class,net.minecraft.world.level.block.state.BlockState.class,int.class), args -> {
@@ -361,7 +365,7 @@ class NativeItemPortalTransferTest {
                 }),
                 new Answer(Level.class.getMethod("getNextEntityId"), args -> ++nextId),
                 new Answer(Level.class.getMethod("enabledFeatures"), args -> FeatureFlags.REGISTRY.allFlags()),
-                new Answer(Level.class.getMethod("getGameTime"), args -> 100L),
+                new Answer(Level.class.getMethod("getGameTime"), args -> gameTime),
                 new Answer(ServerLevel.class.getMethod("players"), args -> List.of()),
                 new Answer(ServerLevel.class.getMethod("resetEmptyTime"), args -> null),
                 new Answer(ServerLevel.class.getMethod("addDuringTeleport",Entity.class), args -> {
