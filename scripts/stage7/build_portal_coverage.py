@@ -3350,9 +3350,12 @@ def build_report(census: dict[str, Any], frozen: dict[str, Any], candidate_sha: 
     metadata_errors: list[dict[str, str]] = []
     ancillary: list[dict[str, Any]] = []
     for card in cards:
-        legacy = (headless_claims(card, census["rows"]) if card.evidence == "server-headless"
+        # Census-shaped cards: the server-headless runs and the real-client K1 cards of client_closeout.py.
+        census_shaped = card.evidence == "server-headless" or (
+            card.evidence == "real-client" and card.result_path.name == "headless-result.json" and CLIENT_CARD.fullmatch(card.name))
+        legacy = (headless_claims(card, census["rows"]) if census_shaped
                   else legacy_claims(card, worktree, contracts))
-        explicit, errors = explicit_claims(card) if card.evidence != "server-headless" else ([], [])
+        explicit, errors = explicit_claims(card) if not census_shaped else ([], [])
         claims.extend(legacy)
         claims.extend(explicit)
         metadata_errors.extend({"card": card.name, "path": str(card.receipt_path), "reason": error} for error in errors)
