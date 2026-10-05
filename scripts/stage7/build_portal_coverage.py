@@ -15,6 +15,7 @@ import dataclasses
 import functools
 import hashlib
 import json
+import math
 import pathlib
 import re
 import sys
@@ -1190,7 +1191,14 @@ HEADLESS_GRAPH_SCRIPT = pathlib.Path("scripts/stage7/headless_graphs.py")
 HEADLESS_DYNAMIC_SCRIPT = pathlib.Path("scripts/stage7/headless_dynamic.py")
 EFFECTS_CARD = re.compile(r"D1-([a-z_]+)-(NETHER_ENTRY|NETHER_RETURN|END_ENTRY|END_EXIT|END_GATEWAY)")
 HEADLESS_EFFECTS_SCRIPT = pathlib.Path("scripts/stage7/headless_effects.py")
+VARIANT_CARD = re.compile(
+    r"Y0-(creaking)-(heart_bound|heart_unbound)-(NETHER_ENTRY|NETHER_RETURN|END_ENTRY|END_EXIT|END_GATEWAY)")
+HEADLESS_VARIANTS_SCRIPT = pathlib.Path("scripts/stage7/headless_variants.py")
+# Where headless_variants.py stands each route's creaking_heart block (the heart-bound creaking's home_pos).
+VARIANT_HEART_AT = {"NETHER_ENTRY": (6, 65, 6), "NETHER_RETURN": (6, 65, 6), "END_ENTRY": (5, 65, 5),
+                    "END_EXIT": (5, 70, 5), "END_GATEWAY": (10, 65, 10)}
 HEADLESS_GROUPS = {"headless-census": (HEADLESS_CENSUS_SCRIPT, HEADLESS_CARD),
+                   "headless-variants": (HEADLESS_VARIANTS_SCRIPT, VARIANT_CARD),
                    "headless-graphs": (HEADLESS_GRAPH_SCRIPT, GRAPH_CARD),
                    "headless-dynamic": (HEADLESS_DYNAMIC_SCRIPT, DYNAMIC_CARD),
                    "headless-effects": (HEADLESS_EFFECTS_SCRIPT, EFFECTS_CARD)}
@@ -1447,8 +1455,10 @@ def headless_transfer_assertions(card: Card, entity_type: str, route: str) -> se
 HEADLESS_PORTAL_CELL = {"NETHER_ENTRY": (0, 65, 0), "NETHER_RETURN": (0, 65, 0), "END_ENTRY": (8, 65, 8),
                         "END_EXIT": (8, 70, 8), "END_GATEWAY": (12, 66, 8)}
 HEADLESS_MIN_DWELL_TICKS = 40
-HEADLESS_SHORT_LIVED = {"minecraft:lightning_bolt", "minecraft:evoker_fangs"}   # discard themselves within ~10-25 ticks
-HEADLESS_SHORT_DWELL_TICKS = 8
+# Self-discarding entities and the least dwell (ticks alive in the portal cell) that still proves they were processed:
+# an evoker fang lives ~20 ticks, a lightning bolt a random 3-30 (the census polls every 0.25 s, so the last snapshot can be early).
+HEADLESS_SHORT_DWELL_TICKS = {"minecraft:lightning_bolt": 2, "minecraft:evoker_fangs": 8}
+HEADLESS_SHORT_LIVED = set(HEADLESS_SHORT_DWELL_TICKS)
 HEADLESS_CONTACT_TYPES = {"minecraft:wither"}         # canUsePortal(false) rejects it AFTER the portal block visited it
 
 
@@ -1456,7 +1466,32 @@ def _single(members: Any) -> dict[str, Any] | None:
     return members[0] if (isinstance(members, list) and len(members) == 1 and isinstance(members[0], dict)) else None
 
 
-def headless_negative_assertions(card: Card, entity_type: str, route: str) -> set[str]:
+def creaking_variant_state_ok(card: Card, route: str, variant: str) -> bool:
+    """The constructed state, read back from the server: a heart-bound creaking's home_pos names a creaking_heart block
+    entity whose protector UUID is exactly this creaking (the native Creaking.isHeartBound()/isProtector relationship);
+    an unbound one carries no home_pos at all."""
+    witness = card.data.get("witness")
+    if not isinstance(witness, dict) or witness.get("variant") != variant:
+        return False
+    source_nbt = witness.get("nbtSource")
+    if not isinstance(source_nbt, str):
+        return False
+    home = re.search(r"home_pos: \[I; (-?\d+), (-?\d+), (-?\d+)\]", source_nbt)
+    if variant == "heart_unbound":
+        return home is None and "heartBlock" not in witness
+    uuid_ints = re.search(r"UUID: \[I; (-?\d+), (-?\d+), (-?\d+), (-?\d+)\]", source_nbt)
+    heart = witness.get("heartBlock")
+    if home is None or uuid_ints is None or not isinstance(heart, str):
+        return False
+    heart_pos = VARIANT_HEART_AT[route]
+    protector = re.search(r"creaking: \[I; (-?\d+), (-?\d+), (-?\d+), (-?\d+)\]", heart)
+    return (tuple(int(value) for value in home.groups()) == heart_pos
+            and f"{heart_pos[0]}, {heart_pos[1]}, {heart_pos[2]} has the following block data" in heart
+            and 'id: "minecraft:creaking_heart"' in heart
+            and protector is not None and protector.groups() == uuid_ints.groups())
+
+
+def headless_negative_assertions(card: Card, entity_type: str, route: str, variant: str | None = None) -> set[str]:
     """Server-side negative witness: the entity sat in the portal cell, was never visited/processed, and never left."""
     witness = card.data.get("witness")
     uuid = _snapshot_uuid(card.data)
@@ -1473,7 +1508,7 @@ def headless_negative_assertions(card: Card, entity_type: str, route: str) -> se
     if (source.get("object") != settled.get("object") or source.get("nativeId") != settled.get("nativeId")
             or not isinstance(source.get("ticks"), int) or not isinstance(settled.get("ticks"), int)):
         return set()
-    dwell = HEADLESS_SHORT_DWELL_TICKS if entity_type in HEADLESS_SHORT_LIVED else HEADLESS_MIN_DWELL_TICKS
+    dwell = HEADLESS_SHORT_DWELL_TICKS.get(entity_type, HEADLESS_MIN_DWELL_TICKS)
     if settled["ticks"] < dwell or settled["ticks"] <= source["ticks"]:
         return set()
     cell = HEADLESS_PORTAL_CELL[route]
@@ -1492,7 +1527,8 @@ def headless_negative_assertions(card: Card, entity_type: str, route: str) -> se
     if not isinstance(contacts, list):
         return assertions
     mine = [event for event in contacts if isinstance(event, dict) and str(event.get("uuid", "")).lower() == uuid]
-    expected_contact = entity_type in HEADLESS_CONTACT_TYPES
+    # canUsePortal(false) rejects the entity AFTER the portal block visited it: the wither, and a heart-bound creaking.
+    expected_contact = entity_type in HEADLESS_CONTACT_TYPES or variant == "heart_bound"
     visited = any(event.get("type") == entity_type and event.get("world") == source_world
                   and event.get("block") == ROUTE_PORTAL_BLOCK[route]
                   and (event.get("x"), event.get("y"), event.get("z")) == cell for event in mine)
@@ -1550,9 +1586,11 @@ def _region(value: Any) -> str | None:
     return match.group(1) if match else None
 
 
-def headless_gateway_assertions(card: Card, entity_type: str, falling: bool = False, later_optional: bool = False) -> set[str]:
+def headless_gateway_assertions(card: Card, entity_type: str, falling: bool = False, later_optional: bool = False,
+                                ends_on_impact: bool = False) -> set[str]:
     """Same-dimension End gateway witness from raw snapshots plus the probe's contact/ticket/tracking records.
 
+    `ends_on_impact` is the same relaxation for an effect projectile that ends itself on its target.
     `falling` is for a falling block: it is summoned above the gateway (the contact event proves it entered the gateway cell),
     and it lands and discards itself soon after arriving, so only the source and arrival snapshots can exist.
     """
@@ -1622,6 +1660,16 @@ def headless_gateway_assertions(card: Card, entity_type: str, falling: bool = Fa
                     and event.get("ownerContext") not in (None, "NONE")
                     and _region(event.get("ownerContext")) == destination_region for event in destination_updates)):
         assertions.update(("tracking_unique", "tracking_owner"))
+    elif ((falling or ends_on_impact) and not destination_updates and not any(
+            event.get("phase") == "TRACKING_REMOVE_RETURN"
+            or (event.get("phase") == "TRACKING_ADD_RETURN" and (event.get("chunkX"), event.get("chunkZ")) == arrival_chunk)
+            for event in every_tracking)
+            and all(event.get("object") == source["object"] and event.get("nativeId") == source["nativeId"]
+                    for event in every_tracking)):
+        # A falling block lands (and an effect projectile hits its target) within a tick or two of the teleport, so the destination chunk's tracker
+        # may never get an update before it ends. Everything the tracker did say is about the one native object, with no
+        # replacement; destination tracking ownership stays unproven (no tracking_owner).
+        assertions.add("tracking_unique")
     if {"source_owner", "gateway_ticket", "tracking_owner"} <= assertions:
         assertions.update(("destination_owner", "observer_phases"))
     return assertions
@@ -1991,17 +2039,26 @@ def effects_kind_of_row(row: dict[str, Any]) -> str | None:
                  if entity_type == row.get("entityType") and row_variant == variant), None)
 
 
-def _effects_comparable(witness: dict[str, Any]) -> Any:
-    """What a native effect leaves behind, normalised: target health to one decimal, fire/orbs as flags, the random hen of an egg dropped."""
+EFFECT_RANDOM_MAGNITUDE = {"firework_rocket"}
+
+
+def _effects_comparable(witness: dict[str, Any], coarse: bool = False) -> Any:
+    """What a native effect leaves behind, normalised: target health to one decimal, fire/orbs as flags, the random hen of an egg dropped.
+
+    `coarse` is for an effect whose native magnitude is itself random (a firework's burst): health becomes "was damaged"
+    positions are floored and the projectile's own position is ignored, so only the exhibited outcome has to match."""
     effects = witness.get("effects")
     if not isinstance(effects, dict) or not effects:
         return None
     result: dict[str, Any] = {}
     for dimension, entry in sorted(effects.items()):
         try:
-            targets = {name: (state.get("alive"), None if state.get("health") is None else round(float(state["health"]), 1),
+            targets = {name: (state.get("alive"),
+                              None if state.get("health") is None
+                              else (float(state["health"]) < 10.0 if coarse else round(float(state["health"]), 1)),
                               tuple(state.get("effects") or ()), (state.get("fire") or 0) > 0, bool(state.get("hurtBy")),
-                              tuple(state.get("pos") or ()))
+                              tuple(math.floor(value) for value in state.get("pos") or ()) if coarse
+                              else tuple(state.get("pos") or ()))
                        for name, state in sorted(entry["targets"].items())}
             owner = entry["owner"]
             projectile = entry["projectile"]
@@ -2010,7 +2067,9 @@ def _effects_comparable(witness: dict[str, Any]) -> Any:
                 "owner": (owner.get("alive"), None if owner.get("health") is None else round(float(owner["health"]), 1)),
                 "counts": {key: (value > 0 if key == "experience_orb" else value)
                            for key, value in sorted(entry["counts"].items()) if key != "chicken"},
-                "projectile": (projectile.get("alive"), tuple(round(value, 1) for value in projectile.get("pos") or ())),
+                # a rocket's flight length is random too, so only whether it is still flying is compared
+                "projectile": (projectile.get("alive"),) if coarse
+                else (projectile.get("alive"), tuple(round(value, 1) for value in projectile.get("pos") or ())),
             }
         except (KeyError, TypeError, AttributeError, ValueError):
             return None
@@ -2029,7 +2088,12 @@ def _effect_exhibited(kind: str, witness: dict[str, Any], route: str) -> bool:
     destination = witness["effects"][WORLD_LABEL[ROUTE_DESTINATION_WORLD[route]]]
     states, counts = list(targets.values()), destination.get("counts", {})
     damaged = any(_is_damaged(state) for state in states)
-    if kind in ("arrow", "fireball", "small_fireball", "wither_skull", "wind_charge", "breeze_wind_charge", "firework_rocket"):
+    if kind == "firework_rocket":
+        # In the Nether the rocket bursts on the ceiling. The End has none under 467 blocks, so the native control's rocket is
+        # still climbing at the end of the window: there the effect is "keeps flying exactly as native does" (credited only
+        # when Phoenium matches the control, a documented native-equal limit like the shulker bullet).
+        return damaged or (route in ("END_ENTRY", "END_EXIT", "END_GATEWAY") and destination.get("projectile", {}).get("alive") is True)
+    if kind in ("arrow", "fireball", "small_fireball", "wither_skull", "wind_charge", "breeze_wind_charge"):
         return damaged
     if kind == "spectral_arrow":
         return any("glowing" in (state.get("effects") or ()) for state in states)
@@ -2039,7 +2103,9 @@ def _effect_exhibited(kind: str, witness: dict[str, Any], route: str) -> bool:
     if kind == "dragon_fireball":
         return counts.get("area_effect_cloud", 0) >= 1
     if kind in ("egg", "snowball"):
-        return damaged or any(state.get("hurtBy") for state in states)
+        # a zero-damage throwable leaves no mark on the target; the native impact is the projectile being consumed (it would
+        # otherwise fly on forever under NoGravity), and Phoenium must be consumed identically (see _effects_comparable)
+        return damaged or any(state.get("hurtBy") for state in states) or destination.get("projectile", {}).get("alive") is False
     if kind == "splash_potion":
         return any("poison" in (state.get("effects") or ()) for state in states)
     if kind == "lingering_potion":
@@ -2114,8 +2180,15 @@ def headless_effects_claims(card: Card, rows: list[dict[str, Any]] | None) -> li
     uuid = _snapshot_uuid(card.data)
     if not isinstance(control_witness, dict) or control.get("outcome") != "TRANSFERRED" or uuid is None:
         return []
-    own, native = _effects_comparable(witness), _effects_comparable(control_witness)
-    if own is None or native is None or own != native or witness.get("armedAt") != control_witness.get("armedAt"):
+    coarse = kind in EFFECT_RANDOM_MAGNITUDE
+    own, native = _effects_comparable(witness, coarse), _effects_comparable(control_witness, coarse)
+    if own is None or native is None or own != native:
+        return []
+    own_armed, native_armed = witness.get("armedAt"), control_witness.get("armedAt")
+    if coarse and isinstance(own_armed, list) and isinstance(native_armed, list):
+        # a rocket is armed while it is already climbing, so the exact armed position is timing noise
+        own_armed, native_armed = ([math.floor(value) for value in position] for position in (own_armed, native_armed))
+    if own_armed != native_armed:
         return []
     if not _effect_exhibited(kind, control_witness, route):
         return []
@@ -2124,7 +2197,7 @@ def headless_effects_claims(card: Card, rows: list[dict[str, Any]] | None) -> li
     if "fuse_preserved" in effect_assertions and _fuse_preserved(witness, control_witness):
         assertions.add("fuse_preserved")
     if gateway:
-        assertions |= headless_gateway_assertions(card, entity_type, later_optional=kind in EFFECT_SHORT_LIVED)
+        assertions |= headless_gateway_assertions(card, entity_type, later_optional=kind in EFFECT_SHORT_LIVED, ends_on_impact=True)
         needed = REQUIRED_SAME_DIMENSION_ASSERTIONS
     else:
         assertions |= _dynamic_trace_assertions(card, route, uuid, entity_type)
@@ -2164,10 +2237,17 @@ def headless_claims(card: Card, rows: list[dict[str, Any]] | None = None) -> lis
                          observedOutcome=outcome, assertions=assertions, basicObservation=True, scope="row",
                          headlessOwner=True, sameDimensionGateway=route == "END_GATEWAY")]
         return []
+    state_variant = None
     match = HEADLESS_CARD.fullmatch(card.name)
-    if card.evidence != "server-headless" or match is None:
+    variant_match = VARIANT_CARD.fullmatch(card.name)
+    if card.evidence != "server-headless" or (match is None and variant_match is None):
         return []
-    kind, route = match.groups()
+    if variant_match is not None:
+        kind, state_variant, route = variant_match.groups()
+        if not creaking_variant_state_ok(card, route, state_variant):
+            return []
+    else:
+        kind, route = match.groups()
     entity_type = "minecraft:" + kind
     outcome = card.data.get("outcome")
     # Negative (no-entry) claims are gated by the row's pinned-source proof; transfers need a plain family contract.
@@ -2182,7 +2262,8 @@ def headless_claims(card: Card, rows: list[dict[str, Any]] | None = None) -> lis
         if family == "vehicle":
             needed |= required_assertions({"entityType": entity_type, "route": route}, "SAME_DIMENSION_TRANSFER")
         if needed <= assertions:
-            return [dict(card=card, entityType=entity_type, route=route, variant=None, graph="standalone",
+            return [dict(card=card, entityType=entity_type, route=route, variant=state_variant, stateVariant=state_variant,
+                         graph="standalone",
                          observedOutcome="SAME_DIMENSION_TRANSFER", assertions=assertions, basicObservation=True,
                          scope="row", sameDimensionGateway=True, headlessOwner=OWNER_ASSERTIONS <= assertions)]
         return []
@@ -2195,8 +2276,27 @@ def headless_claims(card: Card, rows: list[dict[str, Any]] | None = None) -> lis
             needed |= required_assertions({"entityType": entity_type, "route": route}, "TRANSFER") - OWNER_ASSERTIONS \
                 - {"destination_owner"}
         if needed <= assertions:
-            return [dict(card=card, entityType=entity_type, route=route, variant=None, graph="standalone",
+            return [dict(card=card, entityType=entity_type, route=route, variant=state_variant, stateVariant=state_variant,
+                         graph="standalone",
                          observedOutcome="TRANSFER", assertions=assertions, basicObservation=True, scope="row")]
+        return []
+    if state_variant == "heart_bound" and outcome == "STAYED":
+        row = next((candidate for candidate in rows or [] if candidate.get("entityType") == entity_type
+                    and candidate.get("route") == route and candidate.get("variant") == state_variant
+                    and candidate.get("graph", "standalone") == "standalone"), None)
+        proof = row.get("sourceProof") if isinstance(row, dict) else None
+        if not isinstance(proof, dict) or row.get("expectedNativeOutcome") != "REFUSAL":
+            return []
+        negative = headless_negative_assertions(card, entity_type, route, state_variant)
+        if not {"source_unchanged", "destination_absent", "portal_session_absent", "graph_unchanged"} <= negative:
+            return []
+        assertions = set(negative) | {"source_unchanged_or_safely_retired", "no_destination_entity", "no_stuck_session"}
+        applicability = {"sourceProofKind": proof.get("kind"), "sourceJarSha256": proof.get("sourceJarSha256"),
+                         "mappedBinarySha256": proof.get("mappedBinarySha256")}
+        return [dict(card=card, entityType=entity_type, route=route, variant=state_variant, stateVariant=state_variant,
+                     graph="standalone", observedOutcome="REFUSAL", applicability=applicability, assertions=assertions,
+                     basicObservation=True, scope="row", stateConstructed=True)]
+    if state_variant is not None:
         return []
     if outcome in ("STAYED", "GONE"):
         row = next((candidate for candidate in rows or [] if candidate.get("entityType") == entity_type
@@ -2376,6 +2476,9 @@ def claim_matches(row: dict[str, Any], claim: dict[str, Any]) -> bool:
                 or applicability.get("mappedBinarySha256") != proof.get("mappedBinarySha256")):
             return False
     variant = row.get("variant")
+    if claim.get("stateVariant") is not None:
+        # A state-variant card (heart-bound creaking...) credits ONLY the row of exactly that state, never the plain row.
+        return variant == claim["stateVariant"]
     return variant in (None, "") or variant == claim.get("variant")
 
 
@@ -2389,6 +2492,7 @@ def apply_claims(row: dict[str, Any], claims: list[dict[str, Any]], candidate_sh
     assertions: set[str] = set()
     basic_by_worker: set[int] = set()
     owner_by_worker: set[int] = set()
+    state_by_worker: set[int] = set()
     for claim in claims:
         if not claim_matches(row, claim):
             continue
@@ -2405,6 +2509,8 @@ def apply_claims(row: dict[str, Any], claims: list[dict[str, Any]], candidate_sh
         assertions.update(verified_assertions)
         if claim["basicObservation"]:
             basic_by_worker.add(card.workers)
+        if claim.get("stateConstructed"):
+            state_by_worker.add(card.workers)
         if OWNER_ASSERTIONS <= verified_assertions:
             owner_by_worker.add(card.workers)
     row["receipts"] = receipts
@@ -2422,6 +2528,16 @@ def apply_claims(row: dict[str, Any], claims: list[dict[str, Any]], candidate_sh
         row["sourceProof"]["applicabilityDemonstrated"] = True
         row["eligibility"]["resolvedForFixture"] = True
         row["fixture"]["constructed"] = True
+    if (expected == "REFUSAL" and row.get("variant") == "heart_bound" and state_by_worker == {1, 4}
+            and observed == {"REFUSAL"} and isinstance(row.get("sourceProof"), dict)
+            and native_control_valid(row, source_sha, binary_sha)):
+        # The state the pinned proof is conditional on (Creaking.isHeartBound()) was constructed and read back on W1 and W4,
+        # and the native control observed the same refusal for the same state.
+        row["sourceProof"]["applicabilityDemonstrated"] = True
+        if isinstance(row.get("fixture"), dict):
+            row["fixture"]["constructed"] = True
+        if isinstance(row.get("eligibility"), dict):
+            row["eligibility"]["resolvedForFixture"] = True
     reasons = []
     if expected not in OUTCOMES:
         reasons.append("native outcome unresolved or invalid")
@@ -2454,6 +2570,9 @@ def apply_claims(row: dict[str, Any], claims: list[dict[str, Any]], candidate_sh
                 reasons.append("missing semantic assertions: " + ", ".join(sorted(missing)))
             if expected in ("REFUSAL", "NO_NATIVE_ENTRY_PATH", "ROUTE_NOT_APPLICABLE") and not proof:
                 reasons.append("missing applicable pinned native source proof")
+            if (expected == "REFUSAL" and row.get("variant") == "heart_bound"
+                    and not native_control_valid(row, source_sha, binary_sha)):
+                reasons.append("missing native control receipt for the constructed state")
             if (expected in ("TRANSFER", "SAME_DIMENSION_TRANSFER") and row.get("nativeControlReceipt") is not None
                     and not native_control_valid(row, source_sha, binary_sha)):
                 reasons.append("native control receipt does not match the native outcome")
@@ -2538,7 +2657,7 @@ def validate_census(census: dict[str, Any], frozen: dict[str, Any], source_sha: 
                         or inputs.get("vanilla") is not True):
                     raise ValueError(f"headless native control files changed: {row.get('id')}")
                 cards = {item.get("card"): item.get("outcome") for item in read_json(receipt_path).get("cards", [])}
-                if {"TRANSFER": "TRANSFERRED", "SAME_DIMENSION_TRANSFER": "TRANSFERRED"}.get(
+                if {"TRANSFER": "TRANSFERRED", "SAME_DIMENSION_TRANSFER": "TRANSFERRED", "REFUSAL": "STAYED"}.get(
                         control.get("observedOutcome")) != cards.get(control["card"]):
                     raise ValueError(f"headless native control card outcome mismatch: {row.get('id')}")
 
@@ -2567,7 +2686,7 @@ def build_report(census: dict[str, Any], frozen: dict[str, Any], candidate_sha: 
         observed_owner = (OWNER_ASSERTIONS.copy() if claim.get("headlessOwner") else
                           OWNER_ASSERTIONS.copy() if claim.get("sameDimensionGateway")
                           and OWNER_ASSERTIONS <= gateway_pig_assertions(claim["card"]) else
-                          set() if claim.get("observedOutcome") == "NO_NATIVE_ENTRY_PATH" else
+                          set() if claim.get("observedOutcome") in ("NO_NATIVE_ENTRY_PATH", "REFUSAL") else
                           observer_assertions(claim["card"], claim["entityType"], claim["route"])
                           if isinstance(claim["entityType"], str) else
                           graph_observer_assertions(claim["card"], claim["route"])

@@ -57,7 +57,10 @@ def load_control(run: pathlib.Path, source_sha: str, binary_sha: str) -> dict[tu
         graph = GRAPH_CARD.fullmatch(card["card"])
         falling = FALLING_CARD.fullmatch(card["card"])
         effects = coverage.EFFECTS_CARD.fullmatch(card["card"])
-        if falling:
+        variant = coverage.VARIANT_CARD.fullmatch(card["card"])
+        if variant:
+            kind, route = f"variant:{variant.group(1)}:{variant.group(2)}", variant.group(3)
+        elif falling:
             kind, route = "falling:" + falling.group(1), falling.group(2)
         elif effects:
             kind, route = "effects:" + effects.group(1), effects.group(2)
@@ -137,6 +140,29 @@ def main(argv: list[str] | None = None) -> int:
             pending.append({"id": row["id"], "controlOutcomes": sorted({outcome for outcome, _ in fx_observed or []})})
             continue
         falling = row.get("entityType") == "minecraft:falling_block" and row.get("graph", "standalone") == "standalone"
+        state_card = (row.get("entityType") == "minecraft:creaking" and row.get("graph", "standalone") == "standalone"
+                      and row.get("variant") in ("heart_bound", "heart_unbound"))
+        if state_card:
+            observed = controls.get((f"variant:creaking:{row['variant']}", row["route"]))
+            if not observed:
+                continue
+            outcomes = {outcome for outcome, _ in observed}
+            card_name = f"Y0-creaking-{row['variant']}-{row['route']}"
+            if row["variant"] == "heart_bound" and row.get("expectedNativeOutcome") == "REFUSAL":
+                if outcomes == {"STAYED"}:
+                    row["nativeControlReceipt"] = receipt_of(observed[0][1], card_name, "REFUSAL")
+                    classified += 1
+                else:
+                    conflicts.append({"id": row["id"], "expected": "REFUSAL", "controlOutcomes": sorted(outcomes)})
+            elif row["variant"] == "heart_unbound" and row.get("expectedNativeOutcome") is None:
+                if outcomes == {"TRANSFERRED"}:
+                    verdict = "SAME_DIMENSION_TRANSFER" if row["route"] == "END_GATEWAY" else "TRANSFER"
+                    row["expectedNativeOutcome"] = verdict
+                    row["nativeControlReceipt"] = receipt_of(observed[0][1], card_name, verdict)
+                    classified += 1
+                else:
+                    pending.append({"id": row["id"], "controlOutcomes": sorted(outcomes)})
+            continue
         if row.get("variant") not in (None, "") and not falling:
             continue
         if falling:
@@ -182,6 +208,19 @@ def main(argv: list[str] | None = None) -> int:
                 classified += 1
             else:
                 pending.append({"id": row["id"], "controlOutcomes": sorted(outcomes)})
+        elif (falling and expected in ("TRANSFER", "SAME_DIMENSION_TRANSFER") and outcomes == {"TRANSFERRED"}
+              and row.get("nativeControlReceipt") is None):
+            # A legacy falling row whose native outcome the census already fixed: bind it to the control that observed it.
+            run_name = observed[0][1]
+            result_path = out / "native-controls" / run_name / "headless-result.json"
+            row["nativeControlReceipt"] = {
+                "sourceJarSha256": source_sha, "mappedBinarySha256": binary_sha, "observedOutcome": expected,
+                "path": f"native-controls/{run_name}/headless-result.json", "sha256": digest(result_path),
+                "card": f"D0-falling-{key[0].removeprefix('falling:')}-{key[1]}",
+                "receiptSha256": digest(result_path.with_name("headless-receipt.json")),
+                "inputsSha256": digest(result_path.with_name("inputs.json")),
+            }
+            classified += 1
         elif expected == "TRANSFER" and outcomes != {"TRANSFERRED"}:
             conflicts.append({"id": row["id"], "expected": expected, "controlOutcomes": sorted(outcomes)})
         elif expected in ("NO_NATIVE_ENTRY_PATH", "REFUSAL") and outcomes == {"TRANSFERRED"}:

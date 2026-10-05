@@ -192,6 +192,9 @@ class HeadlessNegativeTests(unittest.TestCase):
         self.assertEqual(self.negative(replaced), set())
         self.assertEqual(self.negative(stay_witness(ticks=10)), set())
         self.assertNotEqual(self.negative(stay_witness("lightning_bolt", ticks=10), "lightning_bolt"), set())
+        self.assertNotEqual(self.negative(stay_witness("lightning_bolt", ticks=2), "lightning_bolt"), set())
+        self.assertEqual(self.negative(stay_witness("lightning_bolt", ticks=1), "lightning_bolt"), set())
+        self.assertEqual(self.negative(stay_witness("evoker_fangs", ticks=5), "evoker_fangs"), set())
         session = stay_witness()
         session["settled"][0]["portalProcessPresent"] = True
         self.assertEqual(self.negative(session), set())
@@ -223,6 +226,95 @@ class HeadlessNegativeTests(unittest.TestCase):
             self.assertEqual(coverage.headless_discard_assertions(card, "minecraft:llama_spit", "END_EXIT"), set())
         card = make_card(self.dir, "E0-llama_spit-END_EXIT", "GONE", gone, [trace_event("CAPTURED")])
         self.assertEqual(coverage.headless_discard_assertions(card, "minecraft:llama_spit", "END_EXIT"), set())
+
+
+CREAKING_UUID_INTS = "[I; 31249, 0, 1, 1]"
+
+
+def creaking_variant_witness(variant: str, route: str = "NETHER_ENTRY", contact: bool = True) -> dict:
+    witness = stay_witness("creaking")
+    heart_at = coverage.VARIANT_HEART_AT[route]
+    nbt = "Creaking has the following entity data: {UUID: [I; 31249, 0, 1, 1], Health: 1.0f"
+    witness["variant"] = variant
+    if variant == "heart_bound":
+        nbt += ", home_pos: [I; %d, %d, %d]" % heart_at
+        witness["heartBlock"] = ("%d, %d, %d has the following block data: {creaking: %s, id: \"minecraft:creaking_heart\"}"
+                                 % (heart_at + (CREAKING_UUID_INTS,)))
+        if contact:
+            witness["noEntryContactEvents"] = [{"uuid": UUID, "type": "minecraft:creaking", "world": "minecraft:overworld",
+                                                "block": "minecraft:nether_portal", "x": 0, "y": 65, "z": 0}]
+    witness["nbtSource"] = nbt + "}"
+    return witness
+
+
+class CreakingVariantTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.temp = tempfile.TemporaryDirectory()
+        self.dir = pathlib.Path(self.temp.name)
+
+    def tearDown(self) -> None:
+        self.temp.cleanup()
+
+    def card(self, variant: str, witness: dict, outcome: str, route: str = "NETHER_ENTRY") -> coverage.Card:
+        return make_card(self.dir, f"Y0-creaking-{variant}-{route}", outcome, witness, [], "creaking")
+
+    def rows(self, variant: str, expected: str, route: str = "NETHER_ENTRY") -> list[dict]:
+        row = {"entityType": "minecraft:creaking", "route": route, "variant": variant, "graph": "standalone",
+               "expectedNativeOutcome": expected}
+        if expected == "REFUSAL":
+            row["sourceProof"] = {"kind": "canUsePortal_false_when_heart_bound", "sourceJarSha256": "1" * 64,
+                                  "mappedBinarySha256": "2" * 64}
+            row["requiredAssertions"] = ["source_unchanged_or_safely_retired", "no_destination_entity", "no_stuck_session"]
+        return [row]
+
+    def test_the_state_is_read_back_from_the_server_not_assumed(self) -> None:
+        bound = creaking_variant_witness("heart_bound")
+        self.assertTrue(coverage.creaking_variant_state_ok(self.card("heart_bound", bound, "STAYED"), "NETHER_ENTRY", "heart_bound"))
+        unbound = creaking_variant_witness("heart_unbound")
+        self.assertTrue(coverage.creaking_variant_state_ok(self.card("heart_unbound", unbound, "TRANSFERRED"), "NETHER_ENTRY",
+                                                           "heart_unbound"))
+        stray_home = creaking_variant_witness("heart_bound")
+        stray_home["nbtSource"] = stray_home["nbtSource"].replace("home_pos: [I; 6, 65, 6]", "home_pos: [I; 7, 65, 6]")
+        other_protector = creaking_variant_witness("heart_bound")
+        other_protector["heartBlock"] = other_protector["heartBlock"].replace("31249", "31250")
+        no_heart = creaking_variant_witness("heart_bound")
+        del no_heart["heartBlock"]
+        homed_but_unbound = creaking_variant_witness("heart_unbound")
+        homed_but_unbound["nbtSource"] = homed_but_unbound["nbtSource"][:-1] + ", home_pos: [I; 6, 65, 6]}"
+        for forged in (stray_home, other_protector, no_heart):
+            self.assertFalse(coverage.creaking_variant_state_ok(self.card("heart_bound", forged, "STAYED"), "NETHER_ENTRY",
+                                                                "heart_bound"))
+        self.assertFalse(coverage.creaking_variant_state_ok(self.card("heart_unbound", homed_but_unbound, "TRANSFERRED"),
+                                                            "NETHER_ENTRY", "heart_unbound"))
+        self.assertFalse(coverage.creaking_variant_state_ok(self.card("heart_unbound", bound, "STAYED"), "NETHER_ENTRY", "heart_unbound"))
+
+    def test_a_constructed_bound_creaking_that_stays_after_visiting_the_portal_is_a_refusal_claim(self) -> None:
+        card = self.card("heart_bound", creaking_variant_witness("heart_bound"), "STAYED")
+        claims = coverage.headless_claims(card, self.rows("heart_bound", "REFUSAL"))
+        self.assertEqual(len(claims), 1)
+        self.assertEqual(claims[0]["observedOutcome"], "REFUSAL")
+        self.assertTrue(claims[0]["stateConstructed"])
+        self.assertTrue({"source_unchanged_or_safely_retired", "no_destination_entity", "no_stuck_session"} <= claims[0]["assertions"])
+
+    def test_no_portal_visit_or_no_proof_row_or_unconstructed_state_is_not_a_refusal(self) -> None:
+        unvisited = self.card("heart_bound", creaking_variant_witness("heart_bound", contact=False), "STAYED")
+        self.assertEqual(coverage.headless_claims(unvisited, self.rows("heart_bound", "REFUSAL")), [])
+        card = self.card("heart_bound", creaking_variant_witness("heart_bound"), "STAYED")
+        self.assertEqual(coverage.headless_claims(card, self.rows("heart_bound", "NO_NATIVE_ENTRY_PATH")), [])
+        self.assertEqual(coverage.headless_claims(card, []), [])
+        lying = creaking_variant_witness("heart_bound")
+        del lying["heartBlock"]
+        self.assertEqual(coverage.headless_claims(self.card("heart_bound", lying, "STAYED"), self.rows("heart_bound", "REFUSAL")), [])
+
+    def test_a_state_card_credits_exactly_its_own_row_and_never_the_plain_creaking_row(self) -> None:
+        card = self.card("heart_bound", creaking_variant_witness("heart_bound"), "STAYED")
+        claim = coverage.headless_claims(card, self.rows("heart_bound", "REFUSAL"))[0]
+        bound_row, = self.rows("heart_bound", "REFUSAL")
+        plain_row = dict(bound_row, variant=None)
+        other_state = dict(bound_row, variant="heart_unbound")
+        self.assertTrue(coverage.claim_matches(bound_row, claim))
+        self.assertFalse(coverage.claim_matches(plain_row, claim))
+        self.assertFalse(coverage.claim_matches(other_state, claim))
 
 
 def gateway_witness() -> dict:
@@ -276,6 +368,38 @@ class HeadlessGatewayTests(unittest.TestCase):
         removed = gateway_witness()
         removed["gateway"]["tracking"].append(dict(removed["source"][0], phase="TRACKING_REMOVE_RETURN"))
         self.assertNotIn("tracking_unique", self.gateway(removed))
+
+    def test_a_falling_block_that_lands_before_a_destination_update_keeps_tracking_unique_without_owner(self) -> None:
+        witness = gateway_witness()
+        witness["later"] = []
+        witness["gateway"]["tracking"] = [dict(witness["source"][0], phase="TRACKING_UPDATE_RETURN", chunkX=0, chunkZ=0,
+                                               ownerWorld="minecraft:the_end",
+                                               ownerContext=witness["gateway"]["tracking"][0]["ownerContext"])]
+        card = make_card(self.dir, "D0-falling-sand-END_GATEWAY", "TRANSFERRED", witness, [])
+        falling = coverage.headless_gateway_assertions(card, "minecraft:pig", falling=True)
+        self.assertIn("tracking_unique", falling)
+        self.assertNotIn("tracking_owner", falling)
+        self.assertNotIn("tracking_unique", coverage.headless_gateway_assertions(card, "minecraft:pig"))
+        removed = dict(witness, gateway=dict(witness["gateway"], tracking=witness["gateway"]["tracking"] + [
+            dict(witness["source"][0], phase="TRACKING_REMOVE_RETURN")]))
+        card = make_card(self.dir, "D0-falling-sand-END_GATEWAY", "TRANSFERRED", removed, [])
+        self.assertNotIn("tracking_unique", coverage.headless_gateway_assertions(card, "minecraft:pig", falling=True))
+
+    def test_an_effect_that_ends_on_impact_keeps_tracking_unique_without_a_destination_update(self) -> None:
+        witness = gateway_witness()
+        witness["later"] = [dict(witness["arrival"][0], ticks=40)]
+        witness["gateway"]["tracking"] = witness["gateway"]["tracking"][:1]
+        card = make_card(self.dir, "D1-egg-END_GATEWAY", "TRANSFERRED", witness, [])
+        plain = coverage.headless_gateway_assertions(card, "minecraft:pig")
+        self.assertNotIn("tracking_unique", plain)
+        impact = coverage.headless_gateway_assertions(card, "minecraft:pig", ends_on_impact=True)
+        self.assertIn("tracking_unique", impact)
+        self.assertNotIn("tracking_owner", impact)
+        self.assertNotIn("destination_owner", impact)
+        replaced = dict(witness, gateway=dict(witness["gateway"], tracking=witness["gateway"]["tracking"] + [
+            dict(witness["source"][0], phase="TRACKING_REMOVE_RETURN")]))
+        card = make_card(self.dir, "D1-egg-END_GATEWAY", "TRANSFERRED", replaced, [])
+        self.assertNotIn("tracking_unique", coverage.headless_gateway_assertions(card, "minecraft:pig", ends_on_impact=True))
 
     def test_repeated_gateway_contact_and_a_short_vehicle_cooldown_are_credited(self) -> None:
         witness = gateway_witness()
@@ -897,6 +1021,37 @@ class HeadlessEffectsTests(unittest.TestCase):
         self.assertEqual(len(self.claims("egg", hurt_only, hurt_only)), 1)
         orbs = fx_witness("experience_bottle", damage=False, counts={"experience_orb": 3})
         self.assertEqual(len(self.claims("experience_bottle", orbs, orbs)), 1)
+
+    def test_firework_burst_is_compared_by_outcome_not_by_random_magnitude(self) -> None:
+        own, native = fx_witness("firework_rocket", owner=""), fx_witness("firework_rocket", owner="")
+        native["effects"]["nether"]["targets"]["t0"] = fx_state(health=7.1, pos=(0.5, 65.1, 2.5))
+        own["effects"]["nether"]["targets"]["t0"] = fx_state(health=6.9, pos=(0.5, 65.2, 2.5))
+        self.assertEqual(len(self.claims("firework_rocket", own, native)), 1)
+        arrow_own, arrow_native = fx_witness(), fx_witness()
+        arrow_native["effects"]["nether"]["targets"]["t0"] = fx_state(health=7.1, pos=(0.5, 65.1, 2.5))
+        arrow_own["effects"]["nether"]["targets"]["t0"] = fx_state(health=6.9, pos=(0.5, 65.2, 2.5))
+        self.assertEqual(self.claims("arrow", arrow_own, arrow_native), [])
+        undamaged = fx_witness("firework_rocket", owner="", damage=False)
+        self.assertEqual(self.claims("firework_rocket", undamaged, native), [])
+
+    def test_a_consumed_egg_or_snowball_is_the_native_impact_and_must_match(self) -> None:
+        for kind in ("egg", "snowball"):
+            consumed = fx_witness(kind, damage=False, projectile_alive=False)
+            self.assertEqual(len(self.claims(kind, consumed, consumed)), 1, kind)
+            flying = fx_witness(kind, damage=False, projectile_alive=True)
+            self.assertEqual(self.claims(kind, flying, flying), [], kind)
+            self.assertEqual(self.claims(kind, flying, consumed), [], kind)
+            self.assertEqual(self.claims(kind, consumed, flying), [], kind)
+
+    def test_an_end_firework_that_never_bursts_is_credited_only_when_it_flies_on_like_the_control(self) -> None:
+        for route in ("END_ENTRY", "END_EXIT"):
+            native = fx_witness("firework_rocket", owner="", damage=False, route=route, projectile_alive=True)
+            self.assertEqual(len(self.claims("firework_rocket", native, native, route=route)), 1, route)
+            burst = fx_witness("firework_rocket", owner="", damage=False, route=route, projectile_alive=False)
+            self.assertEqual(self.claims("firework_rocket", burst, native, route=route), [], route)
+            self.assertEqual(self.claims("firework_rocket", native, burst, route=route), [], route)
+        nether = fx_witness("firework_rocket", owner="", damage=False, projectile_alive=True)
+        self.assertEqual(self.claims("firework_rocket", nether, nether), [])
 
     def test_tnt_fuse_must_continue_not_reset(self) -> None:
         good = fx_witness("tnt", owner="", fuse=(160, 158, 118), counts={"tnt": 0})
