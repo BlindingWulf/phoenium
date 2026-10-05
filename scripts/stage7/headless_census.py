@@ -24,7 +24,13 @@ candidate = pathlib.Path(sys.argv[3])
 census = sys.argv[4]
 types = next((a.partition('=')[2].split(',') for a in sys.argv if a.startswith('--types=')), None)
 routes = next((a.partition('=')[2].split(',') for a in sys.argv if a.startswith('--routes=')), ['NETHER_ENTRY', 'NETHER_RETURN', 'END_ENTRY', 'END_EXIT', 'END_GATEWAY'])
-noentry_tag = '' if os.environ.get('HC_NO_NOENTRY_TAG') else ',"stage7_noentry_h"'   # probe contact observer opt-in
+# The probe's no-entry contact observer is opt-in per entity tag; tag only the (type, route) pairs a previous native control saw STAY.
+noentry_pairs = set()
+for arg in sys.argv:
+    if arg.startswith('--noentry-from='):
+        for prior in json.loads(pathlib.Path(arg.partition('=')[2]).read_text())['cards']:
+            if prior['outcome'] == 'STAYED':
+                noentry_pairs.add(re.fullmatch(r'E0-([a-z_]+)-([A-Z_]+)', prior['card']).groups())
 vanilla = '--vanilla' in sys.argv   # Phoenium-free native control: empty mods directory, same fixture
 ports = dict(java=25687, bedrock=19187, rcon=25787) if vanilla else dict(java=25686, bedrock=19186, rcon=25786)
 run = audit / 'installed' / name
@@ -137,7 +143,7 @@ card_list = [c for c in census.split(',') if selected(c)]
 test_sources = {str(q.relative_to(work)): sha(q) for base in [work / 'src/clientGameTest', work / 'src/test/java/dev/phoenium/stage7repair', work / 'src/stage7RepairHarness']
                 for q in base.rglob('*') if q.is_file()}
 test_sources[str(script_path.relative_to(work))] = sha(script_path)
-inputs = dict(candidate=str(immutable), candidateSha256=digest, probeSha256=None if vanilla else sha(probe), workers=workers, vanilla=vanilla,
+inputs = dict(noentryFrom=next((a.partition('=')[2] for a in sys.argv if a.startswith('--noentry-from=')), None), noentryPairs=sorted('%s-%s' % pair for pair in noentry_pairs), candidate=str(immutable), candidateSha256=digest, probeSha256=None if vanilla else sha(probe), workers=workers, vanilla=vanilla,
               group='headless-census', cards=card_list, census=census, routes=routes, headless=True, evidence='server-headless',
               censusScriptSha256=sha(script_path), testSourceHashes=test_sources,
               head=subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=work, text=True).strip(),
@@ -227,7 +233,7 @@ try:
                         rcon('execute in ' + src + ' run ' + c)
                     end_ready.add((src, y))
                 at = '8.5 %d.25 8.5' % y
-            summon = rcon('execute in %s run summon minecraft:%s %s {Tags:["stage7_mob"%s,"%s"],NoGravity:1b%s}' % (src, etype, at, noentry_tag, tag, NBT.get(etype, '')))
+            summon = rcon('execute in %s run summon minecraft:%s %s {Tags:["stage7_mob"%s,"%s"],NoGravity:1b%s}' % (src, etype, at, ',"stage7_noentry_h"' if (etype, route) in noentry_pairs else '', tag, NBT.get(etype, '')))
             outcome = 'GONE' if fixture_ok else 'FIXTURE_INVALID'; where = 'NONE'
             witness = {}
             if fixture_ok: witness['source'] = snapshot_members(tag)

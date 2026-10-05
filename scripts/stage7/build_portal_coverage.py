@@ -248,12 +248,14 @@ class Card:
     result_data: dict[str, Any] = dataclasses.field(default_factory=dict)
     receipt_data: dict[str, Any] = dataclasses.field(default_factory=dict)
     inputs_data: dict[str, Any] = dataclasses.field(default_factory=dict)
+    evidence: str = "real-client"
 
     def reference(self, assertions: set[str] | None = None, scope: str = "row") -> dict[str, Any]:
         return {
             "card": self.name,
             "workers": self.workers,
             "phase": self.phase,
+            "evidence": self.evidence,
             "scope": scope,
             "assertions": sorted(assertions or set()),
             "resultPath": str(self.result_path),
@@ -290,6 +292,8 @@ def scan_installed(
                 continue
             seen.add(result_path)
             phase = result_path.name.removesuffix("-result.json")
+            if phase == "headless":
+                continue
             receipt_path = result_path.with_name(f"{phase}-client-receipt.json")
             inputs_path = result_path.with_name("inputs.json")
             reason = None
@@ -1170,6 +1174,204 @@ def legacy_claims(card: Card, worktree: pathlib.Path, contracts: dict[str, str])
     return claims
 
 
+# ---------------------------------------------------------------------------------------------------------------
+# Server-headless evidence (scripts/stage7/headless_census.py, schema stage7-headless-receipt-v1).
+#
+# These runs have a real final-byte Phoenium server, the pinned probe/observer and an RCON driver, but NO client.
+# They are therefore honest evidence only for assertions a server can witness (source/destination snapshots, owner
+# phases, tracking admissions, post-arrival ticks). They can never witness client_tracking, client_playable or
+# native_pickup, and every row they credit is labelled "server-headless" in its receipts.
+# ---------------------------------------------------------------------------------------------------------------
+HEADLESS_CARD = re.compile(r"E0-([a-z_]+)-(NETHER_ENTRY|NETHER_RETURN|END_ENTRY|END_EXIT|END_GATEWAY)")
+HEADLESS_CENSUS_SCRIPT = pathlib.Path("scripts/stage7/headless_census.py")
+HEADLESS_OUTCOMES = {"TRANSFERRED", "STAYED", "GONE", "FIXTURE_INVALID"}
+HEADLESS_PHASES = ("SOURCE_RETIRING", "SOURCE_RETIRED", "ADD_DURING_TELEPORT_HEAD", "CHUNK_MAP_TRACKING_HEAD",
+                   "CHUNK_MAP_TRACKING_RETURN", "ADD_DURING_TELEPORT_RETURN")
+# Types whose rows need family-specific semantics (pickup, landing, fuse, impact, vehicle state, inventory);
+# the generic server-headless contract below never credits them.
+HEADLESS_SPECIAL_TYPES = {"minecraft:player", "minecraft:item", "minecraft:falling_block", "minecraft:tnt",
+                          "minecraft:fishing_bobber", *PROJECTILE_REQUIREMENTS}
+
+
+def headless_family(entity_type: str) -> str | None:
+    name = entity_type.rsplit(":", 1)[-1]
+    if entity_type in HEADLESS_SPECIAL_TYPES or "boat" in name or "raft" in name or "minecart" in name:
+        return None
+    return "plain"
+
+
+def _snapshot_uuid(card_data: dict[str, Any]) -> str | None:
+    witness = card_data.get("witness")
+    if not isinstance(witness, dict):
+        return None
+    for key in ("arrival", "settled", "source"):
+        members = witness.get(key)
+        if isinstance(members, list) and len(members) == 1 and isinstance(members[0], dict):
+            found = members[0].get("uuid")
+            if isinstance(found, str) and re.fullmatch(r"[0-9a-fA-F-]{36}", found):
+                return found.lower()
+    return None
+
+
+def scan_headless(roots: list[pathlib.Path], candidate_sha: str, worktree: pathlib.Path
+                  ) -> tuple[list[Card], list[dict[str, str]]]:
+    """Read headless census runs and return one Card per recorded census card."""
+    cards: list[Card] = []
+    rejected: list[dict[str, str]] = []
+    script = worktree.joinpath(*HEADLESS_CENSUS_SCRIPT.parts)
+    script_sha = digest(script) if script.is_file() else ""
+    for root in roots:
+        for result_path in sorted(root.glob("*/headless-result.json")):
+            receipt_path = result_path.with_name("headless-receipt.json")
+            inputs_path = result_path.with_name("inputs.json")
+            reason = None
+            try:
+                result, receipt, inputs = (read_json(path) for path in (result_path, receipt_path, inputs_path))
+                if not all(isinstance(doc, dict) for doc in (result, receipt, inputs)):
+                    reason = "malformed result, receipt, or inputs"
+                elif inputs.get("vanilla") is True:
+                    continue  # a Phoenium-free native control, consumed by classify_census.py
+                elif any(str(doc.get("candidateSha256", "")).upper() != candidate_sha for doc in (result, receipt, inputs)):
+                    reason = "candidate hash mismatch"
+                elif str(result.get("installedCandidateSha256", "")).upper() != candidate_sha:
+                    reason = "installed candidate hash mismatch"
+                elif result.get("phase") != "headless" or inputs.get("group") != "headless-census" \
+                        or receipt.get("group") != "headless-census":
+                    reason = "not a headless census run"
+                elif inputs.get("evidence") != "server-headless" or receipt.get("evidence") != "server-headless" \
+                        or inputs.get("headless") is not True:
+                    reason = "headless evidence label missing"
+                elif not (result.get("pass") is True and receipt.get("pass") is True and result.get("txPass") is True
+                          and not result.get("logFailure") and result.get("normalSave") is True
+                          and result.get("normalStopRequested") is True and result.get("serverExitCode") == 0
+                          and not result.get("forcedOwnServerStop")):
+                    reason = "phase did not pass and save/stop cleanly"
+                elif any(result.get(key) for key in ("sourceWorldChanges", "testSourceChanged", "configChanges")):
+                    reason = "source world, test source or config changed during run"
+                elif inputs.get("workers") not in (1, 4):
+                    reason = "unsupported worker count"
+                elif not script_sha or str(inputs.get("censusScriptSha256", "")).upper() != script_sha:
+                    reason = "headless census script identity differs from installed run"
+                elif not _test_sources_match(worktree, inputs.get("testSourceHashes")):
+                    reason = "test source identity differs from installed run"
+                else:
+                    installed_path = pathlib.Path(inputs.get("candidate", ""))
+                    entries = receipt.get("cards")
+                    if not installed_path.is_file() or digest(installed_path) != candidate_sha:
+                        reason = "installed candidate copy differs from final candidate"
+                    elif (not isinstance(entries, list) or not all(isinstance(entry, dict) for entry in entries)
+                          or [entry.get("card") for entry in entries] != inputs.get("cards")
+                          or len({entry.get("card") for entry in entries}) != len(entries)):
+                        reason = "receipt cards differ from requested cards"
+                    else:
+                        for entry in entries:
+                            if entry.get("outcome") in HEADLESS_OUTCOMES and isinstance(entry.get("card"), str):
+                                data = dict(entry)
+                                found = _snapshot_uuid(entry)
+                                if found:
+                                    data["details"] = "UUID=" + found
+                                cards.append(Card(entry["card"], inputs["workers"], "headless", receipt_path,
+                                                  result_path, inputs_path, data, result, receipt, inputs,
+                                                  "server-headless"))
+            except (OSError, ValueError, TypeError, KeyError) as error:
+                reason = f"unreadable evidence: {error}"
+            if reason:
+                rejected.append({"path": str(result_path), "reason": reason})
+    return cards, rejected
+
+
+def headless_generation(card: Card, uuid: str, entity_type: str, route: str) -> list[dict[str, Any]] | None:
+    """Events of the first complete transaction generation for this exact entity, or None."""
+    result = card.result_data
+    status = result.get("txStatus")
+    trace_value = result.get("txTracePath")
+    if not isinstance(status, dict) or not isinstance(trace_value, str):
+        return None
+    trace_path = pathlib.Path(trace_value)
+    if (not trace_path.is_file() or trace_path.resolve().parent != card.result_path.resolve().parent
+            or digest(trace_path) != result.get("txTraceSha256")):
+        return None
+    candidate_sha, probe_sha = result.get("candidateSha256"), status.get("testSourceSha256")
+    if probe_sha != card.inputs_data.get("probeSha256") or not valid_sha(probe_sha):
+        return None
+    by_generation: dict[int, list[dict[str, Any]]] = collections.defaultdict(list)
+    for event in _trace_events(trace_path):
+        if (str(event.get("uuid", "")).lower() == uuid
+                and trace_entity_type(event.get("type")) == entity_type and event.get("route") == route
+                and event.get("candidateSha256") == candidate_sha and event.get("testSourceSha256") == probe_sha
+                and isinstance(event.get("generation"), int) and event["generation"] > 0):
+            by_generation[event["generation"]].append(event)
+    complete = [by_generation[generation] for generation in sorted(by_generation)
+                if all(any(event.get("phase") == phase for event in by_generation[generation])
+                       for phase in HEADLESS_PHASES)]
+    return complete[0] if complete else None
+
+
+def headless_transfer_assertions(card: Card, entity_type: str, route: str) -> set[str]:
+    """Derive server-witnessable transfer assertions from raw snapshots and the full transaction trace."""
+    witness = card.data.get("witness")
+    uuid = _snapshot_uuid(card.data)
+    if card.data.get("outcome") != "TRANSFERRED" or not isinstance(witness, dict) or uuid is None:
+        return set()
+    source_world, destination = ROUTE_SOURCE_WORLD[route], ROUTE_DESTINATION_WORLD[route]
+    arrival_all, later_all = witness.get("arrival"), witness.get("later")
+    if (not isinstance(arrival_all, list) or not isinstance(later_all, list)
+            or len(arrival_all) != 1 or len(later_all) != 1
+            or not all(isinstance(member, dict) for member in (*arrival_all, *later_all))):
+        return set()
+    arrival, later = arrival_all[0], later_all[0]
+    if (str(arrival.get("uuid", "")).lower() != uuid or str(later.get("uuid", "")).lower() != uuid
+            or arrival.get("type") != entity_type or later.get("type") != entity_type
+            or arrival.get("world") != destination or later.get("world") != destination
+            or arrival.get("removed") is not False or later.get("removed") is not False):
+        return set()
+    assertions = {"destination_unique"}
+    if (arrival.get("object") == later.get("object") and arrival.get("nativeId") == later.get("nativeId")
+            and isinstance(arrival.get("ticks"), int) and isinstance(later.get("ticks"), int)
+            and later["ticks"] > arrival["ticks"] + 20):
+        assertions.add("post_arrival_tick")
+    events = headless_generation(card, uuid, entity_type, route)
+    if events is None:
+        return assertions
+    first = {phase: next(event for event in events if event.get("phase") == phase) for phase in HEADLESS_PHASES}
+    if any(event.get("violation") for event in events):
+        return assertions
+    retiring, retired, head = first["SOURCE_RETIRING"], first["SOURCE_RETIRED"], first["ADD_DURING_TELEPORT_HEAD"]
+    if (retiring.get("sourceWorld") != source_world or retired.get("ownerWorld") != source_world
+            or head.get("destinationWorld") != destination
+            or head.get("object") != arrival.get("object") or head.get("nativeId") != arrival.get("nativeId")):
+        return assertions
+    # The tagged entity is unique in the whole server, so a single arrival member also proves the source vanished.
+    assertions.add("source_retired")
+    assertions.add("uuid_preserved")
+    if retiring.get("object") != head.get("object") and retiring.get("nativeId") != head.get("nativeId"):
+        assertions.add("replacement_identity")
+    tracking = [event for event in events if event.get("object") == head.get("object")
+                and event.get("phase") in ("CHUNK_MAP_TRACKING_HEAD", "CHUNK_MAP_TRACKING_RETURN")]
+    if ([event["phase"] for event in tracking].count("CHUNK_MAP_TRACKING_HEAD") == 1
+            and [event["phase"] for event in tracking].count("CHUNK_MAP_TRACKING_RETURN") == 1):
+        assertions.add("tracking_unique")
+    return assertions
+
+
+def headless_claims(card: Card) -> list[dict[str, Any]]:
+    """Generic server-headless claims for entity types without family-specific semantics."""
+    match = HEADLESS_CARD.fullmatch(card.name)
+    if card.evidence != "server-headless" or match is None:
+        return []
+    kind, route = match.groups()
+    entity_type = "minecraft:" + kind
+    if route == "END_GATEWAY" or headless_family(entity_type) != "plain":
+        return []
+    if card.data.get("outcome") == "TRANSFERRED":
+        assertions = headless_transfer_assertions(card, entity_type, route)
+        if {"source_retired", "destination_unique", "tracking_unique", "post_arrival_tick",
+            "uuid_preserved", "replacement_identity"} <= assertions:
+            return [dict(card=card, entityType=entity_type, route=route, variant=None, graph="standalone",
+                         observedOutcome="TRANSFER", assertions=assertions, basicObservation=True, scope="row")]
+    return []
+
+
 def explicit_claims(card: Card) -> tuple[list[dict[str, Any]], list[str]]:
     metadata = card.data.get("coverage")
     if metadata is None or metadata == []:
@@ -1485,8 +1687,8 @@ def build_report(census: dict[str, Any], frozen: dict[str, Any], candidate_sha: 
     metadata_errors: list[dict[str, str]] = []
     ancillary: list[dict[str, Any]] = []
     for card in cards:
-        legacy = legacy_claims(card, worktree, contracts)
-        explicit, errors = explicit_claims(card)
+        legacy = headless_claims(card) if card.evidence == "server-headless" else legacy_claims(card, worktree, contracts)
+        explicit, errors = explicit_claims(card) if card.evidence != "server-headless" else ([], [])
         claims.extend(legacy)
         claims.extend(explicit)
         metadata_errors.extend({"card": card.name, "path": str(card.receipt_path), "reason": error} for error in errors)
@@ -1592,6 +1794,8 @@ def main(argv: list[str] | None = None) -> int:
         census, frozen, contracts = map(read_json, (args.census, args.frozen, args.legacy_contracts))
         validate_census(census, frozen, source_sha, binary_sha, args.census.parent)
         cards, rejected = scan_installed(args.installed_root, candidate_sha, args.worktree)
+        headless_cards, headless_rejected = scan_headless(args.installed_root, candidate_sha, args.worktree)
+        cards, rejected = cards + headless_cards, rejected + headless_rejected
         report = build_report(census, frozen, candidate_sha, source_sha, binary_sha,
                               cards, rejected, args.worktree, contracts)
         args.output.parent.mkdir(parents=True, exist_ok=True)
