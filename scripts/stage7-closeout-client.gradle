@@ -1,0 +1,20 @@
+// Explicit installed-test entry point for the Stage 7 closeout client agent (src/stage7CloseoutClient). It overlays the
+// client test mod's fabric.mod.json so the agent is the only game-test entrypoint; no existing test source is edited.
+allprojects {
+    afterEvaluate {
+        sourceSets.clientGameTest.java.srcDir 'src/stage7CloseoutClient/java'
+        tasks.named('processClientGameTestResources') {
+            duplicatesStrategy = DuplicatesStrategy.INCLUDE
+            from('src/stage7CloseoutClient/resources')
+        }
+        tasks.named('runClientGameTest') {
+            ['control', 'address'].each { name ->
+                systemProperty 'phoenium.closeout.' + name, project.findProperty('closeout' + name.capitalize()) ?: ''
+            }
+            args '--width', '480', '--height', '270'
+            systemProperty 'java.net.useSystemProxies', 'false'
+            systemProperty 'minecraft.api.session.host', 'http://127.0.0.1:9'
+            systemProperty 'minecraft.api.services.host', 'http://127.0.0.1:9'
+        }
+    }
+}

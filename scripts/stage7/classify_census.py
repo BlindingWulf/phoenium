@@ -58,7 +58,10 @@ def load_control(run: pathlib.Path, source_sha: str, binary_sha: str) -> dict[tu
         falling = FALLING_CARD.fullmatch(card["card"])
         effects = coverage.EFFECTS_CARD.fullmatch(card["card"])
         variant = coverage.VARIANT_CARD.fullmatch(card["card"])
-        if variant:
+        client = coverage.CLIENT_CARD.fullmatch(card["card"])
+        if client:
+            kind, route = "k1:" + client.group(1), client.group(2)
+        elif variant:
             kind, route = f"variant:{variant.group(1)}:{variant.group(2)}", variant.group(3)
         elif falling:
             kind, route = "falling:" + falling.group(1), falling.group(2)
@@ -138,6 +141,32 @@ def main(argv: list[str] | None = None) -> int:
                 continue
         elif fx and row.get("variant") not in (None, "") and row.get("expectedNativeOutcome") is None:
             pending.append({"id": row["id"], "controlOutcomes": sorted({outcome for outcome, _ in fx_observed or []})})
+            continue
+        k1 = coverage.k1_kind_of_row(row)
+        if k1 is not None:
+            observed = controls.get(("k1:" + k1, row["route"]))
+            if not observed:
+                continue
+            outcomes = {outcome for outcome, _ in observed}
+            card_name = f"K1-{k1}-{row['route']}"
+            expected = row.get("expectedNativeOutcome")
+            transfer_verdict = "SAME_DIMENSION_TRANSFER" if row["route"] == "END_GATEWAY" else "TRANSFER"
+            if expected is None:
+                if outcomes == {"TRANSFERRED"}:
+                    row["expectedNativeOutcome"] = transfer_verdict
+                    row["nativeControlReceipt"] = receipt_of(observed[0][1], card_name, transfer_verdict)
+                    classified += 1
+                else:
+                    pending.append({"id": row["id"], "controlOutcomes": sorted(outcomes)})
+            elif expected in ("TRANSFER", "SAME_DIMENSION_TRANSFER") and outcomes == {"TRANSFERRED"}:
+                if row.get("nativeControlReceipt") is None:
+                    row["nativeControlReceipt"] = receipt_of(observed[0][1], card_name, expected)
+                    classified += 1
+            elif expected == "REFUSAL" and outcomes == {"STAYED"}:
+                row["nativeControlReceipt"] = receipt_of(observed[0][1], card_name, "REFUSAL")
+                classified += 1
+            elif expected != "NO_NATIVE_ENTRY_PATH" or outcomes == {"TRANSFERRED"}:
+                conflicts.append({"id": row["id"], "expected": expected, "controlOutcomes": sorted(outcomes)})
             continue
         falling = row.get("entityType") == "minecraft:falling_block" and row.get("graph", "standalone") == "standalone"
         state_card = (row.get("entityType") == "minecraft:creaking" and row.get("graph", "standalone") == "standalone"
