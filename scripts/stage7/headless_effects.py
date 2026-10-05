@@ -90,8 +90,15 @@ PREPLACED = {'tnt_near_expiry'}
 ARRIVAL = {'NETHER_ENTRY': (0.5, 65.0, 0.5), 'NETHER_RETURN': (0.5, 65.0, 0.5), 'END_ENTRY': (100.5, 50.0, 0.5),
            'END_EXIT': (8.5, 71.0, 5.5), 'END_GATEWAY': (22.5, 66.0, 12.5)}
 # Cluster offsets (dx, dz): the nether portal frame is in the x axis, so the cluster runs along z there.
-CLUSTER = {'NETHER': [(0, 0), (0, 1.5), (0, -1.5), (0, 3.0), (0, -3.0)], 'END': [(0, 0), (1.5, 0), (-1.5, 0), (0, 1.5), (0, -1.5)]}
-OWNER_OFFSET = {'NETHER': (0, -4.5), 'END': (-4.5, 0)}
+# Targets stand in a line AHEAD of the projectile (distance in blocks along its flight direction), the owner pig behind it.
+# The nether portal frame is in the x axis, so the flight there is along +z; in the End it is along +x.
+AHEAD = {'hit': [2.0, 4.0, 6.0, 8.0, 10.0], 'blast': [3.0, 5.0, 7.0, 9.0, 10.5]}
+DIRECTION = {'NETHER': (0.0, 1.0), 'END': (1.0, 0.0)}
+BLAST_KINDS = {'tnt', 'tnt_near_expiry'}
+# Zero velocity after every portal: the harness gives a thrown kind its flight back (a projectile at rest never reaches a target).
+# The bullet homes on its Target, a firework rocket accelerates by itself and TNT explodes on its fuse.
+FLIGHT = 0.5
+SELF_PROPELLED = {'shulker_bullet', 'firework_rocket', 'tnt', 'tnt_near_expiry'}
 WATCH = ['area_effect_cloud', 'experience_orb', 'chicken']
 TARGET_ID = 9100
 
@@ -110,13 +117,13 @@ def owner_pig(world, x, y, z, card_index):
          % (world, x, y, z, uuid_nbt(card_index, 2)))
 
 
-def place_cluster(world, family, pos, card_index, owner):
-    """Targets (index 0 is the exact arrival cell, the shulker bullet's Target) and the owner pig around a position."""
-    for i, (dx, dz) in enumerate(CLUSTER[family]):
-        pig(world, pos[0] + dx, pos[1], pos[2] + dz, i, card_index, role=1 if i == 0 else 10 + i)
+def place_cluster(world, family, pos, card_index, owner, spacing='hit'):
+    """Targets in a line ahead of a position (index 0 is the nearest and the shulker bullet's Target) and the owner pig behind it."""
+    dx, dz = DIRECTION[family]
+    for i, ahead in enumerate(AHEAD[spacing]):
+        pig(world, pos[0] + dx * ahead, pos[1], pos[2] + dz * ahead, i, card_index, role=1 if i == 0 else 10 + i)
     if owner:
-        ox, oz = OWNER_OFFSET[family]
-        owner_pig(world, pos[0] + ox, pos[1], pos[2] + oz, card_index)
+        owner_pig(world, pos[0] - dx * 4.5, pos[1], pos[2] - dz * 4.5, card_index)
 
 
 def parse_pos(text):
@@ -388,11 +395,11 @@ try:
                 for sel in ('item', 'falling_block', 'area_effect_cloud', 'experience_orb', 'chicken', 'arrow', 'spectral_arrow', 'trident', 'tnt'):
                     rcon('execute in %s run kill @e[type=%s]' % (world, sel))
                 rcon('execute in %s run kill @e[tag=stage7_target]' % world)
-            count = len(CLUSTER[family])
+            count = len(AHEAD['hit'])
             witness = {'kind': kind, 'family': family}
             worlds = [(src, label[src])] if src == dst else [(src, label[src]), (dst, label[dst])]
             if kind in PREPLACED and fixture_ok:
-                place_cluster(dst, family, ARRIVAL[route], index, False)
+                place_cluster(dst, family, ARRIVAL[route], index, False, 'blast')
             owner_nbt = ',Owner:' + uuid_nbt(index, 2) if has_owner else ''
             target_nbt = ',Target:' + uuid_nbt(index, 1) if kind == 'shulker_bullet' else ''
             if has_owner and fixture_ok:   # the owner exists only in the destination: the link must survive the transfer and resolve there
@@ -442,7 +449,12 @@ try:
                 # Arm the effect where the entity is NOW.
                 pos = parse_pos(witness.get('nbtLater') or witness['nbtArrival'])
                 witness['armedAt'] = list(pos) if pos else None
-                if pos: place_cluster(dst, family, pos, index, has_owner)
+                if pos:
+                    place_cluster(dst, family, pos, index, has_owner, 'blast' if kind in BLAST_KINDS else 'hit')
+                    if kind not in SELF_PROPELLED:
+                        dx, dz = DIRECTION[family]
+                        rcon('execute in %s positioned 0 64 0 run data merge entity @e[tag=%s,distance=0..2000,limit=1] {Motion:[%.2fd,0.0d,%.2fd]}'
+                             % (dst, tag, FLIGHT * dx, FLIGHT * dz))
             if fixture_ok and outcome == 'TRANSFERRED':
                 time.sleep(7)   # let the native effect (hit, explosion, cloud, orbs, return) play out
                 witness['effects'] = observe(worlds, etype, count)
