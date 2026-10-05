@@ -41,12 +41,20 @@ NBT = {
 }
 
 
+def snapshot_members(tag):
+    """Raw probe entities carrying this card's tag, from every dimension (Phoenium runs only)."""
+    if vanilla: return None
+    raw = rcon('stage7-probe snapshot', whole=True)
+    body = json.loads(raw[raw.index('{'):])
+    return [e for e in body['entities'] if tag in e.get('tags', '')]
+
+
 def sha(p):
     with p.open('rb') as s:
         return hashlib.file_digest(s, 'sha256').hexdigest().upper()
 
 
-def rcon(command):
+def rcon(command, whole=False):
     with socket.create_connection(('127.0.0.1', ports['rcon']), timeout=3) as s:
         s.settimeout(60)
 
@@ -64,7 +72,25 @@ def rcon(command):
             length = struct.unpack('<i', n(4))[0]; b = n(length)
             if struct.unpack('<i', b[:4])[0] < 0: raise RuntimeError('RCON authentication failed')
             return b[8:-2].decode(errors='replace')
-        packet(1, 3, 'phoenium-stage7-local-test'); read(); packet(2, 2, command); return read()
+        def read_whole():
+            # Long replies (the probe snapshot) arrive as several packets; an unknown-type request echoes id 3 afterwards.
+            chunks = []
+            while True:
+                length = struct.unpack('<i', _exact(4))[0]; b = _exact(length)
+                ident = struct.unpack('<i', b[:4])[0]
+                if ident < 0: raise RuntimeError('RCON authentication failed')
+                if ident == 3: return ''.join(chunks)
+                chunks.append(b[8:-2].decode(errors='replace'))
+        def _exact(count):
+            b = b''
+            while len(b) < count:
+                part = s.recv(count - len(b))
+                if not part: raise EOFError('RCON closed')
+                b += part
+            return b
+        packet(1, 3, 'phoenium-stage7-local-test'); read(); packet(2, 2, command)
+        if not whole: return read()
+        packet(3, 0, ''); return read_whole()
 
 
 run.mkdir(parents=True, exist_ok=False); server.mkdir()
@@ -184,6 +210,8 @@ try:
                 at = '8.5 %d.25 8.5' % y
             summon = rcon('execute in %s run summon minecraft:%s %s {Tags:["stage7_mob","%s"],NoGravity:1b%s}' % (src, etype, at, tag, NBT.get(etype, '')))
             outcome = 'GONE' if fixture_ok else 'FIXTURE_INVALID'; where = 'NONE'
+            witness = {}
+            if fixture_ok: witness['source'] = snapshot_members(tag)
             t0 = time.monotonic()
             while fixture_ok and time.monotonic() - t0 < 8:
                 if process.poll() is not None or failed(): raise RuntimeError('server failure during %s: %s' % (card, failed()))
@@ -198,10 +226,22 @@ try:
                 if 'Test passed' in rcon('execute in %s positioned 0 64 0 if entity @e[tag=%s,distance=0..2000]' % (src, tag)):
                     outcome, where = 'STAYED', src
                 time.sleep(.25)
+            if outcome == 'TRANSFERRED' and not vanilla:
+                witness['arrival'] = snapshot_members(tag)
+                # post_arrival_tick evidence: the destination object must keep ticking for more than twenty ticks.
+                first = next((e['ticks'] for e in witness['arrival'] if e.get('world') == where), None)
+                deadline_later = time.monotonic() + 10
+                while time.monotonic() < deadline_later:
+                    witness['later'] = snapshot_members(tag)
+                    now = next((e['ticks'] for e in witness['later'] if e.get('world') == where), None)
+                    if first is not None and now is not None and now > first + 20: break
+                    time.sleep(.25)
+            elif fixture_ok and not vanilla:
+                witness['settled'] = snapshot_members(tag)
             info = ''
             if outcome != 'TRANSFERRED':
                 info = rcon('execute in %s positioned 0 64 0 run data get entity @e[tag=%s,distance=0..2000,limit=1] Pos' % (src, tag)).strip()[:120]
-            result['cards'].append(dict(card=card, outcome=outcome, world=where, summon=summon.strip()[:80], info=info))
+            result['cards'].append(dict(card=card, outcome=outcome, world=where, summon=summon.strip()[:80], info=info, witness=witness))
             for w in (OW, NETHER, END): rcon('execute in %s run kill @e[tag=stage7_mob]' % w)
             if len(result['cards']) % 20 == 0: print('PROGRESS', len(result['cards']), flush=True)
         if vanilla:
