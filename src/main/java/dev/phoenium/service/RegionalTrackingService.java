@@ -546,6 +546,7 @@ public final class RegionalTrackingService {
         Set<ServerPlayer> selectedPlayers = java.util.Collections.newSetFromMap(new IdentityHashMap<>());
         Object playerTracker = null;
         for (Entry entry : entries) {
+            if (removalInProgress(entry.entity, player)) continue;
             refreshCandidate(entry);
             if (entry.entity == player) {
                 synchronized (this) {
@@ -608,6 +609,8 @@ public final class RegionalTrackingService {
         synchronized (this) { entries = index.values(); }
         Entry entry = entries.stream().filter(value -> value.tracker == trackerIdentity).findFirst()
             .orElseThrow(() -> new IllegalStateException("move tracker is not retained"));
+        // The tracked entity can enter removal after selection; its own removeEntity broadcast owns the exit.
+        if (removalInProgress(entry.entity, player)) return;
         requireEntityOwner(entry.candidate, entry.key);
         requireEntry(entry, entry.candidate);
         requireRelation(publishedRange(entry.candidate));
@@ -641,6 +644,13 @@ public final class RegionalTrackingService {
                 || !finishing.entityFacts.validTrackingCandidate(candidate))
             throw new IllegalStateException("retained tracker identity or entity incarnation changed");
     }
+    /** setRemoved retires the object binding before ChunkMap.removeEntity drains the scheduler, so a
+     * queued move that runs inside that drain sees a still-indexed tracker whose entity is already
+     * removed. Vanilla never interleaves there; the removal broadcast owns that tracker's exit. */
+    static boolean removalInProgress(Entity tracked, ServerPlayer moving) {
+        return tracked != moving && tracked.isRemoved();
+    }
+
     private void requireEntityOwner(FullEntityFacts.Candidate candidate, RoutingKey key) {
         var binding = objects.current(candidate.fact().uuid().toString()).orElseThrow(
             () -> new IllegalStateException("tracked entity lacks current object ownership"));
