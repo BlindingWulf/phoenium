@@ -55,6 +55,34 @@ final class QueuedOwnerWorkTrackingTest {
         }
     }
 
+    /** Census W7: the owner-free entity-management save (unload or autosave storeChunkSections)
+     * takes its section selection and receipts, then its own drain must not deliver an older
+     * queued movement of a selected entity before the strict storage re-check. */
+    @Test void ownerFreeEntityStorageSaveSettlesQueuedMovementBeforeItsSelection() throws Exception {
+        try (var f = new PlayerRespawnHandoffTest.Fixture()) {
+            var paired = Paired.respawnedNextTo(f);
+            // The save path derives its routing world from the native dimension key.
+            set(f.world, net.minecraft.world.level.Level.class, "dimension", net.minecraft.resources.ResourceKey.create(
+                net.minecraft.core.registries.Registries.DIMENSION,
+                net.minecraft.resources.Identifier.fromNamespaceAndPath("phoenium", "respawn-tracking")));
+            assertEquals(paired.tracking.world.value(), f.world.dimension().identifier().toString());
+            var moved = paired.queuePeerMovement();
+            var services = new dev.phoenium.service.RegionalWorldServices(paired.tracking.directory,
+                paired.tracking.dispatcher, paired.tracking.objects);
+            var saved = new AtomicInteger();
+            assertDoesNotThrow(() -> {
+                try (var turn = f.service.referenceAccess()) {
+                    assertTrue(services.storeEntitySections(f.world, net.minecraft.world.level.ChunkPos.pack(0, 0),
+                        () -> List.of(paired.peer), () -> saved.incrementAndGet() > 0));
+                }
+            });
+            assertEquals(1, moved.get(), "queued owner work ran exactly once");
+            assertEquals(1, saved.get(), "the original save ran once on the settled selection");
+            assertFalse(paired.tracking.barrier.tripped());
+            assertTrue(OwnershipContext.current().isEmpty());
+        }
+    }
+
     /** A live player (after one respawn) currently seen by one tracked peer pig at chunk 0,0. */
     private record Paired(PlayerRespawnTrackingTest.TrackingFixture tracking, Entity peer,
                           PlayerRespawnTrackingTest.Tracker peerTracker) {

@@ -322,6 +322,9 @@ public final class RegionalWorldServices implements RegionalStateMigration {
         requireActiveLifetime();
         FullFinishingServices finishing = FullFinishingServices.forServer(level.getServer());
         FullFinishingServices.requireWorld(level, FullFinishingServices.Kind.ENTITY_REGISTRY);
+        // As in ChunkMap.addEntity/removeEntity: older accepted owner work (a queued movement of a
+        // selected entity) settles before the section selection, not inside this save's drain after it.
+        if (dev.phoenium.ownership.OwnershipContext.current().isEmpty()) dispatcher.drainBeforeSelection();
         List<net.minecraft.world.entity.Entity> aliases = List.copyOf(selection.get());
         var sources = new java.util.ArrayList<dev.phoenium.chunk.FullEntityFacts.Candidate>();
         var relations = new java.util.ArrayList<List<dev.phoenium.chunk.FullEntityFacts.Candidate>>();

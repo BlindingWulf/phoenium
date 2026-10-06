@@ -107,7 +107,7 @@ final class PlayerRespawnTrackingTest {
         }
     }
     static final class TrackingFixture {
-        final WorldId world = new WorldId("respawn-tracking");
+        final WorldId world = new WorldId("phoenium:respawn-tracking");
         final RegionId region = new RegionId(world, "owner");
         final RegionRuntime runtime = new RegionRuntime(region, new OwnerEpoch(0));
         final RegionDirectory directory = new RegionDirectory();
