@@ -125,6 +125,47 @@ class SmallHelpersTest(unittest.TestCase):
     def test_default_storm_has_no_hooks(self):
         self.assertEqual(storm.HOOKS, {})
 
+class MonitorScanSerializationTest(unittest.TestCase):
+    """cl2 wave 50: two threads scanning one incremental monitor counted a whole chunk of events twice."""
+
+    def test_mixed_storm_installs_the_scan_lock(self):
+        source = (Path(__file__).resolve().parent / 'mixed_storm.py').read_text(encoding='utf-8')
+        self.assertIn('rs.TransactionMonitor.scan = serialized_scan', source)
+        self.assertIn('with scan_lock:', source)
+
+    def test_serialized_scan_never_double_counts_under_two_threads(self):
+        import json, tempfile, threading
+        with tempfile.TemporaryDirectory() as folder:
+            log = Path(folder) / 'console.log'
+            log.write_bytes(b'')
+            monitor = storm.TransactionMonitor(log)
+            lock = threading.RLock()
+            original = storm.TransactionMonitor.scan
+
+            def serialized(self):
+                with lock:
+                    original(self)
+
+            stop = threading.Event()
+
+            def scanner():
+                while not stop.is_set():
+                    serialized(monitor)
+
+            threads = [threading.Thread(target=scanner) for _ in range(2)]
+            for thread in threads: thread.start()
+            try:
+                with log.open('ab') as out:
+                    for i in range(400):
+                        event = {'schema': 'stage7-portal-tx-v1', 'uuid': 'u%d' % (i // 4), 'phase': 'P%d' % (i % 4)}
+                        out.write(('[00:00:00] [Server thread/INFO]: STAGE7_PORTAL_TX ' + json.dumps(event) + chr(10)).encode())
+                        out.flush()
+            finally:
+                stop.set()
+                for thread in threads: thread.join()
+            serialized(monitor)
+            self.assertEqual(400, sum(len(v) for v in monitor.by_uuid.values()))
+
 
 if __name__ == '__main__':
     unittest.main()
