@@ -238,8 +238,26 @@ public final class RegionalWorldServices implements RegionalStateMigration {
             throw new IllegalStateException("tick area operation crosses bound world lifetime");
         FullFinishingServices.requireWorld(destinationBinding.world().level(), FullFinishingServices.Kind.TICK_LIST);
         FullFinishingServices.requireWorld(sourceBinding.world().level(), FullFinishingServices.Kind.TICK_LIST);
+        if (owner != source && !destinationBinding.service().world().equals(sourceBinding.service().world())
+                && dev.phoenium.ownership.OwnershipContext.current().isEmpty()) {
+            copyAreaAcrossWorlds(owner, sourceBinding.service(), area, offset);
+            return true;
+        }
         destinationBinding.service().mutateArea(sourceBinding.service(), area, offset, original);
         return true;
+    }
+
+    /**
+     * /clone between dimensions: LevelTicks.copyAreaFrom reads one world's tick list and schedules into
+     * another's, which no single owner closure covers. Owner-free, it is split at the world boundary: an
+     * owner-free snapshot under the source world's closure, then each copied tick goes through the
+     * destination's ordinary owner-free LevelTicks.schedule route. Under an owner the regional
+     * mutateArea refusal stands (command confinement keeps in-region commands out of other worlds).
+     */
+    private <T> void copyAreaAcrossWorlds(LevelTicks<T> destination, RegionalScheduledTickService<T> source,
+            net.minecraft.world.level.levelgen.structure.BoundingBox area, net.minecraft.core.Vec3i offset) {
+        List<ScheduledTick<T>> found = source.snapshotArea(area);
+        for (ScheduledTick<T> tick : RegionalScheduledTickService.copiedTicks(found, offset)) destination.schedule(tick);
     }
 
     @SuppressWarnings("unchecked")

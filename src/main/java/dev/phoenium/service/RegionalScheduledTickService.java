@@ -347,6 +347,51 @@ public final class RegionalScheduledTickService<T> {
         }
     }
 
+    /**
+     * Source half of LevelTicks.copyAreaFrom between two worlds (/clone across dimensions): reads the
+     * area's ticks in the native copy order (already run, still to run, then containers) under this
+     * world's own closure. Owner-free only: one owner turn never spans two worlds.
+     */
+    public List<ScheduledTick<T>> snapshotArea(BoundingBox area) {
+        Objects.requireNonNull(area);
+        if (OwnershipContext.current().isPresent())
+            throw new IllegalStateException("cross-world tick area snapshot under owner authority");
+        Set<RoutingKey> footprint = areaKeys(area);
+        List<ScheduledTick<T>> found = new ArrayList<>();
+        if (footprint.isEmpty()) return found;
+        dispatcher.ensureClosure(footprint);
+        dispatcher.executeAndDrain(footprint.iterator().next(), collectKind, ignored -> {
+            dispatcher.requireCurrentClosure(footprint);
+            List<ContainerState<T>> states = new ArrayList<>();
+            synchronized (this) {
+                for (ScheduledTick<T> tick : alreadyRunThisTick) if (area.isInside(tick.pos())) found.add(tick);
+                for (ScheduledTick<T> tick : toRunThisTick) if (area.isInside(tick.pos())) found.add(tick);
+                for (int x = area.minX() >> 4; x <= area.maxX() >> 4; x++)
+                    for (int z = area.minZ() >> 4; z <= area.maxZ() >> 4; z++) {
+                        ContainerState<T> state = containers.get(ChunkPos.pack(x, z));
+                        if (state != null) states.add(state);
+                    }
+            }
+            requireNativeCallbackUnlocked();
+            for (ContainerState<T> state : states)
+                state.container().getAll().filter(tick -> area.isInside(tick.pos())).forEach(found::add);
+        });
+        return found;
+    }
+
+    /** Destination half of LevelTicks.copyAreaFrom: the native offset and sub-tick renumbering. */
+    public static <T> List<ScheduledTick<T>> copiedTicks(List<ScheduledTick<T>> found, Vec3i offset) {
+        Objects.requireNonNull(offset);
+        java.util.LongSummaryStatistics info = found.stream().mapToLong(ScheduledTick::subTickOrder).summaryStatistics();
+        long minSubTick = info.getMin();
+        long maxSubTick = info.getMax();
+        List<ScheduledTick<T>> copied = new ArrayList<>(found.size());
+        for (ScheduledTick<T> tick : found)
+            copied.add(new ScheduledTick<>(tick.type(), tick.pos().offset(offset), tick.triggerTick(), tick.priority(),
+                tick.subTickOrder() - minSubTick + maxSubTick + 1L));
+        return copied;
+    }
+
     private synchronized Set<RoutingKey> areaKeys(BoundingBox area) {
         Set<RoutingKey> keys = new LinkedHashSet<>();
         for (int x = area.minX() >> 4; x <= area.maxX() >> 4; x++)

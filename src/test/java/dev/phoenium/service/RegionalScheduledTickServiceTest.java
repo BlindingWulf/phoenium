@@ -281,6 +281,67 @@ final class RegionalScheduledTickServiceTest {
         assertFalse(called.get());
     }
 
+    @Test
+    void ownerFreeAreaSnapshotCopiesLikeNativeCopyAreaFromIntoAnotherTickList() throws Exception {
+        // /clone from <dimension> to <other dimension> copies block ticks between two worlds' lists.
+        Fixture f = new Fixture(); var service = f.service(key -> true);
+        var original = bindOriginalCycle(service, f);
+        Object type = new Object();
+        original.schedule(tick(type, new BlockPos(0, 64, 0), 7, TickPriority.NORMAL, 5));
+        original.schedule(tick(type, new BlockPos(2, 64, 1), 3, TickPriority.HIGH, 9));
+        original.schedule(tick(type, new BlockPos(3, 65, 3), 4, TickPriority.LOW, 2));
+        original.schedule(tick(type, new BlockPos(9, 64, 0), 4, TickPriority.LOW, 1));   // outside the area
+        var area = new net.minecraft.world.level.levelgen.structure.BoundingBox(0, 64, 0, 3, 65, 3);
+        var offset = new net.minecraft.core.Vec3i(32, 1, 0);
+
+        var nativeTarget = new LevelTicks<Object>(key -> true);
+        var nativeChunk = new LevelChunkTicks<Object>();
+        nativeTarget.addContainer(new ChunkPos(2, 0), nativeChunk);
+        nativeTarget.copyAreaFrom(original, area, offset);
+
+        var regionalTarget = new LevelTicks<Object>(key -> true);
+        var regionalChunk = new LevelChunkTicks<Object>();
+        regionalTarget.addContainer(new ChunkPos(2, 0), regionalChunk);
+        var snapshot = service.snapshotArea(area);
+        RegionalScheduledTickService.copiedTicks(snapshot, offset).forEach(regionalTarget::schedule);
+
+        java.util.function.Function<LevelChunkTicks<Object>, List<String>> dump = chunk -> chunk.getAll()
+            .sorted(ScheduledTick.DRAIN_ORDER).map(t -> t.pos() + ":" + t.triggerTick() + ":" + t.priority() + ":" + t.subTickOrder()).toList();
+        assertEquals(3, nativeChunk.count());
+        assertEquals(dump.apply(nativeChunk), dump.apply(regionalChunk));
+        assertEquals(4, f.aTicks.count() + f.bTicks.count(), "the source list is only read");
+    }
+
+    @Test
+    void areaSnapshotIsOwnerFreeOnly() throws Exception {
+        Fixture f = new Fixture(); var service = f.service(key -> true);
+        bindOriginalCycle(service, f);
+        var area = new net.minecraft.world.level.levelgen.structure.BoundingBox(0, 64, 0, 3, 64, 0);
+        f.dispatcher.executeAndDrain(f.aKey, RegionalServiceKind.COLLECT_SCHEDULED_BLOCK_TICK, ignored ->
+            assertThrows(IllegalStateException.class, () -> service.snapshotArea(area)));
+        assertEquals(List.of(), service.snapshotArea(new net.minecraft.world.level.levelgen.structure.BoundingBox(64, 0, 64, 70, 0, 70)));
+    }
+
+    @Test
+    void crossWorldTickAreaCopyIsOwnerFreeSnapshotThenDestinationSchedule() throws Exception {
+        var node = new org.objectweb.asm.tree.ClassNode();
+        try (var in = RegionalWorldServices.class.getResourceAsStream("RegionalWorldServices.class")) {
+            new org.objectweb.asm.ClassReader(in.readAllBytes()).accept(node, 0);
+        }
+        var method = node.methods.stream().filter(m -> m.name.equals("mutateTickArea")).findFirst().orElseThrow();
+        var calls = new java.util.ArrayList<String>();
+        for (var insn : method.instructions) if (insn instanceof org.objectweb.asm.tree.MethodInsnNode call) calls.add(call.name);
+        int snapshot = calls.indexOf("copyAreaAcrossWorlds");
+        int sameWorld = calls.indexOf("mutateArea");
+        assertTrue(snapshot >= 0, "cross-world branch present: " + calls);
+        assertTrue(sameWorld >= 0, "same-world path unchanged: " + calls);
+        var helper = node.methods.stream().filter(m -> m.name.equals("copyAreaAcrossWorlds")).findFirst().orElseThrow();
+        var helperCalls = new java.util.ArrayList<String>();
+        for (var insn : helper.instructions) if (insn instanceof org.objectweb.asm.tree.MethodInsnNode call) helperCalls.add(call.name);
+        assertTrue(helperCalls.indexOf("snapshotArea") >= 0 && helperCalls.indexOf("copiedTicks") > helperCalls.indexOf("snapshotArea")
+            && helperCalls.lastIndexOf("schedule") > helperCalls.indexOf("copiedTicks"), helperCalls.toString());
+    }
+
     private static List<String> nativeAreaTrace(boolean regional, boolean clear) throws Exception {
         Fixture f = new Fixture(); var service = f.service(key -> true);
         LevelTicks<Object> original = bindOriginalCycle(service, f);
