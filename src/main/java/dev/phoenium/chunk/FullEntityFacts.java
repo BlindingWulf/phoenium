@@ -78,10 +78,21 @@ public final class FullEntityFacts {
                         previous == null ? 1 : previous.revision + 1, entity.getUUID(), access.phoenium$rawEntityId(), entity.getType(),
                         entity.getClass(), entity.getScoreboardName(), entity.isRemoved(), entity instanceof LivingEntity living && living.canBeSeenAsEnemy(),
                         entity instanceof Player player && player.isCreative(), entity.isSpectator());
+                // A data write that changes no published scalar (e.g. effect particles rewritten by native
+                // pairing inside ChunkMap.addEntity) keeps the identity that receipts and relations captured.
+                if (sameScalars(previous, fact)) fact = previous;
                 access.phoenium$referenceFact(fact); service.entityFacts.published++;
                 service.changed(FullFinishingServices.Kind.ENTITY_REGISTRY);
             }
         } finally { PUBLISHING.remove(); }
+    }
+    /** Every component except the revision counter; identity components compare by reference. */
+    static boolean sameScalars(Fact previous, Fact next) {
+        return previous != null && previous.alias == next.alias && previous.server == next.server && previous.world == next.world
+                && previous.incarnation == next.incarnation && previous.uuid.equals(next.uuid) && previous.runtimeId == next.runtimeId
+                && previous.type == next.type && previous.dispatch == next.dispatch && Objects.equals(previous.scoreboardName, next.scoreboardName)
+                && previous.removed == next.removed && previous.enemy == next.enemy && previous.creative == next.creative
+                && previous.spectator == next.spectator;
     }
     /** Source hook follows the successful original UUID-map put, before original tracking callbacks. */
     public static void inserted(Entity entity) {

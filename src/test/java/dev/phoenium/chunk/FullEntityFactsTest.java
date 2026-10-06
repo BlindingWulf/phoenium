@@ -266,6 +266,37 @@ final class FullEntityFactsTest {
         }
     }
 
+    /** Stage 7A first red: native pairing (sendPairingData -> updateDataBeforeSync) rewrites a converted
+     * mob's effect-particle data inside ChunkMap.addEntity. A data write that leaves every published
+     * scalar unchanged must keep the source relation; a scalar change must still retire it. */
+    @Test void ownerDataWriteThatKeepsEveryScalarKeepsTrackingIdentity() throws Exception {
+        try (var f = new FullServiceOperationFixture()) {
+            ServerLevel world = f.world(); Object manager = new Object();
+            LivingEntity entity = target(world, UUID.randomUUID(), 114, new AtomicInteger());
+            set(entity, Entity.class, "position", net.minecraft.world.phys.Vec3.ZERO);
+            set(entity, Entity.class, "blockPosition", net.minecraft.core.BlockPos.ZERO);
+            set(entity, Entity.class, "chunkPosition", new net.minecraft.world.level.ChunkPos(0, 0));
+            set(entity, Entity.class, "firstTick", true);
+            try (var turn = f.service.serial(FullFinishingServices.Phase.SERVER_TASK)) {
+                FullEntityFacts.stored(entity, manager);
+                var access = (FullEntityFacts.Access) entity;
+                FullEntityFacts.Fact fact = access.phoenium$referenceFact();
+                assertTrue(fact.enemy());
+                var receipt = f.service.entityFacts.trackingCandidate(world, entity);
+                FullEntityFacts.publish(entity); FullEntityFacts.publish(entity);
+                assertSame(fact, access.phoenium$referenceFact(), "an unchanged data write must not mint a new identity");
+                assertTrue(f.service.entityFacts.validTrackingCandidate(receipt));
+                set(entity, Entity.class, "invulnerable", true);
+                FullEntityFacts.publish(entity);
+                FullEntityFacts.Fact changed = access.phoenium$referenceFact();
+                assertNotSame(fact, changed);
+                assertFalse(changed.enemy());
+                assertEquals(fact.revision() + 1, changed.revision());
+                assertFalse(f.service.entityFacts.validTrackingCandidate(receipt));
+            }
+        }
+    }
+
     @Test void malformedRetainedPassengerGraphFailsBeforeTrackingCallback() {
         Object vehicle = new Object(), passenger = new Object();
         Map<Object, List<Object>> direct = new IdentityHashMap<>();
