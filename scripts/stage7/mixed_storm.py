@@ -138,6 +138,20 @@ class WholeRcon:
         raise RuntimeError('unreachable')
 
 
+def persistent_rcon_call(clients: dict):
+    """The storm's own per-command RCON connections exhaust the Windows ephemeral ports (WinError 10048 after ~4,000 commands
+    in TIME_WAIT); one persistent connection per port, serialised by RCON_LOCK, carries the same commands."""
+
+    def call(self, command: str) -> str:
+        with RCON_LOCK:
+            client = clients.get(self.port)
+            if client is None:
+                client = clients[self.port] = WholeRcon(self.port)
+            return client(command)
+
+    return call
+
+
 def snapshot_body(rcon: WholeRcon) -> dict:
     raw = rcon('stage7-probe snapshot', whole=True)
     return json.loads(raw[raw.index('{'):])
@@ -796,13 +810,7 @@ def main() -> int:
     args.tnt_card = False
     args.server_properties = {} if args.no_client else {'view-distance': '4', 'simulation-distance': '5'}
     mixed = Mixed(args)
-    original_call = rs.Rcon.__call__
-
-    def serialized_call(self, command: str) -> str:
-        with RCON_LOCK:
-            return original_call(self, command)
-
-    rs.Rcon.__call__ = serialized_call
+    rs.Rcon.__call__ = persistent_rcon_call({})
 
     # The monitor is incremental (offset + tail), so the storm thread and the player lane must not scan at the same time:
     # two concurrent scans read the same bytes and every event in them is counted twice.

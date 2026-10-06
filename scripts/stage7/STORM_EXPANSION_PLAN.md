@@ -74,3 +74,17 @@ they do not certify final bytes.
 - P2 W4 six-card matrix: `.audit/sol-ultra-final-campaign-20260923/installed/arrow-matrix-w4-connect-retry-cfb5-6546-arrow-trident-w4/first-client-receipt.json` and sibling `first-result.json` (CFB5/6546, pass).
 - P3 W1 ten-card matrix: `.audit/sol-ultra-final-campaign-20260923/installed/projectile-matrix-cfb5-6546-first-throwable-projectiles-w1/first-client-receipt.json` and sibling `first-result.json` (CFB5/6546, pass).
 - Exact P2/P3 fixture implementation: `src/clientGameTest/java/dev/phoenium/clienttest/Stage7RepairClientTest.java`, methods `arrowTridentCase` and `throwableProjectileCase`.
+
+## Entity types without a storm family (added after the Bedrock FD29 session)
+
+The coverage ledger (`PORTAL_COVERAGE_LEDGER_FD29.json`) has all 158 registered entity types with headless W1/W4 evidence, but only 18 have a storm family and 37 have a real-client card. `ENTITY_PORTAL_COVERAGE_GAPS.md` in the audit root has the per-type table. Every family below is opt-in (it joins `MIXED_FAMILIES`, never the frozen default mix) and needs the usual new namespace, W1 control, eight-contact W4 pilot and then a mixed run.
+
+| Order | Type | Why first | Fixture note |
+| --- | --- | --- | --- |
+| 1 | armor_stand | Requested; has A0 client cards but no storm; a living, equipment-bearing, non-moving entity that players routinely break | `NoGravity:1b`, equipment on one lane; assert equipment preserved and one tracker. Non-marker only (marker stands ignore block triggers) |
+| 2 | end_crystal, experience_orb | Different tracking cadences, no storm | Orb needs value preserved (P3 already checks it by client) |
+| 3 | arrow, spectral_arrow, trident | Owner reference and in-ground state; client P2 cards exist but the ledger credits only headless D1 | Needs the connected-player owner, as in the P2 fixture |
+| 4 | oak_chest_boat (then the other chest boats/rafts), villager | Passenger/contents graphs; villager has an M0 client card | Contents readback as for chest_minecart |
+| 5 | remaining mobs | Headless-only today | Reuse the `pig`/`cow` NoAI fixture |
+
+Also add to the connected-client lane (a new reviewed exact card, not a coverage claim until it exists): break-while-moving cards for boat, minecart, armor stand, item frame and painting. The FD29 Bedrock failure was an entity being removed while the player's own move was queued; the Java client did not reproduce it (8/8 boats, old jar), (hypothesis, not proven: Geyser may deliver the move and the attack back to back in one server tick, leaving a move queued when the removal drains). The unit test `RegionalTrackingRemovalInterleaveTest` pins the invariant instead.

@@ -167,5 +167,57 @@ class MonitorScanSerializationTest(unittest.TestCase):
             self.assertEqual(400, sum(len(v) for v in monitor.by_uuid.values()))
 
 
+class PersistentRconTest(unittest.TestCase):
+    """The storm must not open one RCON connection per command (that exhausted the Windows ephemeral ports)."""
+
+    def test_many_storm_commands_use_one_connection(self):
+        import socket
+        import struct
+        import threading
+
+        server = socket.socket()
+        server.bind(('127.0.0.1', 0))
+        server.listen(8)
+        accepted = []
+        nul = bytes(2)
+
+        def read_exact(conn, count):
+            data = b''
+            while len(data) < count:
+                chunk = conn.recv(count - len(data))
+                if not chunk:
+                    raise EOFError
+                data += chunk
+            return data
+
+        def serve():
+            while True:
+                try:
+                    conn, _ = server.accept()
+                except OSError:
+                    return
+                accepted.append(conn)
+                try:
+                    while True:
+                        length = struct.unpack('<i', read_exact(conn, 4))[0]
+                        body = read_exact(conn, length)
+                        ident, kind = struct.unpack('<ii', body[:8])
+                        text = b'' if kind == 3 else b'ok:' + body[8:-2]
+                        conn.sendall(struct.pack('<iii', len(text) + 10, ident, 0) + text + nul)
+                except (EOFError, OSError):
+                    conn.close()
+
+        threading.Thread(target=serve, daemon=True).start()
+        port = server.getsockname()[1]
+        call = mixed.persistent_rcon_call({})
+        holder = type('Holder', (), {'port': port})()
+        try:
+            for index in range(300):
+                self.assertEqual('ok:say %d' % index, call(holder, 'say %d' % index))
+        finally:
+            server.close()
+        self.assertEqual(1, len(accepted))
+
+
 if __name__ == '__main__':
     unittest.main()
