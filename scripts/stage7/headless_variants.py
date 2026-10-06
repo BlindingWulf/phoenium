@@ -285,6 +285,13 @@ try:
             outcome = 'GONE' if fixture_ok else 'FIXTURE_INVALID'; where = 'NONE'
             witness = {}
             if fixture_ok:
+                # Readiness: a freshly forceloaded fixture chunk (the first End/y=70 card) may not yet resolve @e selectors when
+                # the summon returns; wait until the selector sees the creaking before the first read.
+                visible_deadline = time.monotonic() + 15
+                while time.monotonic() < visible_deadline:
+                    if 'Test passed' in rcon('execute in %s positioned 0 64 0 if entity @e[tag=%s,distance=0..2000]' % (src, tag)):
+                        break
+                    time.sleep(.1)
                 witness['nbtSource'] = nbt_of(src, tag)
                 source_body = snapshot_body() if not vanilla else None
                 witness['source'] = snapshot_members(tag, source_body)
