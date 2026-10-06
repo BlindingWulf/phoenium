@@ -345,6 +345,7 @@ public final class RegionalChunkGameplayService implements NaturalSpawnContinuat
                 if (fightOrigin != null && dragonCut == null) continue;
                 boolean[] stale = {false};
                 dispatcher.executeAndDrain(key, RegionalServiceKind.CHUNK_GAMEPLAY, ignored -> {
+                    if (removedBeforeOwnerTurn(entity)) return;
                     if (dragonCut != null && (!((EnderDragon) entity).getFightOrigin().equals(fightOrigin)
                             || !dragonInputRoutesCurrent(key, closure) || !dragonCut.current())) {
                         stale[0] = true;
@@ -455,6 +456,14 @@ public final class RegionalChunkGameplayService implements NaturalSpawnContinuat
         entities.forEach(entity -> {
             if (!entity.isRemoved()) output.accept(entity);
         });
+    }
+
+    /** The same native boundary at the owner turn. This entity's own drain can first deliver older
+     * owner work that removes it (a projectile or pearl cap discard queued by an earlier entity's
+     * tick). Vanilla would already have removed it before reaching it, so skip instead of failing
+     * the retained receipt. */
+    static boolean removedBeforeOwnerTurn(Entity entity) {
+        return entity.isRemoved();
     }
 
     public void tickerAdded(TickingBlockEntity ticker) {

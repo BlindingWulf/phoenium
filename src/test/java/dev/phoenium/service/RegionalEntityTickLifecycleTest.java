@@ -34,6 +34,16 @@ final class RegionalEntityTickLifecycleTest {
             "the old EntityTickList snapshot must not re-admit an entity removed by an earlier tick");
     }
 
+    @Test
+    void entityDiscardedByQueuedOwnerWorkBeforeItsOwnerTurnIsSkipped() throws Exception {
+        Entity arrow = entity(103);
+        org.junit.jupiter.api.Assertions.assertFalse(RegionalChunkGameplayService.removedBeforeOwnerTurn(arrow));
+        // A cap discard queued by an earlier entity's tick runs first inside this entity's drain.
+        setUnchecked(entityField("removalReason"), arrow, Entity.RemovalReason.DISCARDED);
+        org.junit.jupiter.api.Assertions.assertTrue(RegionalChunkGameplayService.removedBeforeOwnerTurn(arrow),
+            "a removed entity's owner turn must be skipped, as ServerLevel's consumer skips it");
+    }
+
     private static Entity entity(int id) throws Exception {
         Entity entity = (Entity) unsafe().allocateInstance(ExperienceOrb.class);
         set(entityField("id"), entity, id);

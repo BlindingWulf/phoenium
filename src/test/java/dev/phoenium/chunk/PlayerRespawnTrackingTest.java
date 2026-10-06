@@ -116,13 +116,14 @@ final class PlayerRespawnTrackingTest {
         final Int2ObjectLinkedOpenHashMap<Object> source = new Int2ObjectLinkedOpenHashMap<>();
         final ChunkMap map;
         final RegionalTrackingService service;
+        final RegionalServiceDispatcher dispatcher;
         TrackingFixture(PlayerRespawnHandoffTest.Fixture f) throws Exception {
             runtime.transitionTo(RegionLifecycle.READY);
             var generation = new TopologyGeneration(1);
             directory.publish(generation, Map.of(), Map.of(world, new RegionRoute(region, generation, runtime.ownerEpoch())));
             var runtimes = Map.of(region, runtime); var scheduler = new RegionScheduler(runtimes, directory, barrier);
             var gateway = new OwnerGateway(directory, runtimes, scheduler);
-            var dispatcher = new RegionalServiceDispatcher("respawn-test", 1, directory, runtimes, gateway, scheduler);
+            dispatcher = new RegionalServiceDispatcher("respawn-test", 1, directory, runtimes, gateway, scheduler);
             dispatcher.installClosureEncloser(keys -> true);
             map = stub(ChunkMap.class, List.of(
                 new Answer(RegionalChunkMapAccess.class.getMethod("phoenium$getTrackedEntities"), args -> source),

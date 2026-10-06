@@ -418,6 +418,9 @@ public final class RegionalTrackingService {
      * with no callback; every seen entry and every broadcastRemoved recipient is enclosed. */
     public void removeEntity(ChunkMap map, Entity entity, Runnable original) {
         if (activeRemove.get() != null) throw new IllegalStateException("nested ChunkMap.removeEntity escaped its tracking footprint");
+        // As in addEntity: older accepted owner work (another player's movement envelope) settles
+        // before the recipient cut, not inside this removal's drain after the cut.
+        if (OwnershipContext.current().isEmpty()) dispatcher.drainBeforeSelection();
         FullEntityFacts.Candidate source = finishing.entityFacts.trackingCandidate(level, entity);
         RoutingKey sourceKey = key(source);
         var connectionPlayers = new ArrayList<>(level.players());
@@ -531,6 +534,7 @@ public final class RegionalTrackingService {
      * scan with the exact retained seen/range candidate set prepared before entry. */
     public void movePlayer(ChunkMap map, ServerPlayer player, Runnable original) {
         if (activeMove.get() != null) throw new IllegalStateException("nested ChunkMap.move escaped its tracking footprint");
+        if (OwnershipContext.current().isEmpty()) dispatcher.drainBeforeSelection();
         var connectionPlayers = new ArrayList<>(level.players());
         if (!connectionPlayers.contains(player)) connectionPlayers.add(player);
         FullFinishingScoreboard.TrackingCut cut = finishing.scoreboard.trackingCut(connectionPlayers);
