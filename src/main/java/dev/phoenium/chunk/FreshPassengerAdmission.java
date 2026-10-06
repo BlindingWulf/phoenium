@@ -2,8 +2,10 @@ package dev.phoenium.chunk;
 
 import dev.phoenium.ownership.ObjectOwnership;
 import java.util.*;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.BooleanSupplier;
+import java.util.function.Supplier;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.level.ChunkPos;
@@ -11,7 +13,7 @@ import net.minecraft.world.level.ChunkPos;
 /** Exact, synchronous fresh-spawn input custody. This never inserts or starts tracking an entity. */
 public final class FreshPassengerAdmission implements AutoCloseable {
     public enum Phase { IDENTITY_PUBLISHED_NOT_TRACKED, TRACKING_STARTED, TRACKING_PUBLISHED, RETIRED }
-    public enum EntryPath { BULK_INSERTION, DIRECT_FINALIZATION_INSERTION }
+    public enum EntryPath { BULK_INSERTION, DIRECT_FINALIZATION_INSERTION, DETACHED_FINALIZATION_INSERTION }
     public interface Publisher {
         void requireOwners(Set<ChunkPos> positions);
         ObjectOwnership publish(Entity entity);
@@ -20,6 +22,8 @@ public final class FreshPassengerAdmission implements AutoCloseable {
     }
     private static final AtomicLong ADMISSION_SEQUENCE = new AtomicLong();
     private static final AtomicLong OUTER_SEQUENCE = new AtomicLong();
+    /** Open detached custodies; zero keeps every native insertion and relation edge on its untouched path. */
+    private static final AtomicInteger DETACHED_OPEN = new AtomicInteger();
     private static final ThreadLocal<ArrayDeque<NaturalSpawnScope>> NATURAL_SCOPES =
         ThreadLocal.withInitial(ArrayDeque::new);
     private final FullEntityFacts facts;
@@ -38,6 +42,7 @@ public final class FreshPassengerAdmission implements AutoCloseable {
     private String cancellation;
     private String exitReason = "ACTIVE";
     private Entity activeRoot;
+    private boolean detachedCounted, extending;
 
     private FreshPassengerAdmission(FullEntityFacts facts, ServerLevel world, Entity root, Entity expectedOuterCandidate,
             Publisher publisher, EntryPath entryPath, long outerGeneration, int nestedDepth) {
@@ -95,6 +100,110 @@ public final class FreshPassengerAdmission implements AutoCloseable {
     public static NaturalSpawnScope currentNaturalSpawnScope(ServerLevel world) {
         NaturalSpawnScope scope = NATURAL_SCOPES.get().peek();
         return scope != null && !scope.closed && scope.state.world == world ? scope : null;
+    }
+
+    /**
+     * Zombie/Drowned/Husk.finalizeSpawn inserts a fresh vehicle that already carries {@code finalizing},
+     * which its caller inserts later (spawners, eggs, summon, siege, reinforcements, conversions, or a
+     * nested natural rider such as the zombie-horse jockey). Outside the exact natural candidate the
+     * custody is detached: it lives while an inserted graph member carries an uninserted one.
+     */
+    public static boolean finalizationInsertion(ServerLevel world, Entity finalizing, Entity insertionRoot,
+            Supplier<Publisher> publisher, BooleanSupplier original) {
+        Objects.requireNonNull(world, "world"); Objects.requireNonNull(finalizing, "finalizing");
+        Objects.requireNonNull(insertionRoot, "insertionRoot"); Objects.requireNonNull(publisher, "publisher");
+        Objects.requireNonNull(original, "original");
+        NaturalSpawnScope scope = currentNaturalSpawnScope(world);
+        if (scope != null) {
+            Entity candidate = scope.state.finalizing.peek();
+            if (candidate == finalizing || candidate != null && insertionRoot.getPassengers().size() > 0
+                    && containsIdentity(insertionRoot, candidate))
+                return scope.directInsertion(insertionRoot, original);
+        }
+        if (insertionRoot == finalizing || insertionRoot.getPassengers().isEmpty()
+                || !containsIdentity(insertionRoot, finalizing)) return original.getAsBoolean();
+        var facts = FullFinishingServices.forServer(world.getServer()).entityFacts;
+        FreshPassengerAdmission admission = facts.pendingAdmission(finalizing);
+        if (admission == null) {
+            admission = begin(world, insertionRoot, finalizing, publisher.get(),
+                EntryPath.DETACHED_FINALIZATION_INSERTION, 0, 0);
+            admission.detachedCounted = true; DETACHED_OPEN.incrementAndGet();
+            facts.directAdmissionPrepared();
+        } else {
+            if (!admission.detachedFor(finalizing))
+                throw admission.failure(admission.members.get(finalizing),
+                    "detached direct insertion found its candidate in another pending custody");
+            if (!admission.contains(insertionRoot)) admission.extendDetached(insertionRoot, true);
+            else admission.validate();
+        }
+        boolean accepted;
+        try { accepted = original.getAsBoolean(); }
+        catch (RuntimeException | Error failure) {
+            try { admission.settleDetached("detached direct insertion failed"); }
+            catch (RuntimeException | Error cleanup) { failure.addSuppressed(cleanup); }
+            throw failure;
+        }
+        facts.directInsertionReturned(accepted);
+        admission.detachedCustodyChanged();
+        return accepted;
+    }
+    /** Husk's later parched bulk joins the same detached graph before the native loop tracks it. */
+    public static void finalizationBulkInsertion(ServerLevel world, Entity finalizing, Entity insertionRoot,
+            Runnable original) {
+        Objects.requireNonNull(world, "world"); Objects.requireNonNull(finalizing, "finalizing");
+        Objects.requireNonNull(insertionRoot, "insertionRoot"); Objects.requireNonNull(original, "original");
+        NaturalSpawnScope scope = currentNaturalSpawnScope(world);
+        if (scope != null && scope.state.finalizing.peek() == finalizing) { scope.bulkInsertion(insertionRoot, original); return; }
+        FreshPassengerAdmission admission = DETACHED_OPEN.get() == 0 ? null
+            : FullFinishingServices.forServer(world.getServer()).entityFacts.pendingAdmission(finalizing);
+        if (admission == null || !admission.detachedFor(finalizing)) {
+            if (scope != null) scope.bulkInsertion(insertionRoot, original); else original.run();
+            return;
+        }
+        admission.extendDetached(admission.activeRoot, false);
+        if (!admission.contains(insertionRoot))
+            throw admission.failure(admission.members.get(finalizing),
+                "finalization bulk insertion is outside the detached candidate graph");
+        admission.validate(); original.run(); admission.validate();
+        admission.detachedCustodyChanged();
+    }
+    public static boolean detachedCustodyOpen() { return DETACHED_OPEN.get() != 0; }
+    /** Native insertion of one detached graph member returned; settle once nothing carries an uninserted member. */
+    public static void insertionReturned(Entity entity) {
+        if (DETACHED_OPEN.get() == 0 || !(entity.level() instanceof ServerLevel world)) return;
+        var facts = FullFinishingServices.existingPassengerFacts(world.getServer());
+        FreshPassengerAdmission admission = facts == null ? null : facts.pendingAdmission(entity);
+        if (admission != null) admission.detachedCustodyChanged();
+    }
+    static void relationChanged(FullEntityFacts facts, Entity vehicle) {
+        if (DETACHED_OPEN.get() == 0) return;
+        FreshPassengerAdmission admission = facts.pendingAdmission(vehicle);
+        if (admission != null) admission.detachedCustodyChanged();
+    }
+    private boolean detachedFor(Entity candidate) {
+        return entryPath == EntryPath.DETACHED_FINALIZATION_INSERTION && expectedOuterCandidate == candidate && !closed;
+    }
+    private void extendDetached(Entity newActiveRoot, boolean allowCandidateReparent) {
+        extending = true;
+        try { extendCurrentGraph(newActiveRoot, allowCandidateReparent); } finally { extending = false; }
+    }
+    /** The detached custody is required exactly while an inserted member carries an uninserted entity. */
+    void detachedCustodyChanged() {
+        if (entryPath != EntryPath.DETACHED_FINALIZATION_INSERTION || closed || extending) return;
+        for (Member member : ordered)
+            if (!member.entity.isRemoved() && facts.hasStorage(member.entity) && carriesUninserted(member.entity)) return;
+        settleDetached("detached custody carries no uninserted passenger");
+    }
+    private boolean carriesUninserted(Entity vehicle) {
+        for (Entity passenger : vehicle.getPassengers())
+            if (!facts.hasStorage(passenger) || carriesUninserted(passenger)) return true;
+        return false;
+    }
+    private void settleDetached(String reason) {
+        if (closed) return;
+        boolean upgraded = !expectedOuterCandidate.isRemoved() && facts.hasStorage(expectedOuterCandidate);
+        close(reason);
+        facts.directAdmissionSettled(this, upgraded);
     }
     private void capture(Entity entity, Entity parent, int depth) {
         if (members.containsKey(entity)) throw failure(members.get(entity), "cyclic or duplicate graph node");
@@ -267,6 +376,7 @@ public final class FreshPassengerAdmission implements AutoCloseable {
     private void close(boolean shutdown, String reason) {
         if (closed) return;
         closed = true; exitReason = reason;
+        if (detachedCounted) { detachedCounted = false; DETACHED_OPEN.decrementAndGet(); }
         RuntimeException runtimeFailure = null; Error errorFailure = null;
         for (Member member : ordered) {
             try {

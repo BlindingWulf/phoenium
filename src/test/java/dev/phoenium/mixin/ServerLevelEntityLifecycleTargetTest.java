@@ -17,6 +17,7 @@ import net.minecraft.world.level.entity.PersistentEntitySectionManager;
 import org.junit.jupiter.api.Test;
 import org.objectweb.asm.ClassReader;
 import org.objectweb.asm.Opcodes;
+import org.objectweb.asm.Type;
 import org.objectweb.asm.tree.AnnotationNode;
 import org.objectweb.asm.tree.ClassNode;
 import org.objectweb.asm.tree.JumpInsnNode;
@@ -95,6 +96,102 @@ final class ServerLevelEntityLifecycleTargetTest {
         assertEquals(1, operation.require()); assertEquals(1, operation.expect());
         assertEquals("Lnet/minecraft/server/level/ServerLevel;addFreshEntityWithPassengers(Lnet/minecraft/world/entity/Entity;)V",
             operation.at()[0].target());
+    }
+    /** Stage 7A census: every native graph insertion (skeleton trap, spawn eggs, raids, structures, spawners,
+     * summon, natural spawn) reaches ServerLevel by virtual dispatch, so one ServerLevel override covers them all. */
+    @Test void everyNativeGraphInsertionDispatchesVirtuallyIntoTheServerLevelOverride() throws Exception {
+        var jar = java.nio.file.Path.of(ServerLevel.class.getProtectionDomain().getCodeSource().getLocation().toURI());
+        int callers = 0;
+        try (var zip = new java.util.zip.ZipFile(jar.toFile())) {
+            for (var entry : java.util.Collections.list(zip.entries())) {
+                if (!entry.getName().endsWith(".class")) continue;
+                ClassNode node = new ClassNode();
+                try (InputStream bytes = zip.getInputStream(entry)) { new ClassReader(bytes).accept(node, ClassReader.SKIP_DEBUG | ClassReader.SKIP_FRAMES); }
+                for (MethodNode method : node.methods) for (MethodInsnNode call : calls(method)) {
+                    if (!call.name.equals("addFreshEntityWithPassengers")) continue;
+                    callers++;
+                    assertTrue(call.getOpcode() == Opcodes.INVOKEVIRTUAL || call.getOpcode() == Opcodes.INVOKEINTERFACE,
+                        node.name + "." + method.name + " bypasses virtual dispatch");
+                }
+            }
+        }
+        assertTrue(callers >= 29, "native caller census shrank: " + callers);
+        assertTrue(original(net.minecraft.world.level.Level.class).methods.stream().noneMatch(m -> m.name.equals("addFreshEntityWithPassengers")));
+
+        ClassNode mixin = original(Class.forName("dev.phoenium.mixin.ServerLevelInheritedGraphInsertionMixin"));
+        assertEquals(List.of(Type.getType(ServerLevel.class)), value(annotation(mixin, "Lorg/spongepowered/asm/mixin/Mixin;"), "value"));
+        MethodNode override = method(mixin, "addFreshEntityWithPassengers", "(" + ENTITY + ")V");
+        assertEquals(Opcodes.ACC_PUBLIC, override.access & (Opcodes.ACC_PUBLIC | Opcodes.ACC_STATIC));
+        assertTrue(calls(override).stream().anyMatch(c -> c.owner.equals("dev/phoenium/chunk/CommandPassengerAdmission")
+            && c.name.equals("insertInheritedGraph")));
+        MethodNode nativeLoop = mixin.methods.stream().filter(m -> m.name.equals("phoenium$nativeGraphLoop")).findFirst().orElseThrow();
+        assertEquals(List.of("getSelfAndPassengers", "forEach"), calls(nativeLoop).stream().map(c -> c.name).toList());
+        assertTrue(Arrays.stream(nativeLoop.instructions.toArray()).filter(org.objectweb.asm.tree.InvokeDynamicInsnNode.class::isInstance)
+            .map(org.objectweb.asm.tree.InvokeDynamicInsnNode.class::cast).flatMap(i -> Arrays.stream(i.bsmArgs))
+            .anyMatch(arg -> arg instanceof org.objectweb.asm.Handle h && h.getName().equals("addFreshEntity")));
+    }
+    /** Stage 7A analogue census: every native finalizeSpawn that inserts a fresh entity itself is bound to the
+     * finalizing-mob custody, and the custody bridge passes the exact mixin target as that mob. */
+    @Test void everyNativeFinalizationInsertionIsBoundToTheFinalizingMobCustody() throws Exception {
+        var jar = java.nio.file.Path.of(ServerLevel.class.getProtectionDomain().getCodeSource().getLocation().toURI());
+        var direct = new java.util.TreeSet<String>(); var bulk = new java.util.TreeSet<String>();
+        try (var zip = new java.util.zip.ZipFile(jar.toFile())) {
+            for (var entry : java.util.Collections.list(zip.entries())) {
+                if (!entry.getName().endsWith(".class")) continue;
+                ClassNode node = new ClassNode();
+                try (InputStream bytes = zip.getInputStream(entry)) { new ClassReader(bytes).accept(node, ClassReader.SKIP_DEBUG | ClassReader.SKIP_FRAMES); }
+                for (MethodNode method : node.methods) {
+                    if (!method.name.equals("finalizeSpawn")) continue;
+                    for (MethodInsnNode call : calls(method)) {
+                        if (call.name.equals("addFreshEntity")) direct.add(node.name);
+                        if (call.name.equals("addFreshEntityWithPassengers")) bulk.add(node.name);
+                    }
+                }
+            }
+        }
+        String zombie = "net/minecraft/world/entity/monster/zombie/";
+        assertEquals(new java.util.TreeSet<>(List.of(zombie + "Drowned", zombie + "Husk", zombie + "Zombie")), direct,
+            "a new native finalizeSpawn direct insertion needs the finalizing-mob custody");
+        assertEquals(new java.util.TreeSet<>(List.of(zombie + "Husk")), bulk);
+
+        Class<?> directType = Class.forName("dev.phoenium.mixin.NaturalSpawnFinalizationInsertionMixin");
+        assertEquals(List.of(Type.getObjectType(zombie + "Zombie"), Type.getObjectType(zombie + "Drowned"), Type.getObjectType(zombie + "Husk")),
+            value(annotation(original(directType), "Lorg/spongepowered/asm/mixin/Mixin;"), "value"));
+        MethodNode bridge = original(directType).methods.stream()
+            .filter(m -> m.name.equals("phoenium$directFinalizationInsertion")).findFirst().orElseThrow();
+        assertThisIsTheFinalizingMob(bridge, "phoenium$finalizationInsertion");
+        MethodNode custody = original(directType).methods.stream()
+            .filter(m -> m.name.equals("phoenium$finalizationInsertion")).findFirst().orElseThrow();
+        assertTrue(calls(custody).stream().anyMatch(c -> c.owner.equals("dev/phoenium/chunk/FreshPassengerAdmission")
+            && c.name.equals("finalizationInsertion")));
+        MethodNode huskBridge = original(Class.forName("dev.phoenium.mixin.HuskNaturalSpawnFinalizationInsertionMixin")).methods.stream()
+            .filter(m -> m.name.equals("phoenium$finalizationBulkInsertion")).findFirst().orElseThrow();
+        assertThisIsTheFinalizingMob(huskBridge, "finalizationBulkInsertion");
+
+        ClassNode level = original(Class.forName("dev.phoenium.mixin.ServerLevelInheritedGraphInsertionMixin"));
+        MethodNode returned = level.methods.stream().filter(m -> m.name.equals("phoenium$detachedCustodyInsertion")).findFirst().orElseThrow();
+        assertEquals(List.of("addFreshEntity(Lnet/minecraft/world/entity/Entity;)Z"),
+            value(annotation(returned, "Lcom/llamalad7/mixinextras/injector/wrapmethod/WrapMethod;"), "method"));
+        assertEquals(List.of("call", "insertionReturned"), calls(returned).stream().map(c -> c.name)
+            .filter(name -> !name.equals("valueOf") && !name.equals("booleanValue")).toList(),
+            "the custody edge runs only after the native insertion returned");
+    }
+    private static void assertThisIsTheFinalizingMob(MethodNode bridge, String target) {
+        var instructions = bridge.instructions.toArray();
+        int invoke = -1;
+        for (int i = 0; i < instructions.length; i++)
+            if (instructions[i] instanceof MethodInsnNode call && call.name.equals(target)) invoke = i;
+        assertTrue(invoke > 0, bridge.name + " does not reach " + target);
+        boolean thisLoaded = false;
+        for (int i = 0; i < invoke; i++)
+            if (instructions[i] instanceof org.objectweb.asm.tree.VarInsnNode load && load.getOpcode() == Opcodes.ALOAD && load.var == 0)
+                thisLoaded = true;
+        assertTrue(thisLoaded, bridge.name + " must pass the mixin target as the finalizing mob");
+    }
+    private static AnnotationNode annotation(MethodNode method, String descriptor) {
+        return java.util.stream.Stream.of(method.visibleAnnotations, method.invisibleAnnotations)
+            .filter(java.util.Objects::nonNull).flatMap(List::stream)
+            .filter(annotation -> annotation.desc.equals(descriptor)).findFirst().orElseThrow();
     }
     private static List<MethodInsnNode> calls(MethodNode method) {
         return Arrays.stream(method.instructions.toArray()).filter(MethodInsnNode.class::isInstance).map(MethodInsnNode.class::cast).toList();

@@ -23,11 +23,12 @@ abstract class HuskNaturalSpawnFinalizationInsertionMixin {
         require = 1, expect = 1)
     private void phoenium$finalizationBulkInsertion(ServerLevelAccessor accessor, Entity root,
             Operation<Void> original) {
-        if (!(accessor instanceof ServerLevel level)) { original.call(accessor, root); return; }
-        FreshPassengerAdmission.NaturalSpawnScope scope = FreshPassengerAdmission.currentNaturalSpawnScope(level);
-        if (scope == null) { original.call(accessor, root); return; }
+        if (!(accessor instanceof ServerLevel level)
+                || FreshPassengerAdmission.currentNaturalSpawnScope(level) == null
+                && !FreshPassengerAdmission.detachedCustodyOpen()) { original.call(accessor, root); return; }
         try (var turn = FullFinishingServices.forServer(level.getServer()).referenceAccess()) {
-            scope.bulkInsertion(root, () -> original.call(accessor, root));
+            FreshPassengerAdmission.finalizationBulkInsertion(level, (Entity) (Object) this, root,
+                () -> original.call(accessor, root));
         }
     }
 }

@@ -1,6 +1,7 @@
 package dev.phoenium.chunk;
 
 import java.util.Objects;
+import java.util.function.Supplier;
 import dev.phoenium.topology.RegionRoute;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.entity.Entity;
@@ -26,8 +27,14 @@ public final class CommandPassengerAdmission {
         return baseline;
     }
 
-    public static void insert(ServerLevel level, Entity root, FreshPassengerAdmission.Publisher publisher,
-            Runnable original) {
+    /**
+     * Every other native caller of the inherited {@code ServerLevelAccessor.addFreshEntityWithPassengers}
+     * loop (skeleton trap, spawn eggs and jockeys, structure templates, raids, breeding...) gets the
+     * same graph custody as the command path. A root already admitted by an enclosing command or
+     * natural-spawn custody keeps that exact admission; a passenger-free root is the untouched call.
+     */
+    public static void insertInheritedGraph(ServerLevel level, Entity root,
+            Supplier<FreshPassengerAdmission.Publisher> publisher, Runnable original) {
         Objects.requireNonNull(level, "level");
         Objects.requireNonNull(root, "root");
         Objects.requireNonNull(publisher, "publisher");
@@ -36,8 +43,28 @@ public final class CommandPassengerAdmission {
             original.run();
             return;
         }
+        admitted(level, root, publisher, original);
+    }
+
+    public static void insert(ServerLevel level, Entity root, FreshPassengerAdmission.Publisher publisher,
+            Runnable original) {
+        Objects.requireNonNull(publisher, "publisher");
+        admitted(level, root, () -> publisher, original);
+    }
+
+    /** A root already inside a pending (command, natural, or detached finalization) custody keeps it. */
+    private static void admitted(ServerLevel level, Entity root,
+            Supplier<FreshPassengerAdmission.Publisher> publisher, Runnable original) {
+        Objects.requireNonNull(level, "level");
+        Objects.requireNonNull(root, "root");
+        Objects.requireNonNull(original, "original");
+        if (root.getPassengers().isEmpty()
+                || FullFinishingServices.forServer(level.getServer()).entityFacts.pendingPassengerIdentity(root)) {
+            original.run();
+            return;
+        }
         try (var turn = FullFinishingServices.forServer(level.getServer()).referenceAccess();
-             var graph = FreshPassengerAdmission.begin(level, root, publisher)) {
+             var graph = FreshPassengerAdmission.begin(level, root, publisher.get())) {
             original.run();
             graph.validate();
         }

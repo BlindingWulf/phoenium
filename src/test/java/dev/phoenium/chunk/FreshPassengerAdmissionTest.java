@@ -67,18 +67,15 @@ final class FreshPassengerAdmissionTest {
             });
         level.addFreshEntityWithPassengers(root);
     }
-    /** Executes the production handler bound to Zombie/Drowned/Husk.finalizeSpawn's direct call. */
-    @SuppressWarnings({"rawtypes", "unchecked"})
-    private static boolean directFinalizationInsertion(ServerLevelAccessor level, Entity root,
+    /** Executes the production handler bound to Zombie/Drowned/Husk.finalizeSpawn's direct call
+     * ({@code this} is the finalizing mob; the instance bridge is proved by an ASM test). */
+    private static boolean directFinalizationInsertion(ServerLevel level, Entity finalizing, Entity root,
             BooleanSupplier insertion) throws Exception {
-        Class type = Class.forName("dev.phoenium.mixin.NaturalSpawnFinalizationInsertionMixin");
-        Object mixin = stub(type, List.of());
-        Method handler = Arrays.stream(type.getDeclaredMethods())
-            .filter(method -> method.getName().equals("phoenium$directFinalizationInsertion"))
-            .findFirst().orElseThrow();
+        Class<?> type = Class.forName("dev.phoenium.mixin.NaturalSpawnFinalizationInsertionMixin");
+        Method handler = type.getDeclaredMethod("phoenium$finalizationInsertion",
+            ServerLevel.class, Entity.class, Entity.class, BooleanSupplier.class);
         handler.setAccessible(true);
-        Operation<Boolean> original = ignored -> insertion.getAsBoolean();
-        try { return (Boolean) handler.invoke(mixin, level, root, original); }
+        try { return (Boolean) handler.invoke(null, level, finalizing, root, insertion); }
         catch (InvocationTargetException invocation) {
             Throwable failure = invocation.getCause();
             if (failure instanceof RuntimeException runtime) throw runtime;
@@ -180,6 +177,81 @@ final class FreshPassengerAdmissionTest {
             assertEquals(2, publisher.objects.liveCount());
             assertTrue(f.service.entityFacts.hasStorage(root));
             assertTrue(f.service.entityFacts.hasStorage(child));
+        }
+    }
+    /** Stage 7A conv7b first fatal: SkeletonTrapGoal inserts a fresh horse that already carries a fresh
+     * skeleton through the inherited ServerLevelAccessor loop, outside every command/natural custody. */
+    @Test void inheritedGraphInsertionOutsideAnyCustodyStagesPassengersBeforeRootTracking() throws Exception {
+        try (var f = new FullServiceOperationFixture()) {
+            var world = f.world(); var root = entity(world, 27); var child = entity(world, 28); attach(root, child);
+            var publisher = new Publisher(); var inserted = new ArrayList<Entity>(); var manager = new Object();
+            var requested = new int[1];
+            try (var turn = f.service.referenceAccess()) {
+                CommandPassengerAdmission.insertInheritedGraph(world, root, () -> { requested[0]++; return publisher; },
+                    () -> nativeInsert(root, entity -> {
+                        inserted.add(entity);
+                        FullEntityFacts.stored(entity, manager);
+                        FullEntityFacts.passengerTrackingStarted(entity);
+                        var candidate = f.service.entityFacts.trackingCandidate(world, entity);
+                        var passengers = f.service.entityFacts.trackingPassengers(candidate);
+                        if (entity == root) {
+                            assertEquals(List.of(child), passengers.stream().map(FullEntityFacts.Candidate::alias).toList());
+                            assertFalse(f.service.entityFacts.hasStorage(child), "root native tracking must precede child insertion");
+                        }
+                        FullEntityFacts.passengerTrackingCompleted(entity);
+                    }));
+            }
+            assertEquals(1, requested[0]);
+            assertEquals(List.of(root, child), inserted);
+            assertEquals(2, publisher.objects.liveCount());
+            assertTrue(f.service.entityFacts.hasStorage(root));
+            assertTrue(f.service.entityFacts.hasStorage(child));
+        }
+    }
+    @Test void inheritedGraphInsertionWithoutPassengersIsTheUntouchedNativeCall() throws Exception {
+        try (var f = new FullServiceOperationFixture()) {
+            var world = f.world(); var root = entity(world, 29); var runs = new int[1];
+            CommandPassengerAdmission.insertInheritedGraph(world, root,
+                () -> { throw new AssertionError("a passenger-free root must not request a publisher"); }, () -> runs[0]++);
+            assertEquals(1, runs[0]);
+            assertNull(((FullEntityFacts.Access) root).phoenium$referenceFact());
+            assertFalse(f.service.entityFacts.hasRoute(root));
+        }
+    }
+    /** tryAddFreshEntityWithPassengers and natural bulk insertion already admit the exact graph; the
+     * inherited loop beneath them must reuse that custody, never admit the same identities twice. */
+    @Test void inheritedGraphInsertionReusesTheEnclosingCommandAdmission() throws Exception {
+        try (var f = new FullServiceOperationFixture()) {
+            var world = f.world(); var root = entity(world, 35); var child = entity(world, 36); attach(root, child);
+            var publisher = new Publisher(); var inserted = new ArrayList<Entity>(); var manager = new Object();
+            CommandPassengerAdmission.insert(world, root, publisher, () -> CommandPassengerAdmission.insertInheritedGraph(world, root,
+                () -> { throw new AssertionError("enclosing custody must be reused"); },
+                () -> nativeInsert(root, entity -> {
+                    inserted.add(entity); FullEntityFacts.stored(entity, manager);
+                    FullEntityFacts.passengerTrackingStarted(entity);
+                    f.service.entityFacts.trackingPassengers(f.service.entityFacts.trackingCandidate(world, entity));
+                    FullEntityFacts.passengerTrackingCompleted(entity);
+                })));
+            assertEquals(List.of(root, child), inserted);
+            assertEquals(2, publisher.objects.liveCount());
+        }
+    }
+    @Test void inheritedGraphInsertionReusesTheEnclosingNaturalBulkAdmission() throws Exception {
+        try (var f = new FullServiceOperationFixture()) {
+            var world = f.world(); var root = entity(world, 37); var child = entity(world, 38); attach(root, child);
+            var pub = new Publisher(); var inserted = new ArrayList<Entity>(); Object manager = new Object();
+            try (var turn = f.service.referenceAccess(); var scope = FreshPassengerAdmission.naturalSpawnScope(world, pub)) {
+                scope.bulkInsertion(root, () -> CommandPassengerAdmission.insertInheritedGraph(world, root,
+                    () -> { throw new AssertionError("enclosing natural custody must be reused"); },
+                    () -> nativeInsert(root, entity -> {
+                        inserted.add(entity); FullEntityFacts.stored(entity, manager);
+                        FullEntityFacts.passengerTrackingStarted(entity);
+                        f.service.entityFacts.trackingPassengers(f.service.entityFacts.trackingCandidate(world, entity));
+                        FullEntityFacts.passengerTrackingCompleted(entity);
+                    })));
+            }
+            assertEquals(List.of(root, child), inserted);
+            assertEquals(2, pub.objects.liveCount());
         }
     }
     @Test void commandGraphRouteMustRemainInOneOwnerAndTopologyEpoch() {
@@ -412,7 +484,7 @@ final class FreshPassengerAdmissionTest {
             manager.updateChunkStatus(candidate.chunkPosition(), Visibility.TICKING);
             try (var turn = f.service.referenceAccess(); var scope = FreshPassengerAdmission.naturalSpawnScope(world, pub)) {
                 try (var finalization = scope.finalizing(candidate)) {
-                    assertTrue(directFinalizationInsertion(world, vehicle, () -> manager.addNewEntity(vehicle)));
+                    assertTrue(directFinalizationInsertion(world, candidate, vehicle, () -> manager.addNewEntity(vehicle)));
                 }
                 assertEquals(1, manager.count());
                 assertNotNull(((FullEntityFacts.Access) candidate).phoenium$referenceFact());
@@ -426,6 +498,167 @@ final class FreshPassengerAdmissionTest {
             assertEquals(1L, f.service.entityFacts.measurements().get("directPassengerAccepted"));
             assertEquals(1L, f.service.entityFacts.measurements().get("directPassengerSettled"));
             assertEquals(2, pub.objects.liveCount());
+        }
+    }
+    /** Native addFreshEntity as wrapped in production: storage, synchronous tracking, then the return edge. */
+    private static boolean trackedInsertion(FullServiceOperationFixture f, ServerLevel world, Entity entity,
+            Object manager, List<Entity> expectedPassengers) {
+        FullEntityFacts.stored(entity, manager); FullEntityFacts.passengerTrackingStarted(entity);
+        var passengers = f.service.entityFacts.trackingPassengers(f.service.entityFacts.trackingCandidate(world, entity));
+        if (expectedPassengers != null)
+            assertEquals(expectedPassengers, passengers.stream().map(FullEntityFacts.Candidate::alias).toList());
+        FullEntityFacts.passengerTrackingCompleted(entity);
+        FreshPassengerAdmission.insertionReturned(entity);
+        return true;
+    }
+    private static Publisher refusedPublisher() { throw new AssertionError("existing custody must be reused"); }
+    /** Stage 7A analogue of the skeleton-trap fatal (RED: red-tests/RED-detached-direct-finalization-jockey.xml):
+     * a spawner/egg/summon/siege/reinforcement zombie inserts its fresh chicken while riding it, outside
+     * every natural scope, and its caller inserts the zombie only afterwards. */
+    @Test void detachedJockeyKeepsTheFinalizingRiderStagedUntilItsCallerInsertsIt() throws Exception {
+        try (var f = new FullServiceOperationFixture()) {
+            var world = f.world(); var vehicle = entity(world, 207); var candidate = entity(world, 208);
+            attach(vehicle, candidate); var pub = new Publisher(); Object manager = new Object();
+            try (var turn = f.service.referenceAccess()) {
+                assertTrue(FreshPassengerAdmission.finalizationInsertion(world, candidate, vehicle, () -> pub,
+                    () -> trackedInsertion(f, world, vehicle, manager, List.of(candidate))));
+                assertTrue(FreshPassengerAdmission.detachedCustodyOpen());
+                assertFalse(f.service.entityFacts.hasStorage(candidate));
+                assertNotNull(((FullEntityFacts.Access) candidate).phoenium$referenceFact());
+                assertEquals(List.of(candidate), f.service.entityFacts.trackingPassengers(
+                    f.service.entityFacts.trackingCandidate(world, vehicle)).stream().map(FullEntityFacts.Candidate::alias).toList(),
+                    "vehicle tracking between the two native insertions still resolves the rider");
+                assertEquals(0L, f.service.entityFacts.measurements().get("directPassengerSettled"));
+                var candidateOwnership = pub.current(candidate.getUUID().toString());
+                CommandPassengerAdmission.insertInheritedGraph(world, candidate, FreshPassengerAdmissionTest::refusedPublisher,
+                    () -> nativeInsert(candidate, entity -> trackedInsertion(f, world, entity, manager, List.of())));
+                assertEquals(candidateOwnership, pub.current(candidate.getUUID().toString()));
+            }
+            assertFalse(FreshPassengerAdmission.detachedCustodyOpen());
+            assertFalse(f.service.entityFacts.pendingPassengerIdentity(vehicle));
+            assertFalse(f.service.entityFacts.pendingPassengerIdentity(candidate));
+            assertEquals(2, pub.objects.liveCount());
+            assertEquals(1L, f.service.entityFacts.measurements().get("directPassengerPrepared"));
+            assertEquals(1L, f.service.entityFacts.measurements().get("directPassengerSettled"));
+            assertEquals(1L, f.service.entityFacts.measurements().get("directPassengerUpgraded"));
+        }
+    }
+    /** tryAddFreshEntityWithPassengers (summon, spawners, trial spawners) reuses the detached custody. */
+    @Test void detachedJockeyIsReusedByTheCommandInsertionOfItsRider() throws Exception {
+        try (var f = new FullServiceOperationFixture()) {
+            var world = f.world(); var vehicle = entity(world, 209); var candidate = entity(world, 210);
+            var helmet = entity(world, 213); attach(vehicle, candidate); attach(candidate, helmet);
+            var pub = new Publisher(); Object manager = new Object();
+            try (var turn = f.service.referenceAccess()) {
+                assertTrue(FreshPassengerAdmission.finalizationInsertion(world, candidate, vehicle, () -> pub,
+                    () -> trackedInsertion(f, world, vehicle, manager, List.of(candidate, helmet))));
+                CommandPassengerAdmission.insert(world, candidate, refusedPublisherInstance(),
+                    () -> nativeInsert(candidate, entity -> trackedInsertion(f, world, entity, manager, null)));
+            }
+            assertFalse(FreshPassengerAdmission.detachedCustodyOpen());
+            assertEquals(3, pub.objects.liveCount());
+            assertEquals(1L, f.service.entityFacts.measurements().get("directPassengerUpgraded"));
+        }
+    }
+    private static FreshPassengerAdmission.Publisher refusedPublisherInstance() {
+        return new FreshPassengerAdmission.Publisher() {
+            public void requireOwners(Set<ChunkPos> positions) { throw new AssertionError("existing custody must be reused"); }
+            public ObjectOwnership publish(Entity entity) { throw new AssertionError("existing custody must be reused"); }
+            public ObjectOwnership current(String uuid) { throw new AssertionError("existing custody must be reused"); }
+            public void retire(ObjectOwnership identity) { throw new AssertionError("existing custody must be reused"); }
+        };
+    }
+    /** ZombieHorse.finalizeSpawn (NATURAL): the nested rider rolls a chicken jockey, then rides the horse.
+     * The chicken custody ends at that dismount, so the natural bulk admits the rider exactly once. */
+    @Test void nestedNaturalRiderJockeyDetachesBeforeTheOuterNaturalBulk() throws Exception {
+        try (var f = new FullServiceOperationFixture()) {
+            var world = f.world(); var horse = entity(world, 214); var rider = entity(world, 215);
+            var chicken = entity(world, 216); attach(chicken, rider); var pub = new Publisher(); Object manager = new Object();
+            try (var turn = f.service.referenceAccess(); var scope = FreshPassengerAdmission.naturalSpawnScope(world, pub)) {
+                try (var finalization = scope.finalizing(horse)) {
+                    assertTrue(FreshPassengerAdmission.finalizationInsertion(world, rider, chicken, () -> pub,
+                        () -> trackedInsertion(f, world, chicken, manager, List.of(rider))));
+                    assertNotNull(pub.current(rider.getUUID().toString()));
+                    attach(chicken); attach(horse, rider); FullEntityFacts.passengersChanged(chicken);
+                    assertFalse(FreshPassengerAdmission.detachedCustodyOpen());
+                    assertNull(pub.current(rider.getUUID().toString()));
+                    assertNull(((FullEntityFacts.Access) rider).phoenium$referenceFact());
+                    assertNotNull(pub.current(chicken.getUUID().toString()));
+                }
+                scope.bulkInsertion(horse, () -> nativeInsert(horse, entity -> trackedInsertion(f, world, entity, manager,
+                    entity == horse ? List.of(rider) : List.of())));
+            }
+            assertEquals(3, pub.objects.liveCount());
+            assertEquals(1L, f.service.entityFacts.measurements().get("directPassengerSettled"));
+            assertEquals(0L, f.service.entityFacts.measurements().get("directPassengerUpgraded"));
+        }
+    }
+    @Test void rejectedDetachedVehicleSettlesAtOnceWithoutRetainingIdentities() throws Exception {
+        try (var f = new FullServiceOperationFixture()) {
+            var world = f.world(); var vehicle = entity(world, 217); var candidate = entity(world, 218);
+            attach(vehicle, candidate); var pub = new Publisher();
+            try (var turn = f.service.referenceAccess()) {
+                assertFalse(FreshPassengerAdmission.finalizationInsertion(world, candidate, vehicle, () -> pub, () -> false));
+            }
+            assertFalse(FreshPassengerAdmission.detachedCustodyOpen());
+            assertEquals(0, pub.objects.liveCount());
+            assertNull(((FullEntityFacts.Access) candidate).phoenium$referenceFact());
+            assertEquals(1L, f.service.entityFacts.measurements().get("directPassengerRejected"));
+        }
+    }
+    /** EntityType/SpawnUtil-style discard of the never-inserted rider: its dismount ends the custody. */
+    @Test void discardedDetachedRiderRetiresOnlyItsUnusedIdentity() throws Exception {
+        try (var f = new FullServiceOperationFixture()) {
+            var world = f.world(); var vehicle = entity(world, 219); var candidate = entity(world, 220);
+            attach(vehicle, candidate); var pub = new Publisher(); Object manager = new Object();
+            try (var turn = f.service.referenceAccess()) {
+                assertTrue(FreshPassengerAdmission.finalizationInsertion(world, candidate, vehicle, () -> pub,
+                    () -> trackedInsertion(f, world, vehicle, manager, List.of(candidate))));
+                FullEntityFacts.passengerRemoved(candidate);
+                assertTrue(FreshPassengerAdmission.detachedCustodyOpen(), "removal HEAD precedes the native dismount");
+                attach(vehicle); FullEntityFacts.passengersChanged(vehicle);
+                assertTrue(f.service.entityFacts.trackingPassengers(f.service.entityFacts.trackingCandidate(world, vehicle)).isEmpty());
+            }
+            assertFalse(FreshPassengerAdmission.detachedCustodyOpen());
+            assertEquals(1, pub.objects.liveCount()); assertNotNull(pub.current(vehicle.getUUID().toString()));
+            assertNull(((FullEntityFacts.Access) candidate).phoenium$referenceFact());
+        }
+    }
+    /** Husk.finalizeSpawn outside a natural scope: camel direct insertion, then the parched helper bulk. */
+    @Test void detachedHuskCamelCoversTheLaterParchedBulk() throws Exception {
+        try (var f = new FullServiceOperationFixture()) {
+            var world = f.world(); var camel = entity(world, 221); var husk = entity(world, 222);
+            var parched = entity(world, 223); attach(camel, husk); var pub = new Publisher(); Object manager = new Object();
+            try (var turn = f.service.referenceAccess()) {
+                assertTrue(FreshPassengerAdmission.finalizationInsertion(world, husk, camel, () -> pub,
+                    () -> trackedInsertion(f, world, camel, manager, List.of(husk))));
+                attach(camel, husk, parched); FullEntityFacts.passengersChanged(camel);
+                assertTrue(FreshPassengerAdmission.detachedCustodyOpen());
+                FreshPassengerAdmission.finalizationBulkInsertion(world, husk, parched, () -> nativeInsert(parched, entity -> {
+                    assertEquals(List.of(husk, parched), f.service.entityFacts.trackingPassengers(
+                        f.service.entityFacts.trackingCandidate(world, camel)).stream().map(FullEntityFacts.Candidate::alias).toList());
+                    trackedInsertion(f, world, entity, manager, List.of());
+                }));
+                assertTrue(FreshPassengerAdmission.detachedCustodyOpen(), "the husk itself is still uninserted");
+                nativeInsert(husk, entity -> trackedInsertion(f, world, entity, manager, List.of()));
+            }
+            assertFalse(FreshPassengerAdmission.detachedCustodyOpen());
+            assertEquals(3, pub.objects.liveCount());
+            assertEquals(1L, f.service.entityFacts.measurements().get("directPassengerUpgraded"));
+        }
+    }
+    @Test void detachedPathLeavesVehiclesThatDoNotCarryTheFinalizingMobUntouched() throws Exception {
+        try (var f = new FullServiceOperationFixture()) {
+            var world = f.world(); var finalizing = entity(world, 224); var vehicle = entity(world, 225);
+            var stranger = entity(world, 226); attach(vehicle, stranger); var calls = new int[1];
+            assertFalse(directFinalizationInsertion(world, finalizing, entity(world, 227), () -> { calls[0]++; return false; }));
+            try (var turn = f.service.referenceAccess()) {
+                assertFalse(FreshPassengerAdmission.finalizationInsertion(world, finalizing, vehicle,
+                    FreshPassengerAdmissionTest::refusedPublisher, () -> { calls[0]++; return false; }));
+            }
+            assertEquals(2, calls[0]);
+            assertNull(((FullEntityFacts.Access) vehicle).phoenium$referenceFact());
+            assertFalse(FreshPassengerAdmission.detachedCustodyOpen());
         }
     }
     @Test void reentrantScopeReusesTheExactDirectAdmissionWithoutDoubleOwnershipOrTracking() throws Exception {

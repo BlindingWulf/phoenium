@@ -352,6 +352,7 @@ public final class FullEntityFacts {
         }
         finally { facts.candidateMetadata.unlock(); }
         facts.service.changed(FullFinishingServices.Kind.TRACKER);
+        FreshPassengerAdmission.relationChanged(facts, vehicle);
     }
     /** Exact owner-published routing receipt for one alias already selected by an original
      * service directory. The returned pointer is retained only together with its incarnation,
@@ -701,6 +702,14 @@ public final class FullEntityFacts {
             if (pendingPassengerIdentities.putIfAbsent(entity, admission) != null)
                 throw new ChunkProtocolException("fresh passenger identity already admitted");
         } finally { candidateMetadata.unlock(); }
+    }
+    boolean pendingPassengerIdentity(Entity entity) {
+        candidateMetadata.lock();
+        try { return pendingPassengerIdentities.containsKey(entity); } finally { candidateMetadata.unlock(); }
+    }
+    FreshPassengerAdmission pendingAdmission(Entity entity) {
+        candidateMetadata.lock();
+        try { return pendingPassengerIdentities.get(entity); } finally { candidateMetadata.unlock(); }
     }
     void releasePassengerIdentity(Entity entity, FreshPassengerAdmission admission) {
         candidateMetadata.lock();
