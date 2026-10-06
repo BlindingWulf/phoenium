@@ -500,9 +500,10 @@ final class FreshPassengerAdmissionTest {
             assertEquals(2, pub.objects.liveCount());
         }
     }
-    /** Native addFreshEntity as wrapped in production: storage, synchronous tracking, then the return edge. */
+    /** Native addFreshEntity as wrapped in production: start edge, storage, synchronous tracking, return edge. */
     private static boolean trackedInsertion(FullServiceOperationFixture f, ServerLevel world, Entity entity,
             Object manager, List<Entity> expectedPassengers) {
+        FreshPassengerAdmission.insertionStarting(entity);
         FullEntityFacts.stored(entity, manager); FullEntityFacts.passengerTrackingStarted(entity);
         var passengers = f.service.entityFacts.trackingPassengers(f.service.entityFacts.trackingCandidate(world, entity));
         if (expectedPassengers != null)
@@ -542,6 +543,55 @@ final class FreshPassengerAdmissionTest {
             assertEquals(1L, f.service.entityFacts.measurements().get("directPassengerSettled"));
             assertEquals(1L, f.service.entityFacts.measurements().get("directPassengerUpgraded"));
         }
+    }
+    /** VillageSiege.trySpawn: finalizeSpawn runs at the new Zombie's origin, so the jockey chicken is inserted
+     * there; the caller then snapTo()s the still-uninserted zombie to the siege point and inserts it. */
+    @Test void siegeRiderMovedBeforeItsOwnInsertionIsRestagedAtTheInsertedPosition() throws Exception {
+        try (var f = new FullServiceOperationFixture()) {
+            var world = f.world(); var vehicle = entity(world, 228); var candidate = entity(world, 228);
+            candidate.setId(229); attach(vehicle, candidate); var pub = new Publisher(); Object manager = new Object();
+            try (var turn = f.service.referenceAccess()) {
+                assertTrue(FreshPassengerAdmission.finalizationInsertion(world, candidate, vehicle, () -> pub,
+                    () -> trackedInsertion(f, world, vehicle, manager, List.of(candidate))));
+                var staged = pub.current(candidate.getUUID().toString());
+                moveUninserted(candidate, 231);
+                CommandPassengerAdmission.insertInheritedGraph(world, candidate, FreshPassengerAdmissionTest::refusedPublisher,
+                    () -> nativeInsert(candidate, entity -> trackedInsertion(f, world, entity, manager, List.of())));
+                var inserted = pub.current(candidate.getUUID().toString());
+                assertNotEquals(staged, inserted, "the origin binding is retired, not reused");
+                assertEquals(new RoutingKey(pub.world, 231, 0), inserted.routingKey());
+                assertEquals(new ChunkPos(231, 0), f.service.entityFacts.trackingCandidate(world, candidate).position());
+            }
+            assertFalse(FreshPassengerAdmission.detachedCustodyOpen());
+            assertFalse(f.service.entityFacts.pendingPassengerIdentity(candidate));
+            assertEquals(2, pub.objects.liveCount());
+            assertEquals(1L, f.service.entityFacts.measurements().get("directPassengerUpgraded"));
+        }
+    }
+    /** A caller that moves the rider outside its owner closure still fails closed and publishes nothing new. */
+    @Test void siegeRiderMovedOutsideItsOwnersFailsClosed() throws Exception {
+        try (var f = new FullServiceOperationFixture()) {
+            var world = f.world(); var vehicle = entity(world, 232); var candidate = entity(world, 232);
+            candidate.setId(233); attach(vehicle, candidate); var pub = new Publisher(); Object manager = new Object();
+            try (var turn = f.service.referenceAccess()) {
+                assertTrue(FreshPassengerAdmission.finalizationInsertion(world, candidate, vehicle, () -> pub,
+                    () -> trackedInsertion(f, world, vehicle, manager, List.of(candidate))));
+                var staged = pub.current(candidate.getUUID().toString());
+                moveUninserted(candidate, 235); pub.authority = false;
+                assertThrows(ChunkProtocolException.class, () -> CommandPassengerAdmission.insertInheritedGraph(world, candidate,
+                    FreshPassengerAdmissionTest::refusedPublisher,
+                    () -> nativeInsert(candidate, entity -> trackedInsertion(f, world, entity, manager, List.of()))));
+                assertFalse(f.service.entityFacts.hasStorage(candidate));
+                assertEquals(staged, pub.current(candidate.getUUID().toString()));
+            }
+        }
+    }
+    /** Native snapTo on an uninserted entity: fields change, then EntityLifecycleMixin publishes the route. */
+    private static void moveUninserted(Entity entity, int chunkX) throws Exception {
+        set(entity, Entity.class, "chunkPosition", new ChunkPos(chunkX, 0));
+        set(entity, Entity.class, "position", new Vec3(chunkX * 16 + 1, 65, 1));
+        set(entity, Entity.class, "blockPosition", new net.minecraft.core.BlockPos(chunkX * 16 + 1, 65, 1));
+        FullEntityFacts.routed(entity);
     }
     /** tryAddFreshEntityWithPassengers (summon, spawners, trial spawners) reuses the detached custody. */
     @Test void detachedJockeyIsReusedByTheCommandInsertionOfItsRider() throws Exception {

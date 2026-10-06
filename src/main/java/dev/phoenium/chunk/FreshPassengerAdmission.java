@@ -168,6 +168,40 @@ public final class FreshPassengerAdmission implements AutoCloseable {
         admission.detachedCustodyChanged();
     }
     public static boolean detachedCustodyOpen() { return DETACHED_OPEN.get() != 0; }
+    /**
+     * Native insertion of a detached candidate is starting. VillageSiege finalizes its Zombie at the
+     * construction origin (so the jockey vehicle lands there) and only then snapTo()s the still
+     * uninserted rider to the siege point; the caller's own insertion is the edge that fixes the
+     * rider's position, so its staged binding is re-published there inside the same owner closure.
+     */
+    public static void insertionStarting(Entity entity) {
+        if (DETACHED_OPEN.get() == 0 || !(entity.level() instanceof ServerLevel world)) return;
+        var facts = FullFinishingServices.existingPassengerFacts(world.getServer());
+        FreshPassengerAdmission admission = facts == null ? null : facts.pendingAdmission(entity);
+        if (admission == null || !admission.detachedFor(entity)) return;
+        try (var turn = FullFinishingServices.forServer(world.getServer()).referenceAccess()) {
+            admission.restageCandidate();
+        }
+    }
+    private void restageCandidate() {
+        Member member = members.get(expectedOuterCandidate);
+        if (member == null || facts.hasStorage(expectedOuterCandidate)) return;
+        ChunkPos current = expectedOuterCandidate.chunkPosition();
+        if (current.equals(member.position)) { validate(); return; }
+        Set<ChunkPos> positions = new LinkedHashSet<>();
+        for (Member each : ordered) positions.add(each == member ? current : each.position);
+        try { publisher.requireOwners(Set.copyOf(positions)); }
+        catch (RuntimeException foreign) {
+            throw failure(member, "candidate moved outside its owner closure before insertion: " + foreign.getMessage());
+        }
+        if (!facts.hasRoute(expectedOuterCandidate)) throw failure(member, "moved candidate lost its staged route");
+        FullEntityFacts.routed(expectedOuterCandidate);
+        ObjectOwnership previous = member.binding;
+        publisher.retire(previous);
+        member.binding = publisher.publish(expectedOuterCandidate);
+        member.position = current;
+        validate();
+    }
     /** Native insertion of one detached graph member returned; settle once nothing carries an uninserted member. */
     public static void insertionReturned(Entity entity) {
         if (DETACHED_OPEN.get() == 0 || !(entity.level() instanceof ServerLevel world)) return;
@@ -202,6 +236,9 @@ public final class FreshPassengerAdmission implements AutoCloseable {
     private void settleDetached(String reason) {
         if (closed) return;
         boolean upgraded = !expectedOuterCandidate.isRemoved() && facts.hasStorage(expectedOuterCandidate);
+        Member candidate = members.get(expectedOuterCandidate);
+        if (upgraded && candidate != null && !expectedOuterCandidate.chunkPosition().equals(candidate.position))
+            throw failure(candidate, "candidate was inserted away from its staged binding without an insertion edge");
         close(reason);
         facts.directAdmissionSettled(this, upgraded);
     }
@@ -565,7 +602,7 @@ public final class FreshPassengerAdmission implements AutoCloseable {
     }
     private static final class Member {
         final Entity entity; Entity parent; final int depth, id; final long incarnation; final UUID uuid;
-        final ChunkPos position; List<Entity> children;
+        ChunkPos position; List<Entity> children;
         ObjectOwnership binding; Phase phase = Phase.IDENTITY_PUBLISHED_NOT_TRACKED;
         Member(Entity entity, Entity parent, int depth, long incarnation, UUID uuid, int id,
                 ChunkPos position, List<Entity> children) {

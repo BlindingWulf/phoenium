@@ -172,9 +172,9 @@ final class ServerLevelEntityLifecycleTargetTest {
         MethodNode returned = level.methods.stream().filter(m -> m.name.equals("phoenium$detachedCustodyInsertion")).findFirst().orElseThrow();
         assertEquals(List.of("addFreshEntity(Lnet/minecraft/world/entity/Entity;)Z"),
             value(annotation(returned, "Lcom/llamalad7/mixinextras/injector/wrapmethod/WrapMethod;"), "method"));
-        assertEquals(List.of("call", "insertionReturned"), calls(returned).stream().map(c -> c.name)
+        assertEquals(List.of("insertionStarting", "call", "insertionReturned"), calls(returned).stream().map(c -> c.name)
             .filter(name -> !name.equals("valueOf") && !name.equals("booleanValue")).toList(),
-            "the custody edge runs only after the native insertion returned");
+            "the candidate is re-staged before, and the custody settles after, the native insertion");
     }
     private static void assertThisIsTheFinalizingMob(MethodNode bridge, String target) {
         var instructions = bridge.instructions.toArray();

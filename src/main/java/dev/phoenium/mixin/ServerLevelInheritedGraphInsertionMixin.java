@@ -31,9 +31,11 @@ abstract class ServerLevelInheritedGraphInsertionMixin {
         root.getSelfAndPassengers().forEach(this::addFreshEntity);
     }
 
-    /** A detached finalization custody settles once its caller's later native insertion has returned. */
+    /** A detached finalization candidate is re-staged where its caller inserts it, and the custody
+     * settles once that native insertion has returned. */
     @WrapMethod(method = "addFreshEntity(Lnet/minecraft/world/entity/Entity;)Z")
     private boolean phoenium$detachedCustodyInsertion(Entity entity, Operation<Boolean> original) {
+        FreshPassengerAdmission.insertionStarting(entity);
         boolean accepted = original.call(entity);
         FreshPassengerAdmission.insertionReturned(entity);
         return accepted;
