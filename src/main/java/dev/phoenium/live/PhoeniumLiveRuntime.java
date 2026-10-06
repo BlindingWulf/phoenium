@@ -104,6 +104,7 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
     private final Map<RegionId, RegionRuntime> runtimes = new ConcurrentHashMap<>();
     private final RegionDirectory directory = new RegionDirectory();
     private final ObjectOwnershipRegistry objects = new ObjectOwnershipRegistry(directory);
+    private final ScheduledFunctionBoundary scheduledFunctions = new ScheduledFunctionBoundary();
     private final PearlPortalTransitionManager pearlPortalTransitions;
     private final ItemPortalTransitionManager itemPortalTransitions;
     private final MobPortalTransitionManager mobPortalTransitions;
@@ -448,6 +449,7 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
         regionalDispatcher = new RegionalServiceDispatcher("phoenium-regional-services", lifecycleStarts + 1,
             directory, runtimes, gateway, scheduler);
         regionalServices = new RegionalWorldServices(directory, regionalDispatcher, objects);
+        CommandOwnerConfinement.install(key -> directory.resolve(key).map(RegionRoute::region));
         initializeRegionalSaves(regionalDispatcher);
         // Reload can populate the native tracker map before SERVER_STARTED. Bootstrap
         // reads its real published entity facts under the same named service turn used
@@ -522,6 +524,8 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
             throw failure;
         } finally {
             pendingTick = null;
+            // A capture that never reached the coordinator was not run; its due events remain queued.
+            scheduledFunctions.discard();
         }
         if (scheduler.lifecycle() == SchedulerLifecycle.FAILED) {
             if (hardBarriers == 0) barrier.record().ifPresent(record ->
@@ -544,7 +548,13 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
         if (!pending.queued) throw new IllegalStateException("live tick owner phase was not queued");
         switch (pending.step) {
             case PREFIX_OWNER -> {
-                pending.levelState = phases.phoenium$beforeScheduledTicks(pending.shouldKeepTicking());
+                // The prefix's /schedule timer-queue tick is a global command source; defer it owner-free.
+                scheduledFunctions.arm();
+                try {
+                    pending.levelState = phases.phoenium$beforeScheduledTicks(pending.shouldKeepTicking());
+                } finally {
+                    scheduledFunctions.disarm();
+                }
                 pending.step = PendingTick.Step.SCHEDULED_COORDINATOR;
             }
             case MIDDLE_OWNER -> {
@@ -577,6 +587,8 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
         var phases = (LiveTickPhases.LevelAccess) pending.level();
         switch (pending.step) {
             case SCHEDULED_COORDINATOR -> {
+                // Same tick position as vanilla tickTime: scheduled functions, then scheduled block/fluid ticks.
+                scheduledFunctions.runOwnerFree(OwnershipContext.current().isPresent());
                 phases.phoenium$runScheduledTicks(pending.levelState);
                 queueTickPhase(pending, live, PendingTick.Step.MIDDLE_OWNER);
             }
@@ -921,6 +933,8 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
     }
 
     public ChunkBindingRuntime chunkBinding() { return chunkBinding; }
+    public ScheduledFunctionBoundary scheduledFunctions() { return scheduledFunctions; }
+
     public RegionalWorldServices regionalServices() {
         if (regionalServices == null) throw new IllegalStateException("regional services unavailable before live start");
         return regionalServices;
