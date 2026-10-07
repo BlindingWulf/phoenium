@@ -17,6 +17,7 @@ public record ChunkHolderLifetime(ChunkPrerequisiteServices services, ChunkCusto
      */
     public static void providerHolderRemoved(GenerationChunkHolder holder, java.util.function.Consumer<Runnable> mainExecutor) {
         java.util.Objects.requireNonNull(holder, "holder"); java.util.Objects.requireNonNull(mainExecutor, "mainExecutor");
+        mainExecutor.accept(() -> retired(holder));
     }
     public static void retired(GenerationChunkHolder holder) {
         var attachment = ((FullHolderEvidence) holder).phoenium$lifetime();
