@@ -137,6 +137,31 @@ class ResidentChunkSourceBindingTest {
         }
     }
 
+    /** S8-F5: with C2ME the vanilla pendingUnloads removal never runs; flowsched removal must end the lifetime. */
+    @Test void providerHolderRemovalReleasesBackingLifetimeOnTheMapExecutor() throws Exception {
+        try (var f = new ProviderFixture()) {
+            f.publish(); var binding = f.capture(); assertNotNull(binding);
+            var holder = f.nativeFixture.holder(POS);
+            var lifetime = BlockEntityExternalReadPreparation.lifetime(holder);
+            var services = lifetime.services();
+            ChunkHolderLifetime.residentSourceRetired(holder);
+            var queued = new java.util.ArrayList<Runnable>();
+            ChunkHolderLifetime.providerHolderRemoved(holder, queued::add);
+            assertTrue(BlockEntityExternalReadPreparation.current(holder, lifetime), "retirement ran under the provider monitor");
+            assertEquals(1, queued.size(), "retirement was not handed to the map executor");
+            queued.forEach(Runnable::run);
+            assertFalse(BlockEntityExternalReadPreparation.current(holder, lifetime));
+            assertNull(((FullHolderEvidence) holder).phoenium$lifetime());
+            assertTrue(services.custody().lifecycleState(lifetime.lifecycle()).isEmpty(), "retired lifecycle still in the custody ledger");
+            assertFalse(services.lifecycles().holderMatches(lifetime.lifecycle(), holder), "registry still references the removed holder");
+            assertEquals(0, services.residentHolderEntries());
+            queued.clear();
+            ChunkHolderLifetime.providerHolderRemoved(holder, queued::add);
+            queued.forEach(Runnable::run);
+            assertEquals(0, services.residentHolderEntries());
+        }
+    }
+
     @Test void replacementProviderPublicationCannotReviveAnOlderPendingRegistration() throws Exception {
         try (var f = new ProviderFixture(); var old = f.tickerBinding()) {
             assertFalse(old.activate());

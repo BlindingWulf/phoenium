@@ -32,6 +32,19 @@ final class C2meFullProviderBinaryTest {
         assertEquals(1, invocationCount(removal, "it/unimi/dsi/fastutil/longs/Long2ObjectLinkedOpenHashMap", "remove", "(J)Ljava/lang/Object;"));
     }
 
+    /** S8-F5: the final provider holder removal seam and the map whose main executor receives the retirement. */
+    @Test void providerHolderRemovalSeamAndMapAreExact() throws Exception {
+        var node = read(REWRITES, ROOT + "TheChunkSystem.class");
+        assertMethod(node, "onItemRemoval", "(Lcom/ishland/flowsched/scheduler/ItemHolder;)V");
+        var tacs = node.fields.stream().filter(field -> field.name.equals("tacs")).findFirst().orElseThrow();
+        assertEquals("Lnet/minecraft/server/level/ChunkMap;", tacs.desc);
+        String configuration;
+        try (var input = java.util.Objects.requireNonNull(getClass().getResourceAsStream("/phoenium.mixins.json"))) {
+            configuration = new String(input.readAllBytes(), java.nio.charset.StandardCharsets.UTF_8);
+        }
+        assertTrue(configuration.contains("\"C2meHolderRemovalMixin\""), "provider holder removal adapter is not installed");
+    }
+
     @Test void serverAccessibleHasExactFullAndDelayedRunnableSeams() throws Exception {
         ClassNode node = read(REWRITES, ROOT + "statuses/ServerAccessible.class");
         String upgrade = "(" + CTX + CANCEL + ")" + COMPLETABLE;
