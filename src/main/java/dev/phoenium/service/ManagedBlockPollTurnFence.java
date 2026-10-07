@@ -30,6 +30,9 @@ public final class ManagedBlockPollTurnFence {
         return current == null ? 0 : current.activePoll();
     }
 
+    /** True while this thread is inside any native return-fence wait, including its pumped tasks. */
+    public static boolean reservationActive() { return CURRENT.get() != null; }
+
     public Reservation reserve(long captureOrdinal, long queryGeneration, CompletionStage<?> dependency,
                                BooleanSupplier valid, Runnable requireOwnerFree) {
         requireThread();

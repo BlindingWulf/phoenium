@@ -44,6 +44,7 @@ public final class RegionalServiceDispatcher implements RegionalServiceExecutor 
     private long nextSequence;
     private BooleanSupplier boundaryAdvancer = () -> false;
     private Predicate<Set<RoutingKey>> closureEncloser;
+    private NeighborCascadeContinuation.Environment neighborCascades;
 
     public RegionalServiceDispatcher(String serviceId, long worldInstance, RegionDirectory directory,
                                      Map<RegionId, RegionRuntime> runtimes, OwnerGateway gateway,
@@ -61,6 +62,13 @@ public final class RegionalServiceDispatcher implements RegionalServiceExecutor 
     /** Installs the live topology coordinator's owner-free, non-blocking boundary advance. */
     public void installBoundaryAdvancer(BooleanSupplier boundaryAdvancer) {
         this.boundaryAdvancer = Objects.requireNonNull(boundaryAdvancer, "boundaryAdvancer");
+    }
+
+    /** Installs the native neighbour-cascade continuation for the plain owned service kinds. */
+    public void installNeighborCascades(NeighborCascadeContinuation.Environment environment) {
+        if (neighborCascades != null && neighborCascades != environment)
+            throw new IllegalStateException("neighbor cascade continuation already installed");
+        neighborCascades = Objects.requireNonNull(environment, "environment");
     }
 
     public void installClosureEncloser(Predicate<Set<RoutingKey>> closureEncloser) {
@@ -224,7 +232,13 @@ public final class RegionalServiceDispatcher implements RegionalServiceExecutor 
     }
 
     public void executeAndDrain(RoutingKey key, RegionalServiceKind kind, RegionalServiceWork body) {
-        drain(submit(key, kind, body));
+        var cascade = NeighborCascadeContinuation.arm(neighborCascades, key, kind);
+        if (cascade == null) { drain(submit(key, kind, body)); return; }
+        // A cut cascade waits only here, after the owned body committed and released its lease.
+        try (cascade) {
+            drain(submit(key, kind, cascade.wrap(body)));
+            cascade.finish(this);
+        }
     }
 
     public void requireNaturalSpawnOwnerFree() {
@@ -239,17 +253,24 @@ public final class RegionalServiceDispatcher implements RegionalServiceExecutor 
      * inbox round is allowed between its return reservation and its current owner. */
     public void resumeNaturalSpawn(ManagedBlockPollTurnFence.Reservation reservation,
                                    RoutingKey key, RegionalServiceWork body) {
-        resumeReserved(reservation, key, RegionalServiceKind.CHUNK_GAMEPLAY, body);
+        resumeReserved(reservation, key, RegionalServiceKind.CHUNK_GAMEPLAY, "natural-spawn-resume", body);
     }
 
     /** The same return fence, scoped to the retained Vault block-entity suffix. */
     public void resumeVaultTick(ManagedBlockPollTurnFence.Reservation reservation,
                                RoutingKey key, RegionalServiceWork body) {
-        resumeReserved(reservation, key, RegionalServiceKind.BLOCK_ENTITY_TICK, body);
+        resumeReserved(reservation, key, RegionalServiceKind.BLOCK_ENTITY_TICK, "vault-tick-resume", body);
+    }
+
+    /** The same return fence, scoped to a retained native neighbour-update cascade. */
+    void resumeNeighborCascade(ManagedBlockPollTurnFence.Reservation reservation,
+                               RoutingKey key, RegionalServiceKind kind, RegionalServiceWork body) {
+        if (!NeighborCascadeContinuation.armable(kind)) throw new IllegalArgumentException("not a neighbor cascade kind: " + kind);
+        resumeReserved(reservation, key, kind, "neighbor-cascade-resume", body);
     }
 
     private void resumeReserved(ManagedBlockPollTurnFence.Reservation reservation,
-                               RoutingKey key, RegionalServiceKind kind, RegionalServiceWork body) {
+                               RoutingKey key, RegionalServiceKind kind, String name, RegionalServiceWork body) {
         reservation.requireResumeClaim();
         if (!scheduler.acceptsSimulationWork()) { reservation.retire(ManagedBlockPollTurnFence.State.SHUTDOWN); return; }
         RegionRoute route = directory.resolve(key).orElse(null);
@@ -265,7 +286,7 @@ public final class RegionalServiceDispatcher implements RegionalServiceExecutor 
         }, handle, false, System.nanoTime(), ignored -> true, false);
         pending.put(operationId, retained);
         var payload = new TaskPayload.RegionalService(serviceId, worldInstance, operationId, kind.name());
-        var envelope = new RegionTaskEnvelope(kind == RegionalServiceKind.BLOCK_ENTITY_TICK ? "vault-tick-resume" : "natural-spawn-resume", payload, key, route.generation(),
+        var envelope = new RegionTaskEnvelope(name, payload, key, route.generation(),
             route.ownerEpoch(), serviceId, new TaskCorrelationId(sequence), new TaskSequence(sequence), AdmissionPolicy.REJECT);
         try {
             if (!scheduler.resumeNaturalSpawn(reservation, envelope)) {
