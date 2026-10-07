@@ -1320,17 +1320,32 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
 
     /** Vehicle-move packets from a riding player replay under the player's owner, like every other player packet. */
     public void admitVehicleMovePacket(ServerGamePacketListenerImpl connection,
-                                       net.minecraft.network.protocol.game.ServerboundMoveVehiclePacket packet) {
+                                       net.minecraft.network.protocol.game.ServerboundMoveVehiclePacket packet,
+                                       boolean awaitingTeleport) {
         movementIngress++;
         if (!acceptsGameplay()) { packetRejections++; return; }
         ServerPlayer player = connection.player;
         if (player == null) { packetRejections++; return; }
         try {
-            PlayerPacketAdmission admission = preparePlayerPacketAdmission(player);
-            admitPacket(connection, player,
+            String objectId = player.getUUID().toString();
+            // A riding player may send only vehicle-move packets (a Bedrock client through Geyser
+            // does), so the on-foot movement packet that normally closes the transition fence never
+            // arrives. The vehicle move closes it under the on-foot conditions: destination world
+            // reached, teleport acknowledged, position near the ridden vehicle, owner binding already
+            // destination-world authoritative, no native dimension transition pending.
+            MovementTransitionFence transition = movementTransitionFences.get(objectId);
+            net.minecraft.world.entity.Entity vehicle = player.getRootVehicle();
+            MovementTransitionFence closing = transition != null && VehicleMoveFenceGate.mayClose(
+                    transition.destinationWorld(), worldId(player.level()), awaitingTeleport, vehicle != player,
+                    transition.near(vehicle.getX(), vehicle.getY(), vehicle.getZ(),
+                        packet.position().x(), packet.position().y(), packet.position().z()))
+                ? transition : null;
+            PlayerPacketAdmission admission = preparePlayerPacketAdmission(player, closing);
+            PacketAdmissionResult result = admitPacket(connection, player,
                 new PendingVehicleMove(this, connection, packet, player.level(), admission.binding().objectId(),
                     admission.binding().incarnation(), admission.transitionEpoch(), admission.ticket()),
                 VEHICLE_MOVE_OPERATION, admission.binding(), AdmissionPolicy.REJECT);
+            if (result.admitted() && closing != null) movementTransitionFences.remove(objectId, closing);
         } catch (RuntimeException rejected) {
             packetRejections++;
             logger.warn("PHOENIUM_VEHICLE_MOVE admission rejected reason={}", rejected.toString());
@@ -1528,8 +1543,17 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
     }
 
     private PlayerPacketAdmission preparePlayerPacketAdmission(ServerPlayer player) {
+        return preparePlayerPacketAdmission(player, null);
+    }
+
+    /**
+     * {@code closing} is the exact open fence a vehicle-move packet has qualified to close, null for
+     * every other packet. Any other open fence, or a pending native transition, refuses the packet.
+     */
+    private PlayerPacketAdmission preparePlayerPacketAdmission(ServerPlayer player, MovementTransitionFence closing) {
         String objectId = player.getUUID().toString();
-        if (movementTransitionFences.containsKey(objectId) || playerDimensionTransitionPending(player))
+        MovementTransitionFence open = movementTransitionFences.get(objectId);
+        if ((open != null && open != closing) || playerDimensionTransitionPending(player))
             throw new IllegalStateException("item-use packet arrived during player dimension transition");
         ObjectOwnership binding;
         // Packet processing precedes tickServer. Identity lookup needs its existing owner-free
@@ -1537,6 +1561,10 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
         try (var turn = dev.phoenium.chunk.FullFinishingServices.forServer(player.level().getServer()).referenceAccess()) {
             binding = bindPlayer(player);
         }
+        // As on the movement path, the fence stays closed until the binding itself is
+        // destination-world authoritative. Same refusal text: the packet is still fenced.
+        if (closing != null && !VehicleMoveFenceGate.ownerReady(binding.owner().world(), worldId(player.level())))
+            throw new IllegalStateException("item-use packet arrived during player dimension transition");
         LivePlayerPacketAdmission.Ticket ticket = LivePlayerPacketAdmission.admit(directory, binding);
         return new PlayerPacketAdmission(binding, movementTransitionEpochs.getOrDefault(objectId, 0L), ticket);
     }

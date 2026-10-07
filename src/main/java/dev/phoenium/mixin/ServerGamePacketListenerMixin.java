@@ -65,7 +65,7 @@ abstract class ServerGamePacketListenerMixin {
     private void phoenium$routeVehicleMove(ServerboundMoveVehiclePacket packet, CallbackInfo ci) {
         ServerGamePacketListenerImpl connection = (ServerGamePacketListenerImpl) (Object) this;
         if (Phoenium.liveRuntime().matchesVehicleMoveReplay(connection, packet)) return;
-        Phoenium.liveRuntime().admitVehicleMovePacket(connection, packet);
+        Phoenium.liveRuntime().admitVehicleMovePacket(connection, packet, awaitingPositionFromClient != null);
         ci.cancel();
     }
 
