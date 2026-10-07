@@ -103,6 +103,40 @@ final class FullFinishingServicesTest {
         assertEquals(0L, service.measurements().get("reservations"));
         FullFinishingServices.stopped(server);
     }
+    @Test void providerAutosaveIsDeferredUntilConcurrentProviderReservationReleases() throws Exception {
+        MinecraftServer server = stub(MinecraftServer.class, List.of());
+        var service = FullFinishingServices.forServer(server);
+        var reserved = new CountDownLatch(1); var release = new CountDownLatch(1);
+        var failure = new AtomicReference<Throwable>();
+        Thread producer = Thread.ofPlatform().start(() -> {
+            try (var reservation = service.tryReserve(stage(), new Object(), List.of(), 1)) {
+                assertNotNull(reservation); reserved.countDown(); release.await();
+            } catch (Throwable problem) { failure.set(problem); reserved.countDown(); }
+        });
+        AtomicInteger saves = new AtomicInteger();
+        java.util.function.Supplier<Boolean> save = () -> {
+            FullFinishingServices.requireServer(server, FullFinishingServices.Kind.UNSAVED);
+            saves.incrementAndGet(); return true;
+        };
+        try {
+            assertTrue(reserved.await(5, TimeUnit.SECONDS)); assertNull(failure.get());
+            assertFalse(FullFinishingServices.trySerial(server, FullFinishingServices.Phase.SAVE, false, save));
+            assertEquals(0, saves.get());
+            assertEquals(0L, service.measurements().get("serialEntries"));
+        } finally { release.countDown(); producer.join(5000); }
+        assertFalse(producer.isAlive()); assertNull(failure.get());
+        assertTrue(FullFinishingServices.trySerial(server, FullFinishingServices.Phase.SAVE, false, save));
+        assertEquals(1, saves.get());
+        assertEquals(1L, service.measurements().get("serialEntries"));
+        try (var serial = service.serial(FullFinishingServices.Phase.SERVER_TICK)) {
+            assertTrue(FullFinishingServices.trySerial(server, FullFinishingServices.Phase.SAVE, false, save));
+            assertEquals(2L, service.measurements().get("serialEntries"),
+                    "a deferrable save must still reuse an already-admitted same-server turn");
+        }
+        assertEquals(2, saves.get());
+        assertEquals(0L, service.measurements().get("reservations"));
+        FullFinishingServices.stopped(server);
+    }
     @Test void providerSaveEntryCreatesOneSerialTurnOnlyWhenNoTurnIsAlreadyAdmitted() throws Exception {
         MinecraftServer server = stub(MinecraftServer.class, List.of());
         var service = FullFinishingServices.forServer(server);

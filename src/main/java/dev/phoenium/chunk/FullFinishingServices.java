@@ -235,6 +235,13 @@ public final class FullFinishingServices {
         }
         try (var turn = forServer(server).serial(phase)) { return body.get(); }
     }
+    /**
+     * Provider entry that may be retried later (C2ME's idle autosave). Same admission rules as
+     * {@link #ensureSerial}; {@code busy} is the provider's "not done, retry" result.
+     */
+    public static <T> T trySerial(MinecraftServer server, Phase phase, T busy, java.util.function.Supplier<T> body) {
+        return ensureSerial(server, phase, body);
+    }
     public static Reservation currentReservation(MinecraftServer server) {
         Scope scope = CURRENT.get();
         if (scope == null || scope.service.server != server || !scope.full()) return null;
