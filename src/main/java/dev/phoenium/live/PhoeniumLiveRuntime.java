@@ -468,6 +468,7 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
         else fullEnclosure.installStateMigration(regionalServices);
         regionalDispatcher.installBoundaryAdvancer(fullEnclosure::advance);
         regionalDispatcher.installClosureEncloser(fullEnclosure::enclose);
+        regionalDispatcher.installNeighborCascades(new dev.phoenium.service.LiveNeighborCascadeEnvironment());
         state = State.RUNNING;
         ChunkRuntimeTrace.start();
         for (ServerLevel level : server.getAllLevels()) refreshEntityBindings(level);

@@ -120,8 +120,10 @@ public final class RegionScheduler {
         reservation.requireResumeClaim();
         if (!(envelope.payload() instanceof TaskPayload.RegionalService service)
                 || !(service.operationKind().equals(dev.phoenium.service.RegionalServiceKind.CHUNK_GAMEPLAY.name())
-                    || service.operationKind().equals(dev.phoenium.service.RegionalServiceKind.BLOCK_ENTITY_TICK.name())))
-            throw new IllegalArgumentException("poll return reservation is only for natural spawn or Vault tick");
+                    || service.operationKind().equals(dev.phoenium.service.RegionalServiceKind.BLOCK_ENTITY_TICK.name())
+                    || dev.phoenium.service.NeighborCascadeContinuation.armable(
+                        dev.phoenium.service.RegionalServiceKind.valueOf(service.operationKind()))))
+            throw new IllegalArgumentException("poll return reservation is only for natural spawn, Vault tick or a neighbor cascade");
         if (!acceptsSimulationWork()) return false;
         var route = directory.resolve(envelope.routingKey()).orElse(null);
         if (route == null) return false;

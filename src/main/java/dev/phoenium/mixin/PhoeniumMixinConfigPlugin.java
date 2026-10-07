@@ -84,6 +84,8 @@ public final class PhoeniumMixinConfigPlugin implements IMixinConfigPlugin {
                 || mixinClassName.equals("dev.phoenium.mixin.VaultOutputNeighborMixin")
                 || mixinClassName.equals("dev.phoenium.mixin.VaultSetChangedAccess"))
             dev.phoenium.service.VaultContinuationPin.verify(targetClass);
+        if (mixinClassName.startsWith("dev.phoenium.mixin.NeighborCascade"))
+            dev.phoenium.service.NeighborCascadePin.verify(targetClass);
     }
     @Override public void postApply(String targetClassName, ClassNode targetClass, String mixinClassName, IMixinInfo info) { }
 }
