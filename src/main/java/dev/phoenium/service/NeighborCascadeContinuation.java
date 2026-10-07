@@ -9,6 +9,8 @@ import java.util.List;
 import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.CompletionStage;
+import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.LongAdder;
 import java.util.function.BooleanSupplier;
 import net.minecraft.core.BlockPos;
 import net.minecraft.world.level.ChunkPos;
@@ -71,6 +73,22 @@ public final class NeighborCascadeContinuation implements AutoCloseable {
     private static final Set<RegionalServiceKind> KINDS = EnumSet.of(RegionalServiceKind.RUN_SCHEDULED_BLOCK_TICK,
         RegionalServiceKind.RUN_SCHEDULED_FLUID_TICK, RegionalServiceKind.BLOCK_EVENT);
     static final int SAME_CHUNK_WAITS = 4, STALE_RETRIES = 8;
+    static final int LOGGED_EVENTS = 64, LOG_EVERY = 256;
+
+    /** Process-wide live evidence that cuts, waits and resumes happened. Never readiness or control
+     * authority: nothing in the continuation reads these back. */
+    public record Totals(long cuts, long deepCuts, long deferredRoots, long waits, long settled, long shutdowns, long failures) {
+        @Override public String toString() {
+            return "cuts=" + cuts + " deepCuts=" + deepCuts + " deferredRoots=" + deferredRoots + " waits=" + waits
+                + " settled=" + settled + " shutdowns=" + shutdowns + " failures=" + failures;
+        }
+    }
+    private static final LongAdder CUTS = new LongAdder(), DEEP_CUTS = new LongAdder(), DEFERRED_ROOTS = new LongAdder(),
+        WAITS = new LongAdder(), SETTLED = new LongAdder(), SHUTDOWNS = new LongAdder(), FAILURES = new LongAdder();
+    private static final AtomicLong EVENTS = new AtomicLong();
+    public static Totals totals() {
+        return new Totals(CUTS.sum(), DEEP_CUTS.sum(), DEFERRED_ROOTS.sum(), WAITS.sum(), SETTLED.sum(), SHUTDOWNS.sum(), FAILURES.sum());
+    }
 
     private sealed interface Segment permits Retained, Root { Port updater(); }
     private record Retained(Port updater, List<Object> topFirst, int count) implements Segment { }
@@ -140,6 +158,7 @@ public final class NeighborCascadeContinuation implements AutoCloseable {
         var active = ACTIVE.get();
         if (active == null || active.phase != Phase.SUSPENDED || updater.phoenium$cascadeCount() != 0) return false;
         active.segments.addLast(new Root(updater, position.immutable(), Objects.requireNonNull(update)));
+        DEFERRED_ROOTS.increment(); active.observe("defer-root", position);
         return true;
     }
 
@@ -188,7 +207,7 @@ public final class NeighborCascadeContinuation implements AutoCloseable {
         boolean cuttable = inFlight == null && scope == null && environment.suspendable(level);
         if (cuttable) {
             BlockPos start = environment.startRead(step);
-            if (start != null && !environment.readable(level, start)) { suspend(updater, step, level, start); return false; }
+            if (start != null && !environment.readable(level, start)) { suspend(updater, step, level, start, false); return false; }
         }
         var flight = new InFlight(level, cuttable ? environment.dispatchTarget(step) : null);
         Object snapshot = cuttable ? environment.snapshot(step) : null;
@@ -199,11 +218,11 @@ public final class NeighborCascadeContinuation implements AutoCloseable {
         finally { inFlight = previous; }
         if (flight.deep == null) return result;
         environment.restore(step, snapshot);
-        suspend(updater, step, level, flight.deep);
+        suspend(updater, step, level, flight.deep, true);
         return false;
     }
 
-    private void suspend(Port updater, Object step, Object level, BlockPos position) {
+    private void suspend(Port updater, Object step, Object level, BlockPos position, boolean deep) {
         var stack = updater.phoenium$cascadeStack();
         if (!updater.phoenium$cascadeLayer().isEmpty() || stack.peek() != step)
             throw new IllegalStateException("neighbor cascade cut is not at a native step boundary");
@@ -215,6 +234,8 @@ public final class NeighborCascadeContinuation implements AutoCloseable {
         stack.push(step); // native runUpdates pops exactly this step, exits, and resets its state
         blockedLevel = level; blocked = position.immutable(); suspensions++;
         phase = Phase.SUSPENDED;
+        CUTS.increment(); if (deep) DEEP_CUTS.increment();
+        observe(deep ? "deep-cut" : "cut", blocked);
     }
 
     // ---- owner-free wait and owned resume -----------------------------------------------------
@@ -240,6 +261,7 @@ public final class NeighborCascadeContinuation implements AutoCloseable {
                 }
                 if (state == ManagedBlockPollTurnFence.State.SHUTDOWN) {
                     LOGGER.warn("Phoenium neighbor cascade at {} retired by shutdown with {} retained segment(s)", blocked, segments.size());
+                    SHUTDOWNS.increment();
                     segments.clear(); phase = Phase.SHUTDOWN; return;
                 }
                 if (++stale > STALE_RETRIES)
@@ -247,12 +269,15 @@ public final class NeighborCascadeContinuation implements AutoCloseable {
                 dispatcher.ensureClosure(key, 0);
             }
         } catch (RuntimeException | Error failure) {
-            phase = Phase.FAILED; segments.clear(); throw failure;
+            phase = Phase.FAILED; segments.clear();
+            FAILURES.increment(); observe("failed", blocked);
+            throw failure;
         }
     }
 
     private ManagedBlockPollTurnFence.State awaitOnce(RegionalServiceDispatcher dispatcher) {
         long query = ++waits;
+        WAITS.increment();
         try (var wait = environment.await(blockedLevel, blocked)) {
             wait.prepare();
             try (var reservation = wait.fence().reserve(suspensions, query, wait.dependency(),
@@ -261,6 +286,7 @@ public final class NeighborCascadeContinuation implements AutoCloseable {
                     .prepareAtObservation(wait::prepare).shutdownWhen(() -> !dispatcher.naturalSpawnOpen())) {
                 reservation.awaitAndResume(wait::managedBlock,
                     () -> dispatcher.resumeNeighborCascade(reservation, key, kind, execution -> resume()));
+                observe("wait-" + reservation.state(), blocked);
                 return reservation.state();
             }
         }
@@ -297,10 +323,21 @@ public final class NeighborCascadeContinuation implements AutoCloseable {
                 }
                 updater.phoenium$cascadeRunUpdates();
             }
-            if (phase == Phase.RESUMING) phase = Phase.SETTLED;
+            if (phase == Phase.RESUMING) { phase = Phase.SETTLED; SETTLED.increment(); observe("settled", blocked); }
         } catch (RuntimeException | Error failure) {
             phase = Phase.FAILED; segments.clear(); throw failure;
         } finally { ACTIVE.remove(); inFlight = null; scope = null; }
+    }
+
+    /** Bounded, diagnostics-gated event line: the first LOGGED_EVENTS, then every LOG_EVERY-th. */
+    private void observe(String event, BlockPos position) {
+        if (!Boolean.getBoolean("phoenium.test.diagnostics")) return;
+        try {
+            long n = EVENTS.incrementAndGet();
+            if (n <= LOGGED_EVENTS || n % LOG_EVERY == 0)
+                LOGGER.info("PHOENIUM_S8F6_CASCADE event={} n={} kind={} key={} at={} segments={} suspensions={} waits={} totals=[{}]",
+                    event, n, kind, key, position == null ? null : position.toShortString(), segments.size(), suspensions, waits, totals());
+        } catch (Throwable ignored) { /* Telemetry cannot change the cascade result. */ }
     }
 
     @Override public void close() {

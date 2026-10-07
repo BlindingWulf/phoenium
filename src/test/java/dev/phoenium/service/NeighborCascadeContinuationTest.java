@@ -221,6 +221,33 @@ class NeighborCascadeContinuationTest {
         assertEquals(List.of(FAR, new BlockPos(80, 64, 1)), actual.waited());
     }
 
+    /** Live evidence: every cut, deep cut, deferred root, wait and outcome is counted, with the
+     * diagnostics event lines enabled (they must never change the result). */
+    @Test void totalsRecordEveryCutWaitAndOutcome() {
+        String previous = System.getProperty("phoenium.test.diagnostics");
+        System.setProperty("phoenium.test.diagnostics", "true");
+        try {
+            var before = NeighborCascadeContinuation.totals();
+            stepStartCutWaitsOwnerFreeAndResumesInNativeOrder();
+            rootsStartedAfterTheCutRunFifoBehindTheRetainedCascade();
+            deepLiquidReadRollsBackTheStepAndDispatchesExactlyOnce();
+            failedFullDependencyFailsClosedWithItsCause();
+            shutdownDuringTheWaitRetiresWithoutRunningTheSuffix();
+            var after = NeighborCascadeContinuation.totals();
+            assertEquals(5, after.cuts() - before.cuts(), "cuts");
+            assertEquals(1, after.deepCuts() - before.deepCuts(), "deep cuts");
+            assertEquals(1, after.deferredRoots() - before.deferredRoots(), "deferred roots");
+            assertEquals(3, after.settled() - before.settled(), "settled resumes");
+            assertEquals(1, after.failures() - before.failures(), "failures");
+            assertEquals(1, after.shutdowns() - before.shutdowns(), "shutdowns");
+            assertTrue(after.waits() - before.waits() >= 5, "every cut waited at least once");
+            assertTrue(after.toString().startsWith("cuts="), after.toString());
+        } finally {
+            if (previous == null) System.clearProperty("phoenium.test.diagnostics");
+            else System.setProperty("phoenium.test.diagnostics", previous);
+        }
+    }
+
     @Test void kindsWithTheirOwnContinuationKeepTheFailClosedGuard() {
         assertThrows(BlockingRead.class, () -> run(cascadeWorld(), RegionalServiceKind.CHUNK_GAMEPLAY, -1, u -> u.updateNeighbors(ROOT)));
         assertThrows(BlockingRead.class, () -> run(cascadeWorld(), RegionalServiceKind.BLOCK_ENTITY_TICK, -1, u -> u.updateNeighbors(ROOT)));
