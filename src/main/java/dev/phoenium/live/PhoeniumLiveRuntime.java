@@ -600,7 +600,7 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
                 if (pending.cacheState == null)
                     pending.cacheState = ((LiveTickPhases.CacheAccess) pending.levelState.cache())
                         .phoenium$prepareChunkTick(pending.shouldKeepTicking(), true);
-                pending.readiness = LiveTickReadiness.await(pending.level());
+                pending.readiness = LiveTickReadiness.awaitWithin(pending.level(), LiveTickReadiness.TICK_BUDGET_NANOS, System::nanoTime);
                 // A native entity can cross a chunk-owner boundary between live ticks (for
                 // example, an ender pearl moved by the vanilla lifecycle callback). Reconcile
                 // that bounded observation before the next chunk-gameplay phase reads the entity

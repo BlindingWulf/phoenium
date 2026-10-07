@@ -5,6 +5,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
+import java.util.function.LongSupplier;
 import java.util.stream.Stream;
 import net.minecraft.server.level.*;
 import net.minecraft.world.level.chunk.LevelChunk;
@@ -13,6 +14,8 @@ import net.minecraft.world.level.chunk.status.ChunkStatus;
 /** Ordinary public ticking prerequisites, observed after the original distance-update stage. */
 public final class LiveTickReadiness {
     private LiveTickReadiness() { }
+    /** One nominal server tick. Vanilla never waits for a ticking future; the live tick waits at most this long. */
+    public static final long TICK_BUDGET_NANOS = 50_000_000L;
     public interface MapAccess { Stream<ChunkHolder> phoenium$tickCandidates(ChunkStatus status); }
     /** Provider adapters may expose the stable producer slot behind a public wrapper future. */
     public interface TickingSlotAccess { Object phoenium$tickingSlotIdentity(); }
@@ -39,10 +42,18 @@ public final class LiveTickReadiness {
         private Receipt(ServerLevel level, List<Input> inputs) { this.level = level; this.inputs = inputs; }
         public boolean current() { return sameCandidates(inputs, candidates(level)) && settled(inputs); }
         public int count() { return inputs.size(); }
+        /** Candidates whose original ticking future was still outstanding when this receipt was taken. */
+        public int pending() { return (int) inputs.stream().filter(input -> !input.future.isDone()).count(); }
     }
     public static Receipt await(ServerLevel level) {
         requireCoordinator(level);
         return observeUntilSettled(level);
+    }
+    /** Live tick entry: readiness may hold the tick for at most {@code budgetNanos} of {@code clock}. */
+    public static Receipt awaitWithin(ServerLevel level, long budgetNanos, LongSupplier clock) {
+        if (budgetNanos < 0) throw new IllegalArgumentException("negative readiness budget");
+        Objects.requireNonNull(clock, "clock");
+        return await(level);
     }
     /** A receipt observes a producer slot; it does not prevent native slot replacement. */
     public static Receipt refresh(Receipt receipt) {

@@ -8,6 +8,7 @@ import dev.phoenium.ownership.OwnershipContext;
 import dev.phoenium.ownership.RegionLeaseManager;
 import dev.phoenium.region.RegionId;
 import it.unimi.dsi.fastutil.longs.Long2ObjectLinkedOpenHashMap;
+import java.time.Duration;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.function.BooleanSupplier;
@@ -143,6 +144,49 @@ final class LiveTickReadinessTest {
         assertEquals(2, f.waits);
         assertEquals(2, holder.wrapperCalls());
         assertFalse(old.isCancelled());
+    }
+
+    /** S8-F4: an elytra flight outran generation; one candidate never settled within the 60 s watchdog window. */
+    @Test void boundedLiveWaitReleasesAnUnsettledCandidateAfterItsBudget() throws Exception {
+        var f = new Fixture(); long[] now = {0};
+        f.delivery = ready -> {
+            if (Thread.currentThread().isInterrupted()) throw new IllegalStateException("abandoned by the timeout");
+            assertFalse(ready.getAsBoolean()); now[0] += 10_000_000L;
+        };
+        var receipt = assertTimeoutPreemptively(Duration.ofSeconds(10),
+                () -> LiveTickReadiness.awaitWithin(f.level, 50_000_000L, () -> now[0]));
+        assertTrue(receipt.current()); assertEquals(1, receipt.count()); assertEquals(1, receipt.pending());
+        assertFalse(f.input.isDone(), "no ticking future is completed or synthesized");
+        assertEquals(5, f.waits);
+        assertSame(receipt, LiveTickReadiness.refresh(receipt)); assertEquals(5, f.waits, "an expired tick budget is not waited again");
+        assertNull(f.holder.getTickingChunk(), "the unsettled chunk stays unticked, as in vanilla");
+    }
+
+    /** S8-F4 livelock: every pumped task (a teleport, a C2ME promotion) published a new unsettled candidate. */
+    @Test void boundedLiveWaitEndsWhileUnsettledCandidatesKeepArriving() throws Exception {
+        var f = new Fixture(); long[] now = {0}; int[] next = {1};
+        f.delivery = ready -> {
+            if (ready.getAsBoolean()) return;   // a real managedBlock pumps nothing once its condition holds
+            try {
+                var arrival = f.newHolder();
+                set(arrival, ChunkHolder.class, "tickingChunkFuture", new CompletableFuture<ChunkResult<LevelChunk>>());
+                f.visible.put(new ChunkPos(next[0]++, 0).pack(), arrival);
+            } catch (Exception failure) { throw new AssertionError(failure); }
+            now[0] += 10_000_000L;
+            if (Thread.currentThread().isInterrupted()) throw new IllegalStateException("abandoned by the timeout");
+        };
+        var receipt = assertTimeoutPreemptively(Duration.ofSeconds(10),
+                () -> LiveTickReadiness.awaitWithin(f.level, 50_000_000L, () -> now[0]));
+        assertTrue(receipt.current()); assertEquals(receipt.count(), receipt.pending());
+        assertTrue(f.waits <= 6, "the budget, not candidate churn, ends the wait: " + f.waits);
+    }
+
+    @Test void boundedLiveWaitReturnsAsSoonAsEveryCandidateSettles() throws Exception {
+        var f = new Fixture(); long[] now = {0};
+        f.delivery = ready -> { assertFalse(ready.getAsBoolean()); f.input.complete(ChunkResult.of(f.actual)); now[0] += 1_000_000L; };
+        var receipt = LiveTickReadiness.awaitWithin(f.level, 50_000_000L, () -> now[0]);
+        assertTrue(receipt.current()); assertEquals(0, receipt.pending()); assertEquals(1, f.waits);
+        assertThrows(IllegalArgumentException.class, () -> LiveTickReadiness.awaitWithin(f.level, -1, () -> now[0]));
     }
 
     @Test void ownerCannotWaitAndTerminalOriginalResultsAreNotManufacturedIntoSuccess() throws Exception {
