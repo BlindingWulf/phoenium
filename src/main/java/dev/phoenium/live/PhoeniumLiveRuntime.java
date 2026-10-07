@@ -192,6 +192,7 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
     private long ownershipViolations;
     private long unleasedExecutions;
     private long hardBarriers;
+    private long readinessBudgetTicks, readinessBudgetMaxPending, readinessBudgetLoggedAt;
     private long packetAdmissions;
     private long packetExecutions;
     private long packetStaleReroutes;
@@ -629,6 +630,7 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
                 // Native providers can replace a settled slot during coordinator work.
                 // Re-observe their original futures without replaying the distance-update prefix.
                 pending.readiness = LiveTickReadiness.refresh(pending.readiness);
+                observeReadinessBudget(pending.level(), pending.readiness);
                 phases.phoenium$afterChunkTick(pending.levelState, pending.cacheState);
                 pending.step = PendingTick.Step.BLOCK_EVENTS_COORDINATOR;
             }
@@ -684,6 +686,19 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
             }
             default -> throw new IllegalStateException("owner-free tick coordinator reached " + pending.step);
         }
+    }
+
+    /** Counts ticks whose readiness budget released outstanding candidates; one INFO line at most every 30 s. */
+    private void observeReadinessBudget(ServerLevel level, LiveTickReadiness.Receipt receipt) {
+        if (receipt.pending() == 0) return;
+        readinessBudgetTicks++;
+        readinessBudgetMaxPending = Math.max(readinessBudgetMaxPending, receipt.pending());
+        long now = System.nanoTime();
+        if (readinessBudgetLoggedAt != 0 && now - readinessBudgetLoggedAt < 30_000_000_000L) return;
+        readinessBudgetLoggedAt = now;
+        logger.info("PHOENIUM_TICK_READINESS budgetMs={} level={} ticksPastBudget={} pendingNow={} maxPending={} candidates={}",
+                LiveTickReadiness.TICK_BUDGET_NANOS / 1_000_000L, level.dimension().identifier(), readinessBudgetTicks,
+                receipt.pending(), readinessBudgetMaxPending, receipt.count());
     }
 
     static void advanceConsecutiveOwnerFreePhases(java.util.function.BooleanSupplier queued,

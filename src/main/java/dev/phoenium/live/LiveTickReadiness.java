@@ -36,43 +36,65 @@ public final class LiveTickReadiness {
     }
 
     private record Input(Candidate candidate, CompletableFuture<ChunkResult<LevelChunk>> future) { }
+    /** Unbounded: the receipt is current only while every candidate is settled. */
+    private static final Budget UNBOUNDED = new Budget(null, 0L);
+    /** A tick deadline on a monotonic clock. Once it has passed, outstanding candidates no longer hold the tick. */
+    private record Budget(LongSupplier clock, long deadline) {
+        boolean expired() { return clock != null && clock.getAsLong() - deadline >= 0; }
+    }
     public static final class Receipt {
         private final ServerLevel level;
         private final List<Input> inputs;
-        private Receipt(ServerLevel level, List<Input> inputs) { this.level = level; this.inputs = inputs; }
-        public boolean current() { return sameCandidates(inputs, candidates(level)) && settled(inputs); }
+        private final Budget budget;
+        private final int pending;
+        private Receipt(ServerLevel level, List<Input> inputs, Budget budget) {
+            this.level = level; this.inputs = inputs; this.budget = budget;
+            this.pending = (int) inputs.stream().filter(input -> !input.future.isDone()).count();
+        }
+        /**
+         * Same candidates and slots, and either every original ticking future has settled or the tick budget has passed.
+         * A candidate still outstanding after the budget is not ticked: its {@code getTickingChunk()} stays null, exactly
+         * as vanilla skips a chunk whose ticking future has not completed.
+         */
+        public boolean current() { return sameCandidates(inputs, candidates(level)) && (settled(inputs) || budget.expired()); }
         public int count() { return inputs.size(); }
         /** Candidates whose original ticking future was still outstanding when this receipt was taken. */
-        public int pending() { return (int) inputs.stream().filter(input -> !input.future.isDone()).count(); }
+        public int pending() { return pending; }
     }
     public static Receipt await(ServerLevel level) {
         requireCoordinator(level);
-        return observeUntilSettled(level);
+        return observeUntilSettled(level, UNBOUNDED);
     }
-    /** Live tick entry: readiness may hold the tick for at most {@code budgetNanos} of {@code clock}. */
+    /**
+     * Live tick entry: readiness may hold the tick for at most {@code budgetNanos} of {@code clock}. Waiting for every
+     * candidate without a bound lets generation demand that outruns the generators (a fast elytra flight into new
+     * terrain) hold one tick until the watchdog ends the server (S8-F4): each pumped task can publish a new unsettled
+     * candidate, so the candidate set never settles.
+     */
     public static Receipt awaitWithin(ServerLevel level, long budgetNanos, LongSupplier clock) {
         if (budgetNanos < 0) throw new IllegalArgumentException("negative readiness budget");
         Objects.requireNonNull(clock, "clock");
-        return await(level);
+        requireCoordinator(level);
+        return observeUntilSettled(level, new Budget(clock, clock.getAsLong() + budgetNanos));
     }
-    /** A receipt observes a producer slot; it does not prevent native slot replacement. */
+    /** A receipt observes a producer slot; it does not prevent native slot replacement. The original budget still applies. */
     public static Receipt refresh(Receipt receipt) {
         Objects.requireNonNull(receipt, "receipt");
         requireCoordinator(receipt.level);
-        while (!receipt.current()) receipt = observeUntilSettled(receipt.level);
+        while (!receipt.current()) receipt = observeUntilSettled(receipt.level, receipt.budget);
         return receipt;
     }
     private static void requireCoordinator(ServerLevel level) {
         if (OwnershipContext.current().isPresent() || !level.getServer().isSameThread())
             throw new IllegalStateException("ticking readiness must run on the owner-free server thread");
     }
-    private static Receipt observeUntilSettled(ServerLevel level) {
+    private static Receipt observeUntilSettled(ServerLevel level, Budget budget) {
         for (;;) {
             List<Input> inputs = capture(level);
             // Existing original ticking futures already include their radius-one FULL range.
             // No future, ticket, public result, callback or absence is synthesized here.
-            level.getServer().managedBlock(() -> settled(inputs) || !sameCandidates(inputs, candidates(level)));
-            Receipt receipt = new Receipt(level, inputs);
+            level.getServer().managedBlock(() -> settled(inputs) || !sameCandidates(inputs, candidates(level)) || budget.expired());
+            Receipt receipt = new Receipt(level, inputs, budget);
             if (receipt.current()) return receipt;
         }
     }
