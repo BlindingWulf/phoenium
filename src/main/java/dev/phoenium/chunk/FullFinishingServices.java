@@ -240,7 +240,13 @@ public final class FullFinishingServices {
      * {@link #ensureSerial}; {@code busy} is the provider's "not done, retry" result.
      */
     public static <T> T trySerial(MinecraftServer server, Phase phase, T busy, java.util.function.Supplier<T> body) {
-        return ensureSerial(server, phase, body);
+        Objects.requireNonNull(server); Objects.requireNonNull(phase); Objects.requireNonNull(body);
+        if (OwnershipContext.current().isPresent())
+            throw new ChunkProtocolException("provider serial service entered after regional admission");
+        if (CURRENT.get() != null) return ensureSerial(server, phase, body);
+        try (var turn = forServer(server).tryTurn(phase)) {
+            return turn == null ? busy : body.get();
+        }
     }
     public static Reservation currentReservation(MinecraftServer server) {
         Scope scope = CURRENT.get();
@@ -270,20 +276,20 @@ public final class FullFinishingServices {
         }
         // Pinned terminal executor acknowledgements can run inline on their producer.
         if (server.isStopped() && !server.isSameThread()) { original.run(); return; }
-        try (var turn = forServer(server).tryServerTaskTurn()) {
+        try (var turn = forServer(server).tryTurn(Phase.SERVER_TASK)) {
             if (turn == null) enqueue.run();
             else original.run();
         }
     }
 
     /** C2ME can reserve FULL on a producer while the server polls its original task queue. */
-    private Scope tryServerTaskTurn() {
+    private Scope tryTurn(Phase phase) {
         metadata.lock();
         try {
             Scope current = CURRENT.get();
             if ((current == null || current.service != this) && (active != null || reserved != null))
                 return null;
-            return serial(Phase.SERVER_TASK);
+            return serial(phase);
         } finally { metadata.unlock(); }
     }
     /** Storage does not retain even the conservative ordinary serial service turn. */
