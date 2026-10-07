@@ -98,7 +98,7 @@ public final class ArmorStandPortalTransitionManager implements AutoCloseable {
                     if (entry.visibilityReady==null)
                         entry.visibilityReady=authority.demandDestinationEntityVisibility(entry.stand,entry.transition);
                     if (!entry.visibilityReady.getAsBoolean()) {
-                        if (++entry.visibilityWaits>200) throw new IllegalStateException("armor-stand visibility deadline: "+entry.visibilityReady);
+                        if (entry.visibilityDeadline.expired(authority.serverTick())) throw new IllegalStateException("armor-stand visibility deadline: "+entry.visibilityReady);
                         continue;
                     }
                 }
@@ -177,7 +177,7 @@ public final class ArmorStandPortalTransitionManager implements AutoCloseable {
         final Portal portal;final BlockPos entryPosition;final int portalTime;final boolean insidePortal;
         final Vec3 position,motion;final float yRot,xRot;final net.minecraft.world.entity.Pose pose;
         volatile boolean retained,consumed,advancing,destinationPrepared;
-        int visibilityWaits;BooleanSupplier visibilityReady;TeleportTransition transition;
+        final PortalVisibilityDeadline visibilityDeadline = new PortalVisibilityDeadline();BooleanSupplier visibilityReady;TeleportTransition transition;
         Entry(LivingEntity stand,ServerLevel level,PortalProcessor processor,ObjectOwnership binding,
                 CrossDimensionReplacementBoundary.Token token) {
             this.stand=stand;this.level=level;this.processor=processor;this.binding=binding;this.token=token;

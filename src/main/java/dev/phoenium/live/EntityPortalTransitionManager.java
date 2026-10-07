@@ -190,7 +190,7 @@ public final class EntityPortalTransitionManager implements AutoCloseable {
                     if (entry.visibilityReady == null)
                         entry.visibilityReady = authority.demandDestinationEntityVisibility(entry.entity, entry.transition);
                     if (!entry.visibilityReady.getAsBoolean()) {
-                        if (++entry.visibilityWaits > 200)
+                        if (entry.visibilityDeadline.expired(authority.serverTick()))
                             throw new IllegalStateException("entity destination visibility deadline: " + entry.visibilityReady);
                         continue;
                     }
@@ -205,7 +205,7 @@ public final class EntityPortalTransitionManager implements AutoCloseable {
                                 && entry.graphPlan != null && entry.graphPlan.visibilityCurrent());
                     graphPlan = entry.graphPlan;
                     if (!graphPlan.ready()) {
-                        if (++entry.visibilityWaits > 200)
+                        if (entry.visibilityDeadline.expired(authority.serverTick()))
                             throw new IllegalStateException("entity graph destination visibility deadline");
                         continue;
                     }
@@ -328,7 +328,7 @@ public final class EntityPortalTransitionManager implements AutoCloseable {
         final java.util.IdentityHashMap<Entity, CrossDimensionReplacementBoundary.Token> graphTokens = new java.util.IdentityHashMap<>();
         NativePortalGraphTransferPlan graphPlan;
         volatile boolean retained, consumed, destinationPending, advancing;
-        int visibilityWaits;
+        final PortalVisibilityDeadline visibilityDeadline = new PortalVisibilityDeadline();
         java.util.function.BooleanSupplier visibilityReady;
         Entry(Entity entity, ServerLevel level, PortalProcessor processor, ObjectOwnership binding,
                 CrossDimensionReplacementBoundary.Token token) {

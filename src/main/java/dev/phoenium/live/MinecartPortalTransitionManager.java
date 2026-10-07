@@ -160,7 +160,7 @@ public final class MinecartPortalTransitionManager implements AutoCloseable {
                     if (entry.visibilityReady == null)
                         entry.visibilityReady = authority.demandDestinationEntityVisibility(entry.cart, entry.transition);
                     if (!entry.visibilityReady.getAsBoolean()) {
-                        if (++entry.visibilityWaits > 200)
+                        if (entry.visibilityDeadline.expired(authority.serverTick()))
                             throw new IllegalStateException("minecart destination visibility deadline: " + entry.visibilityReady);
                         continue;
                     }
@@ -175,7 +175,7 @@ public final class MinecartPortalTransitionManager implements AutoCloseable {
                                 && entry.graphPlan != null && entry.graphPlan.visibilityCurrent());
                     graphPlan = entry.graphPlan;
                     if (!graphPlan.ready()) {
-                        if (++entry.visibilityWaits > 200)
+                        if (entry.visibilityDeadline.expired(authority.serverTick()))
                             throw new IllegalStateException("minecart graph destination visibility deadline");
                         continue;
                     }
@@ -383,7 +383,7 @@ public final class MinecartPortalTransitionManager implements AutoCloseable {
         final ResourceKey<LootTable> lootTable;
         final long lootSeed;
         volatile boolean retained, consumed, destinationPrepared, advancing;
-        int visibilityWaits;
+        final PortalVisibilityDeadline visibilityDeadline = new PortalVisibilityDeadline();
         java.util.function.BooleanSupplier visibilityReady;
         TeleportTransition transition;
         Entry(AbstractMinecart cart, ServerLevel level, PortalProcessor processor, Portal portal,

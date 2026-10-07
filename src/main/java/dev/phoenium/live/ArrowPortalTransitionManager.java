@@ -137,7 +137,7 @@ public final class ArrowPortalTransitionManager implements AutoCloseable {
                     if (entry.visibilityReady == null)
                         entry.visibilityReady = authority.demandDestinationEntityVisibility(entry.projectile, entry.transition);
                     if (!entry.visibilityReady.getAsBoolean()) {
-                        if (++entry.visibilityWaits > 200)
+                        if (entry.visibilityDeadline.expired(authority.serverTick()))
                             throw new IllegalStateException("arrow destination visibility deadline: " + entry.visibilityReady);
                         continue;
                     }
@@ -248,7 +248,7 @@ public final class ArrowPortalTransitionManager implements AutoCloseable {
         final float yRot, xRot;
         final net.minecraft.world.entity.Pose pose;
         volatile boolean retained, consumed, destinationPrepared, advancing;
-        int visibilityWaits;
+        final PortalVisibilityDeadline visibilityDeadline = new PortalVisibilityDeadline();
         java.util.function.BooleanSupplier visibilityReady;
         TeleportTransition transition;
         Entry(AbstractArrow projectile, ServerLevel level, PortalProcessor processor, Portal portal,

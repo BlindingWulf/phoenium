@@ -93,7 +93,7 @@ public final class TntPortalTransitionManager implements AutoCloseable {
                     if (entry.visibilityReady == null)
                         entry.visibilityReady = authority.demandDestinationEntityVisibility(entry.tnt, entry.transition);
                     if (!entry.visibilityReady.getAsBoolean()) {
-                        if (++entry.visibilityWaits > 200)
+                        if (entry.visibilityDeadline.expired(authority.serverTick()))
                             throw new IllegalStateException("tnt destination entity visibility deadline: " + entry.visibilityReady);
                         continue;
                     }
@@ -175,7 +175,7 @@ public final class TntPortalTransitionManager implements AutoCloseable {
         final net.minecraft.world.phys.Vec3 position, motion;
         final float yRot, xRot; final net.minecraft.world.entity.Pose pose;
         volatile boolean retained, consumed, advancing, destinationPrepared;
-        int visibilityWaits;
+        final PortalVisibilityDeadline visibilityDeadline = new PortalVisibilityDeadline();
         java.util.function.BooleanSupplier visibilityReady;
         final int fuse; final net.minecraft.world.level.block.state.BlockState blockState;
         TeleportTransition transition;

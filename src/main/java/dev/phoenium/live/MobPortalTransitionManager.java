@@ -233,7 +233,7 @@ public final class MobPortalTransitionManager implements AutoCloseable {
                     if (entry.visibilityReady == null)
                         entry.visibilityReady = authority.demandDestinationEntityVisibility(entry.mob, entry.transition);
                     if (!entry.visibilityReady.getAsBoolean()) {
-                        if (++entry.visibilityWaits > 200)
+                        if (entry.visibilityDeadline.expired(authority.serverTick()))
                             throw new IllegalStateException("mob destination entity visibility deadline: " + entry.visibilityReady);
                         continue;
                     }
@@ -248,7 +248,7 @@ public final class MobPortalTransitionManager implements AutoCloseable {
                                 && entry.graphPlan != null && entry.graphPlan.visibilityCurrent());
                     graphPlan = entry.graphPlan;
                     if (!graphPlan.ready()) {
-                        if (++entry.visibilityWaits > 200)
+                        if (entry.visibilityDeadline.expired(authority.serverTick()))
                             throw new IllegalStateException("mob graph destination visibility deadline");
                         continue;
                     }
@@ -373,7 +373,7 @@ public final class MobPortalTransitionManager implements AutoCloseable {
         List<net.minecraft.server.level.ServerPlayer> riders = List.of();
         volatile boolean retained, consumed, destinationPending, advancing;
         int airSupply;
-        int visibilityWaits;
+        final PortalVisibilityDeadline visibilityDeadline = new PortalVisibilityDeadline();
         java.util.function.BooleanSupplier visibilityReady;
         Entry(Mob mob, ServerLevel level, PortalProcessor processor, TeleportTransition transition,
                 ObjectOwnership binding, CrossDimensionReplacementBoundary.Token token, NativeProfile profile) {

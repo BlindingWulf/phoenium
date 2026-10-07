@@ -229,6 +229,10 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
         this.chunkBinding = new ChunkBindingRuntime(this, logger);
         var portalAuthority = new PearlPortalTransitionManager.Authority() {
             @Override public boolean running() { return PhoeniumLiveRuntime.this.isRunning(); }
+            @Override public long serverTick() {
+                MinecraftServer server = serverInstance;
+                return server == null ? 0L : server.getTickCount();
+            }
             @Override public boolean worldActive(ServerLevel level) {
                 if (!running() || serverInstance == null || level == null || level.getServer() != serverInstance) return false;
                 for (ServerLevel current : serverInstance.getAllLevels()) if (current == level) return true;

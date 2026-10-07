@@ -109,7 +109,7 @@ public final class ItemPortalTransitionManager implements AutoCloseable {
                     if (entry.visibilityReady == null)
                         entry.visibilityReady = authority.demandDestinationEntityVisibility(entry.item, entry.transition);
                     if (!entry.visibilityReady.getAsBoolean()) {
-                        if (++entry.visibilityWaits > 200)
+                        if (entry.visibilityDeadline.expired(authority.serverTick()))
                             throw new IllegalStateException("item destination entity visibility deadline: " + entry.visibilityReady);
                         continue;
                     }
@@ -191,7 +191,7 @@ public final class ItemPortalTransitionManager implements AutoCloseable {
         final Portal portal; final BlockPos entryPosition; final int portalTime; final boolean insidePortal;
         final CrossDimensionReplacementBoundary.Token token;
         volatile boolean retained, consumed, destinationPending, advancing;
-        int visibilityWaits;
+        final PortalVisibilityDeadline visibilityDeadline = new PortalVisibilityDeadline();
         java.util.function.BooleanSupplier visibilityReady;
         Entry(ItemEntity item, ServerLevel level, PortalProcessor processor, TeleportTransition transition,
                 ObjectOwnership binding, CrossDimensionReplacementBoundary.Token token) {

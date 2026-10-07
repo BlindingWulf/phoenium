@@ -39,6 +39,8 @@ public final class NativePortalTransfer {
         default BooleanSupplier demandDestinationEntityVisibility(Entity source, TeleportTransition transition) {
             return () -> true;
         }
+        /** Server tick clock bounding destination visibility waits; constant where no server ticks. */
+        default long serverTick() { return 0L; }
         default void withDestinationPlatform(ServerLevel destination, BlockPos origin,
                 BooleanSupplier sourceCurrent, Runnable nativePlatform) {
             throw new IllegalStateException("destination platform service is not bound");

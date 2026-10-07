@@ -66,6 +66,33 @@ class NativeItemPortalTransferTest {
         assertEquals(1,Collections.frequency(f.order,"item-suffix"));
     }
 
+    /** S8-F2: the coordinator advances after every native entity tick callback, so a populated source level calls
+     * advance() hundreds of times in one server tick. A destination that needs a few ticks to become entity-visible
+     * (a generated exit chunk loading from disk) must not exhaust its bound inside that one tick. */
+    @Test void destinationVisibilityWaitIsBoundedInServerTicksNotAdvanceCalls() throws Exception {
+        var f = new Fixture(); var item = f.item(f.overworld);
+        f.entityVisible = false;
+        f.capture(item, f.transition(f.nether));
+        for (int callback = 0; callback < 1000; callback++) assertEquals(0, f.manager.advance());
+        f.tick += 200;
+        assertEquals(0, f.manager.advance());
+        assertEquals(1, f.visibilityDemands);
+        f.entityVisible = true;
+        assertEquals(1, f.manager.advance());
+        assertEquals(0, f.manager.pendingCount());
+        assertEquals(1, f.objects.liveCount()); assertTrue(item.isRemoved());
+    }
+
+    @Test void destinationVisibilityWaitStillFailsClosedAfterTwoHundredServerTicks() throws Exception {
+        var f = new Fixture(); var item = f.item(f.overworld);
+        f.entityVisible = false;
+        f.capture(item, f.transition(f.nether));
+        assertEquals(0, f.manager.advance());
+        f.tick += 201;
+        var failure = assertThrows(IllegalStateException.class, f.manager::advance);
+        assertTrue(failure.getMessage().contains("visibility deadline"), failure.getMessage());
+    }
+
     @Test void sameDimensionRunsTheOriginalItemTeleportWithoutRetention() throws Exception {
         var f=new Fixture(); var item=f.item(f.overworld); var transition=f.transition(f.overworld);
         f.dispatcher.executeAndDrain(f.from,RegionalServiceKind.CHUNK_GAMEPLAY, ignored -> {
@@ -204,6 +231,7 @@ class NativeItemPortalTransferTest {
         Entity replacement;
         boolean enforceOwners=true, running=true, ready=true, entityVisible=true, cleanupFailure;
         int visibilityDemands;
+        long tick;
         long gameTime = 100L;
         net.minecraft.server.ServerScoreboard scoreboard;
         net.minecraft.server.ServerScoreboard scoreboard() { if (scoreboard == null) scoreboard = new net.minecraft.server.ServerScoreboard(server); return scoreboard; }
@@ -263,6 +291,7 @@ class NativeItemPortalTransferTest {
                 public java.util.function.BooleanSupplier demandDestinationEntityVisibility(Entity source,TeleportTransition transition) {
                     visibilityDemands++;return () -> entityVisible;
                 }
+                @Override public long serverTick() { return tick; }
                 public void withDestinationPlatform(ServerLevel destination,net.minecraft.core.BlockPos origin,
                         java.util.function.BooleanSupplier sourceCurrent,Runnable nativePlatform) {
                     assertTrue(OwnershipContext.current().isEmpty());

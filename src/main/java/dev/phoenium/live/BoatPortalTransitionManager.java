@@ -181,7 +181,7 @@ public final class BoatPortalTransitionManager implements AutoCloseable {
                         entry.visibilityReady = authority.demandDestinationEntityVisibility(
                             entry.boat, entry.transition);
                     if (!entry.visibilityReady.getAsBoolean()) {
-                        if (++entry.visibilityWaits > 200)
+                        if (entry.visibilityDeadline.expired(authority.serverTick()))
                             throw new IllegalStateException("boat destination visibility deadline");
                         continue;
                     }
@@ -196,7 +196,7 @@ public final class BoatPortalTransitionManager implements AutoCloseable {
                                 && entry.graphPlan != null && entry.graphPlan.visibilityCurrent());
                     graphPlan = entry.graphPlan;
                     if (!graphPlan.ready()) {
-                        if (++entry.visibilityWaits > 200)
+                        if (entry.visibilityDeadline.expired(authority.serverTick()))
                             throw new IllegalStateException("boat graph destination visibility deadline");
                         continue;
                     }
@@ -372,7 +372,7 @@ public final class BoatPortalTransitionManager implements AutoCloseable {
         final float yRot, xRot;
         final Pose pose;
         volatile boolean retained, consumed, advancing, destinationPrepared;
-        int visibilityWaits;
+        final PortalVisibilityDeadline visibilityDeadline = new PortalVisibilityDeadline();
         BooleanSupplier visibilityReady;
         TeleportTransition transition;
         NativePortalGraphTransferPlan graphPlan;

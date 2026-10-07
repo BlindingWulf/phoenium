@@ -95,7 +95,7 @@ public final class FallingBlockPortalTransitionManager implements AutoCloseable 
                     if (entry.visibilityReady == null)
                         entry.visibilityReady = authority.demandDestinationEntityVisibility(entry.block, entry.transition);
                     if (!entry.visibilityReady.getAsBoolean()) {
-                        if (++entry.visibilityWaits > 200)
+                        if (entry.visibilityDeadline.expired(authority.serverTick()))
                             throw new IllegalStateException("falling-block destination entity visibility deadline: " + entry.visibilityReady);
                         continue;
                     }
@@ -176,7 +176,7 @@ public final class FallingBlockPortalTransitionManager implements AutoCloseable 
         final net.minecraft.world.phys.Vec3 position, motion;
         final float yRot, xRot; final net.minecraft.world.entity.Pose pose;
         volatile boolean retained, consumed, advancing, destinationPrepared;
-        int visibilityWaits;
+        final PortalVisibilityDeadline visibilityDeadline = new PortalVisibilityDeadline();
         java.util.function.BooleanSupplier visibilityReady;
         Block originalBlock; TeleportTransition transition;
         Entry(FallingBlockEntity block, ServerLevel level, PortalProcessor processor, ObjectOwnership binding,

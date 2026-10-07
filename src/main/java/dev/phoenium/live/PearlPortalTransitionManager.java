@@ -194,7 +194,7 @@ final class PearlPortalTransitionManager implements AutoCloseable {
         if (entry.visibilityReady == null)
             entry.visibilityReady = authority.demandDestinationEntityVisibility(entry.source, transition);
         if (!entry.visibilityReady.getAsBoolean()) {
-            if (++entry.visibilityWaits > 200)
+            if (entry.visibilityDeadline.expired(authority.serverTick()))
                 throw new IllegalStateException("pearl destination entity visibility deadline: " + entry.visibilityReady);
             return;
         }
@@ -402,7 +402,7 @@ final class PearlPortalTransitionManager implements AutoCloseable {
         volatile TeleportTransition prepared;
         volatile long preparedGeneration;
         java.util.function.BooleanSupplier visibilityReady;
-        int visibilityWaits;
+        final PortalVisibilityDeadline visibilityDeadline = new PortalVisibilityDeadline();
         volatile CrossDimensionReplacementBoundary.SourceRemoval sourceRemoval;
         Entry(CrossDimensionReplacementBoundary.Token token, ThrownEnderpearl source, ServerLevel sourceLevel,
                 PortalProcessor processor, Portal portal, BlockPos entryPosition, ObjectOwnership binding) {

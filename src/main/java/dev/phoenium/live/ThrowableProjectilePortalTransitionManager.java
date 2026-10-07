@@ -132,7 +132,7 @@ public final class ThrowableProjectilePortalTransitionManager implements AutoClo
                     if (entry.visibilityReady == null)
                         entry.visibilityReady = authority.demandDestinationEntityVisibility(entry.projectile, entry.transition);
                     if (!entry.visibilityReady.getAsBoolean()) {
-                        if (++entry.visibilityWaits > 200)
+                        if (entry.visibilityDeadline.expired(authority.serverTick()))
                             throw new IllegalStateException("throwable projectile destination visibility deadline: " + entry.visibilityReady);
                         continue;
                     }
@@ -269,7 +269,7 @@ public final class ThrowableProjectilePortalTransitionManager implements AutoClo
         final float yRot, xRot;
         final net.minecraft.world.entity.Pose pose;
         volatile boolean retained, consumed, destinationPrepared, advancing;
-        int visibilityWaits;
+        final PortalVisibilityDeadline visibilityDeadline = new PortalVisibilityDeadline();
         java.util.function.BooleanSupplier visibilityReady;
         TeleportTransition transition;
         Entry(ThrowableProjectile projectile, ServerLevel level, PortalProcessor processor, Portal portal,
