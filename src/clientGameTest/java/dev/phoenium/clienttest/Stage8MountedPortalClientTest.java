@@ -69,6 +69,12 @@ public final class Stage8MountedPortalClientTest {
     static final String USER = "PhoeniumTest0", OW = "minecraft:overworld", NE = "minecraft:the_nether", TAG = "s8f7_pig";
     static final int SX = 2000, SY = 150, SZ = 2000;
     static final int OBSERVE_TICKS = 200, STABLE_TICKS = 20;
+    /**
+     * One terrain for every arm. With a random seed the portal arrival sites differed per arm, and in one arm the pig
+     * drifted off its arrival frame into ocean, where vanilla's underwater dismount (LivingEntity.baseTick ->
+     * dismountsUnderwater -> stopRiding) unseated the rider. This is the seed of the first vanilla control run.
+     */
+    static final long LEVEL_SEED = -728736150286961811L;
     static final double POSITION_TOLERANCE = 0.5;
     static final Pattern UUID_INTS = Pattern.compile("\\[I;\\s*(-?\\d+),\\s*(-?\\d+),\\s*(-?\\d+),\\s*(-?\\d+)\\]");
     static final Pattern DOUBLES = Pattern.compile("(-?\\d+(?:\\.\\d+)?(?:E-?\\d+)?)d");
@@ -249,9 +255,12 @@ public final class Stage8MountedPortalClientTest {
         r.put("arrivalWaitTicks", waited);
         r.put("pigUuidStable", pig.equals(pigUuid(to)));
         double[] q = serverPig(to);
-        if (q != null) rcon(fill(to, (int) Math.floor(q[0]) - 3, (int) Math.floor(q[1]) - 2, (int) Math.floor(q[2]) - 3,
-            (int) Math.floor(q[0]) + 3, (int) Math.floor(q[1]) + 4, (int) Math.floor(q[2]) + 3,
-            "minecraft:air replace minecraft:nether_portal"));
+        if (q != null) {
+            int x = (int) Math.floor(q[0]), y = (int) Math.floor(q[1] + 1.0e-3), z = (int) Math.floor(q[2]);
+            rcon(fill(to, x - 3, y - 2, z - 3, x + 3, y + 4, z + 3, "minecraft:air replace minecraft:nether_portal"));
+            // After the observation: solid ground under the arrival, so the next steps never depend on the terrain.
+            rcon(fill(to, x - 3, y - 1, z - 3, x + 3, y - 1, z + 3, "minecraft:stone replace #minecraft:replaceable"));
+        }
         return r;
     }
 
@@ -703,13 +712,14 @@ public final class Stage8MountedPortalClientTest {
         String world = "s8f7-mount-" + System.currentTimeMillis();
         receipt.put("serverDirectory", directory.toAbsolutePath().toString());
         receipt.put("world", world);
+        receipt.put("levelSeed", LEVEL_SEED);
         Files.writeString(directory.resolve("eula.txt"), "# Disposable S8-F7 evidence server\neula=true\n");
         String port = address.substring(address.lastIndexOf(':') + 1);
         // The prepared (L5) server keeps its own properties; only the test's keys are overridden, identically on every arm.
         Map<String, String> overrides = new LinkedHashMap<>();
         for (String entry : List.of(
             "allow-flight=true", "difficulty=peaceful", "enable-rcon=true", "enforce-secure-profile=false",
-            "gamemode=survival", "level-name=" + world, "level-seed=", "max-players=2", "online-mode=false",
+            "gamemode=survival", "level-name=" + world, "level-seed=" + LEVEL_SEED, "max-players=2", "online-mode=false",
             "server-ip=127.0.0.1", "server-port=" + port, "query.port=" + port, "rcon.ip=127.0.0.1", "rcon.port=" + rconPort,
             "rcon.password=" + rconPassword, "spawn-protection=0", "view-distance=6", "simulation-distance=6"))
             overrides.put(entry.substring(0, entry.indexOf('=')), entry);
