@@ -24,12 +24,15 @@ final class VehicleMoveFenceGate {
     }
 
     /**
-     * Whether a replayed vehicle move may run the native handler on the player's root vehicle.
+     * Whether a replayed vehicle move may run the native handler on the player's root vehicle. Vanilla teleports a
+     * vehicle atomically inside its tick and then ignores the client's vehicle moves until the teleport is acknowledged.
+     * Under Phoenium the capture is that instant: a move replayed after it is retired without touching the vehicle, which
+     * stays frozen at its capture pose until the transfer settles (or is cancelled; the next move then applies normally).
      *
      * @param rootVehiclePortalRetained the root vehicle's portal transfer is captured and not yet settled
      */
     static boolean mayApply(boolean rootVehiclePortalRetained) {
-        return true;
+        return !rootVehiclePortalRetained;
     }
 
     /** The owner binding must already be destination-world authoritative before the fence closes. */
