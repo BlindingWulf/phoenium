@@ -230,6 +230,33 @@ loom {
                     layout.buildDirectory.file('client-gametest/evidence/STAGE3-CLIENT.json').get().asFile.absolutePath
         }
 
+        stage8MountedPortalClientGameTest {
+            client()
+            name 'Phoenium S8-F7 mounted portal client regression'
+            source sourceSets.clientGameTest
+            runDir 'run/s8f7-mounted-portal-client'
+
+            vmArg '-Dfabric.client.gametest'
+            vmArg '-Dfabric.client.gametest.modid=phoenium-client-tests'
+            vmArg '-Dphoenium.test.mode=stage8-mounted-portal'
+
+            programArg '--username'
+            programArg 'PhoeniumTest0'
+
+            property 'phoenium.test.username', 'PhoeniumTest0'
+            property 'phoenium.test.minecraftVersion', minecraft_version
+            property 'phoenium.test.gradleTask', 'runStage8MountedPortalClientGameTest'
+            property 'phoenium.test.serverDirectory',
+                    layout.buildDirectory.dir('s8f7-mounted-portal-server').get().asFile.absolutePath
+            property 'phoenium.test.serverAddress', '127.0.0.1:25566'
+            property 'phoenium.test.rconPort', '25576'
+            property 'phoenium.test.rconPassword', 'phoenium-s8f7-client'
+            property 'phoenium.s8f7.workers', providers.gradleProperty('s8f7Workers').orElse('1').get()
+            property 'phoenium.client.gametest.evidence', providers.gradleProperty('s8f7Evidence')
+                    .orElse(layout.buildDirectory.file('client-gametest/evidence/S8F7-MOUNTED-PORTAL.json')
+                    .map { it.asFile.absolutePath }).get()
+        }
+
         stage4ClientGameTest {
             client()
             name 'Phoenium Stage 4 account-free client trace'
@@ -437,6 +464,28 @@ loom {
 
 tasks.named('runStage3ClientGameTest') {
     dependsOn tasks.named('prepareStage3ClientServer')
+}
+
+// S8-F7: the mounted portal regression runs against the built JAR, or against exact candidate bytes
+// with -Ps8f7Production=<path>. Only the static server inputs are taken from the Stage 3 tree.
+tasks.register('prepareS8f7MountedPortalServer', Sync) {
+    description = 'Prepare a disposable external server for the S8-F7 mounted portal client regression.'
+    group = 'verification'
+    dependsOn tasks.named('prepareStage3ClientServer')
+    def production = providers.gradleProperty('s8f7Production')
+    inputs.property('s8f7Production', production.orElse(''))
+    into layout.buildDirectory.dir('s8f7-mounted-portal-server')
+    from(tasks.named('prepareStage3ClientServer')) {
+        include 'fabric-server-launch.jar', '.fabric/**', 'libraries/**', 'versions/**', 'mods/**'
+        if (production.isPresent()) exclude 'mods/phoenium-*.jar'
+    }
+    if (production.isPresent()) {
+        from(file(production.get())) { into 'mods' }
+    }
+}
+
+tasks.named('runStage8MountedPortalClientGameTest') {
+    dependsOn tasks.named('prepareS8f7MountedPortalServer')
 }
 
 tasks.named('runStage4ClientGameTest') {
