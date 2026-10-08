@@ -31,6 +31,20 @@ final class VehicleMoveFenceGateTest {
         assertFalse(VehicleMoveFenceGate.mayClose(OVERWORLD, OVERWORLD, false, true, false));
     }
 
+    /**
+     * S8-F7: a rider-controlled vehicle (carrot-on-a-stick pig, horse, boat; a Bedrock rider through Geyser) keeps sending
+     * vehicle moves while its portal transfer is retained. Vanilla teleports atomically inside the vehicle's tick and then
+     * ignores the client's vehicle moves until the teleport is acknowledged, so a move replayed after the capture must not
+     * move the captured vehicle; applying it made the transfer stale and vanilla's portal cooldown blocked every retry.
+     */
+    @Test void vehicleMoveDoesNotMoveAVehicleWithARetainedPortalTransfer() {
+        assertFalse(VehicleMoveFenceGate.mayApply(true));
+    }
+
+    @Test void vehicleMoveAppliesToAVehicleWithoutAPortalTransfer() {
+        assertTrue(VehicleMoveFenceGate.mayApply(false));
+    }
+
     @Test void ownerMustAlreadyBeInThePlayersWorld() {
         assertTrue(VehicleMoveFenceGate.ownerReady(OVERWORLD, OVERWORLD));
         assertFalse(VehicleMoveFenceGate.ownerReady(NETHER, OVERWORLD));

@@ -200,6 +200,7 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
     private long packetRecursions;
     private long movementIngress, movementBootstrapDeferred, movementFootprintAccepted, movementFootprintRejected, movementOwnerExecution;
     private long movementReplayCount, movementHandlerCompletion, movementRoutingReconciliation, movementSameOwnerEpochPreserved, movementStaleTicketRejected;
+    private long movementPortalRetainedRetired;
     private long interactionIngress, interactionIndexHit, interactionIndexMiss, interactionIncarnationRejected, interactionOwnerAdmission;
     private long interactionCrossOwnerRejected, interactionOwnerExecution, interactionReplay, interactionVanillaLookup, interactionHandlerCompletion, interactionStaleTicketRejected;
     private long playerActionIngress, playerActionOwnerAdmission, playerActionOwnerExecution, playerActionReplay,
@@ -938,7 +939,8 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
     public LivePacketDiagnostics packetDiagnostics() {
         return new LivePacketDiagnostics(movementIngress, movementBootstrapDeferred, movementFootprintAccepted, movementFootprintRejected,
             movementOwnerExecution, movementReplayCount, movementHandlerCompletion, movementRoutingReconciliation,
-            movementSameOwnerEpochPreserved, movementStaleTicketRejected, interactionIngress, interactionIndexHit,
+            movementSameOwnerEpochPreserved, movementStaleTicketRejected, movementPortalRetainedRetired,
+            interactionIngress, interactionIndexHit,
             interactionIndexMiss, interactionIncarnationRejected, interactionOwnerAdmission, interactionCrossOwnerRejected,
             interactionOwnerExecution, interactionReplay, interactionVanillaLookup, interactionHandlerCompletion,
             interactionStaleTicketRejected, playerActionIngress, playerActionOwnerAdmission, playerActionOwnerExecution,
@@ -1887,6 +1889,10 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
                     throw new IllegalStateException("stale vehicle-move player world");
                 vehicleMove.ticket().requireCurrent(directory, objects, runtime.id());
             } catch (RuntimeException stale) { movementStaleTicketRejected++; return; }
+            if (!VehicleMoveFenceGate.mayApply(vehiclePortalRetained(vehicleMove.connection().player.getRootVehicle()))) {
+                movementPortalRetainedRetired++;
+                return;
+            }
             try (PacketExecutionScope ignored = enterPacketExecution(operation.correlationId(), ReplayKind.VEHICLE_MOVE,
                     vehicleMove.connection(), vehicleMove.packet())) {
                 try {
@@ -2633,6 +2639,14 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
         return entityPortalTransitions.suspendDestination(entity, processor);
     }
     public boolean entityPortalSuspended(Entity entity) { return entityPortalTransitions.suspended(entity); }
+    /** A rideable root vehicle whose portal transfer is captured and not yet settled (frozen at its capture pose). */
+    private boolean vehiclePortalRetained(Entity vehicle) {
+        return vehicle instanceof net.minecraft.world.entity.Mob mob && mobPortalTransitions.suspended(mob)
+            || vehicle instanceof net.minecraft.world.entity.vehicle.boat.AbstractBoat boat && boatPortalTransitions.suspended(boat)
+            || vehicle instanceof net.minecraft.world.entity.vehicle.minecart.AbstractMinecart cart
+                && minecartPortalTransitions.suspended(cart)
+            || entityPortalTransitions.suspended(vehicle);
+    }
     public void beginMobPortalTick(net.minecraft.world.entity.Mob mob) { mobPortalTransitions.begin(mob); }
     public boolean suspendMobPortalDestination(net.minecraft.world.entity.Mob mob, net.minecraft.world.entity.PortalProcessor processor) {
         return mobPortalTransitions.suspendDestination(mob, processor);

@@ -23,6 +23,15 @@ final class VehicleMoveFenceGate {
         return fenceWorld.equals(playerWorld) && !awaitingTeleport && riding && nearVehicle;
     }
 
+    /**
+     * Whether a replayed vehicle move may run the native handler on the player's root vehicle.
+     *
+     * @param rootVehiclePortalRetained the root vehicle's portal transfer is captured and not yet settled
+     */
+    static boolean mayApply(boolean rootVehiclePortalRetained) {
+        return true;
+    }
+
     /** The owner binding must already be destination-world authoritative before the fence closes. */
     static boolean ownerReady(WorldId ownerWorld, WorldId playerWorld) {
         return ownerWorld != null && ownerWorld.equals(playerWorld);
