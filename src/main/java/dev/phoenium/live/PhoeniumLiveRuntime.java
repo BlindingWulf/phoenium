@@ -1332,7 +1332,7 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
                 movementFootprintAccepted++;
                 long transitionEpoch = movementTransitionEpochs.getOrDefault(objectId, 0L);
                 PacketAdmissionResult admission = admitPacket(connection, player, new PendingMove(this, connection, packet, player.level(), current.objectId(),
-                        current.incarnation(), transitionEpoch, ticket),
+                        current.incarnation(), transitionEpoch, ticket, snapshot.passenger(), snapshot.footprint().routingDestination()),
                     "player-movement", current, AdmissionPolicy.REJECT);
                 if (admission.admitted() && transition != null) movementTransitionFences.remove(objectId, transition);
             } catch (RuntimeException rejected) { packetRejections++; movementFootprintRejected++; }
@@ -1784,6 +1784,12 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
                 if (move.playerLevel() != move.connection().player.level()
                         || !runtime.id().world().equals(worldId(move.connection().player.level())))
                     throw new IllegalStateException("stale movement player world");
+                // A rider's footprint is its settled chunk at admission (the packet position is discarded).
+                // Mounting, dismounting, or being carried to another chunk before replay retires the packet.
+                ServerPlayer mover = move.connection().player;
+                if (mover.isPassenger() != move.passenger() || move.passenger() && !move.routingDestination().equals(
+                        new RoutingKey(worldId(mover.level()), mover.chunkPosition().x(), mover.chunkPosition().z())))
+                    throw new IllegalStateException("stale passenger movement");
                 move.ticket().requireCurrent(directory, runtime.id());
             } catch (RuntimeException stale) { movementStaleTicketRejected++; return; }
             try (LivePacketReplayGate.Scope gate = movementReplay.enter(move.ticket(), directory, runtime.id());
@@ -3045,7 +3051,8 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
     private record PendingMove(PhoeniumLiveRuntime runtime, ServerGamePacketListenerImpl connection, ServerboundMovePlayerPacket packet,
                                ServerLevel playerLevel,
                                String objectId, long playerIncarnation, long transitionEpoch,
-                               LiveMovementAdmission.Ticket ticket) implements PendingPacket {
+                               LiveMovementAdmission.Ticket ticket, boolean passenger,
+                               RoutingKey routingDestination) implements PendingPacket {
         @Override public void execute() {
             ((ServerGamePacketListenerInvoker) connection).phoenium$invokeMovePlayer(packet);
             runtime.reconcileAfterMove(objectId, connection.player);

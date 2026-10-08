@@ -20,6 +20,7 @@ public record LiveMovementSnapshot(LiveMovementFootprint footprint, Disposition 
         CLASSIFIED,
         NON_FINITE,
         AWAITING_TELEPORT,
+        /** A rider whose vehicle is absent, removed, or in another level: no vanilla passenger state to replay. */
         PASSENGER,
         NO_PHYSICS,
         SLEEPING,
@@ -53,7 +54,16 @@ public record LiveMovementSnapshot(LiveMovementFootprint footprint, Disposition 
                                                 double lastGoodX, double lastGoodY, double lastGoodZ,
                                                 boolean awaitingTeleport) {
         if (awaitingTeleport) return rejected(Disposition.AWAITING_TELEPORT);
-        if (state.passenger()) return rejected(Disposition.PASSENGER);
+        if (state.passenger()) {
+            // Vanilla's passenger branch discards the packet position (and lastGood): it snaps only the
+            // rotation at the rider's current position and re-runs ChunkMap.move, which is where a rider
+            // pairs trackers whose chunks were still pending when it was added (a mounted portal arrival).
+            // Its footprint is therefore the settled rider position with no sweep.
+            if (state.changingDimension()) return rejected(Disposition.DIMENSION_TRANSITION);
+            if (!state.vehicleInLevel()) return rejected(Disposition.PASSENGER);
+            if (!finite(state.x(), state.y(), state.z())) return rejected(Disposition.NON_FINITE);
+            return footprint(state, state.x(), state.y(), state.z(), 0.0D, 0.0D, 0.0D, true);
+        }
         if (state.noPhysics()) return rejected(Disposition.NO_PHYSICS);
         if (state.sleeping()) return rejected(Disposition.SLEEPING);
         if (state.changingDimension()) return rejected(Disposition.DIMENSION_TRANSITION);
