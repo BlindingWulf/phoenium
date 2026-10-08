@@ -85,6 +85,10 @@ public final class Stage8MountedPortalClientTest {
     /** Vanilla 26.2 control: the same scenario on the same server base without the Phoenium JAR. */
     final boolean control = Boolean.getBoolean("phoenium.s8f7.control");
     final boolean diagnose = "diagnose".equals(System.getProperty("phoenium.s8f7.mode"));
+    // Regression: the rider controls the pig (carrot on a stick), as players do. Diagnose: a passive pig, so the pairing
+    // recovery trigger is observed without the rider-controlled vehicle-move path. Overridable with phoenium.s8f7.carrot.
+    final boolean carrot = System.getProperty("phoenium.s8f7.carrot", "").isEmpty() ? !diagnose
+        : Boolean.parseBoolean(System.getProperty("phoenium.s8f7.carrot"));
     final int roundTrips = Integer.getInteger("phoenium.s8f7.roundTrips", 3);
     final int aiTrials = Integer.getInteger("phoenium.s8f7.aiTrials", 3);
     final long t0 = System.nanoTime();
@@ -117,6 +121,7 @@ public final class Stage8MountedPortalClientTest {
         context = ctx;
         receipt.put("test", "S8F7-MOUNTED-PORTAL");
         receipt.put("mode", diagnose ? "diagnose" : "regression");
+        receipt.put("riderControlsPig", carrot);
         receipt.put("control", control);
         receipt.put("username", USER);
         receipt.put("microsoftAuthentication", false);
@@ -203,7 +208,7 @@ public final class Stage8MountedPortalClientTest {
         rcon("effect give " + USER + " minecraft:resistance infinite 4 true");
         rcon("effect give " + USER + " minecraft:fire_resistance infinite 0 true");
         // A saddled pig takes its rider's movement input only while the rider holds a carrot on a stick.
-        rcon("item replace entity " + USER + " weapon.mainhand with minecraft:carrot_on_a_stick");
+        if (carrot) rcon("item replace entity " + USER + " weapon.mainhand with minecraft:carrot_on_a_stick");
         int px = SX + 6, pz = SZ - 4;
         rcon("execute in " + OW + " run summon minecraft:pig " + (px + 1) + " " + SY + " " + (pz + 0.5)
             + " {NoAI:1b,Invulnerable:1b,Tags:[\"" + TAG + "\"],equipment:{saddle:{id:\"minecraft:saddle\",count:1}}}");
