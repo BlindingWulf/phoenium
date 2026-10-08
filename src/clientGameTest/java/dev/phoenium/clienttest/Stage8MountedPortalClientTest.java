@@ -46,11 +46,16 @@ public final class Stage8MountedPortalClientTest {
     Process server;
     Path serverLog;
 
-    record ClientView(String dimension, UUID vehicle, boolean hasEntity) { }
+    /** Vanilla 26.2 control: the same scenario on the same server base without the Phoenium JAR. */
+    final boolean control = Boolean.getBoolean("phoenium.s8f7.control");
+
+    /** vehicle = LocalPlayer.getVehicle(); hasEntity = pig spawned in the client level; carries = the client pig's passengers hold the local player. */
+    record ClientView(String dimension, UUID vehicle, boolean hasEntity, boolean carries) { }
 
     public void runTest(ClientGameTestContext ctx) {
         context = ctx;
         receipt.put("test", "S8F7-MOUNTED-PORTAL");
+        receipt.put("control", control);
         receipt.put("username", USER);
         receipt.put("microsoftAuthentication", false);
         receipt.put("startUtc", Instant.now().toString());
@@ -149,43 +154,50 @@ public final class Stage8MountedPortalClientTest {
 
     /** Server passenger relation AND client vehicle AND client entity, each within the deadline, then stable for 1 s. */
     void requireMounted(String check, String dimension, UUID pig) throws IOException {
-        Integer serverAt = null, clientVehicleAt = null, clientEntityAt = null;
+        Integer serverAt = null, clientVehicleAt = null, clientEntityAt = null, clientPassengerAt = null;
         List<String> samples = new ArrayList<>();
         for (int tick = 0; tick <= MOUNT_DEADLINE_TICKS; tick++) {
             ClientView v = view(pig);
             if (clientEntityAt == null && v.hasEntity()) clientEntityAt = tick;
             if (clientVehicleAt == null && pig.equals(v.vehicle())) clientVehicleAt = tick;
+            if (clientPassengerAt == null && v.carries()) clientPassengerAt = tick;
             if (serverAt == null && tick % 5 == 0 && serverRiding(dimension)) serverAt = tick;
-            if (tick % 10 == 0) samples.add(tick + ":" + v.dimension() + "/" + v.vehicle() + "/" + v.hasEntity());
-            if (serverAt != null && clientVehicleAt != null && clientEntityAt != null) break;
+            if (tick % 10 == 0) samples.add(tick + ":" + v.dimension() + "/" + v.vehicle() + "/" + v.hasEntity() + "/" + v.carries());
+            if (serverAt != null && clientVehicleAt != null && clientEntityAt != null && clientPassengerAt != null) break;
             context.waitTick();
         }
         boolean stable = true;
-        if (serverAt != null && clientVehicleAt != null && clientEntityAt != null) {
+        if (serverAt != null && clientVehicleAt != null && clientEntityAt != null && clientPassengerAt != null) {
             context.waitTicks(20);
             ClientView v = view(pig);
-            stable = pig.equals(v.vehicle()) && v.hasEntity() && serverRiding(dimension);
+            stable = pig.equals(v.vehicle()) && v.hasEntity() && v.carries() && serverRiding(dimension);
         }
         receipt.put(check + "-pig", pig.toString());
         receipt.put(check + "-serverRidingTick", serverAt);
         receipt.put(check + "-clientVehicleTick", clientVehicleAt);
         receipt.put(check + "-clientEntityTick", clientEntityAt);
+        receipt.put(check + "-clientPassengerTick", clientPassengerAt);
         receipt.put(check + "-stable1s", stable);
         receipt.put(check + "-samples", samples);
         if (serverAt == null) failures.add(check + ": server does not report the player riding the pig");
         if (clientEntityAt == null) failures.add(check + ": client level never contained the pig " + pig);
         if (clientVehicleAt == null) failures.add(check + ": client LocalPlayer.getVehicle() never became the pig");
+        if (clientPassengerAt == null) failures.add(check + ": client pig never listed the local player as its passenger");
         if (!stable) failures.add(check + ": mount state did not stay consistent for 1 s");
     }
 
     // ------------------------------------------------------------------------------------------------ observations
     ClientView view(UUID pig) {
         return context.computeOnClient(c -> {
-            if (c.level == null || c.player == null) return new ClientView(null, null, false);
+            if (c.level == null || c.player == null) return new ClientView(null, null, false, false);
             Entity vehicle = c.player.getVehicle();
-            boolean has = false;
-            if (pig != null) for (Entity e : c.level.entitiesForRendering()) if (pig.equals(e.getUUID())) { has = true; break; }
-            return new ClientView(c.level.dimension().identifier().toString(), vehicle == null ? null : vehicle.getUUID(), has);
+            boolean has = false, carries = false;
+            if (pig != null) for (Entity e : c.level.entitiesForRendering()) if (pig.equals(e.getUUID())) {
+                has = true;
+                carries = e.getPassengers().contains(c.player);
+                break;
+            }
+            return new ClientView(c.level.dimension().identifier().toString(), vehicle == null ? null : vehicle.getUUID(), has, carries);
         });
     }
 
@@ -250,6 +262,9 @@ public final class Stage8MountedPortalClientTest {
             for (Path jar : jars) mods.put(jar.getFileName().toString(), Files.size(jar) + " " + sha256(jar));
         }
         receipt.put("serverMods", mods);
+        long phoeniumJars = mods.keySet().stream().filter(name -> name.startsWith("phoenium")).count();
+        if (phoeniumJars != (control ? 0 : 1))
+            throw new IllegalStateException((control ? "control" : "candidate") + " server has " + phoeniumJars + " Phoenium JARs: " + mods.keySet());
         Files.createDirectories(evidence.toAbsolutePath().getParent());
         serverLog = evidence.toAbsolutePath().getParent().resolve(world + "-server-console.log");
         receipt.put("serverLog", serverLog.toAbsolutePath().toString());
@@ -265,13 +280,13 @@ public final class Stage8MountedPortalClientTest {
         while (System.currentTimeMillis() < deadline) {
             String log = Files.exists(serverLog) ? Files.readString(serverLog) : "";
             if (!server.isAlive()) throw new IllegalStateException("server exited during startup");
-            if (log.contains("Done (") && log.contains("lifecycle=RUNNING")) break;
+            if (log.contains("Done (") && (control || log.contains("lifecycle=RUNNING"))) break;
             context.waitTicks(20);
         }
         String log = Files.readString(serverLog);
         Matcher started = Pattern.compile("PHOENIUM_STAGE2 started lifecycle=RUNNING[^\\r\\n]*").matcher(log);
         receipt.put("phoeniumStarted", started.find() ? started.group().substring(0, Math.min(200, started.group().length())) : null);
-        if (!log.contains("Done (") || receipt.get("phoeniumStarted") == null)
+        if (!log.contains("Done (") || !control && receipt.get("phoeniumStarted") == null)
             throw new IllegalStateException("server did not reach Done with Phoenium RUNNING");
     }
 
