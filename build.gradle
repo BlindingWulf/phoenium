@@ -246,14 +246,15 @@ loom {
             property 'phoenium.test.username', 'PhoeniumTest0'
             property 'phoenium.test.minecraftVersion', minecraft_version
             property 'phoenium.test.gradleTask', 'runStage8MountedPortalClientGameTest'
-            property 'phoenium.test.serverDirectory',
-                    layout.buildDirectory.dir('s8f7-mounted-portal-server').get().asFile.absolutePath
+            property 'phoenium.test.serverDirectory', providers.gradleProperty('s8f7ServerDir').map { file(it).absolutePath }
+                    .orElse(layout.buildDirectory.dir('s8f7-mounted-portal-server').map { it.asFile.absolutePath }).get()
             property 'phoenium.test.serverAddress', '127.0.0.1:25566'
             property 'phoenium.test.rconPort', '25576'
             property 'phoenium.test.rconPassword', 'phoenium-s8f7-client'
             property 'phoenium.s8f7.workers', providers.gradleProperty('s8f7Workers').orElse('1').get()
             property 'phoenium.s8f7.control', providers.gradleProperty('s8f7Control').orElse('false').get()
-            property 'phoenium.client.gametest.evidence', providers.gradleProperty('s8f7Evidence')
+            property 'phoenium.s8f7.mode', providers.gradleProperty('s8f7Mode').orElse('regression').get()
+            property 'phoenium.client.gametest.evidence', providers.gradleProperty('s8f7Evidence').map { file(it).absolutePath }
                     .orElse(layout.buildDirectory.file('client-gametest/evidence/S8F7-MOUNTED-PORTAL.json')
                     .map { it.asFile.absolutePath }).get()
         }
@@ -468,7 +469,8 @@ tasks.named('runStage3ClientGameTest') {
 }
 
 // S8-F7: the mounted portal regression runs against the built JAR, against exact candidate bytes
-// with -Ps8f7Production=<path>, or as the vanilla control without Phoenium with -Ps8f7Control=true.
+// with -Ps8f7Production=<path>, or as the vanilla control without Phoenium with -Ps8f7Control=true. Paths may be
+// project-relative (gradlew.bat cannot take a quoted argument containing a space).
 // Only the static server inputs are taken from the Stage 3 tree.
 tasks.register('prepareS8f7MountedPortalServer', Sync) {
     description = 'Prepare a disposable external server for the S8-F7 mounted portal client regression.'
@@ -489,8 +491,10 @@ tasks.register('prepareS8f7MountedPortalServer', Sync) {
     }
 }
 
+// -Ps8f7ServerDir=<dir> runs against an already prepared server (the certified L5 stack, built outside Gradle with
+// exactly one candidate JAR or none for the control); the minimal Stage 3 base is then not prepared.
 tasks.named('runStage8MountedPortalClientGameTest') {
-    dependsOn tasks.named('prepareS8f7MountedPortalServer')
+    if (!providers.gradleProperty('s8f7ServerDir').isPresent()) dependsOn tasks.named('prepareS8f7MountedPortalServer')
 }
 
 tasks.named('runStage4ClientGameTest') {
