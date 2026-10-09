@@ -113,7 +113,7 @@ public final class RegionScheduler {
         RegionRuntime only = null;
         java.util.ArrayList<RegionRuntime> eligible = null;
         for (RegionRuntime value : runtimes.values()) {
-            if (value.lifecycle() != RegionLifecycle.READY || value.transitioning() || value.inboxSize() <= 0) continue;
+            if (value.lifecycle() != RegionLifecycle.READY || value.transitioning() || value.inboxEmpty()) continue;
             if (only == null && eligible == null) { only = value; continue; }
             if (eligible == null) { eligible = new java.util.ArrayList<>(); eligible.add(only); }
             eligible.add(value);
@@ -143,6 +143,26 @@ public final class RegionScheduler {
         var selection = runtime.leases().trySelect().orElse(null);
         if (selection == null) return false;
         new Selected(runtime, envelope, selection, true).run();
+        return true;
+    }
+    /**
+     * S9-D10: the turn {@link #advanceOne()} would give an admitted envelope had it been enqueued, without the inbox
+     * round trip. With every inbox empty, enqueueing it would make its runtime the only eligible one and it the head
+     * that {@link #select} polls; this takes that same path from the selection on: one {@link Selected#run()} with
+     * its admission re-checks, delivery revalidation, lease, owner context, lifecycle and failure barrier (a stop
+     * observed there requeues it, as it would a polled head). False means nothing was claimed or run, and the caller
+     * delivers the envelope through the gateway as before. Never for local block-entity work, which a generic
+     * submission cannot carry and runOne leaves to its batch.
+     */
+    public boolean runImmediate(RegionRuntime runtime, RegionTaskEnvelope envelope) {
+        if (!acceptsSimulationWork() || runtime.transitioning() || runtime.lifecycle() != RegionLifecycle.READY) return false;
+        if (envelope.payload() instanceof TaskPayload.RegionalService service
+                && service.operationKind().equals(dev.phoenium.service.RegionalServiceKind.LOCAL_BLOCK_ENTITY_TICK.name()))
+            return false;
+        for (RegionRuntime value : runtimes.values()) if (!value.inboxEmpty()) return false;
+        var selection = runtime.leases().trySelect().orElse(null);
+        if (selection == null) return false;
+        new Selected(runtime, envelope, selection).run();
         return true;
     }
     public boolean runOne(RegionRuntime runtime) {
@@ -243,7 +263,9 @@ public final class RegionScheduler {
         private final RegionTaskEnvelope envelope;
         private final dev.phoenium.ownership.RegionLeaseManager.Selection selection;
         private final boolean nativeReturn;
-        private final long selectedAt = System.nanoTime();
+        /** S9-D10: clock reads only for the local block-entity measurement, their only reader. */
+        private final boolean measuredLocal;
+        private final long selectedAt;
         private volatile boolean started;
         private RegionLease preparedLease;
         private long preparedClaimStart;
@@ -254,6 +276,9 @@ public final class RegionScheduler {
         private Selected(RegionRuntime runtime, RegionTaskEnvelope envelope,
                          dev.phoenium.ownership.RegionLeaseManager.Selection selection, boolean nativeReturn) {
             this.runtime = runtime; this.envelope = envelope; this.selection = selection; this.nativeReturn = nativeReturn;
+            this.measuredLocal = envelope.payload() instanceof TaskPayload.RegionalService service
+                && service.operationKind().equals(dev.phoenium.service.RegionalServiceKind.LOCAL_BLOCK_ENTITY_TICK.name());
+            this.selectedAt = measuredLocal ? System.nanoTime() : 0L;
         }
         private boolean prepareLocal() throws Exception {
             deliveryAttempts.incrementAndGet();
@@ -279,7 +304,7 @@ public final class RegionScheduler {
                     : locationValidator != null && locationValidator.revalidateLocationForExecution(runtime, envelope));
                 if (!valid) return;
                 if (!acceptsSimulationWork()) { if (!nativeReturn) runtime.requeueFirst(envelope); return; }
-                long claimStart = preparedLease == null ? System.nanoTime() : preparedClaimStart;
+                long claimStart = preparedLease != null ? preparedClaimStart : measuredLocal ? System.nanoTime() : 0L;
                 RegionLease executing = preparedLease == null ? selection.promote() : preparedLease;
                 preparedLease = null;
                 try (RegionLease lease = executing;
@@ -287,8 +312,7 @@ public final class RegionScheduler {
                     runtime.transitionTo(RegionLifecycle.TICKING);
                     try {
                         lease.requireCurrent();
-                        if (envelope.payload() instanceof TaskPayload.RegionalService service
-                                && service.operationKind().equals(dev.phoenium.service.RegionalServiceKind.LOCAL_BLOCK_ENTITY_TICK.name()))
+                        if (measuredLocal && envelope.payload() instanceof TaskPayload.RegionalService service)
                             measured = measurements.enter(regionalServiceExecutor.enqueuedNanos(service), selectedAt, claimStart,
                                 directory.snapshot().generation().value(), service.operationId());
                         apply(runtime, envelope.payload());

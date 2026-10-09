@@ -233,6 +233,69 @@ final class RegionalServiceDispatcherTest {
         assertEquals(0, dispatcher.pendingCount());
     }
 
+    /** S9-D10: with every inbox empty, executeAndDrain's turn is the scheduler's own leased turn, not queued. */
+    @Test
+    void directTurnRunsUnderItsOwnerLeaseWithoutTheInbox() {
+        Fixture f = new Fixture(); var dispatcher = f.dispatcher();
+        long attempts = f.scheduler.deliveryAttempts(), advances = f.scheduler.advances();
+        var seen = new java.util.ArrayList<Object>();
+        dispatcher.executeAndDrain(f.aKey, RegionalServiceKind.TRACKING_UPDATE, execution -> {
+            seen.add(OwnershipContext.current().orElseThrow().region());
+            seen.add(f.a.leases().hasActiveLease());
+            seen.add(f.a.lifecycle());
+            seen.add(f.a.inboxEmpty() && f.b.inboxEmpty());
+            seen.add(dispatcher.pendingCount());
+        });
+        assertEquals(List.of(f.aId, true, RegionLifecycle.TICKING, true, 1), seen);
+        assertEquals(attempts + 1, f.scheduler.deliveryAttempts());
+        assertEquals(advances + 1, f.scheduler.advances());
+        assertEquals(0, dispatcher.pendingCount());
+        assertEquals(RegionLifecycle.READY, f.a.lifecycle());
+        assertFalse(f.a.leases().hasActiveLease());
+        assertTrue(OwnershipContext.current().isEmpty());
+    }
+
+    /** S9-D10: queued work anywhere keeps the queued path, so the drain still selects in region-id order: work queued
+     * on region a runs before a drained turn on region b. */
+    @Test
+    void earlierQueuedWorkStillRunsBeforeTheDrainedOperation() {
+        Fixture f = new Fixture(); var dispatcher = f.dispatcher();
+        var order = new java.util.ArrayList<String>();
+        var earlier = dispatcher.submit(f.aKey, RegionalServiceKind.BLOCK_EVENT, execution -> order.add("earlier"));
+        dispatcher.executeAndDrain(f.bKey, RegionalServiceKind.BLOCK_EVENT, execution -> order.add("drained"));
+        assertEquals(List.of("earlier", "drained"), order);
+        assertTrue(earlier.completed());
+        assertEquals(0, dispatcher.pendingCount());
+    }
+
+    /** S9-D10: a direct turn's failure trips the barrier and is thrown exactly as the drain loop throws it. */
+    @Test
+    void directTurnFailureIsReportedAsTheDrainReportsIt() {
+        Fixture f = new Fixture(); var dispatcher = f.dispatcher();
+        var failure = assertThrows(IllegalArgumentException.class, () -> dispatcher.executeAndDrain(f.aKey,
+            RegionalServiceKind.RUN_SCHEDULED_BLOCK_TICK, execution -> { throw new IllegalArgumentException("direct"); }));
+        assertEquals("direct", failure.getMessage());
+        assertTrue(f.barrier.tripped());
+        assertEquals(0, dispatcher.pendingCount());
+        assertFalse(f.a.leases().hasActiveLease());
+        assertThrows(IllegalStateException.class, () -> dispatcher.executeAndDrain(f.bKey,
+            RegionalServiceKind.TRACKING_UPDATE, execution -> fail("no turn after the barrier tripped")));
+    }
+
+    /** S9-D10: an owner caller is refused as before, and its own turn is unaffected. */
+    @Test
+    void ownerCallerCannotTakeADirectTurn() {
+        Fixture f = new Fixture(); var dispatcher = f.dispatcher();
+        var refused = new java.util.ArrayList<Boolean>();
+        dispatcher.executeAndDrain(f.aKey, RegionalServiceKind.BLOCK_EVENT, execution -> refused.add(
+            assertThrows(IllegalStateException.class, () -> dispatcher.executeAndDrain(f.bKey,
+                RegionalServiceKind.BLOCK_EVENT, inner -> fail("nested owner turn"))) != null));
+        assertEquals(List.of(true), refused);
+        assertFalse(f.barrier.tripped());
+        assertFalse(f.a.leases().hasActiveLease());
+        assertFalse(f.b.leases().hasActiveLease());
+    }
+
     private static final class Fixture {
         final WorldId world = new WorldId("test");
         final RegionId aId = new RegionId(world, "a");

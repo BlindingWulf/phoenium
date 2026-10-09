@@ -195,6 +195,15 @@ public final class RegionalServiceDispatcher implements RegionalServiceExecutor 
     }
     private Handle submitAdmitted(RoutingKey key, RegionalServiceKind kind, RegionalServiceWork body, boolean local,
                                   LocalPreparation preparation, boolean completeAfterRelease) {
+        return admitted(key, kind, body, local, preparation, completeAfterRelease, false).handle;
+    }
+    /** An admitted operation: its handle and, for a direct turn, the never-enqueued envelope and its owner runtime. */
+    private record Admitted(Handle handle, RegionTaskEnvelope envelope, RegionRuntime runtime) { }
+    /** S9-D10: the envelope origin per kind, built once rather than concatenated per operation. */
+    private static final String[] ORIGINS = java.util.Arrays.stream(RegionalServiceKind.values())
+        .map(kind -> "regional-service:" + kind.name()).toArray(String[]::new);
+    private Admitted admitted(RoutingKey key, RegionalServiceKind kind, RegionalServiceWork body, boolean local,
+                              LocalPreparation preparation, boolean completeAfterRelease, boolean direct) {
         Objects.requireNonNull(key, "key");
         Objects.requireNonNull(kind, "kind");
         Objects.requireNonNull(body, "body");
@@ -207,9 +216,20 @@ public final class RegionalServiceDispatcher implements RegionalServiceExecutor 
         Pending retained = new Pending(key, kind, body, handle, local, System.nanoTime(), preparation, completeAfterRelease);
         pending.put(operationId, retained);
         TaskPayload.RegionalService payload = new TaskPayload.RegionalService(serviceId, worldInstance, operationId, kind.name());
-        RegionTaskEnvelope envelope = new RegionTaskEnvelope("regional-service:" + kind.name(), payload, key,
+        RegionTaskEnvelope envelope = new RegionTaskEnvelope(ORIGINS[kind.ordinal()], payload, key,
             route.generation(), route.ownerEpoch(), serviceId, new TaskCorrelationId(sequence),
             new TaskSequence(sequence), AdmissionPolicy.REROUTE);
+        // S9-D10: the gateway would queue this envelope, unchanged, on exactly this runtime (current route, so never
+        // stale; no transition and no pending change for the key). Leave it unqueued for the caller's direct turn.
+        if (direct) {
+            RegionRuntime runtime = runtimes.get(route.region());
+            if (runtime != null && !runtime.transitioning() && directory.pendingChange(key).isEmpty())
+                return new Admitted(handle, envelope, runtime);
+        }
+        deliver(operationId, envelope);
+        return new Admitted(handle, envelope, null);
+    }
+    private void deliver(long operationId, RegionTaskEnvelope envelope) {
         OwnerGateway.Delivery delivery;
         try {
             delivery = gateway.submit(envelope);
@@ -222,7 +242,23 @@ public final class RegionalServiceDispatcher implements RegionalServiceExecutor 
             pending.remove(operationId);
             throw new IllegalStateException("regional service admission rejected: " + delivery);
         }
-        return handle;
+    }
+    /**
+     * S9-D10: {@code submit} for {@link #executeAndDrain}, whose drain follows at once. When every inbox is empty the
+     * drain's first advanceOne would select exactly this envelope, so the scheduler runs that turn directly
+     * ({@link RegionScheduler#runImmediate}); otherwise, or when it declines, the envelope is delivered through the
+     * gateway as before and the drain selects it in order. An owner caller keeps the queued path, so the drain still
+     * refuses it.
+     */
+    private Handle submitForDrain(RoutingKey key, RegionalServiceKind kind, RegionalServiceWork body) {
+        if (kind == RegionalServiceKind.LOCAL_BLOCK_ENTITY_TICK)
+            throw new IllegalArgumentException("local worker capability cannot be obtained through generic submission");
+        if (OwnershipContext.current().isPresent()) return submit(key, kind, body);
+        Admitted admitted = scheduler.admit(() -> admitted(key, kind, body, false, ignored -> true, false, true), null);
+        if (admitted == null) throw new IllegalStateException("regional service admission after scheduler stop");
+        if (admitted.runtime != null && !scheduler.runImmediate(admitted.runtime, admitted.envelope))
+            deliver(admitted.handle.operationId(), admitted.envelope);
+        return admitted.handle;
     }
 
     /** Drives the existing serial scheduler until this exact operation commits or the barrier trips. */
@@ -233,19 +269,7 @@ public final class RegionalServiceDispatcher implements RegionalServiceExecutor 
         while (handle.state == Outcome.PENDING) {
             long before = scheduler.deliveryAttempts();
             scheduler.advanceOne();
-            if (handle.state == Outcome.COMPLETE) return;
-            if (handle.state == Outcome.FAILED) {
-                pending.remove(handle.operationId());
-                Throwable cause = handle.failure;
-                // Preserve the original unchecked callback identity for vanilla callers and catch
-                // sites. Only a checked callback failure needs a cause-preserving bridge because
-                // the synchronous drain API itself has no checked throws clause.
-                if (cause instanceof RuntimeException runtime) throw runtime;
-                if (cause instanceof Error error) throw error;
-                throw new RegionalServiceFailure("regional service failed " + handle, cause, handle.kind());
-            }
-            if (handle.state == Outcome.ABANDONED)
-                throw new IllegalStateException("regional service was abandoned without acknowledgement: " + handle);
+            if (settled(handle)) return;
             var failed = scheduler.failureBarrier().record().orElse(null);
             if (failed != null)
                 throw new IllegalStateException("regional service stopped by prior owner failure: " + handle, failed.cause());
@@ -258,9 +282,34 @@ public final class RegionalServiceDispatcher implements RegionalServiceExecutor 
         }
     }
 
+    /** The drain's report after the turn that ran {@code handle}: true when it completed; its failure or abandonment
+     * is thrown; false while it is still pending. */
+    private boolean settled(Handle handle) {
+        if (handle.state == Outcome.COMPLETE) return true;
+        if (handle.state == Outcome.FAILED) {
+            pending.remove(handle.operationId());
+            Throwable cause = handle.failure;
+            // Preserve the original unchecked callback identity for vanilla callers and catch
+            // sites. Only a checked callback failure needs a cause-preserving bridge because
+            // the synchronous drain API itself has no checked throws clause.
+            if (cause instanceof RuntimeException runtime) throw runtime;
+            if (cause instanceof Error error) throw error;
+            throw new RegionalServiceFailure("regional service failed " + handle, cause, handle.kind());
+        }
+        if (handle.state == Outcome.ABANDONED)
+            throw new IllegalStateException("regional service was abandoned without acknowledgement: " + handle);
+        return false;
+    }
+    /** S9-D10: a direct turn has already run (and settled) the handle, which the drain loop would report only after
+     * the advanceOne that ran it; report it the same way. A handle still pending drains as before. */
+    private void drainSubmitted(Handle handle) {
+        if (handle.state != Outcome.PENDING && settled(handle)) return;
+        drain(handle);
+    }
+
     public void executeAndDrain(RoutingKey key, RegionalServiceKind kind, RegionalServiceWork body) {
         var cascade = NeighborCascadeContinuation.arm(neighborCascades, key, kind);
-        if (cascade == null) { drain(submit(key, kind, body)); return; }
+        if (cascade == null) { drainSubmitted(submitForDrain(key, kind, body)); return; }
         // A cut cascade waits only here, after the owned body committed and released its lease.
         try (cascade) {
             drain(submit(key, kind, cascade.wrap(body)));

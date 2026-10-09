@@ -343,6 +343,10 @@ public final class RegionalChunkGameplayService implements NaturalSpawnContinuat
         FullFinishingServices.requireWorld(level, FullFinishingServices.Kind.ENTITY_REGISTRY);
         FullFinishingServices.requireWorld(level, FullFinishingServices.Kind.TRACKER);
         FullFinishingServices.requireServer(level.getServer(), FullFinishingServices.Kind.CONNECTIONS);
+        // S9-D10: the player cut feeds only an entity's closure. A uniformly routed world admits the closure without
+        // its keys, so the cut is captured (and its sessions validated) once for the pass, and per entity only where
+        // a closure is built (another routing, or a dragon).
+        capturePlayers();
         forEachLiveEntityTickAlias(entities, entity -> {
             // A dragon lazily reads the native 24-node heightmap ring. Selection can change
             // while the owner-free FULL inputs settle, so repeat its preflight before any
@@ -354,14 +358,13 @@ public final class RegionalChunkGameplayService implements NaturalSpawnContinuat
                 List<FullEntityFacts.Candidate> passengers = finishing.entityFacts.trackingPassengers(source);
                 FullEntityFacts.VehicleRelation vehicle = finishing.entityFacts.trackingVehicle(source);
                 RoutingKey key = key(source);
-                PlayerCut currentPlayers = capturePlayers();
                 BlockPos fightOrigin = entity instanceof EnderDragon dragon ? dragon.getFightOrigin().immutable() : null;
                 List<ChunkPos> dragonInputs = fightOrigin == null ? List.of() : dragonHeightmapInputChunks(fightOrigin);
                 // S9-D7: every footprint key names this world; a uniformly routed world admits it without the keys.
                 // The dragon's owner-turn route check reads its closure, so a dragon always builds it.
                 Set<RoutingKey> closure = null;
                 if (fightOrigin != null || !dispatcher.ensureUniformClosure(key)) {
-                    closure = entityTickClosure(source, key, passengers, vehicle, currentPlayers, dragonInputs);
+                    closure = entityTickClosure(source, key, passengers, vehicle, capturePlayers(), dragonInputs);
                     dispatcher.ensureClosure(closure);
                 }
                 Set<RoutingKey> admittedClosure = closure;

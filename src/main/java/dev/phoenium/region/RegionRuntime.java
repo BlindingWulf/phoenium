@@ -57,6 +57,8 @@ public final class RegionRuntime {
     public Optional<RegionTaskEnvelope> pollTransitionMailbox() { return Optional.ofNullable(transitionMailbox.pollFirst()); }
     public int transitionMailboxSize() { return transitionMailbox.size(); }
     public int inboxSize() { return inbox.size(); }
+    /** S9-D10: {@code inboxSize() == 0} without ConcurrentLinkedDeque's O(n) size walk. */
+    public boolean inboxEmpty() { return inbox.isEmpty(); }
     public void append(String value) { requireMutation(); if (recordOperationLog) operationLog.add(value); }
     public void add(long value) { requireMutation(); accumulator += value; if (recordOperationLog) operationLog.add("add:" + value); }
     public List<String> immutableLog() { return List.copyOf(operationLog); }

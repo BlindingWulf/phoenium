@@ -798,7 +798,11 @@ public final class RegionalTrackingService {
 
     private void refreshProjection(Entry entry) {
         entry.effectiveRange = publishedRange(entry.candidate).effectiveRange;
-        entry.seenConnections = Set.copyOf(access(entry.tracker).phoenium$getSeenBy());
+        // S9-D10: seenConnections is only ever asked contains(); a retained copy with the same members is the same
+        // answer, so a move that left the tracker's seenBy unchanged (nearly every move) keeps it uncopied.
+        var live = access(entry.tracker).phoenium$getSeenBy();
+        Set<Object> retained = entry.seenConnections;
+        if (retained.size() != live.size() || !retained.containsAll(live)) entry.seenConnections = Set.copyOf(live);
     }
     private void reorderSource(Int2ObjectMap<Object> source) {
         List<RegionalTrackingPartitions.Identity> order = new ArrayList<>(source.size());
