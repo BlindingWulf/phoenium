@@ -8,7 +8,7 @@ import net.minecraft.world.entity.ai.goal.target.NearestAttackableTargetGoal;
 
 /** Only a selector's inactive acquisition site consults this context. It grants no ownership. */
 public final class MobDecisionContext {
-    private static final ThreadLocal<Mob> CURRENT = new ThreadLocal<>();
+    private static final ThreadLocal<Mob> CURRENT = new dev.phoenium.core.FastThreadLocal<>();
     private static final Set<String> HOSTILE = Set.of("net.minecraft.world.entity.monster.zombie.Zombie",
         "net.minecraft.world.entity.monster.skeleton.Skeleton", "net.minecraft.world.entity.monster.Creeper");
     private static final Set<String> PASSIVE = Set.of("net.minecraft.world.entity.animal.cow.Cow",

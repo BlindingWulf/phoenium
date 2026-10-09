@@ -50,7 +50,7 @@ public final class BoatPortalTransitionManager implements AutoCloseable {
     private final CrossDimensionReplacementBoundary replacements = new CrossDimensionReplacementBoundary();
     private final Map<Key, Entry> active = new ConcurrentHashMap<>();
     private final Map<Key, Entry> graphPending = new ConcurrentHashMap<>();
-    private final ThreadLocal<AbstractBoat> ticking = new ThreadLocal<>();
+    private final ThreadLocal<AbstractBoat> ticking = new dev.phoenium.core.FastThreadLocal<>();
     private volatile boolean closed;
 
     public BoatPortalTransitionManager(NativePortalTransfer.Authority authority,

@@ -26,7 +26,7 @@ public final class ArmorStandPortalTransitionManager implements AutoCloseable {
     private final ObjectOwnershipRegistry objects;
     private final CrossDimensionReplacementBoundary replacements = new CrossDimensionReplacementBoundary();
     private final Map<Key, Entry> active = new ConcurrentHashMap<>();
-    private final ThreadLocal<LivingEntity> ticking = new ThreadLocal<>();
+    private final ThreadLocal<LivingEntity> ticking = new dev.phoenium.core.FastThreadLocal<>();
     private volatile boolean closed;
 
     public ArmorStandPortalTransitionManager(NativePortalTransfer.Authority authority, ObjectOwnershipRegistry objects) {

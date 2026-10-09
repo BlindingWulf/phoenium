@@ -25,7 +25,7 @@ import net.minecraft.world.level.storage.ValueInput;
  * predicate, reader, brain, or gameplay random source. Original resolution runs once later.
  */
 public final class FullSavedContextInputs {
-    private static final ThreadLocal<Plan> ACTIVE = new ThreadLocal<>();
+    private static final ThreadLocal<Plan> ACTIVE = new dev.phoenium.core.FastThreadLocal<>();
     private FullSavedContextInputs() { }
 
     public static Plan prepare(ServerLevel world, WorldId worldId, RegionDirectory directory,

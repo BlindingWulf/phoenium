@@ -15,7 +15,7 @@ import net.minecraft.world.level.chunk.storage.SerializableChunkData;
  * light receipt path.  C2ME's deferred POI mutation is handled later by the regional dispatcher.
  */
 public final class PrivateC2meReadInvocation implements AutoCloseable {
-    private static final ThreadLocal<PrivateC2meReadInvocation> CURRENT = new ThreadLocal<>();
+    private static final ThreadLocal<PrivateC2meReadInvocation> CURRENT = new dev.phoenium.core.FastThreadLocal<>();
     private static final AtomicInteger RETAINED = new AtomicInteger();
 
     private C2meDiskReadOperation operation;

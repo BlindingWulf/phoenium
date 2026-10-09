@@ -23,7 +23,7 @@ public final class MobPortalTransitionManager implements AutoCloseable {
     private final CrossDimensionReplacementBoundary replacements = new CrossDimensionReplacementBoundary();
     private final Map<IdentityKey, Entry> active = new java.util.concurrent.ConcurrentHashMap<>();
     private final Map<IdentityKey, Entry> graphPending = new java.util.concurrent.ConcurrentHashMap<>();
-    private final ThreadLocal<Mob> ticking = new ThreadLocal<>();
+    private final ThreadLocal<Mob> ticking = new dev.phoenium.core.FastThreadLocal<>();
     private volatile boolean closed;
     public MobPortalTransitionManager(NativePortalTransfer.Authority authority, ObjectOwnershipRegistry objects) {
         this.authority = Objects.requireNonNull(authority); this.objects = Objects.requireNonNull(objects);

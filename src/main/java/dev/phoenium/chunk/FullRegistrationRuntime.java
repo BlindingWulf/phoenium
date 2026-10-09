@@ -19,7 +19,7 @@ import net.minecraft.world.level.chunk.status.*;
  * The one custody gate protects metadata, never callbacks, submissions or future completion.
  */
 public final class FullRegistrationRuntime {
-    private static final ThreadLocal<Invocation> SYNCHRONOUS = new ThreadLocal<>();
+    private static final ThreadLocal<Invocation> SYNCHRONOUS = new dev.phoenium.core.FastThreadLocal<>();
     private record Invocation(FullRegistrationRuntime runtime, GeneratingChunkMap map,
                               GenerationChunkHolder holder, ChunkStep step,
                               StaticCache2D<GenerationChunkHolder> cache, Producer producer) { }

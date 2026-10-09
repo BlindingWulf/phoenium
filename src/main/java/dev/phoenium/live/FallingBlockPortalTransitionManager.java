@@ -23,7 +23,7 @@ public final class FallingBlockPortalTransitionManager implements AutoCloseable 
     private final ObjectOwnershipRegistry objects;
     private final CrossDimensionReplacementBoundary replacements = new CrossDimensionReplacementBoundary();
     private final Map<IdentityKey, Entry> active = new ConcurrentHashMap<>();
-    private final ThreadLocal<FallingBlockEntity> ticking = new ThreadLocal<>();
+    private final ThreadLocal<FallingBlockEntity> ticking = new dev.phoenium.core.FastThreadLocal<>();
     private volatile boolean closed;
 
     public FallingBlockPortalTransitionManager(NativePortalTransfer.Authority authority, ObjectOwnershipRegistry objects) {

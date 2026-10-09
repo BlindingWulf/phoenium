@@ -11,7 +11,7 @@ import net.minecraft.world.level.block.state.BlockState;
  * original ordered invocation. This is a precondition, never a catch-and-retry path. */
 public final class LocalBlockEntityTick {
     private LocalBlockEntityTick() { }
-    private static final ThreadLocal<Selection> CURRENT = new ThreadLocal<>();
+    private static final ThreadLocal<Selection> CURRENT = new dev.phoenium.core.FastThreadLocal<>();
     private static volatile RecipePolicy recipePolicy;
     private record RecipePolicy(java.lang.ref.WeakReference<net.minecraft.world.item.crafting.RecipeMap> map, boolean safe) { }
     private static boolean trustedCookingRecipes(BlockEntity entity) {

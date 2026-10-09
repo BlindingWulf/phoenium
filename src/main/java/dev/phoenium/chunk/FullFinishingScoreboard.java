@@ -25,8 +25,8 @@ public final class FullFinishingScoreboard {
     private final IdentityHashMap<Connection, Session> sessions = new IdentityHashMap<>();
     private final List<Session> order = new ArrayList<>();
     private final Map<UUID, ServerPlayer> byUuid = new HashMap<>();
-    private final ThreadLocal<Membership> membership = new ThreadLocal<>();
-    private final ThreadLocal<Broadcast> broadcast = new ThreadLocal<>();
+    private final ThreadLocal<Membership> membership = new dev.phoenium.core.FastThreadLocal<>();
+    private final ThreadLocal<Broadcast> broadcast = new dev.phoenium.core.FastThreadLocal<>();
     private long nextSession, nextRespawn, sequence, accepted, uncertain, committed, completed, directoryRevision;
     private int catchup;
     FullFinishingScoreboard(FullFinishingServices service) { this.service = service; server = service.server(); }

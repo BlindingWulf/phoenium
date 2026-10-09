@@ -53,7 +53,7 @@ public final class NativePortalTransfer {
          */
         default boolean deferRiderRemount(net.minecraft.server.level.ServerPlayer rider, Entity vehicle) { return false; }
     }
-    private static final ThreadLocal<NativePortalTransfer> ACTIVE = new ThreadLocal<>();
+    private static final ThreadLocal<NativePortalTransfer> ACTIVE = new dev.phoenium.core.FastThreadLocal<>();
     private final Authority authority;
     private final ObjectOwnershipRegistry objects;
     private final CrossDimensionReplacementBoundary boundary;

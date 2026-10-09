@@ -35,7 +35,7 @@ public final class EntityPortalTransitionManager implements AutoCloseable {
     private final CrossDimensionReplacementBoundary replacements = new CrossDimensionReplacementBoundary();
     private final Map<IdentityKey, Entry> active = new java.util.concurrent.ConcurrentHashMap<>();
     private final Map<IdentityKey, Entry> graphPending = new java.util.concurrent.ConcurrentHashMap<>();
-    private final ThreadLocal<Entity> ticking = new ThreadLocal<>();
+    private final ThreadLocal<Entity> ticking = new dev.phoenium.core.FastThreadLocal<>();
     private volatile boolean closed;
 
     public EntityPortalTransitionManager(NativePortalTransfer.Authority authority, ObjectOwnershipRegistry objects) {

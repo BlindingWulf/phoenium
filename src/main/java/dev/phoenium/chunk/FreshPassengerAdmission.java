@@ -25,7 +25,7 @@ public final class FreshPassengerAdmission implements AutoCloseable {
     /** Open detached custodies; zero keeps every native insertion and relation edge on its untouched path. */
     private static final AtomicInteger DETACHED_OPEN = new AtomicInteger();
     private static final ThreadLocal<ArrayDeque<NaturalSpawnScope>> NATURAL_SCOPES =
-        ThreadLocal.withInitial(ArrayDeque::new);
+        dev.phoenium.core.FastThreadLocal.withInitial(ArrayDeque::new);
     private final FullEntityFacts facts;
     private final ServerLevel world;
     private final Entity root;

@@ -48,7 +48,7 @@ final class PlayerDimensionTransitionManager implements AutoCloseable {
     private final ObjectOwnershipRegistry objects;
     private final PlayerDimensionTransitionBoundary transitions = new PlayerDimensionTransitionBoundary();
     private final Map<IdentityKey<ServerPlayer>, Entry> active = new ConcurrentHashMap<>();
-    private final ThreadLocal<Entry> nativeCall = new ThreadLocal<>();
+    private final ThreadLocal<Entry> nativeCall = new dev.phoenium.core.FastThreadLocal<>();
     private volatile boolean closed;
 
     PlayerDimensionTransitionManager(Authority authority, RegionDirectory directory,

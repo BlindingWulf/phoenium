@@ -17,7 +17,7 @@ import net.minecraft.world.level.chunk.status.*;
  * Original completion and save-pin callbacks always run outside the custody metadata fence.
  */
 public final class FullPublishedInputs {
-    private static final ThreadLocal<Entry> ORIGINAL_INVOCATION = new ThreadLocal<>();
+    private static final ThreadLocal<Entry> ORIGINAL_INVOCATION = new dev.phoenium.core.FastThreadLocal<>();
     public enum Origin { ORIGINAL_BASELINE_PROTO, ORIGINAL_BASELINE_IMPOSTER, ADMITTED_PROTO, ADMITTED_IMPOSTER }
     /** A distinct subscriber slot populated by the still-winning original producer after
      * Minecraft actually withdrew the earlier subscriber. The producer is never rerun. */

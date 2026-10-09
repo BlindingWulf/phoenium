@@ -13,7 +13,7 @@ public final class FullServerShutdown {
     private static final Object METADATA = new Object();
     private static final Set<MinecraftServer> SETTLING = Collections.newSetFromMap(new IdentityHashMap<>());
     private static final Set<MinecraftServer> SETTLED = Collections.newSetFromMap(new WeakHashMap<>());
-    private static final ThreadLocal<FullInputNotifications.Failures> FAILED_STOP = new ThreadLocal<>();
+    private static final ThreadLocal<FullInputNotifications.Failures> FAILED_STOP = new dev.phoenium.core.FastThreadLocal<>();
     private FullServerShutdown() { }
 
     /** Only the failed native stop invocation may omit new world captures and unload

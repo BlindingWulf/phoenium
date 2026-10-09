@@ -39,7 +39,7 @@ public final class HurtingProjectilePortalTransitionManager implements AutoClose
     private final ObjectOwnershipRegistry objects;
     private final CrossDimensionReplacementBoundary replacements = new CrossDimensionReplacementBoundary();
     private final ConcurrentHashMap<IdentityKey, Entry> active = new ConcurrentHashMap<>();
-    private final ThreadLocal<Capture> ticking = new ThreadLocal<>();
+    private final ThreadLocal<Capture> ticking = new dev.phoenium.core.FastThreadLocal<>();
     private volatile boolean closed;
 
     public HurtingProjectilePortalTransitionManager(NativePortalTransfer.Authority authority,

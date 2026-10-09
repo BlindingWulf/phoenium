@@ -35,7 +35,7 @@ public final class NaturalSpawnContinuation {
         double naturalSpawnPlayerDistance(net.minecraft.world.entity.player.Player player, double x, double y, double z);
     }
     private enum Pc { CATEGORY, GROUP, ATTEMPT, SELECT_RESULT, TYPE, CHECK_RESULT, NEXT_ATTEMPT, NEXT_GROUP, DONE }
-    private static final ThreadLocal<Capture> ACTIVE = new ThreadLocal<>();
+    private static final ThreadLocal<Capture> ACTIVE = new dev.phoenium.core.FastThreadLocal<>();
     private final Capture capture;
     private final ServerLevel level;
     private final LevelChunk chunk;

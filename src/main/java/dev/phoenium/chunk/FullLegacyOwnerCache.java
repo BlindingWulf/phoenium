@@ -56,7 +56,7 @@ public final class FullLegacyOwnerCache {
     private final ExecutorService storage = Executors.newSingleThreadExecutor(r -> {
         Thread thread = new Thread(r, "Phoenium-profile-storage"); thread.setDaemon(true); return thread;
     });
-    private final ThreadLocal<SaveAttempt> lastSave = ThreadLocal.withInitial(() -> new SaveAttempt(0, Persistence.NO_ATTEMPT, null));
+    private final ThreadLocal<SaveAttempt> lastSave = dev.phoenium.core.FastThreadLocal.withInitial(() -> new SaveAttempt(0, Persistence.NO_ATTEMPT, null));
     private long policy, mutation, saveSequence, nextWrite = 1;
     private boolean draining, stopped;
 

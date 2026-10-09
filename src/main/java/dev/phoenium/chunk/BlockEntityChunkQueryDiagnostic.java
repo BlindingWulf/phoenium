@@ -17,7 +17,7 @@ import org.slf4j.LoggerFactory;
 
 /** Observation only: never schedules a chunk, waits, or supplies a read result. */
 public final class BlockEntityChunkQueryDiagnostic {
-    private static final ThreadLocal<Scope> CURRENT = new ThreadLocal<>();
+    private static final ThreadLocal<Scope> CURRENT = new dev.phoenium.core.FastThreadLocal<>();
     /** S9-D4: open scopes on all threads (see FullFinishingQueries.ACTIVE for the exactness argument). */
     private static final java.util.concurrent.atomic.AtomicInteger ACTIVE = new java.util.concurrent.atomic.AtomicInteger();
     public static boolean idle() { return ACTIVE.get() == 0; }

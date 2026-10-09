@@ -9,7 +9,7 @@ public final class OwnershipContext {
     /** S9-D7: closed scopes store null rather than remove() the entry, here and in Phoenium's other plain
      * ThreadLocal scopes. get() answers null either way, but a removed entry makes every following get() miss
      * its slot, walk the probe chain and re-insert, and remove() itself rehashes the run. */
-    private static final ThreadLocal<Active> CURRENT = new ThreadLocal<>();
+    private static final ThreadLocal<Active> CURRENT = new dev.phoenium.core.FastThreadLocal<>();
     private OwnershipContext() {}
 
     public static Scope enter(RegionId region, LeaseEpoch lease, OperationCategory category) {

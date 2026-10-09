@@ -14,7 +14,7 @@ import net.minecraft.advancements.predicates.entity.EntitySubPredicate;
 public final class FullEntityPredicateInputs {
     public interface Access { Produced phoenium$entityPredicateInputs(); }
     public record Produced(EntitySubPredicate original, List<EntitySubPredicate> parts) { }
-    private static final ThreadLocal<Frame> BUILDING = new ThreadLocal<>();
+    private static final ThreadLocal<Frame> BUILDING = new dev.phoenium.core.FastThreadLocal<>();
     private static final class Frame { EntitySubPredicate[] array; }
 
     private FullEntityPredicateInputs() { }

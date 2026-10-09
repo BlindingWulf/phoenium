@@ -17,7 +17,7 @@ public final class ManagedBlockPollTurnFence {
         RETURN_FENCE_READY, POLL_RETURNED_READY, RESUME_CLAIMED, RESUMING, SETTLED,
         FAILED, CANCELLED, STALE, SHUTDOWN
     }
-    private static final ThreadLocal<Reservation> CURRENT = new ThreadLocal<>();
+    private static final ThreadLocal<Reservation> CURRENT = new dev.phoenium.core.FastThreadLocal<>();
     private final Thread thread;
     private long nextPoll;
     private Reservation reserved;

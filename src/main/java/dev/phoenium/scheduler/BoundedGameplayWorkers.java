@@ -24,7 +24,8 @@ final class BoundedGameplayWorkers {
         AtomicInteger ids = new AtomicInteger();
         executor = count == 1 ? null : new ThreadPoolExecutor(count, count, 0, TimeUnit.MILLISECONDS,
             new ArrayBlockingQueue<>(count), body -> {
-                Thread worker = new Thread(body, "phoenium-gameplay-" + ids.incrementAndGet());
+                // S9-D9: workers carry their own FastThreadLocal slots.
+                Thread worker = new dev.phoenium.core.FastThreadLocal.Carrier(body, "phoenium-gameplay-" + ids.incrementAndGet());
                 worker.setDaemon(false);
                 return worker;
             }, new ThreadPoolExecutor.AbortPolicy());

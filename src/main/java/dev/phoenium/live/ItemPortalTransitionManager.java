@@ -22,7 +22,7 @@ public final class ItemPortalTransitionManager implements AutoCloseable {
     private final ObjectOwnershipRegistry objects;
     private final CrossDimensionReplacementBoundary replacements = new CrossDimensionReplacementBoundary();
     private final Map<IdentityKey, Entry> active = new java.util.concurrent.ConcurrentHashMap<>();
-    private final ThreadLocal<ItemEntity> ticking = new ThreadLocal<>();
+    private final ThreadLocal<ItemEntity> ticking = new dev.phoenium.core.FastThreadLocal<>();
     private volatile boolean closed;
     public ItemPortalTransitionManager(NativePortalTransfer.Authority authority, ObjectOwnershipRegistry objects) {
         this.authority = Objects.requireNonNull(authority); this.objects = Objects.requireNonNull(objects);

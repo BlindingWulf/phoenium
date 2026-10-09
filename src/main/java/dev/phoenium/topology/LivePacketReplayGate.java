@@ -9,7 +9,7 @@ import java.util.Objects;
  * never a global or recursive exemption from the footprint or owner checks.
  */
 public final class LivePacketReplayGate {
-    private final ThreadLocal<LiveMovementAdmission.Ticket> active = new ThreadLocal<>();
+    private final ThreadLocal<LiveMovementAdmission.Ticket> active = new dev.phoenium.core.FastThreadLocal<>();
     // Ticket values may legitimately be equal for two different packets with the same movement
     // footprint.  The replay guard is about one admission instance, not value-level geometry, so the
     // instance itself carries its consumption (S9-D7; this gate is the only consumer).

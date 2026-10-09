@@ -30,7 +30,7 @@ public final class FullEntityFacts {
     record Estimate(ServerLevel world, long revision, int candidates) { }
     private record Route(ChunkPos position, long revision) { }
     private static final AtomicLong INCARNATIONS = new AtomicLong();
-    private static final ThreadLocal<Boolean> PUBLISHING = ThreadLocal.withInitial(() -> false);
+    private static final ThreadLocal<Boolean> PUBLISHING = dev.phoenium.core.FastThreadLocal.withInitial(() -> false);
     private final FullFinishingServices service;
     private final IdentityHashMap<ServerLevel, Map<UUID, Entity>> directories = new IdentityHashMap<>();
     private final IdentityHashMap<ServerLevel, LinkedHashMap<Integer, Entity>> candidates = new IdentityHashMap<>();

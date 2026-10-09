@@ -22,7 +22,7 @@ public final class TntPortalTransitionManager implements AutoCloseable {
     private final ObjectOwnershipRegistry objects;
     private final CrossDimensionReplacementBoundary replacements = new CrossDimensionReplacementBoundary();
     private final Map<IdentityKey, Entry> active = new ConcurrentHashMap<>();
-    private final ThreadLocal<PrimedTnt> ticking = new ThreadLocal<>();
+    private final ThreadLocal<PrimedTnt> ticking = new dev.phoenium.core.FastThreadLocal<>();
     private volatile boolean closed;
 
     public TntPortalTransitionManager(NativePortalTransfer.Authority authority, ObjectOwnershipRegistry objects) {

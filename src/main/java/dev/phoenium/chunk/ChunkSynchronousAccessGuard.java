@@ -7,7 +7,7 @@ import java.util.function.BooleanSupplier;
 /** Rejects an unfinished synchronous dependency; context presence grants no new authority. */
 public final class ChunkSynchronousAccessGuard {
     /** Synchronous fault routing only: never used to discover work or grant query authority. */
-    private static final ThreadLocal<Invocation> INVOCATION = new ThreadLocal<>();
+    private static final ThreadLocal<Invocation> INVOCATION = new dev.phoenium.core.FastThreadLocal<>();
     private ChunkSynchronousAccessGuard() { }
     public static void beforeWait(BooleanSupplier ready) {
         if (OwnershipContext.current().isPresent() && !ready.getAsBoolean()) {

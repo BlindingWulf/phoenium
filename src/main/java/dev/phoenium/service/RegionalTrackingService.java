@@ -44,9 +44,9 @@ public final class RegionalTrackingService {
     private final RegionalServiceDispatcher dispatcher;
     private final ObjectOwnershipRegistry objects;
     private final RegionalTrackingPartitions<Entry> index = new RegionalTrackingPartitions<>();
-    private final ThreadLocal<AddPlan> activeAdd = new ThreadLocal<>();
-    private final ThreadLocal<RemovePlan> activeRemove = new ThreadLocal<>();
-    private final ThreadLocal<MovePlan> activeMove = new ThreadLocal<>();
+    private final ThreadLocal<AddPlan> activeAdd = new dev.phoenium.core.FastThreadLocal<>();
+    private final ThreadLocal<RemovePlan> activeRemove = new dev.phoenium.core.FastThreadLocal<>();
+    private final ThreadLocal<MovePlan> activeMove = new dev.phoenium.core.FastThreadLocal<>();
     private final AtomicBoolean routeHandoffLogged = new AtomicBoolean();
     private final AtomicBoolean staleRouteFailureLogged = new AtomicBoolean();
     private boolean cycling;

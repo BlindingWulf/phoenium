@@ -13,7 +13,7 @@ import net.minecraft.world.level.portal.TeleportTransition;
 
 /** Diagnostics-only native query observations. Never creates ownership, provider slots or work. */
 public final class PortalDestinationObservation {
-    private static final ThreadLocal<PortalDestinationObservation> CURRENT = new ThreadLocal<>();
+    private static final ThreadLocal<PortalDestinationObservation> CURRENT = new dev.phoenium.core.FastThreadLocal<>();
     /** S9-D4: open observations on all threads (see FullFinishingQueries.ACTIVE for the exactness argument). */
     private static final java.util.concurrent.atomic.AtomicInteger ACTIVE = new java.util.concurrent.atomic.AtomicInteger();
     public static boolean idle() { return ACTIVE.get() == 0; }

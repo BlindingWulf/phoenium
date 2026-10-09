@@ -69,7 +69,7 @@ public final class NeighborCascadeContinuation implements AutoCloseable {
     public enum Phase { ARMED, SUSPENDED, RESUMING, SETTLED, SHUTDOWN, FAILED, CLOSED }
 
     private static final Logger LOGGER = LoggerFactory.getLogger("Phoenium");
-    private static final ThreadLocal<NeighborCascadeContinuation> ACTIVE = new ThreadLocal<>();
+    private static final ThreadLocal<NeighborCascadeContinuation> ACTIVE = new dev.phoenium.core.FastThreadLocal<>();
     private static final Set<RegionalServiceKind> KINDS = EnumSet.of(RegionalServiceKind.RUN_SCHEDULED_BLOCK_TICK,
         RegionalServiceKind.RUN_SCHEDULED_FLUID_TICK, RegionalServiceKind.BLOCK_EVENT);
     static final int SAME_CHUNK_WAITS = 4, STALE_RETRIES = 8;

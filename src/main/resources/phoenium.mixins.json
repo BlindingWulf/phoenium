@@ -29,6 +29,7 @@
     "LocalRecipeManagerAccess",
     "FailedStopDedicatedServerMixin",
     "MinecraftServerMixin",
+    "ServerThreadBindingMixin",
     "FailedStopMinecraftServerMixin",
     "FailedStopServerChunkCacheMixin",
     "FailedStopPersistentEntitySectionManagerMixin",

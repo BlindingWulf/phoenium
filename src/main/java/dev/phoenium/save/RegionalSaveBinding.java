@@ -28,10 +28,10 @@ public final class RegionalSaveBinding {
         void phoenium$retainVisibleSave(ChunkHolder holder, ChunkSaveRetention retention);
         ChunkSaveRetention phoenium$borrowVisibleSave(ChunkHolder holder, ChunkAccess selected);
     }
-    private static final ThreadLocal<Invocation> CURRENT = new ThreadLocal<>();
-    private static final ThreadLocal<Unload> UNLOAD = new ThreadLocal<>();
-    private static final ThreadLocal<Selection> SELECTION = new ThreadLocal<>();
-    private static final ThreadLocal<Batch> BATCH = new ThreadLocal<>();
+    private static final ThreadLocal<Invocation> CURRENT = new dev.phoenium.core.FastThreadLocal<>();
+    private static final ThreadLocal<Unload> UNLOAD = new dev.phoenium.core.FastThreadLocal<>();
+    private static final ThreadLocal<Selection> SELECTION = new dev.phoenium.core.FastThreadLocal<>();
+    private static final ThreadLocal<Batch> BATCH = new dev.phoenium.core.FastThreadLocal<>();
     private RegionalSaveBinding() { }
 
     /** Current invocation diagnostic only; it retains no historical source or snapshot. */

@@ -22,7 +22,7 @@ import net.minecraft.world.phys.shapes.VoxelShape;
  * can use the exact retained preparation. Such a result never enters the ordinary cache.
  */
 public final class FullFinishingQueries {
-    private static final ThreadLocal<Invocation> CURRENT = new ThreadLocal<>();
+    private static final ThreadLocal<Invocation> CURRENT = new dev.phoenium.core.FastThreadLocal<>();
     /** S9-D4: open invocations on all threads. A thread increments before its own reads and decrements
      * only after removing its scope, so zero proves this thread has none and skips the ThreadLocal probe
      * on the hot chunk-getter/block-read hooks. */

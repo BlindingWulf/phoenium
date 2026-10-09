@@ -17,7 +17,7 @@ import net.minecraft.world.level.entity.UniquelyIdentifyable;
 /** Approved D2-P: bounded, detached owner occurrences settle before any FULL turn. */
 public final class FullLegacyOwners {
     private static final int MAX_PLANS = 128;
-    private static final ThreadLocal<Plan> ACTIVE = new ThreadLocal<>();
+    private static final ThreadLocal<Plan> ACTIVE = new dev.phoenium.core.FastThreadLocal<>();
     private final MinecraftServer server;
     private final Set<Plan> plans = Collections.newSetFromMap(new IdentityHashMap<>());
     private final Set<FullLegacyOwnerCache> caches = Collections.newSetFromMap(new IdentityHashMap<>());

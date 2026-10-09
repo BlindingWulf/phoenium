@@ -17,7 +17,7 @@ public final class GameplayMeasurements {
     private final AtomicLong maxQueueNanos = new AtomicLong();
     private final AtomicInteger activeBodies = new AtomicInteger(), maxBodies = new AtomicInteger();
     private final AtomicLong sequence = new AtomicLong();
-    private final ThreadLocal<Claim> current = new ThreadLocal<>();
+    private final ThreadLocal<Claim> current = new dev.phoenium.core.FastThreadLocal<>();
 
     Claim enter(long enqueuedAt, long selectedAt, long claimStart, long generation, long operation) {
         var active = OwnershipContext.current().orElseThrow();

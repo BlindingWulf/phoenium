@@ -16,7 +16,7 @@ import net.minecraft.server.network.ServerGamePacketListenerImpl;
  * order, dimension/distance conditions and synchronous send calls remain unchanged.
  * This scope grants no authority over a recipient entity and retains no history. */
 public final class RegionalBlockEventBroadcast implements AutoCloseable {
-    private static final ThreadLocal<RegionalBlockEventBroadcast> CURRENT = new ThreadLocal<>();
+    private static final ThreadLocal<RegionalBlockEventBroadcast> CURRENT = new dev.phoenium.core.FastThreadLocal<>();
     private final RegionalBlockEventBroadcast parent;
     private final FullFinishingServices services;
     private final FullFinishingScoreboard.TrackingCut connections;

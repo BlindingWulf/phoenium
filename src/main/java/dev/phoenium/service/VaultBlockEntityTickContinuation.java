@@ -24,7 +24,7 @@ public final class VaultBlockEntityTickContinuation implements AutoCloseable {
     public enum Phase { RUNNING_PREFIX, NEIGHBOR_LOOP, READ_SUSPENDED, PREPARING, PREPARED,
         RESUME_QUEUED, RESUMING_NEIGHBOR_LOOP, SET_CHANGED_COMPLETE, RESUMING_VAULT_SUFFIX,
         SETTLED, FAILED, CANCELLED, STALE, SHUTDOWN }
-    private static final ThreadLocal<VaultBlockEntityTickContinuation> ACTIVE = new ThreadLocal<>();
+    private static final ThreadLocal<VaultBlockEntityTickContinuation> ACTIVE = new dev.phoenium.core.FastThreadLocal<>();
     private final ServerLevel level;
     private final TickingBlockEntity ticker;
     private final RegionDirectory directory;

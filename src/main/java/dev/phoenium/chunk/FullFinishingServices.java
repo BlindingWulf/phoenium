@@ -25,7 +25,7 @@ public final class FullFinishingServices {
     private static final Set<MinecraftServer> TERMINATED = Collections.newSetFromMap(new WeakHashMap<>());
     private static final Map<Object, WorldResource> ENVIRONMENTS = new IdentityHashMap<>();
     private static final ReentrantLock DIRECTORY = new ReentrantLock();
-    private static final ThreadLocal<Scope> CURRENT = new ThreadLocal<>();
+    private static final ThreadLocal<Scope> CURRENT = new dev.phoenium.core.FastThreadLocal<>();
     /** S9-D6: FULL reservation scopes entered and not yet closed, on all threads. A scope is counted after it
      * becomes its thread's CURRENT and uncounted once, after its close restored the parent; a nested scope is
      * full only through an open counted ancestor. Zero therefore proves currentReservation() is null on every

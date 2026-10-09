@@ -159,7 +159,7 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
     private final Map<TaskCorrelationId, ChunkWorkRequest> chunkRequests = new ConcurrentHashMap<>();
     private final java.util.Set<WorldId> observedChunkFutureWorlds = ConcurrentHashMap.newKeySet();
     private final LivePacketReplayGate movementReplay = new LivePacketReplayGate();
-    private final ThreadLocal<ReplayIdentity> replayIdentity = new ThreadLocal<>();
+    private final ThreadLocal<ReplayIdentity> replayIdentity = new dev.phoenium.core.FastThreadLocal<>();
     private final java.util.Set<TaskCorrelationId> consumedInteractionReplays = ConcurrentHashMap.newKeySet();
     private final java.util.Set<TaskCorrelationId> consumedBlockPacketReplays = ConcurrentHashMap.newKeySet();
     private final java.util.concurrent.atomic.AtomicBoolean firstPlayerActionFailure = new java.util.concurrent.atomic.AtomicBoolean();

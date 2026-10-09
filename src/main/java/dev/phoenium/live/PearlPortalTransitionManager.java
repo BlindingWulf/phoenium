@@ -38,7 +38,7 @@ final class PearlPortalTransitionManager implements AutoCloseable {
     private final ObjectOwnershipRegistry objects;
     private final CrossDimensionReplacementBoundary replacements = new CrossDimensionReplacementBoundary();
     private final Map<IdentityKey<ThrownEnderpearl>, Entry> active = new ConcurrentHashMap<>();
-    private final ThreadLocal<Capture> capture = new ThreadLocal<>();
+    private final ThreadLocal<Capture> capture = new dev.phoenium.core.FastThreadLocal<>();
     private volatile boolean closed;
 
     PearlPortalTransitionManager(Authority authority, ObjectOwnershipRegistry objects) {
