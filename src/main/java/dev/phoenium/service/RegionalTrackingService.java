@@ -499,8 +499,8 @@ public final class RegionalTrackingService {
         footprint.add(movement.routingDestination());
         List<Entry> entries;
         synchronized (this) { entries = index.values(); }
+        refreshCandidates(entries);
         for (Entry entry : entries) {
-            refreshCandidate(entry);
             if (entry.entity == player) {
                 for (ServerPlayer recipient : level.players()) {
                     var candidate = finishing.entityFacts.trackingCandidate(level, recipient);
@@ -557,9 +557,10 @@ public final class RegionalTrackingService {
         Set<Object> selectedTrackers = java.util.Collections.newSetFromMap(new IdentityHashMap<>());
         Set<ServerPlayer> selectedPlayers = java.util.Collections.newSetFromMap(new IdentityHashMap<>());
         Object playerTracker = null;
-        for (Entry entry : entries) {
-            if (removalInProgress(entry.entity, player)) continue;
-            refreshCandidate(entry);
+        List<Entry> live = new ArrayList<>(entries.size());
+        for (Entry entry : entries) if (!removalInProgress(entry.entity, player)) live.add(entry);
+        refreshCandidates(live);
+        for (Entry entry : live) {
             if (entry.entity == player) {
                 synchronized (this) {
                     entry.candidate = moving.candidate;
@@ -594,8 +595,13 @@ public final class RegionalTrackingService {
             dispatcher.requireCurrentOwner(moving.key);
             requireRelation(movingRelation);
             activeMove.set(plan);
+            // S9-D5: TrackingMoveMarks lets the original loop skip unselected trackers' callbacks.
+            TrackingMoveMarks.mark(plan.selectedTrackers, player, plan);
             try { original.run(); }
-            finally { activeMove.remove(); }
+            finally {
+                TrackingMoveMarks.unmark(plan.selectedTrackers, player, plan);
+                activeMove.remove();
+            }
         };
         if (OwnershipContext.current().isPresent()) body.run();
         else dispatcher.executeAndDrain(moving.key, RegionalServiceKind.TRACKING_UPDATE, ignored -> body.run());
@@ -739,6 +745,31 @@ public final class RegionalTrackingService {
             entry.routedView = view;
         }
     }
+    /** S9-D5: refreshCandidate for each entry in order, with one facts lock, one directory snapshot and one
+     * monitor entry. On a refresh failure the entries before it are applied and the failure is rethrown. */
+    private void refreshCandidates(List<Entry> entries) {
+        if (entries.isEmpty()) return;
+        List<FullEntityFacts.Candidate> retained = new ArrayList<>(entries.size());
+        for (Entry entry : entries) retained.add(entry.candidate);
+        FullEntityFacts.Candidate[] current = new FullEntityFacts.Candidate[entries.size()];
+        RuntimeException failure = null;
+        try { finishing.entityFacts.refreshTrackingCandidates(retained, current); }
+        catch (RuntimeException refreshFailure) { failure = refreshFailure; }
+        RegionDirectory.View view = directory.snapshot();
+        synchronized (this) {
+            for (int i = 0; i < current.length && current[i] != null; i++) {
+                Entry entry = entries.get(i);
+                if (current[i] == entry.candidate && entry.routedView == view) continue;
+                RoutingKey key = key(current[i]);
+                entry.candidate = current[i];
+                entry.key = key;
+                entry.owner = route(key).region();
+                index.update(entry.id, key, entry.owner);
+                entry.routedView = view;
+            }
+        }
+        if (failure != null) throw failure;
+    }
     /** Exact retained record for a live tracker callback (S9-D2: identity index instead of a copied O(n) scan). */
     private Entry retainedTracker(Object trackerIdentity, String missing) {
         Entry entry;
@@ -765,10 +796,16 @@ public final class RegionalTrackingService {
         return projection;
     }
     private RangeProjection publishedRange(FullEntityFacts.Candidate source) {
+        List<FullEntityFacts.Candidate> passengers = finishing.entityFacts.trackingPassengers(source);
+        if (passengers.isEmpty()) {
+            // S9-D5: without passengers the footprint is the source key and the range is the source type's own.
+            int visible = Math.min(level.getServer().getScaledTrackingDistance(source.fact().type().clientTrackingRange() * 16),
+                ((RegionalChunkMapAccess) level.getChunkSource().chunkMap).phoenium$getServerViewDistance() * 16);
+            return new RangeProjection(source, visible, Set.of(key(source)), List.of());
+        }
         LinkedHashSet<RoutingKey> footprint = new LinkedHashSet<>();
         footprint.add(key(source));
         int effective = source.fact().type().clientTrackingRange() * 16;
-        List<FullEntityFacts.Candidate> passengers = finishing.entityFacts.trackingPassengers(source);
         for (FullEntityFacts.Candidate passenger : passengers) {
             footprint.add(key(passenger));
             effective = Math.max(effective, passenger.fact().type().clientTrackingRange() * 16);

@@ -80,6 +80,8 @@
     "RegionalChunkMapTrackingMixin",
     "RegionalTrackedEntityAccess",
     "TrackedEntityRangeFastPathMixin",
+    "TrackedEntityMoveMarkMixin",
+    "ServerPlayerMoveMarkMixin",
     "ServerGamePacketListenerMixin",
     "ServerGamePacketListenerInvoker",
     "ServerChunkCacheMixin",

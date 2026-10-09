@@ -480,6 +480,33 @@ public final class FullEntityFacts {
         } finally { candidateMetadata.unlock(); }
     }
 
+    /** S9-D5: {@link #refreshTrackingCandidate} for every retained candidate in order under one metadata lock,
+     * writing each result to {@code out}. A failure is thrown after the results before it were written. */
+    public void refreshTrackingCandidates(List<Candidate> retained, Candidate[] out) {
+        if (out.length < retained.size()) throw new IllegalArgumentException("refresh output is shorter than its input");
+        ServerLevel checked = null;
+        for (Candidate candidate : retained) {
+            Objects.requireNonNull(candidate, "retained");
+            if (candidate.fact.world != checked) {
+                FullFinishingServices.requireWorld(candidate.fact.world, FullFinishingServices.Kind.ENTITY_REGISTRY);
+                checked = candidate.fact.world;
+            }
+        }
+        candidateMetadata.lock();
+        try {
+            for (int i = 0; i < retained.size(); i++) {
+                Candidate previous = retained.get(i);
+                Candidate current = candidateLocked(previous.fact.world, previous.alias, "retained tracker");
+                if (current.fact.incarnation != previous.fact.incarnation
+                        || current.fact.runtimeId != previous.fact.runtimeId
+                        || !current.fact.uuid.equals(previous.fact.uuid))
+                    throw new ChunkProtocolException("retained tracker entity lifetime changed");
+                out[i] = current.fact == previous.fact && current.routingRevision == previous.routingRevision
+                        && current.position.equals(previous.position) ? previous : current;
+            }
+        } finally { candidateMetadata.unlock(); }
+    }
+
     public List<Candidate> trackingPassengers(Candidate vehicle) {
         Objects.requireNonNull(vehicle, "vehicle");
         FullFinishingServices.requireWorld(vehicle.fact.world, FullFinishingServices.Kind.ENTITY_REGISTRY);

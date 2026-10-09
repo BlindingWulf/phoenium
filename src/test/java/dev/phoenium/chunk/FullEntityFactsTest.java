@@ -212,6 +212,40 @@ final class FullEntityFactsTest {
             assertTrue(objects.current(id.toString()).isEmpty());
         }
     }
+    /** S9-D5: the one-lock batch refresh returns what per-entry refreshes return, keeps an unchanged retained
+     * record, and on a failure leaves the results before it written and the rest untouched. */
+    @Test void batchTrackerRefreshMatchesSingleRefreshAndStopsAtFirstFailure() throws Exception {
+        try (var f = new FullServiceOperationFixture()) {
+            ServerLevel world = f.world();
+            LivingEntity first = target(world, UUID.randomUUID(), 211, new AtomicInteger());
+            LivingEntity second = target(world, UUID.randomUUID(), 212, new AtomicInteger());
+            for (LivingEntity entity : List.of(first, second)) {
+                set(entity, Entity.class, "position", net.minecraft.world.phys.Vec3.ZERO);
+                set(entity, Entity.class, "blockPosition", net.minecraft.core.BlockPos.ZERO);
+                set(entity, Entity.class, "chunkPosition", new net.minecraft.world.level.ChunkPos(0, 0));
+                set(entity, Entity.class, "firstTick", true);
+            }
+            var lookup = new EntityLookup<Entity>(); lookup.add(first); lookup.add(second);
+            try (var turn = f.service.serial(FullFinishingServices.Phase.SERVER_TASK)) {
+                var retainedFirst = f.service.entityFacts.trackingCandidate(world, first);
+                var retainedSecond = f.service.entityFacts.trackingCandidate(world, second);
+                second.setPosRaw(33.125, 65.75, -17.5);
+                var out = new FullEntityFacts.Candidate[2];
+                f.service.entityFacts.refreshTrackingCandidates(List.of(retainedFirst, retainedSecond), out);
+                assertSame(retainedFirst, out[0]);
+                assertEquals(f.service.entityFacts.refreshTrackingCandidate(retainedSecond), out[1]);
+                assertEquals(new net.minecraft.world.level.ChunkPos(2, -2), out[1].position());
+                lookup.remove(second);
+                var partial = new FullEntityFacts.Candidate[2];
+                var refreshedSecond = out[1];
+                assertThrows(ChunkProtocolException.class,
+                    () -> f.service.entityFacts.refreshTrackingCandidates(List.of(retainedFirst, refreshedSecond), partial));
+                assertSame(retainedFirst, partial[0]);
+                assertNull(partial[1]);
+            }
+        }
+    }
+
     @Test void trackerRefreshUsesCommittedMovementButCannotAdoptReplacementEntity() throws Exception {
         try (var f = new FullServiceOperationFixture()) {
             ServerLevel world = f.world();

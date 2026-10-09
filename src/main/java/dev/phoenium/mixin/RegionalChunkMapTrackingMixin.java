@@ -84,6 +84,8 @@ abstract class RegionalChunkMapTrackingMixin {
         target = "Lnet/minecraft/server/level/ChunkMap$TrackedEntity;updatePlayer(Lnet/minecraft/server/level/ServerPlayer;)V"), require = 1)
     private void phoenium$regionalTrackingMovedPlayer(@Coerce Object tracker, ServerPlayer player,
                                                       Operation<Void> original) {
+        // S9-D5: a tracker the active regional move plan did not select is a no-op in movedPlayerUpdate.
+        if (dev.phoenium.service.TrackingMoveMarks.unselected(tracker, player)) return;
         if (!Phoenium.liveRuntime().regionalTrackingMovedPlayer((ChunkMap) (Object) this, tracker, player,
                 () -> original.call(tracker, player))) original.call(tracker, player);
     }
