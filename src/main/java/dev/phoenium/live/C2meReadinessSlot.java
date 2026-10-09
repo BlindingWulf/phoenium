@@ -44,8 +44,13 @@ final class C2meReadinessSlot {
         }
     };
 
+    /** S9-D8: the hierarchy name walk once per holder class, not once per holder per readiness walk. */
+    private static final ClassValue<Boolean> SUPPORTED = new ClassValue<>() {
+        @Override protected Boolean computeValue(Class<?> type) { return isC2meType(type); }
+    };
+
     static boolean supports(ChunkHolder holder) {
-        return isC2meType(holder.getClass());
+        return SUPPORTED.get(holder.getClass());
     }
 
     private static boolean isC2meType(Class<?> type) {

@@ -25,9 +25,17 @@ final class RegionalTrackingPartitions<T> {
     /** Exact tracker identity -> retained value, rebuilt with the partitions. The first record in source order wins,
      * which is what a findFirst() scan of values() by identity returned before this index existed. */
     private final IdentityHashMap<Object, T> byIdentity = new IdentityHashMap<>();
+    /** S9-D8: records per identity, so a put or removal whose identity is unique can update the indexes in place. */
+    private final IdentityHashMap<Object, Integer> identityCounts = new IdentityHashMap<>();
+    /** S9-D8: values() in source order, rebuilt only after a membership, order or value change (update() keeps values). */
+    private List<T> values;
 
     T value(int id) { Item<T> item = ordered.get(id); return item == null ? null : item.value; }
-    List<T> values() { return ordered.values().stream().map(Item::value).toList(); }
+    List<T> values() {
+        List<T> current = values;
+        if (current == null) values = current = ordered.values().stream().map(Item::value).toList();
+        return current;
+    }
     /** O(1) equivalent of the first value in source order whose record identity is exactly {@code identity}. */
     T valueByIdentity(Object identity) { return byIdentity.get(identity); }
     int size() { return ordered.size(); }
@@ -49,7 +57,17 @@ final class RegionalTrackingPartitions<T> {
         Item<T> previous = ordered.get(item.id);
         if (previous != null && previous.identity != item.identity)
             throw new IllegalStateException("tracker insertion displaced retained identity " + item.id);
-        ordered.put(item.id, item); rebuild();
+        ordered.put(item.id, item);
+        // S9-D8: a new id is appended last in source order; with a new identity it is also its identity's first
+        // record, so rebuild() would add exactly this item to its partition and identity index.
+        if (previous == null && !identityCounts.containsKey(item.identity)) {
+            partitions.computeIfAbsent(item.owner, ignored -> new LinkedHashMap<>()).put(item.id, item);
+            byIdentity.put(item.identity, item.value);
+            identityCounts.put(item.identity, 1);
+            values = null;
+            return;
+        }
+        rebuild();
     }
 
     void reorder(List<Identity> sourceOrder) {
@@ -69,9 +87,22 @@ final class RegionalTrackingPartitions<T> {
         Item<T> previous = ordered.get(id);
         if (previous != null && previous.identity != expectedIdentity)
             throw new IllegalStateException("tracker removal names displaced identity " + id);
-        if (previous != null) ordered.remove(id);
+        // S9-D8: nothing removed leaves the indexes as rebuild() derives them; the sole record of an identity
+        // leaves its partition and the identity index. Shared identities still rebuild.
+        if (previous == null) return null;
+        ordered.remove(id);
+        values = null;
+        Integer count = identityCounts.get(previous.identity);
+        LinkedHashMap<Integer, Item<T>> partition = partitions.get(previous.owner);
+        if (count != null && count == 1 && partition != null && partition.get(id) == previous) {
+            partition.remove(id);
+            if (partition.isEmpty()) partitions.remove(previous.owner);
+            byIdentity.remove(previous.identity);
+            identityCounts.remove(previous.identity);
+            return previous.value;
+        }
         rebuild();
-        return previous == null ? null : previous.value;
+        return previous.value;
     }
 
     void update(int id, RoutingKey key, RegionId owner) {
@@ -110,9 +141,12 @@ final class RegionalTrackingPartitions<T> {
     private void rebuild() {
         partitions.clear();
         byIdentity.clear();
+        identityCounts.clear();
+        values = null;
         ordered.forEach((id, item) -> {
             partitions.computeIfAbsent(item.owner, ignored -> new LinkedHashMap<>()).put(id, item);
             byIdentity.putIfAbsent(item.identity, item.value);
+            identityCounts.merge(item.identity, 1, Integer::sum);
         });
     }
 }

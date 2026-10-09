@@ -14,8 +14,22 @@ import net.minecraft.world.level.chunk.status.ChunkStatus;
 /** Ordinary public ticking prerequisites, observed after the original distance-update stage. */
 public final class LiveTickReadiness {
     private LiveTickReadiness() { }
-    /** One nominal server tick. Vanilla never waits for a ticking future; the live tick waits at most this long. */
+    /** One nominal server tick: the S8-F4 bound on a live readiness wait. */
     public static final long TICK_BUDGET_NANOS = 50_000_000L;
+    /**
+     * S9-D8: the live tick's readiness budget. Vanilla never waits for a ticking future: a chunk whose future is still
+     * outstanding is skipped and ticks once its holder promotion runs in the server's between-tick task window. A
+     * zero budget takes the same receipt the S8-F4 expiry path already takes, without first holding the tick while
+     * every pumped task re-walks the candidate set (the join-storm and new-terrain MSPT spikes in Stage 9).
+     * {@code -Dphoenium.live.readinessBudgetMs=50} restores the Stage 8 bounded wait.
+     */
+    public static final long LIVE_BUDGET_NANOS = liveBudgetNanos();
+    private static long liveBudgetNanos() {
+        long millis = Long.getLong("phoenium.live.readinessBudgetMs", 0L);
+        if (millis < 0 || millis > TICK_BUDGET_NANOS / 1_000_000L)
+            throw new IllegalStateException("phoenium.live.readinessBudgetMs must be within 0.." + TICK_BUDGET_NANOS / 1_000_000L);
+        return millis * 1_000_000L;
+    }
     public interface MapAccess { Stream<ChunkHolder> phoenium$tickCandidates(ChunkStatus status); }
     /** Provider adapters may expose the stable producer slot behind a public wrapper future. */
     public interface TickingSlotAccess { Object phoenium$tickingSlotIdentity(); }
@@ -56,7 +70,7 @@ public final class LiveTickReadiness {
          * A candidate still outstanding after the budget is not ticked: its {@code getTickingChunk()} stays null, exactly
          * as vanilla skips a chunk whose ticking future has not completed.
          */
-        public boolean current() { return sameCandidates(inputs, candidates(level)) && (settled(inputs) || budget.expired()); }
+        public boolean current() { return sameCandidates(inputs, level) && (budget.expired() || settled(inputs)); }
         public int count() { return inputs.size(); }
         /** Candidates whose original ticking future was still outstanding when this receipt was taken. */
         public int pending() { return pending; }
@@ -96,9 +110,11 @@ public final class LiveTickReadiness {
             // S9-D4: managedBlock re-tests this after every pumped task. A completed future never becomes
             // incomplete, so the settled scan resumes at the first input it last found outstanding, and the
             // candidate comparison walks the live candidates without building a list.
+            // S9-D8: the expiry test first: once the budget has passed (always, for a zero budget) the condition
+            // holds without the settled scan or the candidate walk. The disjunction itself is unchanged.
             int[] firstOutstanding = {0};
-            level.getServer().managedBlock(() -> settledFrom(inputs, firstOutstanding)
-                    || !sameCandidates(inputs, level) || budget.expired());
+            level.getServer().managedBlock(() -> budget.expired() || settledFrom(inputs, firstOutstanding)
+                    || !sameCandidates(inputs, level));
             Receipt receipt = new Receipt(level, inputs, budget);
             if (receipt.current()) return receipt;
         }
@@ -126,13 +142,6 @@ public final class LiveTickReadiness {
             if (before == after) return new Input(new Candidate(holder, after), future);
         }
     }
-    private static List<Candidate> candidates(ServerLevel level) {
-        List<Candidate> candidates = new ArrayList<>();
-        try (var holders = tickCandidates(level)) {
-            holders.forEach(holder -> candidates.add(new Candidate(holder, slotIdentity(holder))));
-        }
-        return List.copyOf(candidates);
-    }
     private static Stream<ChunkHolder> tickCandidates(ServerLevel level) {
         return ((MapAccess) level.getChunkSource().chunkMap).phoenium$tickCandidates(ChunkStatus.FULL)
                 .filter(holder -> ChunkLevel.fullStatus(holder.getTicketLevel()).isOrAfter(FullChunkStatus.BLOCK_TICKING));
@@ -153,8 +162,8 @@ public final class LiveTickReadiness {
         firstOutstanding[0] = inputs.size();
         return true;
     }
-    /** Same result as {@code sameCandidates(inputs, candidates(level))}: every live candidate's slot identity is
-     * still observed, in order, and none is allocated. */
+    /** Every live candidate (holder and slot identity) is still observed, in order, with none added or removed; no
+     * candidate list is allocated. */
     private static boolean sameCandidates(List<Input> inputs, ServerLevel level) {
         int[] index = {0};
         boolean[] same = {true};
@@ -167,12 +176,5 @@ public final class LiveTickReadiness {
             });
         }
         return same[0] && index[0] == inputs.size();
-    }
-    private static boolean sameCandidates(List<Input> inputs, List<Candidate> candidates) {
-        if (inputs.size() != candidates.size()) return false;
-        for (int i = 0; i < inputs.size(); i++) {
-            if (!inputs.get(i).candidate.equals(candidates.get(i))) return false;
-        }
-        return true;
     }
 }
