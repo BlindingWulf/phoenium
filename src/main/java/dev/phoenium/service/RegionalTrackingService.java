@@ -400,10 +400,7 @@ public final class RegionalTrackingService {
         AddPlan plan = Objects.requireNonNull(activeAdd.get(), "unprepared addEntity updatePlayer call");
         if (player != plan.source.alias()) throw new IllegalStateException("addEntity reverse pairing player changed");
         if (!plan.selectedTrackers.contains(trackerIdentity)) return;
-        List<Entry> currentEntries;
-        synchronized (this) { currentEntries = index.values(); }
-        Entry entry = currentEntries.stream().filter(value -> value.tracker == trackerIdentity).findFirst()
-            .orElseThrow(() -> new IllegalStateException("addEntity reverse pairing tracker is not retained"));
+        Entry entry = retainedTracker(trackerIdentity, "addEntity reverse pairing tracker is not retained");
         requireEntityOwner(entry.candidate, entry.key);
         requireEntry(entry, entry.candidate);
         requireRelation(publishedRange(entry.candidate));
@@ -480,10 +477,7 @@ public final class RegionalTrackingService {
         RemovePlan plan = Objects.requireNonNull(activeRemove.get(), "unprepared removeEntity removePlayer call");
         if (player != plan.entity) throw new IllegalStateException("removeEntity reverse player changed");
         if (!plan.selectedTrackers.contains(trackerIdentity)) return;
-        List<Entry> entries;
-        synchronized (this) { entries = index.values(); }
-        Entry entry = entries.stream().filter(value -> value.tracker == trackerIdentity).findFirst()
-            .orElseThrow(() -> new IllegalStateException("removeEntity tracker is not retained"));
+        Entry entry = retainedTracker(trackerIdentity, "removeEntity tracker is not retained");
         requireEntityOwner(entry.candidate, entry.key);
         requireEntry(entry, entry.candidate);
         requireRelation(publishedRange(entry.candidate));
@@ -598,10 +592,7 @@ public final class RegionalTrackingService {
             requirePlayer(receipt, plan.connections);
             access(trackerIdentity).phoenium$invokeUpdatePlayer(player);
         }
-        List<Entry> entries;
-        synchronized (this) { entries = index.values(); }
-        Entry entry = entries.stream().filter(value -> value.tracker == trackerIdentity).findFirst()
-            .orElseThrow(() -> new IllegalStateException("move player tracker is not retained"));
+        Entry entry = retainedTracker(trackerIdentity, "move player tracker is not retained");
         refreshProjection(entry);
     }
 
@@ -609,10 +600,7 @@ public final class RegionalTrackingService {
         MovePlan plan = Objects.requireNonNull(activeMove.get(), "unprepared move updatePlayer call");
         if (player != plan.player) throw new IllegalStateException("move player alias changed");
         if (!plan.selectedTrackers.contains(trackerIdentity)) return;
-        List<Entry> entries;
-        synchronized (this) { entries = index.values(); }
-        Entry entry = entries.stream().filter(value -> value.tracker == trackerIdentity).findFirst()
-            .orElseThrow(() -> new IllegalStateException("move tracker is not retained"));
+        Entry entry = retainedTracker(trackerIdentity, "move tracker is not retained");
         // The tracked entity can enter removal after selection; its own removeEntity broadcast owns the exit.
         if (removalInProgress(entry.entity, player)) return;
         requireEntityOwner(entry.candidate, entry.key);
@@ -724,6 +712,15 @@ public final class RegionalTrackingService {
             index.update(entry.id, key, entry.owner);
         }
     }
+    /** Exact retained record for a live tracker callback (S9-D2: identity index instead of a copied O(n) scan). */
+    private Entry retainedTracker(Object trackerIdentity, String missing) {
+        Entry entry;
+        synchronized (this) { entry = index.valueByIdentity(trackerIdentity); }
+        if (entry == null) throw new IllegalStateException(missing);
+        if (entry.tracker != trackerIdentity) throw new IllegalStateException("tracker identity index diverged " + entry.id);
+        return entry;
+    }
+
     private void refreshProjection(Entry entry) {
         entry.effectiveRange = publishedRange(entry.candidate).effectiveRange;
         entry.seenConnections = Set.copyOf(access(entry.tracker).phoenium$getSeenBy());

@@ -3,6 +3,7 @@ package dev.phoenium.service;
 import dev.phoenium.region.RegionId;
 import dev.phoenium.topology.RoutingKey;
 import java.util.ArrayList;
+import java.util.IdentityHashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -21,9 +22,14 @@ final class RegionalTrackingPartitions<T> {
     record Identity(int id, Object identity) { Identity { Objects.requireNonNull(identity); } }
     private final LinkedHashMap<Integer, Item<T>> ordered = new LinkedHashMap<>();
     private final LinkedHashMap<RegionId, LinkedHashMap<Integer, Item<T>>> partitions = new LinkedHashMap<>();
+    /** Exact tracker identity -> retained value, rebuilt with the partitions. The first record in source order wins,
+     * which is what a findFirst() scan of values() by identity returned before this index existed. */
+    private final IdentityHashMap<Object, T> byIdentity = new IdentityHashMap<>();
 
     T value(int id) { Item<T> item = ordered.get(id); return item == null ? null : item.value; }
     List<T> values() { return ordered.values().stream().map(Item::value).toList(); }
+    /** O(1) equivalent of the first value in source order whose record identity is exactly {@code identity}. */
+    T valueByIdentity(Object identity) { return byIdentity.get(identity); }
     int size() { return ordered.size(); }
     int partitionCount() { return partitions.size(); }
 
@@ -103,6 +109,10 @@ final class RegionalTrackingPartitions<T> {
 
     private void rebuild() {
         partitions.clear();
-        ordered.forEach((id, item) -> partitions.computeIfAbsent(item.owner, ignored -> new LinkedHashMap<>()).put(id, item));
+        byIdentity.clear();
+        ordered.forEach((id, item) -> {
+            partitions.computeIfAbsent(item.owner, ignored -> new LinkedHashMap<>()).put(id, item);
+            byIdentity.putIfAbsent(item.identity, item.value);
+        });
     }
 }

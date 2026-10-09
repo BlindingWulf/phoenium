@@ -72,6 +72,29 @@ final class RegionalTrackingPartitionsTest {
     }
 
     @Test
+    void identityLookupMatchesSourceOrderScanThroughEveryMutation() {
+        var index = new RegionalTrackingPartitions<String>();
+        Object one = new Object(), two = new Object(), three = new Object();
+        index.replaceAll(List.of(item(1, one, "one", aKey, a), item(2, two, "two", bKey, b)));
+        assertEquals("one", index.valueByIdentity(one));
+        assertEquals("two", index.valueByIdentity(two));
+        assertNull(index.valueByIdentity(three));
+        index.put(item(3, three, "three", cKey, c));
+        assertEquals("three", index.valueByIdentity(three));
+        index.update(3, aKey, a);
+        assertEquals("three", index.valueByIdentity(three), "an owner/key update keeps the same retained record");
+        index.reorder(List.of(new RegionalTrackingPartitions.Identity(3, three),
+            new RegionalTrackingPartitions.Identity(1, one), new RegionalTrackingPartitions.Identity(2, two)));
+        assertEquals("one", index.valueByIdentity(one));
+        index.install(index.plan(4, key -> c));
+        assertEquals("two", index.valueByIdentity(two));
+        assertEquals("one", index.remove(1, one));
+        assertNull(index.valueByIdentity(one), "a removed tracker is no longer retained");
+        assertThrows(IllegalStateException.class, () -> index.remove(2, one));
+        assertEquals("two", index.valueByIdentity(two), "a rejected removal leaves the identity index intact");
+    }
+
+    @Test
     void conservativeRecipientChunksAreFiniteAndDoNotIncludeFarPlayers() {
         RoutingKey source = new RoutingKey(world, 10, 10);
         assertTrue(RegionalTrackingService.candidateChunk(source, 64, new RoutingKey(world, 15, 10)));
