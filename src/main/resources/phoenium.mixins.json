@@ -79,6 +79,7 @@
     "RegionalSpawningWeatherMixin",
     "RegionalChunkMapTrackingMixin",
     "RegionalTrackedEntityAccess",
+    "TrackedEntityRangeFastPathMixin",
     "ServerGamePacketListenerMixin",
     "ServerGamePacketListenerInvoker",
     "ServerChunkCacheMixin",
