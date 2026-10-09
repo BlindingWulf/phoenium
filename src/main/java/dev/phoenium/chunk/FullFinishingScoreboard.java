@@ -127,9 +127,14 @@ public final class FullFinishingScoreboard {
 
     public void requireTrackingSession(TrackingCut cut, TrackingSession receipt) {
         FullFinishingServices.requireServer(server, FullFinishingServices.Kind.CONNECTIONS);
-        if (cut.directoryRevision != directoryRevision || cut.sessions.stream().noneMatch(value -> value == receipt))
+        if (cut.directoryRevision != directoryRevision || !cut.contains(receipt))
             throw FullFinishingServices.failure(new ChunkProtocolException("tracking connection cut became stale"));
-        Session session = sessions.values().stream().filter(value -> value.id == receipt.sessionId).findFirst().orElse(null);
+        // S9-D3: a session can pass the identity checks below only if its listener is receipt.listener, and a
+        // listener's transport connection is final, so the only possible match is the session keyed by that
+        // connection. This is the same answer as scanning every live session for receipt.sessionId, in O(1).
+        Session session = receipt.listener instanceof ConnectionAccess access
+            ? sessions.get(access.phoenium$serviceConnection()) : null;
+        if (session != null && session.id != receipt.sessionId) session = null;
         if (receipt.transition != null) receipt.transition.require(receipt.player, receipt.sessionId);
         if (session == null || session.state != State.LIVE
                 || (receipt.transition == null ? session.player != receipt.player
@@ -140,8 +145,23 @@ public final class FullFinishingScoreboard {
             throw FullFinishingServices.failure(new ChunkProtocolException("tracking connection identity changed"));
     }
 
-    public record TrackingCut(long directoryRevision, List<TrackingSession> sessions) {
-        public TrackingCut { sessions = List.copyOf(sessions); }
+    public record TrackingCut(long directoryRevision, List<TrackingSession> sessions, Set<TrackingSession> members) {
+        /** {@code members} is always derived from {@code sessions}: the exact receipt objects, by identity (S9-D3). */
+        public TrackingCut {
+            sessions = List.copyOf(sessions);
+            Set<TrackingSession> exact = Collections.newSetFromMap(new IdentityHashMap<>(sessions.size() * 2));
+            exact.addAll(sessions);
+            members = Collections.unmodifiableSet(exact);
+        }
+        public TrackingCut(long directoryRevision, List<TrackingSession> sessions) { this(directoryRevision, sessions, Set.of()); }
+        /** O(1) form of {@code sessions().stream().anyMatch(value -> value == receipt)}. */
+        public boolean contains(TrackingSession receipt) { return members.contains(receipt); }
+        // value semantics stay those of the original two-component record; members is a derived index
+        @Override public boolean equals(Object other) {
+            return other instanceof TrackingCut cut && directoryRevision == cut.directoryRevision && sessions.equals(cut.sessions);
+        }
+        @Override public int hashCode() { return 31 * Long.hashCode(directoryRevision) + sessions.hashCode(); }
+        @Override public String toString() { return "TrackingCut[directoryRevision=" + directoryRevision + ", sessions=" + sessions + "]"; }
     }
     public record TrackingSession(long sessionId, ServerPlayer player,
                                   ServerGamePacketListenerImpl listener, UUID uuid, PlayerRespawnHandoff.Tracking transition) { }
