@@ -28,7 +28,7 @@ public final class MobDecisionContext {
         Mob previous = CURRENT.get();
         CURRENT.set(mob);
         try { original.run(); }
-        finally { if (previous == null) CURRENT.remove(); else CURRENT.set(previous); }
+        finally { if (previous == null) CURRENT.set(null); else CURRENT.set(previous); }
     }
     public static boolean allow(Goal goal) {
         Mob mob = CURRENT.get();

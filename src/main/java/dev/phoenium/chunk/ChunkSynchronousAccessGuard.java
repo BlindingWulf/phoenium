@@ -53,7 +53,7 @@ public final class ChunkSynchronousAccessGuard {
             throw failure;
         }
         @Override public void close() {
-            INVOCATION.remove();
+            INVOCATION.set(null);
             requireAuthority = null;
             failure = null;
         }

@@ -607,7 +607,7 @@ public final class FullSavedContextInputs {
             if (plan == null) return;
             if (ACTIVE.get() != plan || plan.currentText != null || plan.selectorCandidates != null)
                 throw new ChunkProtocolException("saved text context scope escaped");
-            ACTIVE.remove(); plan.claim = null; plan = null;
+            ACTIVE.set(null); plan.claim = null; plan = null;
         }
     }
     /** Installed on the exact concrete reader, with its real ValueInput source alias. */

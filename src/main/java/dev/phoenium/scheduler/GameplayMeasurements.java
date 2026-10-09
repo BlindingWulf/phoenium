@@ -52,7 +52,7 @@ public final class GameplayMeasurements {
         }
     }
 
-    void leaveBody() { current.remove(); }
+    void leaveBody() { current.set(null); }
     void released(Claim claim) {
         if (claim == null || !trace) return;
         long end = System.nanoTime();

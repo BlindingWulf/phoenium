@@ -103,7 +103,7 @@ public final class ArrowPortalTransitionManager implements AutoCloseable {
         Capture capture = ticking.get();
         if (capture != null && capture.projectile == projectile) {
             if (capture.entry != null && !capture.entry.retained) cancel(capture.entry, "UNRETAINED_PREFIX");
-            ticking.remove();
+            ticking.set(null);
         }
     }
 
@@ -217,7 +217,7 @@ public final class ArrowPortalTransitionManager implements AutoCloseable {
         closed = true;
         for (Entry entry : List.copyOf(active.values())) cancel(entry, "SHUTDOWN");
         replacements.close();
-        ticking.remove();
+        ticking.set(null);
     }
     private static IdentityKey key(AbstractArrow projectile) { return new IdentityKey(projectile); }
     private record IdentityKey(AbstractArrow projectile) {

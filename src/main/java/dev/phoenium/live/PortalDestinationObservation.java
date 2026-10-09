@@ -38,7 +38,7 @@ public final class PortalDestinationObservation {
         var observation=new PortalDestinationObservation(entity,binding,token,authority,sourceCurrent); CURRENT.set(observation); ACTIVE.incrementAndGet();
         try { return nativeLookup.get(); }
         catch(RuntimeException | Error failure) { observation.report("FAILED_DESTINATION_LOOKUP:"+failure.getClass().getSimpleName());throw failure; }
-        finally { observation.report("DESTINATION_LOOKUP_EXIT queries="+observation.queryCount);if(previous==null) CURRENT.remove();else CURRENT.set(previous); ACTIVE.decrementAndGet(); }
+        finally { observation.report("DESTINATION_LOOKUP_EXIT queries="+observation.queryCount);if(previous==null) CURRENT.set(null);else CURRENT.set(previous); ACTIVE.decrementAndGet(); }
     }
     /** EndPortalBlock calls the original platform method once, at its native point.
      * Dependency reads are prepared owner-free; the entire native block operation has

@@ -6,6 +6,9 @@ import java.util.Optional;
 
 /** Context is evidence supplied by an active lease; a thread name is never authority. */
 public final class OwnershipContext {
+    /** S9-D7: closed scopes store null rather than remove() the entry, here and in Phoenium's other plain
+     * ThreadLocal scopes. get() answers null either way, but a removed entry makes every following get() miss
+     * its slot, walk the probe chain and re-insert, and remove() itself rehashes the run. */
     private static final ThreadLocal<Active> CURRENT = new ThreadLocal<>();
     private OwnershipContext() {}
 
@@ -35,7 +38,7 @@ public final class OwnershipContext {
         @Override public void close() {
             if (closed) throw new IllegalStateException("ownership context closed twice");
             if (CURRENT.get() != active) throw new IllegalStateException("ownership context escaped its worker");
-            CURRENT.remove();
+            CURRENT.set(null);
             closed = true;
         }
     }

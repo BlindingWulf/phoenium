@@ -141,7 +141,7 @@ public final class NeighborCascadeContinuation implements AutoCloseable {
                 throw new IllegalStateException("neighbor cascade body entered twice or off its arm thread");
             ACTIVE.set(this);
             try { body.run(execution); }
-            finally { ACTIVE.remove(); inFlight = null; scope = null; }
+            finally { ACTIVE.set(null); inFlight = null; scope = null; }
         };
     }
 
@@ -326,7 +326,7 @@ public final class NeighborCascadeContinuation implements AutoCloseable {
             if (phase == Phase.RESUMING) { phase = Phase.SETTLED; SETTLED.increment(); observe("settled", blocked); }
         } catch (RuntimeException | Error failure) {
             phase = Phase.FAILED; segments.clear(); throw failure;
-        } finally { ACTIVE.remove(); inFlight = null; scope = null; }
+        } finally { ACTIVE.set(null); inFlight = null; scope = null; }
     }
 
     /** Bounded, diagnostics-gated event line: the first LOGGED_EVENTS, then every LOG_EVERY-th. */
@@ -341,7 +341,7 @@ public final class NeighborCascadeContinuation implements AutoCloseable {
     }
 
     @Override public void close() {
-        if (ACTIVE.get() == this) ACTIVE.remove();
+        if (ACTIVE.get() == this) ACTIVE.set(null);
         if (phase == Phase.SUSPENDED || phase == Phase.RESUMING) phase = Phase.FAILED;
         else if (phase == Phase.ARMED) phase = Phase.CLOSED;
         segments.clear(); inFlight = null; scope = null; blockedLevel = null;

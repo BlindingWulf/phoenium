@@ -98,7 +98,7 @@ public final class HurtingProjectilePortalTransitionManager implements AutoClose
         Capture capture = ticking.get();
         if (capture != null && capture.projectile == projectile) {
             if (capture.entry != null && !capture.entry.retained) cancel(capture.entry, "UNRETAINED_PREFIX");
-            ticking.remove();
+            ticking.set(null);
         }
     }
 
@@ -217,7 +217,7 @@ public final class HurtingProjectilePortalTransitionManager implements AutoClose
         closed = true;
         for (Entry entry : List.copyOf(active.values())) cancel(entry, "SHUTDOWN");
         replacements.close();
-        ticking.remove();
+        ticking.set(null);
     }
     private static IdentityKey key(AbstractHurtingProjectile projectile) { return new IdentityKey(projectile); }
     private record IdentityKey(AbstractHurtingProjectile projectile) {

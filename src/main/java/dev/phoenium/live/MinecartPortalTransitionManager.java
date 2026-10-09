@@ -124,7 +124,7 @@ public final class MinecartPortalTransitionManager implements AutoCloseable {
         Capture capture = ticking.get();
         if (capture != null && capture.cart == cart) {
             if (capture.entry != null && !capture.entry.retained) cancel(capture.entry, "UNRETAINED_PREFIX");
-            ticking.remove();
+            ticking.set(null);
         }
     }
 
@@ -314,7 +314,7 @@ public final class MinecartPortalTransitionManager implements AutoCloseable {
         closed = true;
         for (Entry entry : List.copyOf(active.values())) cancel(entry, "SHUTDOWN");
         replacements.close();
-        ticking.remove();
+        ticking.set(null);
     }
 
     private static boolean supported(AbstractMinecart cart) {

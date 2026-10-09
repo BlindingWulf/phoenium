@@ -76,7 +76,7 @@ public final class ItemPortalTransitionManager implements AutoCloseable {
     public void finish(ItemEntity item) {
         Entry entry = active.get(key(item));
         if (entry != null && !entry.retained) cancel(entry);
-        if (ticking.get() == item) ticking.remove();
+        if (ticking.get() == item) ticking.set(null);
     }
     public int advance() {
         if (OwnershipContext.current().isPresent()) throw new IllegalStateException("item portal coordinator retained source owner");
@@ -176,7 +176,7 @@ public final class ItemPortalTransitionManager implements AutoCloseable {
         closed = true;
         List<Entry> entries=List.copyOf(active.values());
         for(Entry entry:entries) cancel(entry,"SHUTDOWN");
-        replacements.close(); ticking.remove();
+        replacements.close(); ticking.set(null);
     }
     private static IdentityKey key(ItemEntity item) { return new IdentityKey(item); }
     private static final class IdentityKey {

@@ -130,7 +130,7 @@ public final class NaturalSpawnContinuation {
         @Override public void close() {
             closed = true;
             if (continuation != null && continuation.query != null) continuation.query.close();
-            if (ACTIVE.get() == this) ACTIVE.remove();
+            if (ACTIVE.get() == this) ACTIVE.set(null);
             continuation = null;
         }
     }

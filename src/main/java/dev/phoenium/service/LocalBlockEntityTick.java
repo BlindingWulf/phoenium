@@ -72,7 +72,7 @@ public final class LocalBlockEntityTick {
         public void tickOriginal() {
             if (CURRENT.get() != null) throw new IllegalStateException("nested local native callback");
             CURRENT.set(this);
-            try { ticker.tick(); } finally { CURRENT.remove(); }
+            try { ticker.tick(); } finally { CURRENT.set(null); }
         }
         public void requireCurrent() {
             if (((LocalNativeTickerAccess) ticker).phoenium$localBlockEntity() != entity

@@ -122,7 +122,7 @@ public final class NativePortalTransfer {
                 catch (Throwable cleanup) { if (cleanup != failure) failure.addSuppressed(cleanup); }
             }
             throw failure;
-        } finally { ACTIVE.remove(); }
+        } finally { ACTIVE.set(null); }
     }
 
     /** Prepares a graph member's destination before native recursion can mutate any source edge. */
@@ -196,7 +196,7 @@ public final class NativePortalTransfer {
             transfer.transition = nativeTransition;
             return null;
         });
-        ACTIVE.remove();
+        ACTIVE.set(null);
         try {
             Entity result = transfer.run();
             parent.transferredChildren.put(child, result);
@@ -235,7 +235,7 @@ public final class NativePortalTransfer {
                 throw new IllegalStateException("relative-position rider transition is not supported");
             return null;
         });
-        ACTIVE.remove();
+        ACTIVE.set(null);
         try {
             Entity result = original.get();
             transferredRiders.put(rider, result);

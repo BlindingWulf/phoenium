@@ -69,7 +69,7 @@ public final class ArmorStandPortalTransitionManager implements AutoCloseable {
     public void finish(LivingEntity stand) {
         Entry entry=active.get(new Key(stand));
         if (entry!=null && !entry.retained) cancel(entry,"UNRETAINED_PREFIX");
-        if (ticking.get()==stand) ticking.remove();
+        if (ticking.get()==stand) ticking.set(null);
     }
     public int advance() {
         if (OwnershipContext.current().isPresent()) throw new IllegalStateException("armor-stand coordinator retained source owner");
@@ -165,7 +165,7 @@ public final class ArmorStandPortalTransitionManager implements AutoCloseable {
     public int pendingCount() {return active.size();}
     @Override public void close() {
         closed=true;for(Entry entry:List.copyOf(active.values()))cancel(entry,"SHUTDOWN");
-        replacements.close();ticking.remove();
+        replacements.close();ticking.set(null);
     }
     private record Key(LivingEntity stand) {
         @Override public int hashCode(){return System.identityHashCode(stand);}

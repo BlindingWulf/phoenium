@@ -163,7 +163,7 @@ public final class ManagedBlockPollTurnFence {
                     state = State.SETTLED;
                 }
             } catch (RuntimeException | Error cause) { fail(cause); throw cause; }
-            finally { CURRENT.remove(); close(); }
+            finally { CURRENT.set(null); close(); }
         }
         public void requireResumeClaim() {
             requireThread(); requireOwnerFree.run();

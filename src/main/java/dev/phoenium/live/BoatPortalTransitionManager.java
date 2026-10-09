@@ -145,7 +145,7 @@ public final class BoatPortalTransitionManager implements AutoCloseable {
     public void finish(AbstractBoat boat) {
         Entry entry = active.get(new Key(boat));
         if (entry != null && !entry.retained) cancel(entry, "UNRETAINED_PREFIX");
-        if (ticking.get() == boat) ticking.remove();
+        if (ticking.get() == boat) ticking.set(null);
     }
 
     public int advance() {
@@ -345,7 +345,7 @@ public final class BoatPortalTransitionManager implements AutoCloseable {
         closed = true;
         for (Entry entry : List.copyOf(active.values())) cancel(entry, "SHUTDOWN");
         replacements.close();
-        ticking.remove();
+        ticking.set(null);
     }
 
     private record Key(Entity entity) {

@@ -112,6 +112,30 @@ public final class RegionalServiceDispatcher implements RegionalServiceExecutor 
         requireCommonOwner(center, footprint);
     }
 
+    /** S9-D7: ensureClosure for a footprint whose every key names center's world, decided without the footprint
+     * while that world is uniformly routed (RegionDirectory.uniformRoute): the same owner-context, barrier and
+     * encloser checks run, and every key would resolve to the one route. Returns false, having admitted nothing,
+     * when the world is not uniformly routed or the encloser declines; the caller then runs ensureClosure. */
+    public boolean ensureUniformClosure(RoutingKey center) {
+        if (OwnershipContext.current().isPresent())
+            throw new IllegalStateException("regional service closure requested under owner authority");
+        if (directory.uniformRoute(center.world()) == null) return false;
+        Predicate<Set<RoutingKey>> encloser = Objects.requireNonNull(closureEncloser,
+            "regional service closure encloser is not installed");
+        if (scheduler.failureBarrier().tripped())
+            throw new IllegalStateException("regional service closure failed at topology barrier");
+        return encloser.test(Set.of(center)) && directory.uniformRoute(center.world()) != null;
+    }
+
+    /** S9-D7: requireCurrentClosure for a footprint whose every key names center's world, decided without the
+     * footprint while that world is uniformly routed; any key's owner check is then center's. Returns false,
+     * having checked nothing, when the world is not uniformly routed; the caller then runs requireCurrentClosure. */
+    public boolean requireUniformClosure(RoutingKey center) {
+        if (directory.uniformRoute(center.world()) == null) return false;
+        requireCurrentOwner(center);
+        return true;
+    }
+
     /** Revalidation for nested producer effects after the owner-free closure was admitted. */
     public void requireCurrentClosure(RoutingKey center, int radius) {
         requireCurrentClosure(new dev.phoenium.topology.TopologyPlanner().requiredClosure(Set.of(center), radius));
@@ -127,6 +151,9 @@ public final class RegionalServiceDispatcher implements RegionalServiceExecutor 
     }
 
     private void requireCommonOwner(RoutingKey center, Set<RoutingKey> footprint) {
+        // S9-D7: both callers already required every key to name center's world; in a uniformly routed world
+        // the source and each key resolve to the same route.
+        if (directory.uniformRoute(center.world()) != null) return;
         RegionRoute source = directory.resolve(center).orElseThrow(
             () -> new IllegalStateException("regional service closure source became unresolved"));
         for (RoutingKey key : footprint) {

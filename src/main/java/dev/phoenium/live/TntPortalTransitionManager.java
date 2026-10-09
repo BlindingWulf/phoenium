@@ -63,7 +63,7 @@ public final class TntPortalTransitionManager implements AutoCloseable {
     public void finish(PrimedTnt tnt) {
         Entry entry = active.get(key(tnt));
         if (entry != null && !entry.retained) cancel(entry, "UNRETAINED_PREFIX");
-        if (ticking.get() == tnt) ticking.remove();
+        if (ticking.get() == tnt) ticking.set(null);
     }
     public int advance() {
         if (OwnershipContext.current().isPresent()) throw new IllegalStateException("tnt coordinator retained source owner");
@@ -161,7 +161,7 @@ public final class TntPortalTransitionManager implements AutoCloseable {
     @Override public void close() {
         closed = true;
         for (Entry entry : List.copyOf(active.values())) cancel(entry, "SHUTDOWN");
-        replacements.close(); ticking.remove();
+        replacements.close(); ticking.set(null);
     }
     private static IdentityKey key(PrimedTnt tnt) { return new IdentityKey(tnt); }
     private record IdentityKey(PrimedTnt tnt) {

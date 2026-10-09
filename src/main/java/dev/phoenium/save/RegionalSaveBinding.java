@@ -80,7 +80,7 @@ public final class RegionalSaveBinding {
         try { return original.get(); }
         catch (RuntimeException | Error failure) { attempt.failed(failure); throw failure; }
         finally {
-            if (before == null) CURRENT.remove(); else CURRENT.set(before);
+            if (before == null) CURRENT.set(null); else CURRENT.set(before);
             attempt.finishBody();
         }
     }
@@ -102,7 +102,7 @@ public final class RegionalSaveBinding {
         Selection selected = new Selection(map);
         SELECTION.set(selected);
         try (selected) { return original.get(); }
-        finally { if (before == null) SELECTION.remove(); else SELECTION.set(before); }
+        finally { if (before == null) SELECTION.set(null); else SELECTION.set(before); }
     }
     public static ChunkAccess select(RegionalSaveCoordinator coordinator, ChunkMap map, ServerLevel level,
                                      ChunkHolder holder, Supplier<ChunkAccess> original) {
@@ -142,7 +142,7 @@ public final class RegionalSaveBinding {
         try (batch) {
             if (!flush) batch.retainCut();
             selectionScope(map, () -> { original.run(); return null; });
-        } finally { if (before == null) BATCH.remove(); else BATCH.set(before); }
+        } finally { if (before == null) BATCH.set(null); else BATCH.set(before); }
     }
     public static List<ChunkHolder> readyBatch(ChunkMap map, List<ChunkHolder> original) {
         Batch batch = Objects.requireNonNull(BATCH.get(), "selected save-all holders outside original batch");
@@ -203,7 +203,7 @@ public final class RegionalSaveBinding {
             } finally {
                 scope.retention.close();
                 scope.open = false;
-                if (before == null) UNLOAD.remove(); else UNLOAD.set(before);
+                if (before == null) UNLOAD.set(null); else UNLOAD.set(before);
             }
         }
     }

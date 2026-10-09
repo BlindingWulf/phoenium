@@ -21,12 +21,33 @@ public final class LiveMovementAdmission {
         return new Ticket(owner, authority.generation(), footprint);
     }
 
-    public record Ticket(RegionId owner, TopologyGeneration generation, LiveMovementFootprint footprint) {
-        public Ticket {
+    /** S9-D7: a value class with the former record's components, equality and string form, plus the replay
+     * gate's exactly-once marker for this admission instance. The gate formerly recorded every consumed ticket
+     * (and its whole footprint) in an identity set that was never cleared: one retained footprint per move. */
+    public static final class Ticket {
+        private final RegionId owner;
+        private final TopologyGeneration generation;
+        private final LiveMovementFootprint footprint;
+        private final java.util.concurrent.atomic.AtomicBoolean consumed = new java.util.concurrent.atomic.AtomicBoolean();
+        public Ticket(RegionId owner, TopologyGeneration generation, LiveMovementFootprint footprint) {
             Objects.requireNonNull(owner, "owner");
             Objects.requireNonNull(generation, "generation");
             Objects.requireNonNull(footprint, "footprint");
             if (!owner.world().equals(footprint.world())) throw new IllegalArgumentException("ticket footprint crosses owner world");
+            this.owner = owner; this.generation = generation; this.footprint = footprint;
+        }
+        public RegionId owner() { return owner; }
+        public TopologyGeneration generation() { return generation; }
+        public LiveMovementFootprint footprint() { return footprint; }
+        /** True exactly once per ticket instance. */
+        boolean consume() { return consumed.compareAndSet(false, true); }
+        @Override public boolean equals(Object other) {
+            return this == other || other instanceof Ticket ticket && owner.equals(ticket.owner)
+                && generation.equals(ticket.generation) && footprint.equals(ticket.footprint);
+        }
+        @Override public int hashCode() { return Objects.hash(owner, generation, footprint); }
+        @Override public String toString() {
+            return "Ticket[owner=" + owner + ", generation=" + generation + ", footprint=" + footprint + "]";
         }
 
         /** Re-check topology generation and the complete footprint immediately before replay. */

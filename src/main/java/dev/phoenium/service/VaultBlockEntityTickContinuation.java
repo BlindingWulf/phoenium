@@ -86,7 +86,7 @@ public final class VaultBlockEntityTickContinuation implements AutoCloseable {
         ACTIVE.set(this);
         try { original.run(); if (phase == Phase.RUNNING_PREFIX) phase = Phase.SETTLED; }
         catch (RuntimeException | Error cause) { fail(cause); throw cause; }
-        finally { ACTIVE.remove(); }
+        finally { ACTIVE.set(null); }
     }
 
     /** Mixin at Vault.Server.tick bci 111, before access$000, retains local 7.

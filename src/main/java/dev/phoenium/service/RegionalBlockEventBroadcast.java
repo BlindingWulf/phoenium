@@ -75,7 +75,7 @@ public final class RegionalBlockEventBroadcast implements AutoCloseable {
     }
     @Override public void close() {
         requireOpen(); closed = true;
-        if (parent == null) CURRENT.remove(); else CURRENT.set(parent);
+        if (parent == null) CURRENT.set(null); else CURRENT.set(parent);
         selected = null; projection = null; sessions.clear();
     }
 }

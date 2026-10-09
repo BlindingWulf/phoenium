@@ -244,15 +244,12 @@ public final class RegionalChunkGameplayService implements NaturalSpawnContinuat
         cycle.players = capturePlayers().players;
         cycle.levelPlayers = captureLevelPlayers();
         RoutingKey source = new RoutingKey(world, chunk.getPos().x(), chunk.getPos().z());
-        Set<RoutingKey> footprint = new LinkedHashSet<>(new TopologyPlanner().requiredClosure(Set.of(source), terrainRadius));
         int visibleRecipientRadius = Math.min(recipientRadius,
             ((RegionalChunkMapAccess) map).phoenium$getServerViewDistance() + 2);
-        for (PlayerProjection player : cycle.players)
-            if (Math.abs((long) player.key.x() - source.x()) <= visibleRecipientRadius
-                    && Math.abs((long) player.key.z() - source.z()) <= visibleRecipientRadius) footprint.add(player.key);
-        // S9-D6: Set.copyOf of the same LinkedHashSet is deterministic; build it once for both uses.
-        Set<RoutingKey> closure = Set.copyOf(footprint);
-        dispatcher.ensureClosure(closure);
+        // S9-D7: built from these captured inputs only when a check needs its keys (a world that is not
+        // uniformly routed), so every use sees the same footprint as the former eager construction.
+        ChunkFootprint footprint = new ChunkFootprint(source, terrainRadius, cycle.players, visibleRecipientRadius);
+        if (!dispatcher.ensureUniformClosure(source)) dispatcher.ensureClosure(footprint.closure());
         Cycle capturedCycle = cycle;
         Consumer<Runnable> owned = body -> {
             dispatcher.requireCurrentOwner(source); capturedCycle.callbackKey = source;
@@ -265,20 +262,51 @@ public final class RegionalChunkGameplayService implements NaturalSpawnContinuat
                 naturalSpawnOrdinal = Math.incrementExact(naturalSpawnOrdinal),
                 () -> cycle == capturedCycle && naturalSpawnClosureCurrent(source, footprint))) {
             dispatcher.executeAndDrain(source, RegionalServiceKind.CHUNK_GAMEPLAY, ignored -> owned.accept(() -> spawn.original(original)));
-            spawn.finish(body -> { dispatcher.requireCurrentClosure(closure); owned.accept(body); });
+            spawn.finish(body -> {
+                if (!dispatcher.requireUniformClosure(source)) dispatcher.requireCurrentClosure(footprint.closure());
+                owned.accept(body);
+            });
         }
         chunkCallbacks = Math.incrementExact(chunkCallbacks);
     }
 
-    private boolean naturalSpawnClosureCurrent(RoutingKey source, Set<RoutingKey> footprint) {
+    private boolean naturalSpawnClosureCurrent(RoutingKey source, ChunkFootprint footprint) {
+        // S9-D7: a uniformly routed world has no pending change and one route for the source and every key
+        // (each footprint key is built in source's world).
+        if (directory.uniformRoute(source.world()) != null) return true;
         var owner = directory.resolve(source).orElse(null);
         if (owner == null) return false;
-        for (var key : footprint) {
+        for (var key : footprint.ordered()) {
             var route = directory.resolve(key).orElse(null);
             if (route == null || !route.region().equals(owner.region()) || !route.generation().equals(owner.generation())
                     || directory.pendingChange(key).filter(change -> !change.completed()).isPresent()) return false;
         }
         return true;
+    }
+
+    /** S9-D7: a chunk callback's terrain closure plus its visible current players, in the former insertion order. */
+    private static final class ChunkFootprint {
+        private final RoutingKey source; private final int terrainRadius; private final List<PlayerProjection> players;
+        private final int visibleRecipientRadius;
+        private Set<RoutingKey> ordered, closure;
+        ChunkFootprint(RoutingKey source, int terrainRadius, List<PlayerProjection> players, int visibleRecipientRadius) {
+            this.source = source; this.terrainRadius = terrainRadius; this.players = players;
+            this.visibleRecipientRadius = visibleRecipientRadius;
+        }
+        Set<RoutingKey> ordered() {
+            if (ordered == null) {
+                Set<RoutingKey> keys = new LinkedHashSet<>(new TopologyPlanner().requiredClosure(Set.of(source), terrainRadius));
+                for (PlayerProjection player : players)
+                    if (Math.abs((long) player.key.x() - source.x()) <= visibleRecipientRadius
+                            && Math.abs((long) player.key.z() - source.z()) <= visibleRecipientRadius) keys.add(player.key);
+                ordered = keys;
+            }
+            return ordered;
+        }
+        Set<RoutingKey> closure() {
+            if (closure == null) closure = Set.copyOf(ordered());
+            return closure;
+        }
     }
 
     /** Pinned NaturalSpawner calls the boolean getNearestPlayer overload and immediately asks the
@@ -325,32 +353,25 @@ public final class RegionalChunkGameplayService implements NaturalSpawnContinuat
                 FullEntityFacts.Candidate source = finishing.entityFacts.trackingCandidate(level, entity);
                 List<FullEntityFacts.Candidate> passengers = finishing.entityFacts.trackingPassengers(source);
                 FullEntityFacts.VehicleRelation vehicle = finishing.entityFacts.trackingVehicle(source);
-                RoutingKey key = key(source); LinkedHashSet<RoutingKey> footprint = new LinkedHashSet<>();
-                TopologyPlanner planner = new TopologyPlanner();
-                footprint.addAll(planner.requiredClosure(Set.of(key), 1));
-                passengers.forEach(passenger -> footprint.addAll(planner.requiredClosure(Set.of(key(passenger)), 1)));
-                if (vehicle.vehicle() != null) footprint.addAll(planner.requiredClosure(Set.of(key(vehicle.vehicle())), 1));
-                int entityRange = source.fact().type().clientTrackingRange() * 16;
-                for (var passenger : passengers)
-                    entityRange = Math.max(entityRange, passenger.fact().type().clientTrackingRange() * 16);
-                int entityRecipientRadius = Math.min((level.getServer().getScaledTrackingDistance(entityRange) + 15) / 16 + 2,
-                    ((RegionalChunkMapAccess) map).phoenium$getServerViewDistance() + 2);
+                RoutingKey key = key(source);
                 PlayerCut currentPlayers = capturePlayers();
-                for (PlayerProjection player : currentPlayers.players)
-                    if (Math.abs((long) player.key.x() - key.x()) <= entityRecipientRadius
-                            && Math.abs((long) player.key.z() - key.z()) <= entityRecipientRadius) footprint.add(player.key);
                 BlockPos fightOrigin = entity instanceof EnderDragon dragon ? dragon.getFightOrigin().immutable() : null;
                 List<ChunkPos> dragonInputs = fightOrigin == null ? List.of() : dragonHeightmapInputChunks(fightOrigin);
-                for (ChunkPos input : dragonInputs) footprint.add(new RoutingKey(world, input.x(), input.z()));
-                Set<RoutingKey> closure = Set.copyOf(footprint);
-                dispatcher.ensureClosure(closure);
+                // S9-D7: every footprint key names this world; a uniformly routed world admits it without the keys.
+                // The dragon's owner-turn route check reads its closure, so a dragon always builds it.
+                Set<RoutingKey> closure = null;
+                if (fightOrigin != null || !dispatcher.ensureUniformClosure(key)) {
+                    closure = entityTickClosure(source, key, passengers, vehicle, currentPlayers, dragonInputs);
+                    dispatcher.ensureClosure(closure);
+                }
+                Set<RoutingKey> admittedClosure = closure;
                 DragonHeightmapCut dragonCut = fightOrigin == null ? null : prepareDragonHeightmapInputs(dragonInputs);
                 if (fightOrigin != null && dragonCut == null) continue;
                 boolean[] stale = {false};
                 dispatcher.executeAndDrain(key, RegionalServiceKind.CHUNK_GAMEPLAY, ignored -> {
                     if (removedBeforeOwnerTurn(entity)) return;
                     if (dragonCut != null && (!((EnderDragon) entity).getFightOrigin().equals(fightOrigin)
-                            || !dragonInputRoutesCurrent(key, closure) || !dragonCut.current())) {
+                            || !dragonInputRoutesCurrent(key, admittedClosure) || !dragonCut.current())) {
                         stale[0] = true;
                         return;
                     }
@@ -367,6 +388,27 @@ public final class RegionalChunkGameplayService implements NaturalSpawnContinuat
             // portal operation before the next entity tick/RNG draw in native order.
             dev.phoenium.Phoenium.liveRuntime().advanceMobPortalAfterEntityCallback();
         });
+    }
+
+    /** An entity tick's footprint: its own, passenger and vehicle halos, recipient players and dragon inputs. */
+    private Set<RoutingKey> entityTickClosure(FullEntityFacts.Candidate source, RoutingKey key,
+            List<FullEntityFacts.Candidate> passengers, FullEntityFacts.VehicleRelation vehicle,
+            PlayerCut currentPlayers, List<ChunkPos> dragonInputs) {
+        LinkedHashSet<RoutingKey> footprint = new LinkedHashSet<>();
+        TopologyPlanner planner = new TopologyPlanner();
+        footprint.addAll(planner.requiredClosure(Set.of(key), 1));
+        passengers.forEach(passenger -> footprint.addAll(planner.requiredClosure(Set.of(key(passenger)), 1)));
+        if (vehicle.vehicle() != null) footprint.addAll(planner.requiredClosure(Set.of(key(vehicle.vehicle())), 1));
+        int entityRange = source.fact().type().clientTrackingRange() * 16;
+        for (var passenger : passengers)
+            entityRange = Math.max(entityRange, passenger.fact().type().clientTrackingRange() * 16);
+        int entityRecipientRadius = Math.min((level.getServer().getScaledTrackingDistance(entityRange) + 15) / 16 + 2,
+            ((RegionalChunkMapAccess) map).phoenium$getServerViewDistance() + 2);
+        for (PlayerProjection player : currentPlayers.players)
+            if (Math.abs((long) player.key.x() - key.x()) <= entityRecipientRadius
+                    && Math.abs((long) player.key.z() - key.z()) <= entityRecipientRadius) footprint.add(player.key);
+        for (ChunkPos input : dragonInputs) footprint.add(new RoutingKey(world, input.x(), input.z()));
+        return Set.copyOf(footprint);
     }
 
     /** Pinned 26.2 EnderDragon.findClosestNode initializes 12 radius-60, 8 radius-40,

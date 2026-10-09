@@ -200,7 +200,7 @@ public final class MobPortalTransitionManager implements AutoCloseable {
     public void finish(Mob mob) {
         Entry entry = active.get(key(mob));
         if (entry != null && !entry.retained) cancel(entry);
-        if (ticking.get() == mob) ticking.remove();
+        if (ticking.get() == mob) ticking.set(null);
     }
     public int advance() {
         if (OwnershipContext.current().isPresent()) throw new IllegalStateException("mob portal coordinator retained source owner");
@@ -350,7 +350,7 @@ public final class MobPortalTransitionManager implements AutoCloseable {
         closed = true;
         List<Entry> entries=List.copyOf(active.values());
         for(Entry entry:entries) cancel(entry,"SHUTDOWN");
-        replacements.close(); ticking.remove();
+        replacements.close(); ticking.set(null);
     }
     private static IdentityKey key(Entity entity) { return new IdentityKey(entity); }
     private static final class IdentityKey {

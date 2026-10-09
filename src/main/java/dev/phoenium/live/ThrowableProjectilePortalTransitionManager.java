@@ -98,7 +98,7 @@ public final class ThrowableProjectilePortalTransitionManager implements AutoClo
         Capture capture = ticking.get();
         if (capture != null && capture.projectile == projectile) {
             if (capture.entry != null && !capture.entry.retained) cancel(capture.entry, "UNRETAINED_PREFIX");
-            ticking.remove();
+            ticking.set(null);
         }
     }
 
@@ -239,7 +239,7 @@ public final class ThrowableProjectilePortalTransitionManager implements AutoClo
         closed = true;
         for (Entry entry : List.copyOf(active.values())) cancel(entry, "SHUTDOWN");
         replacements.close();
-        ticking.remove();
+        ticking.set(null);
     }
     private static IdentityKey key(ThrowableProjectile projectile) { return new IdentityKey(projectile); }
     private record IdentityKey(ThrowableProjectile projectile) {

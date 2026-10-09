@@ -161,7 +161,7 @@ public final class FullPublishedInputs {
         Entry previous = ORIGINAL_INVOCATION.get(); entry.cache = cache; ORIGINAL_INVOCATION.set(entry);
         try { entry.returned = Objects.requireNonNull(original.get()); return entry.returned; }
         catch (Throwable failure) { owner.settled(entry); throw failure; }
-        finally { if (previous == null) ORIGINAL_INVOCATION.remove(); else ORIGINAL_INVOCATION.set(previous); }
+        finally { if (previous == null) ORIGINAL_INVOCATION.set(null); else ORIGINAL_INVOCATION.set(previous); }
     }
     /** Verifies the actual original FULL async call, without selecting the incomplete admitted graph. */
     static CompletableFuture<ChunkAccess> originalAsync(Supplier<ChunkAccess> original, Executor executor,

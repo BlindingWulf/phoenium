@@ -185,7 +185,7 @@ final class PlayerDimensionTransitionManager implements AutoCloseable {
         Entry entry = nativeCall.get();
         if (entry == null || entry.player != player)
             throw new IllegalStateException("player dimension invocation scope changed");
-        nativeCall.remove();
+        nativeCall.set(null);
         if (!entry.suspended) {
             cancel(entry);
             return false;
@@ -338,7 +338,7 @@ final class PlayerDimensionTransitionManager implements AutoCloseable {
     @Override public void close() {
         if (closed) return;
         closed = true;
-        nativeCall.remove();
+        nativeCall.set(null);
         active.clear();
         transitions.close();
     }

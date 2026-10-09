@@ -30,7 +30,7 @@ public final class FullEntityPredicateInputs {
                     : Collections.unmodifiableList(Arrays.asList(frame.array));
             return new Produced(result, parts);
         } finally {
-            if (parent == null) BUILDING.remove(); else BUILDING.set(parent);
+            if (parent == null) BUILDING.set(null); else BUILDING.set(parent);
         }
     }
 

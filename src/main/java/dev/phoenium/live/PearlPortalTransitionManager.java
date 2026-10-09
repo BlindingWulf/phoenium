@@ -97,7 +97,7 @@ final class PearlPortalTransitionManager implements AutoCloseable {
         entry.continuation = new RetainedPearlTickContinuation(entry.token, pearl, entry.sourceLevel,
             entry.processor, entry.portal, entry.entryPosition, Objects.requireNonNull(current.hitResult, "hitResult"),
             current.previousSectionX, current.previousSectionZ, current.retainedOwner);
-        capture.remove();
+        capture.set(null);
         return true;
     }
 
@@ -105,7 +105,7 @@ final class PearlPortalTransitionManager implements AutoCloseable {
         Capture current = capture.get();
         if (current != null && current.pearl == pearl) {
             if (current.entry != null && current.entry.continuation == null) cancel(current.entry);
-            capture.remove();
+            capture.set(null);
         }
     }
 
@@ -282,7 +282,7 @@ final class PearlPortalTransitionManager implements AutoCloseable {
         closed = true;
         Capture current = capture.get();
         if (current != null && current.entry != null && current.entry.continuation != null) current.entry.continuation.retire();
-        capture.remove();
+        capture.set(null);
         List<Entry> snapshot = List.copyOf(active.values());
         for (Entry entry : snapshot) if (entry.continuation != null) entry.continuation.retire();
         active.clear();

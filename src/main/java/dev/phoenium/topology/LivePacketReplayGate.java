@@ -1,10 +1,7 @@
 package dev.phoenium.topology;
 
 import dev.phoenium.region.RegionId;
-import java.util.Collections;
-import java.util.IdentityHashMap;
 import java.util.Objects;
-import java.util.Set;
 
 /**
  * Narrow replay-marker model for the future packet adapter. A marker is created only after the
@@ -14,15 +11,14 @@ import java.util.Set;
 public final class LivePacketReplayGate {
     private final ThreadLocal<LiveMovementAdmission.Ticket> active = new ThreadLocal<>();
     // Ticket values may legitimately be equal for two different packets with the same movement
-    // footprint.  The replay guard is about one admission instance, not value-level geometry.
-    private final Set<LiveMovementAdmission.Ticket> consumed =
-        Collections.newSetFromMap(new IdentityHashMap<>());
+    // footprint.  The replay guard is about one admission instance, not value-level geometry, so the
+    // instance itself carries its consumption (S9-D7; this gate is the only consumer).
 
     public Scope enter(LiveMovementAdmission.Ticket ticket, RegionDirectory directory, RegionId owner) {
         Objects.requireNonNull(ticket, "ticket");
         ticket.requireCurrent(directory, owner);
         if (active.get() != null) throw new IllegalStateException("nested packet replay marker");
-        if (!consumed.add(ticket)) throw new IllegalStateException("packet replay ticket already consumed");
+        if (!ticket.consume()) throw new IllegalStateException("packet replay ticket already consumed");
         active.set(ticket);
         return new Scope(ticket);
     }
@@ -35,7 +31,7 @@ public final class LivePacketReplayGate {
         private Scope(LiveMovementAdmission.Ticket ticket) { this.ticket = ticket; }
         @Override public void close() {
             if (closed || active.get() != ticket) throw new IllegalStateException("packet replay marker escaped");
-            active.remove();
+            active.set(null);
             closed = true;
         }
     }

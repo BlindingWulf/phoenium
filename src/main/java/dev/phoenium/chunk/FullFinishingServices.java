@@ -32,6 +32,13 @@ public final class FullFinishingServices {
      * thread, without the ThreadLocal probe. */
     private static final java.util.concurrent.atomic.AtomicInteger OPEN_FULL_SCOPES = new java.util.concurrent.atomic.AtomicInteger();
     public static boolean fullScopeOpen() { return OPEN_FULL_SCOPES.get() != 0; }
+    /** S9-D7: whether this thread's current scope is a FULL one: the condition currentReservation() checks before
+     * its requireCurrent. False proves currentReservation() is null here, also while other threads hold one. */
+    public static boolean fullScopeOnThisThread() {
+        if (OPEN_FULL_SCOPES.get() == 0) return false;
+        Scope scope = CURRENT.get();
+        return scope != null && scope.full();
+    }
     private static final int MAX_RESERVATIONS = 256;
     private final MinecraftServer server;
     public final FullLegacyOwners legacyOwners;
@@ -312,7 +319,7 @@ public final class FullFinishingServices {
         serial.service.metadata.lock();
         try {
             if (serial.service.reserved != null) throw new ChunkProtocolException("storage wait retains a FULL reservation");
-            serial.service.active = null; CURRENT.remove();
+            serial.service.active = null; CURRENT.set(null);
         } finally { serial.service.metadata.unlock(); }
         try { return body.get(); }
         finally {
@@ -573,7 +580,7 @@ public final class FullFinishingServices {
                 service.active = parent != null && parent.service == service ? parent : null; closed = true; claim = null;
             }
             finally { service.metadata.unlock(); }
-            if (parent == null) CURRENT.remove(); else CURRENT.set(parent);
+            if (parent == null) CURRENT.set(null); else CURRENT.set(parent);
             if (reservation != null) OPEN_FULL_SCOPES.decrementAndGet();
             try { if (reservation != null) reservation.requireHealthy(); }
             finally { service.tryFinishShutdown(); }

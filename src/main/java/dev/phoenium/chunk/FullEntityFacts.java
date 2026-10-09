@@ -56,8 +56,13 @@ public final class FullEntityFacts {
     public static long nextIncarnation() { return INCARNATIONS.incrementAndGet(); }
     /** Access-free read; callers that reuse a projection perform publishedPosition's own access check. */
     public long playerPublications() { return playerPublications.get(); }
+    /** S9-D7: the same for every other entity: equal reads bracket an interval with no change to any non-player's
+     * reference fact or route, so a non-player candidate validated in it is still its own refresh. */
+    private final java.util.concurrent.atomic.AtomicLong nonPlayerPublications = new java.util.concurrent.atomic.AtomicLong();
+    public long nonPlayerPublications() { return nonPlayerPublications.get(); }
     private void touched(Entity entity) {
         if (entity instanceof net.minecraft.world.entity.player.Player) playerPublications.incrementAndGet();
+        else nonPlayerPublications.incrementAndGet();
     }
     public static void constructed(Entity entity) {
         FullFinishingServices.Reservation full = FullFinishingServices.currentReservation();
@@ -483,6 +488,12 @@ public final class FullEntityFacts {
     /** S9-D5: {@link #refreshTrackingCandidate} for every retained candidate in order under one metadata lock,
      * writing each result to {@code out}. A failure is thrown after the results before it were written. */
     public void refreshTrackingCandidates(List<Candidate> retained, Candidate[] out) {
+        refreshTrackingCandidates(retained, out, null);
+    }
+    /** S9-D7: as above, except that an index set in {@code unchanged} is written its retained candidate without the
+     * lookup. The caller sets it only for a candidate it validated with no publication since (nonPlayerPublications);
+     * every world check, the lock and the failure order are unchanged. */
+    public void refreshTrackingCandidates(List<Candidate> retained, Candidate[] out, boolean[] unchanged) {
         if (out.length < retained.size()) throw new IllegalArgumentException("refresh output is shorter than its input");
         ServerLevel checked = null;
         for (Candidate candidate : retained) {
@@ -496,6 +507,7 @@ public final class FullEntityFacts {
         try {
             for (int i = 0; i < retained.size(); i++) {
                 Candidate previous = retained.get(i);
+                if (unchanged != null && unchanged[i]) { out[i] = previous; continue; }
                 Candidate current = candidateLocked(previous.fact.world, previous.alias, "retained tracker");
                 if (current.fact.incarnation != previous.fact.incarnation
                         || current.fact.runtimeId != previous.fact.runtimeId
@@ -671,7 +683,8 @@ public final class FullEntityFacts {
     public static boolean foreign(Entity entity) {
         // S9-D6: Entity.getId/getUUID/isRemoved/getScoreboardName reach this on every call. Outside any FULL
         // reservation scope currentReservation() is null, so the answer is false whatever PUBLISHING holds.
-        if (!FullFinishingServices.fullScopeOpen()) return false;
+        // S9-D7: and so on any thread whose own scope is not FULL, while other threads hold FULL scopes.
+        if (!FullFinishingServices.fullScopeOnThisThread()) return false;
         if (PUBLISHING.get()) return false;
         FullFinishingServices.Reservation full = FullFinishingServices.currentReservation();
         return full != null && !full.owns(entity) && !FullSavedContextInputs.ownsSelectorCandidate(entity);
@@ -810,7 +823,7 @@ public final class FullEntityFacts {
             pendingPassengerIdentities.clear();
             closedPassengerWorlds.clear();
             candidates.clear(); candidateRevisions.clear(); routes.clear(); stored.clear(); precisePositions.clear(); passengerRelations.clear();
-            playerPublications.incrementAndGet();
+            playerPublications.incrementAndGet(); nonPlayerPublications.incrementAndGet();
             passengerVehicles.clear(); relationRevisions.clear(); }
         finally { candidateMetadata.unlock(); }
     }

@@ -322,7 +322,7 @@ public final class FullFinishingScoreboard {
             if (terminal) return;
             if (membership.get() != this) throw FullFinishingServices.failure(new ChunkProtocolException("scoreboard occurrence escaped original nesting"));
             for (int i = 0; i < sends.length; i++) if (sends[i] == SendState.UNUSED || sends[i] == SendState.PENDING) sends[i] = SendState.TERMINAL;
-            terminal = true; completed++; if (parent == null) membership.remove(); else membership.set(parent);
+            terminal = true; completed++; if (parent == null) membership.set(null); else membership.set(parent);
         }
     }
     public void primitive() {
@@ -370,7 +370,7 @@ public final class FullFinishingScoreboard {
         }
         @Override public void close() {
             if (entry != null) for (int i = index; i < entry.sends.length; i++) entry.sends[i] = SendState.TERMINAL;
-            if (parent == null) broadcast.remove(); else broadcast.set(parent);
+            if (parent == null) broadcast.set(null); else broadcast.set(parent);
         }
     }
     public void send(ServerGamePacketListenerImpl listener, Runnable original) {
@@ -392,7 +392,7 @@ public final class FullFinishingScoreboard {
             session.catchup.clear(); session.player = null; session.listener = null; session.state = State.CLOSED;
         }
         sessions.clear(); order.clear(); byUuid.clear(); catchup = 0;
-        membership.remove(); broadcast.remove();
+        membership.set(null); broadcast.set(null);
     }
     private static final class Session {
         final long id;

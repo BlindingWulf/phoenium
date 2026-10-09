@@ -174,7 +174,7 @@ public final class FullLegacyOwners {
         @Override public void close() {
             if (plan == null) return;
             if (ACTIVE.get() != plan) throw new ChunkProtocolException("legacy owner operation escaped");
-            ACTIVE.remove(); plan.claim = null; plan = null;
+            ACTIVE.set(null); plan.claim = null; plan = null;
         }
     }
     public static UUID atOriginalEdge(ValueInput input, String key, Level level, String name) {

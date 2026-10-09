@@ -193,7 +193,7 @@ public final class FullRegistrationRuntime {
             returned = Objects.requireNonNull(original.get());
         }
         catch (Throwable failure) { release(producer, null, failure); throw failure; }
-        finally { if (previous == null) SYNCHRONOUS.remove(); else SYNCHRONOUS.set(previous); }
+        finally { if (previous == null) SYNCHRONOUS.set(null); else SYNCHRONOUS.set(previous); }
         custody.gate().lock();
         try {
             producer.returned = returned;

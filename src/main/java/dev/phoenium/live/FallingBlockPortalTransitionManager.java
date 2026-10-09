@@ -65,7 +65,7 @@ public final class FallingBlockPortalTransitionManager implements AutoCloseable 
     public void finish(FallingBlockEntity block) {
         Entry entry = active.get(key(block));
         if (entry != null && !entry.retained) cancel(entry, "UNRETAINED_PREFIX");
-        if (ticking.get() == block) ticking.remove();
+        if (ticking.get() == block) ticking.set(null);
     }
     public int advance() {
         if (OwnershipContext.current().isPresent()) throw new IllegalStateException("falling-block coordinator retained source owner");
@@ -162,7 +162,7 @@ public final class FallingBlockPortalTransitionManager implements AutoCloseable 
     @Override public void close() {
         closed = true;
         for (Entry entry : List.copyOf(active.values())) cancel(entry, "SHUTDOWN");
-        replacements.close(); ticking.remove();
+        replacements.close(); ticking.set(null);
     }
     private static IdentityKey key(FallingBlockEntity block) { return new IdentityKey(block); }
     private record IdentityKey(FallingBlockEntity block) {

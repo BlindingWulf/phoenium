@@ -137,7 +137,7 @@ public final class FullFinishingQueries {
             if (claim == null) return;
             if (CURRENT.get() != this || query != null || shape != null || blockRead != null || locationRead != null)
                 throw breach("initialized FULL query scope escaped its synchronous operation");
-            CURRENT.remove(); ACTIVE.decrementAndGet(); targets.clear(); runtime = null; source = null; claim = null; receipt = null;
+            CURRENT.set(null); ACTIVE.decrementAndGet(); targets.clear(); runtime = null; source = null; claim = null; receipt = null;
         }
     }
 

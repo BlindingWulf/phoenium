@@ -10,6 +10,13 @@ import java.util.Set;
 
 /** Deterministic, pure metadata planning for create/merge/split candidate components. */
 public final class TopologyPlanner {
+    /** S9-D7: single-seed closures up to this radius are memoized; the cached value is the identical immutable set
+     * the computation returns, so contents and iteration order are unchanged. Bounded by clearing. */
+    private static final int MEMOIZED_RADIUS = 8;
+    private static final int MEMO_LIMIT = 49_152;
+    private record SeedRadius(RoutingKey seed, int radius) { }
+    private static final java.util.concurrent.ConcurrentHashMap<SeedRadius, Set<RoutingKey>> SINGLE_SEED =
+        new java.util.concurrent.ConcurrentHashMap<>();
     public List<Set<RoutingKey>> mergePlan(Collection<RoutingKey> holders, int radius) {
         if (radius < 0) throw new IllegalArgumentException("negative radius");
         Set<RoutingKey> remaining = new java.util.TreeSet<>(holders);
@@ -36,6 +43,21 @@ public final class TopologyPlanner {
      */
     public Set<RoutingKey> requiredClosure(Collection<RoutingKey> seeds, int radius) {
         if (radius < 0) throw new IllegalArgumentException("negative radius");
+        if (radius <= MEMOIZED_RADIUS && seeds.size() == 1) {
+            RoutingKey seed = seeds.iterator().next();
+            if (seed != null) {
+                SeedRadius memo = new SeedRadius(seed, radius);
+                Set<RoutingKey> cached = SINGLE_SEED.get(memo);
+                if (cached != null) return cached;
+                Set<RoutingKey> computed = computeClosure(List.of(seed), radius);
+                if (SINGLE_SEED.size() >= MEMO_LIMIT) SINGLE_SEED.clear();
+                Set<RoutingKey> raced = SINGLE_SEED.putIfAbsent(memo, computed);
+                return raced != null ? raced : computed;
+            }
+        }
+        return computeClosure(seeds, radius);
+    }
+    private static Set<RoutingKey> computeClosure(Collection<RoutingKey> seeds, int radius) {
         Set<RoutingKey> closure = new LinkedHashSet<>();
         for (RoutingKey seed : seeds) {
             for (int x = seed.x() - radius; x <= seed.x() + radius; x++) {

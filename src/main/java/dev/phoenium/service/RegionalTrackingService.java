@@ -203,8 +203,12 @@ public final class RegionalTrackingService {
             }
         }
 
+        // S9-D7: every level player must have a receipt whatever the entry; check it where the first entry did.
+        // A uniformly routed world then admits each entry's footprint (all keys in this world) without its keys.
+        if (!entries.isEmpty()) for (ServerPlayer player : levelPlayers) requirePlayer(players, player);
         for (Entry entry : entries) {
             Preview preview = previews.get(entry);
+            if (dispatcher.ensureUniformClosure(preview.key)) continue;
             LinkedHashSet<RoutingKey> footprint = new LinkedHashSet<>();
             footprint.addAll(preview.relation.footprint);
             for (ServerPlayer player : levelPlayers) {
@@ -377,7 +381,7 @@ public final class RegionalTrackingService {
                 }
                 throw failure;
             }
-            finally { activeAdd.remove(); }
+            finally { activeAdd.set(null); }
         };
         Runnable admitted = respawn == null ? body : () -> respawn.captureOwnerFailure(body);
         if (OwnershipContext.current().isPresent()) admitted.run();
@@ -460,7 +464,7 @@ public final class RegionalTrackingService {
                 finishing.scoreboard.requireTrackingSession(cut, players.get(player).session);
             activeRemove.set(plan);
             try { original.run(); }
-            finally { activeRemove.remove(); }
+            finally { activeRemove.set(null); }
         };
         Runnable admitted = respawn == null ? body : () -> respawn.captureOwnerFailure(body);
         if (OwnershipContext.current().isPresent()) admitted.run();
@@ -514,7 +518,9 @@ public final class RegionalTrackingService {
                 if (seen || movementCandidate(entry.key, tracked.effectiveRange, movement)) footprint.addAll(tracked.footprint);
             }
         }
-        dispatcher.ensureClosure(footprint);
+        // S9-D7: the movement destination comes from the admission, so its world is checked like ensureClosure's.
+        if (!RegionDirectory.sameWorld(footprint, world) || !dispatcher.ensureUniformClosure(key(source)))
+            dispatcher.ensureClosure(footprint);
         return movement.withCallbacks(footprint);
     }
 
@@ -587,8 +593,10 @@ public final class RegionalTrackingService {
                 }
             }
         }
-        if (OwnershipContext.current().isPresent()) dispatcher.requireCurrentClosure(footprint);
-        else dispatcher.ensureClosure(footprint);
+        // S9-D7: the footprint's first key is the moving player's; in a uniformly routed world its check is every key's.
+        if (OwnershipContext.current().isPresent()) {
+            if (!dispatcher.requireUniformClosure(moving.key)) dispatcher.requireCurrentClosure(footprint);
+        } else if (!dispatcher.ensureUniformClosure(moving.key)) dispatcher.ensureClosure(footprint);
         MovePlan plan = new MovePlan(player, playerTracker, movingRelation, cut, players,
             Set.copyOf(selectedPlayers), Set.copyOf(selectedTrackers));
         Runnable body = () -> {
@@ -600,7 +608,7 @@ public final class RegionalTrackingService {
             try { original.run(); }
             finally {
                 TrackingMoveMarks.unmark(plan.selectedTrackers, player, plan);
-                activeMove.remove();
+                activeMove.set(null);
             }
         };
         if (OwnershipContext.current().isPresent()) body.run();
@@ -749,16 +757,25 @@ public final class RegionalTrackingService {
      * monitor entry. On a refresh failure the entries before it are applied and the failure is rethrown. */
     private void refreshCandidates(List<Entry> entries) {
         if (entries.isEmpty()) return;
+        // S9-D7: read before the refresh, so a stamp never claims a later publication. Player candidates are
+        // always looked up: each movement publishes its player.
+        long stamp = finishing.entityFacts.nonPlayerPublications();
         List<FullEntityFacts.Candidate> retained = new ArrayList<>(entries.size());
-        for (Entry entry : entries) retained.add(entry.candidate);
+        boolean[] unchanged = new boolean[entries.size()];
+        for (int i = 0; i < entries.size(); i++) {
+            Entry entry = entries.get(i);
+            retained.add(entry.candidate);
+            unchanged[i] = entry.verifiedAt == stamp && !(entry.entity instanceof net.minecraft.world.entity.player.Player);
+        }
         FullEntityFacts.Candidate[] current = new FullEntityFacts.Candidate[entries.size()];
         RuntimeException failure = null;
-        try { finishing.entityFacts.refreshTrackingCandidates(retained, current); }
+        try { finishing.entityFacts.refreshTrackingCandidates(retained, current, unchanged); }
         catch (RuntimeException refreshFailure) { failure = refreshFailure; }
         RegionDirectory.View view = directory.snapshot();
         synchronized (this) {
             for (int i = 0; i < current.length && current[i] != null; i++) {
                 Entry entry = entries.get(i);
+                if (!(entry.entity instanceof net.minecraft.world.entity.player.Player)) entry.verifiedAt = stamp;
                 if (current[i] == entry.candidate && entry.routedView == view) continue;
                 RoutingKey key = key(current[i]);
                 entry.candidate = current[i];
@@ -791,8 +808,10 @@ public final class RegionalTrackingService {
     }
     private RangeProjection prepareRange(FullEntityFacts.Candidate source) {
         RangeProjection projection = publishedRange(source);
-        if (OwnershipContext.current().isPresent()) dispatcher.requireCurrentClosure(projection.footprint);
-        else dispatcher.ensureClosure(projection.footprint);
+        RoutingKey center = key(source);
+        if (OwnershipContext.current().isPresent()) {
+            if (!dispatcher.requireUniformClosure(center)) dispatcher.requireCurrentClosure(projection.footprint);
+        } else if (!dispatcher.ensureUniformClosure(center)) dispatcher.ensureClosure(projection.footprint);
         return projection;
     }
     private RangeProjection publishedRange(FullEntityFacts.Candidate source) {
@@ -857,6 +876,8 @@ public final class RegionalTrackingService {
         Set<Object> seenConnections = Set.of();
         /** Directory view under which {@link #owner} was last resolved by refreshCandidate; null = re-resolve. */
         RegionDirectory.View routedView;
+        /** S9-D7: nonPlayerPublications read before the last refresh that validated {@link #candidate}. */
+        long verifiedAt = Long.MIN_VALUE;
         Entry(int id, Object tracker, Entity entity, FullEntityFacts.Candidate candidate, RoutingKey key, RegionId owner) {
             this.id = id; this.tracker = tracker; this.entity = entity; this.candidate = candidate; this.key = key; this.owner = owner;
         }

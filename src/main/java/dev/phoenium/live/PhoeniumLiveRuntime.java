@@ -3054,8 +3054,18 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
         RoutingKey key = new RoutingKey(world, player.chunkPosition().x(), player.chunkPosition().z());
         return entityIndexLifecycle.addressable(id, OwnedObjectKind.PLAYER, world, player.getId(), key, explicitFixture);
     }
+    /** S9-D7: published directory shape (generation, explicit routes by world, world defaults, pending change). */
+    private String topologySummary() {
+        var view = directory.snapshot();
+        var byWorld = new java.util.TreeMap<String, Integer>();
+        view.routes().keySet().forEach(key -> byWorld.merge(key.world().value(), 1, Integer::sum));
+        return "g" + view.generation().value() + ",explicit=" + byWorld + ",defaults=" + view.worldDefaults().size()
+            + ",uniform=" + regions.keySet().stream().filter(world -> directory.uniformRoute(world) != null).count()
+            + "/" + regions.size();
+    }
     private void logStatus(String event) {
-        logger.info("PHOENIUM_STAGE2 {} {} packets={}", event, diagnostics().toLogLine(), packetDiagnostics().toLogLine() + " " + containerCloseDiagnostics());
+        logger.info("PHOENIUM_STAGE2 {} {} packets={}", event, diagnostics().toLogLine(), packetDiagnostics().toLogLine() + " " + containerCloseDiagnostics()
+            + " topology=" + topologySummary());
         logger.info("PHOENIUM_S8F6_CASCADE_TOTALS {} {}", event, dev.phoenium.service.NeighborCascadeContinuation.totals());
     }
 
@@ -3168,7 +3178,7 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
         private PacketExecutionScope(ReplayIdentity marker) { this.marker = marker; }
         @Override public void close() {
             if (closed || replayIdentity.get() != marker) throw new IllegalStateException("packet execution marker escaped");
-            replayIdentity.remove();
+            replayIdentity.set(null);
             closed = true;
         }
     }

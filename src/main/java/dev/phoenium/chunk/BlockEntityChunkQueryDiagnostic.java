@@ -72,7 +72,7 @@ public final class BlockEntityChunkQueryDiagnostic {
         }
         @Override public void close() {
             if (closed) return;
-            closed = true; CURRENT.remove(); ACTIVE.decrementAndGet();
+            closed = true; CURRENT.set(null); ACTIVE.decrementAndGet();
         }
     }
 

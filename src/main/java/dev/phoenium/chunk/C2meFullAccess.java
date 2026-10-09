@@ -206,7 +206,7 @@ final class C2meFullAccess {
                     try {
                         Object holders = current.invoke(map);
                         if (holders == null) throw new ChunkProtocolException("C2ME currentChunkHolders is null");
-                        Method get = findLongGet(holders.getClass());
+                        Method get = longGet(holders.getClass());
                         return get.invoke(holders, packed);
                     } catch (InvocationTargetException failure) {
                         throw drift(failure.getCause() == null ? failure : failure.getCause());
@@ -329,6 +329,18 @@ final class C2meFullAccess {
     private static Method findZeroArgumentMethod(Class<?> type, String name) throws NoSuchMethodException {
         for (Method method : type.getMethods()) if (method.getName().equals(name) && method.getParameterCount() == 0) return method;
         throw new NoSuchMethodException(type.getName() + "." + name);
+    }
+
+    /** S9-D7: findLongGet per holder-map class, resolved once; Class.getMethods copies every public method. */
+    private static final ClassValue<Object> LONG_GET = new ClassValue<>() {
+        @Override protected Object computeValue(Class<?> type) {
+            try { return findLongGet(type); } catch (NoSuchMethodException missing) { return missing; }
+        }
+    };
+    private static Method longGet(Class<?> type) throws NoSuchMethodException {
+        Object found = LONG_GET.get(type);
+        if (found instanceof Method method) return method;
+        throw new NoSuchMethodException(((NoSuchMethodException) found).getMessage());
     }
 
     private static Method findLongGet(Class<?> type) throws NoSuchMethodException {

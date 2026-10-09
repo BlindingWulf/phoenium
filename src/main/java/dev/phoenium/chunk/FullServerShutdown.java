@@ -72,7 +72,7 @@ public final class FullServerShutdown {
                             failures.run(acknowledgeRuntime::run);
                             failures.run(original::run);
                         } finally {
-                            if (parent == null) FAILED_STOP.remove(); else FAILED_STOP.set(parent);
+                            if (parent == null) FAILED_STOP.set(null); else FAILED_STOP.set(parent);
                         }
                     }
                 }

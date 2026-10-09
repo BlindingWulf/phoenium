@@ -103,6 +103,19 @@ public final class RegionDirectory {
                 ? Optional.of(change) : Optional.empty();
     }
     public View snapshot() { return view.get(); }
+    /** S9-D7: the route every key of {@code world} resolves to when the world carries no explicit route and no
+     * directory change is pending (so pendingChange is empty for each of its keys); otherwise null. This is the
+     * live topology outside the explicit test fixture: one default-routed region per world. */
+    public RegionRoute uniformRoute(dev.phoenium.core.WorldId world) {
+        if (pending.get() != null) return null;
+        View current = view.get();
+        return current.hasExplicitRoutesForWorld(world) ? null : current.worldDefaults().get(world);
+    }
+    /** True when every key names {@code world}. */
+    public static boolean sameWorld(java.util.Collection<RoutingKey> keys, dev.phoenium.core.WorldId world) {
+        for (RoutingKey key : keys) if (!key.world().equals(world)) return false;
+        return true;
+    }
     public Optional<RegionRoute> resolve(RoutingKey key) {
         View current = view.get();
         RegionRoute explicit = current.routes().get(key);

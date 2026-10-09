@@ -149,7 +149,7 @@ public final class PrivateC2meReadInvocation implements AutoCloseable {
         if (!active) return;
         if (CURRENT.get() != this) throw new ChunkProtocolException("private C2ME read scope identity changed");
         active = false;
-        CURRENT.remove();
+        CURRENT.set(null);
         RETAINED.decrementAndGet();
     }
 

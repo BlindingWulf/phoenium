@@ -79,7 +79,7 @@ public final class EntityPortalTransitionManager implements AutoCloseable {
         } finally {
             Entry entry = active.get(key(entity));
             if (entry != null && !entry.retained) cancel(entry);
-            ticking.remove();
+            ticking.set(null);
         }
     }
 
@@ -308,7 +308,7 @@ public final class EntityPortalTransitionManager implements AutoCloseable {
     @Override public void close() {
         closed = true;
         for (Entry entry : List.copyOf(active.values())) cancel(entry, "SHUTDOWN");
-        replacements.close(); ticking.remove();
+        replacements.close(); ticking.set(null);
     }
 
     private static IdentityKey key(Entity entity) { return new IdentityKey(entity); }
