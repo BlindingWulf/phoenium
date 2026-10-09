@@ -23,7 +23,18 @@ import net.minecraft.world.phys.shapes.VoxelShape;
  */
 public final class FullFinishingQueries {
     private static final ThreadLocal<Invocation> CURRENT = new ThreadLocal<>();
+    /** S9-D4: open invocations on all threads. A thread increments before its own reads and decrements
+     * only after removing its scope, so zero proves this thread has none and skips the ThreadLocal probe
+     * on the hot chunk-getter/block-read hooks. */
+    private static final java.util.concurrent.atomic.AtomicInteger ACTIVE = new java.util.concurrent.atomic.AtomicInteger();
     private FullFinishingQueries() { }
+    private static Invocation current() { return ACTIVE.get() == 0 ? null : CURRENT.get(); }
+    /** True when no initialized-query, block-entity diagnostic or portal-destination scope is open anywhere,
+     * so an ordinary chunk-cache getChunk has no observer to notify. */
+    public static boolean ordinaryChunkQuery() {
+        return ACTIVE.get() == 0 && BlockEntityChunkQueryDiagnostic.idle()
+                && dev.phoenium.live.PortalDestinationObservation.idle();
+    }
 
     public static Invocation enter(FullRegistrationRuntime runtime, FullRegistrationRuntime.Graph source,
                                    ChunkStageClaim claim, FullInitializedInputs.Receipt receipt) {
@@ -31,7 +42,7 @@ public final class FullFinishingQueries {
         if (CURRENT.get() != null) throw breach("overlapping initialized FULL query operation");
         source.requireFinishingAuthority(claim, receipt);
         Invocation invocation = new Invocation(runtime, source, claim, receipt);
-        CURRENT.set(invocation);
+        CURRENT.set(invocation); ACTIVE.incrementAndGet();
         try { invocation.requireCurrent(); return invocation; }
         catch (Throwable failure) { invocation.close(); throw failure; }
     }
@@ -126,7 +137,7 @@ public final class FullFinishingQueries {
             if (claim == null) return;
             if (CURRENT.get() != this || query != null || shape != null || blockRead != null || locationRead != null)
                 throw breach("initialized FULL query scope escaped its synchronous operation");
-            CURRENT.remove(); targets.clear(); runtime = null; source = null; claim = null; receipt = null;
+            CURRENT.remove(); ACTIVE.decrementAndGet(); targets.clear(); runtime = null; source = null; claim = null; receipt = null;
         }
     }
 
@@ -151,7 +162,7 @@ public final class FullFinishingQueries {
      * short-circuiting remain in vanilla; each reached chunk getter checks a declared input. */
     public static boolean locationPredicate(ServerLevel world, double x, double y, double z,
                                              java.util.function.BooleanSupplier original) {
-        Invocation invocation = CURRENT.get();
+        Invocation invocation = current();
         if (!FullFinishingServices.finishing()) return original.getAsBoolean();
         if (invocation == null || invocation.receipt.contexts() == null || world != invocation.receipt.world())
             throw breach("location predicate has no exact saved FULL context");
@@ -166,7 +177,7 @@ public final class FullFinishingQueries {
      * ticket effects. Only this location-predicate call can borrow an unpublished FULL. */
     public static ChunkAccess predicateChunk(ServerLevel world, int x, int z, ChunkStatus status, boolean create,
                                               Supplier<ChunkAccess> original) {
-        Invocation invocation = CURRENT.get();
+        Invocation invocation = current();
         if (invocation == null || invocation.locationRead == null || invocation.query != null) {
             try { return BlockEntityChunkQueryDiagnostic.chunk(world, x, z, status, create, original); }
             catch (RuntimeException | Error failure) {
@@ -193,7 +204,7 @@ public final class FullFinishingQueries {
     public static ChunkAccess query(LevelReader world, FullInitializedInputs.Purpose purpose,
                                     int x, int z, ChunkStatus status, boolean create,
                                     Supplier<ChunkAccess> original) {
-        Invocation invocation = CURRENT.get();
+        Invocation invocation = current();
         if (invocation == null) return original.get();
         boolean audited = switch (purpose) {
             case DIFFICULTY, COLLISION -> status == ChunkStatus.FULL && !create;
@@ -251,7 +262,7 @@ public final class FullFinishingQueries {
     public static void selected(ServerLevel world, int x, int z, ChunkStatus status, boolean create,
                                 CompletableFuture<ChunkResult<ChunkAccess>> selected) {
         BlockEntityChunkQueryDiagnostic.selected(world, x, z, status, create, selected);
-        Invocation invocation = CURRENT.get();
+        Invocation invocation = current();
         if (invocation == null || invocation.query == null) return;
         Query query = invocation.query;
         invocation.target(world, new ChunkPos(x, z), query.purpose);
@@ -281,7 +292,7 @@ public final class FullFinishingQueries {
 
     /** True only between the exact original selector and this getter's local consumption. */
     public static boolean usesPrivateResult() {
-        Invocation invocation = CURRENT.get();
+        Invocation invocation = current();
         if (invocation == null || invocation.query == null || invocation.query.privateResult == null) return false;
         invocation.requireCurrent();
         return true;
@@ -290,16 +301,16 @@ public final class FullFinishingQueries {
     /** Null means execute the original join. The selected future itself stays untouched. */
     public static ChunkResult<ChunkAccess> privateJoin(CompletableFuture<?> selected) {
         if (!usesPrivateResult()) return null;
-        Query query = CURRENT.get().query;
+        Query query = current().query;
         if (query.selected != selected) throw breach("initialized query joined a different dependency");
-        CURRENT.get().target(CURRENT.get().receipt.world(), query.target.position(), query.purpose);
+        current().target(current().receipt.world(), query.target.position(), query.purpose);
         return ChunkResult.of(query.privateResult);
     }
 
     /** Captured only at BlockCollisions.computeNext's original collision-shape invocation. */
     public static VoxelShape collisionShape(BlockState state, BlockGetter world, BlockPos position,
                                             Supplier<VoxelShape> original) {
-        Invocation invocation = CURRENT.get();
+        Invocation invocation = current();
         if (invocation == null) return original.get();
         invocation.requireCurrent();
         if (world != invocation.receipt.world()) throw breach("foreign collision shape world");
@@ -313,7 +324,7 @@ public final class FullFinishingQueries {
     }
 
     private static Shape requireShape(Level world, BlockPos position) {
-        Invocation invocation = CURRENT.get();
+        Invocation invocation = current();
         Shape shape = invocation == null ? null : invocation.shape;
         if (shape == null || shape.invocation != invocation || shape.world != world || !shape.position.equals(position)
                 || !(shape.state.getBlock() instanceof ShulkerBoxBlock || shape.state.getBlock() instanceof MovingPistonBlock))
@@ -323,7 +334,7 @@ public final class FullFinishingQueries {
     }
 
     public static LevelChunk dynamicChunk(Level world, BlockPos position, Supplier<LevelChunk> original) {
-        Invocation invocation = CURRENT.get();
+        Invocation invocation = current();
         if (invocation == null || invocation.shape == null) return original.get();
         requireShape(world, position);
         return (LevelChunk) query(world, FullInitializedInputs.Purpose.DYNAMIC_SHAPE_MUTATION,
@@ -333,7 +344,7 @@ public final class FullFinishingQueries {
     /** The original IMMEDIATE creation, registration and shape-state reads execute once. */
     public static BlockEntity dynamicBlockEntity(LevelChunk chunk, BlockPos position,
                                                 LevelChunk.EntityCreationType creation, Supplier<BlockEntity> original) {
-        Invocation invocation = CURRENT.get();
+        Invocation invocation = current();
         if (invocation != null && invocation.locationRead != null && invocation.shape == null) {
             var target = invocation.target(chunk.getLevel(), chunk.getPos(), FullInitializedInputs.Purpose.BLOCK_CONTEXT);
             if (creation != LevelChunk.EntityCreationType.IMMEDIATE || target.actual() != chunk
@@ -352,7 +363,7 @@ public final class FullFinishingQueries {
 
     /** Original BlockDataSource readiness is retained; only an exact frozen private preparation can satisfy its unpublished branch. */
     static boolean blockLoaded(ServerLevel world, BlockPos position, java.util.function.BooleanSupplier original) {
-        Invocation invocation = CURRENT.get();
+        Invocation invocation = current();
         if (invocation == null) return original.getAsBoolean();
         var target = invocation.target(world, position(position), FullInitializedInputs.Purpose.BLOCK_CONTEXT);
         if (invocation.blockRead != null) throw breach("nested saved block context readiness call");
@@ -367,7 +378,7 @@ public final class FullFinishingQueries {
 
     /** The original serializer still runs at its original call and observes the retained exact block entity. */
     static BlockEntity blockEntity(ServerLevel world, BlockPos position, Supplier<BlockEntity> original) {
-        Invocation invocation = CURRENT.get();
+        Invocation invocation = current();
         if (invocation == null) return original.get();
         var target = invocation.target(world, position(position), FullInitializedInputs.Purpose.BLOCK_CONTEXT);
         BlockRead read = invocation.blockRead;

@@ -14,6 +14,10 @@ import net.minecraft.world.level.portal.TeleportTransition;
 /** Diagnostics-only native query observations. Never creates ownership, provider slots or work. */
 public final class PortalDestinationObservation {
     private static final ThreadLocal<PortalDestinationObservation> CURRENT = new ThreadLocal<>();
+    /** S9-D4: open observations on all threads (see FullFinishingQueries.ACTIVE for the exactness argument). */
+    private static final java.util.concurrent.atomic.AtomicInteger ACTIVE = new java.util.concurrent.atomic.AtomicInteger();
+    public static boolean idle() { return ACTIVE.get() == 0; }
+    private static PortalDestinationObservation current() { return ACTIVE.get() == 0 ? null : CURRENT.get(); }
     private final Entity entity;
     private final ObjectOwnership binding;
     private final CrossDimensionReplacementBoundary.Token token;
@@ -31,16 +35,16 @@ public final class PortalDestinationObservation {
             NativePortalTransfer.Authority authority,BooleanSupplier sourceCurrent,Supplier<TeleportTransition> nativeLookup) {
         if(OwnershipContext.current().isPresent()) throw new IllegalStateException("portal destination preparation retained source owner");
         var previous=CURRENT.get();
-        var observation=new PortalDestinationObservation(entity,binding,token,authority,sourceCurrent); CURRENT.set(observation);
+        var observation=new PortalDestinationObservation(entity,binding,token,authority,sourceCurrent); CURRENT.set(observation); ACTIVE.incrementAndGet();
         try { return nativeLookup.get(); }
         catch(RuntimeException | Error failure) { observation.report("FAILED_DESTINATION_LOOKUP:"+failure.getClass().getSimpleName());throw failure; }
-        finally { observation.report("DESTINATION_LOOKUP_EXIT queries="+observation.queryCount);if(previous==null) CURRENT.remove();else CURRENT.set(previous); }
+        finally { observation.report("DESTINATION_LOOKUP_EXIT queries="+observation.queryCount);if(previous==null) CURRENT.remove();else CURRENT.set(previous); ACTIVE.decrementAndGet(); }
     }
     /** EndPortalBlock calls the original platform method once, at its native point.
      * Dependency reads are prepared owner-free; the entire native block operation has
      * destination service authority. An unretained caller keeps the vanilla path. */
     public static void endPlatform(Entity entity,ServerLevel level,BlockPos origin,Runnable nativePlatform) {
-        var observation=CURRENT.get();
+        var observation=current();
         if(observation==null || observation.entity!=entity) {nativePlatform.run();return;}
         if(OwnershipContext.current().isPresent())
             throw new IllegalStateException("End platform preparation retained a source owner");
@@ -49,7 +53,7 @@ public final class PortalDestinationObservation {
         observation.authority.withDestinationPlatform(level,origin,observation.sourceCurrent,nativePlatform);
     }
     public static void query(ServerLevel level,int x,int z,ChunkStatus status,boolean create) {
-        var observation=CURRENT.get();if(observation==null)return;
+        var observation=current();if(observation==null)return;
         try {
             observation.queryCount++;
             observation.query="destinationWorld="+level.dimension().identifier()+" requestedStatus="+status.getName()
@@ -58,7 +62,7 @@ public final class PortalDestinationObservation {
         } catch(Throwable ignored) { }
     }
     public static void selected(ServerLevel level,int x,int z,ChunkStatus status,CompletableFuture<?> future) {
-        var observation=CURRENT.get();if(observation==null)return;
+        var observation=current();if(observation==null)return;
         try {
             boolean done=future.isDone();
             observation.query += " selectedNativeFuture="+System.identityHashCode(future)+" selectedDone="+done;
@@ -71,7 +75,7 @@ public final class PortalDestinationObservation {
         catch(Throwable ignored) { }
     }
     public static void result(ServerLevel level,int x,int z,ChunkStatus status,net.minecraft.world.level.chunk.ChunkAccess result) {
-        var observation=CURRENT.get();if(observation==null||observation.resultObserved)return;
+        var observation=current();if(observation==null||observation.resultObserved)return;
         try {
             observation.resultObserved=true;
             observation.query+=" nativeResult="+(result==null ? "NULL" : result.getClass().getSimpleName()+"@"+System.identityHashCode(result))

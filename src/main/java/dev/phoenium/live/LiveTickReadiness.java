@@ -93,7 +93,12 @@ public final class LiveTickReadiness {
             List<Input> inputs = capture(level);
             // Existing original ticking futures already include their radius-one FULL range.
             // No future, ticket, public result, callback or absence is synthesized here.
-            level.getServer().managedBlock(() -> settled(inputs) || !sameCandidates(inputs, candidates(level)) || budget.expired());
+            // S9-D4: managedBlock re-tests this after every pumped task. A completed future never becomes
+            // incomplete, so the settled scan resumes at the first input it last found outstanding, and the
+            // candidate comparison walks the live candidates without building a list.
+            int[] firstOutstanding = {0};
+            level.getServer().managedBlock(() -> settledFrom(inputs, firstOutstanding)
+                    || !sameCandidates(inputs, level) || budget.expired());
             Receipt receipt = new Receipt(level, inputs, budget);
             if (receipt.current()) return receipt;
         }
@@ -140,6 +145,28 @@ public final class LiveTickReadiness {
     }
     private static boolean settled(List<Input> inputs) {
         return inputs.stream().allMatch(input -> input.future.isDone());
+    }
+    private static boolean settledFrom(List<Input> inputs, int[] firstOutstanding) {
+        for (int i = firstOutstanding[0]; i < inputs.size(); i++) {
+            if (!inputs.get(i).future.isDone()) { firstOutstanding[0] = i; return false; }
+        }
+        firstOutstanding[0] = inputs.size();
+        return true;
+    }
+    /** Same result as {@code sameCandidates(inputs, candidates(level))}: every live candidate's slot identity is
+     * still observed, in order, and none is allocated. */
+    private static boolean sameCandidates(List<Input> inputs, ServerLevel level) {
+        int[] index = {0};
+        boolean[] same = {true};
+        try (var holders = tickCandidates(level)) {
+            holders.forEach(holder -> {
+                Object slot = Objects.requireNonNull(slotIdentity(holder), "slot");
+                int i = index[0]++;
+                if (same[0] && (i >= inputs.size() || inputs.get(i).candidate.holder != holder
+                        || inputs.get(i).candidate.slot != slot)) same[0] = false;
+            });
+        }
+        return same[0] && index[0] == inputs.size();
     }
     private static boolean sameCandidates(List<Input> inputs, List<Candidate> candidates) {
         if (inputs.size() != candidates.size()) return false;

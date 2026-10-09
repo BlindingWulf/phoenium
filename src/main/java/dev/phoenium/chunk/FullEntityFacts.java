@@ -47,10 +47,18 @@ public final class FullEntityFacts {
     private final java.util.concurrent.atomic.AtomicBoolean directPassengerSuccessReported = new java.util.concurrent.atomic.AtomicBoolean();
     private final java.util.concurrent.locks.ReentrantLock candidateMetadata = new java.util.concurrent.locks.ReentrantLock();
     private long routingSequence;
+    /** S9-D4: advances after every change to a player's reference fact, route or precise position, the only
+     * inputs of {@link #publishedPosition} for that player. Equal reads bracket an interval with no such change. */
+    private final java.util.concurrent.atomic.AtomicLong playerPublications = new java.util.concurrent.atomic.AtomicLong();
     private long published, insertions, removals, naturalPassengerScopes, directPassengerPrepared,
         directPassengerAccepted, directPassengerRejected, directPassengerSettled, directPassengerUpgraded;
     FullEntityFacts(FullFinishingServices service) { this.service = service; }
     public static long nextIncarnation() { return INCARNATIONS.incrementAndGet(); }
+    /** Access-free read; callers that reuse a projection perform publishedPosition's own access check. */
+    public long playerPublications() { return playerPublications.get(); }
+    private void touched(Entity entity) {
+        if (entity instanceof net.minecraft.world.entity.player.Player) playerPublications.incrementAndGet();
+    }
     public static void constructed(Entity entity) {
         FullFinishingServices.Reservation full = FullFinishingServices.currentReservation();
         if (full != null) full.constructed(entity);
@@ -82,6 +90,7 @@ public final class FullEntityFacts {
                 // pairing inside ChunkMap.addEntity) keeps the identity that receipts and relations captured.
                 if (sameScalars(previous, fact)) fact = previous;
                 access.phoenium$referenceFact(fact); service.entityFacts.published++;
+                if (fact != previous) service.entityFacts.touched(entity);
                 service.changed(FullFinishingServices.Kind.ENTITY_REGISTRY);
             }
         } finally { PUBLISHING.remove(); }
@@ -117,14 +126,14 @@ public final class FullEntityFacts {
             if (displaced != null && displaced != entity) {
                 if (!facts.stored.containsKey(displaced)) {
                     facts.routes.remove(displaced); facts.precisePositions.remove(displaced);
-                    facts.removeRelationsLocked(displaced);
+                    facts.removeRelationsLocked(displaced); facts.touched(displaced);
                 }
             }
             long routeRevision = Math.incrementExact(facts.routingSequence);
             long worldRevision = facts.nextCandidateRevision(fact.world);
             facts.candidates.computeIfAbsent(fact.world, ignored -> new LinkedHashMap<>()).put(id, entity);
             facts.routes.put(entity, new Route(position, routeRevision));
-            facts.precisePositions.put(entity, precise);
+            facts.precisePositions.put(entity, precise); facts.touched(entity);
             facts.routingSequence = routeRevision; facts.candidateRevisions.put(fact.world, worldRevision);
         } finally { facts.candidateMetadata.unlock(); }
         facts.service.changed(FullFinishingServices.Kind.ENTITY_REGISTRY);
@@ -157,7 +166,7 @@ public final class FullEntityFacts {
             facts.candidateRevisions.put(fact.world, worldRevision);
             if (!facts.stored.containsKey(entity)) {
                 facts.routes.remove(entity); facts.precisePositions.remove(entity);
-                facts.removeRelationsLocked(entity);
+                facts.removeRelationsLocked(entity); facts.touched(entity);
             }
         } finally { facts.candidateMetadata.unlock(); }
         facts.service.changed(FullFinishingServices.Kind.ENTITY_REGISTRY);
@@ -177,7 +186,7 @@ public final class FullEntityFacts {
             if (previous != null) throw new ChunkProtocolException("entity already belongs to persistent storage");
             long revision = facts.routingSequence = Math.incrementExact(facts.routingSequence);
             facts.routes.put(entity, new Route(position, revision));
-            facts.precisePositions.put(entity, precise);
+            facts.precisePositions.put(entity, precise); facts.touched(entity);
         } finally { facts.candidateMetadata.unlock(); }
         passengersChanged(entity);
         facts.service.changed(FullFinishingServices.Kind.ENTITY_REGISTRY);
@@ -209,7 +218,7 @@ public final class FullEntityFacts {
                 try {
                     long revision = facts.routingSequence = Math.incrementExact(facts.routingSequence);
                     facts.routes.put(entity, new Route(position, revision));
-                    facts.precisePositions.put(entity, precise);
+                    facts.precisePositions.put(entity, precise); facts.touched(entity);
                 } finally { facts.candidateMetadata.unlock(); }
             }
             for (Entity entity : batch.staged) passengersChanged(entity);
@@ -238,7 +247,7 @@ public final class FullEntityFacts {
                     if (facts.stored.containsKey(entity) || visible) continue;
                     facts.routes.remove(entity); facts.precisePositions.remove(entity);
                     facts.removeRelationsLocked(entity);
-                    ((Access) entity).phoenium$referenceFact(previousFacts.get(entity));
+                    ((Access) entity).phoenium$referenceFact(previousFacts.get(entity)); facts.touched(entity);
                 }
                 staged.clear(); previousFacts.clear();
             } finally { facts.candidateMetadata.unlock(); }
@@ -271,7 +280,7 @@ public final class FullEntityFacts {
             if (visible != null && visible.containsValue(entity))
                 throw new ChunkProtocolException("persistent entity removal retained visible identity");
             facts.routes.remove(entity); facts.precisePositions.remove(entity);
-            facts.removeRelationsLocked(entity);
+            facts.removeRelationsLocked(entity); facts.touched(entity);
         } finally { facts.candidateMetadata.unlock(); }
         facts.service.changed(FullFinishingServices.Kind.ENTITY_REGISTRY);
     }
@@ -294,7 +303,7 @@ public final class FullEntityFacts {
                 long routeRevision = Math.incrementExact(facts.routingSequence);
                 long worldRevision = facts.nextCandidateRevision(fact.world);
                 facts.routes.put(entity, new Route(position, routeRevision));
-                facts.precisePositions.put(entity, precise);
+                facts.precisePositions.put(entity, precise); facts.touched(entity);
                 facts.routingSequence = routeRevision; facts.candidateRevisions.put(fact.world, worldRevision);
             }
         } finally { facts.candidateMetadata.unlock(); }
@@ -463,6 +472,10 @@ public final class FullEntityFacts {
                     || current.fact.runtimeId != retained.fact.runtimeId
                     || !current.fact.uuid.equals(retained.fact.uuid))
                 throw new ChunkProtocolException("retained tracker entity lifetime changed");
+            // S9-D4: an unchanged fact and route receipt is the retained candidate (equal record); keeping the
+            // retained object lets callers skip re-deriving its key and owner.
+            if (current.fact == retained.fact && current.routingRevision == retained.routingRevision
+                    && current.position.equals(retained.position)) return retained;
             return current;
         } finally { candidateMetadata.unlock(); }
     }
@@ -526,6 +539,8 @@ public final class FullEntityFacts {
      * malformed cycles in the retained identity graph. Package-visible for a focused order proof. */
     static <E> List<E> orderedDescendants(E root, Function<E, List<E>> children) {
         Objects.requireNonNull(root, "root"); Objects.requireNonNull(children, "children");
+        // S9-D4: a root without children yields the same empty list without the traversal sets.
+        if (children.apply(root).isEmpty()) return List.of();
         var result = new ArrayList<E>();
         Set<E> visiting = Collections.newSetFromMap(new IdentityHashMap<>());
         Set<E> emitted = Collections.newSetFromMap(new IdentityHashMap<>());
@@ -765,6 +780,7 @@ public final class FullEntityFacts {
             pendingPassengerIdentities.clear();
             closedPassengerWorlds.clear();
             candidates.clear(); candidateRevisions.clear(); routes.clear(); stored.clear(); precisePositions.clear(); passengerRelations.clear();
+            playerPublications.incrementAndGet();
             passengerVehicles.clear(); relationRevisions.clear(); }
         finally { candidateMetadata.unlock(); }
     }

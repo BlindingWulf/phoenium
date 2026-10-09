@@ -18,6 +18,10 @@ import org.slf4j.LoggerFactory;
 /** Observation only: never schedules a chunk, waits, or supplies a read result. */
 public final class BlockEntityChunkQueryDiagnostic {
     private static final ThreadLocal<Scope> CURRENT = new ThreadLocal<>();
+    /** S9-D4: open scopes on all threads (see FullFinishingQueries.ACTIVE for the exactness argument). */
+    private static final java.util.concurrent.atomic.AtomicInteger ACTIVE = new java.util.concurrent.atomic.AtomicInteger();
+    public static boolean idle() { return ACTIVE.get() == 0; }
+    private static Scope current() { return ACTIVE.get() == 0 ? null : CURRENT.get(); }
     private final AtomicBoolean reported = new AtomicBoolean();
     private final Consumer<Failure> sink;
 
@@ -31,7 +35,7 @@ public final class BlockEntityChunkQueryDiagnostic {
                        RegionalServiceDispatcher.Execution execution, TopologyGeneration topology) {
         if (CURRENT.get() != null) throw new IllegalStateException("nested block entity diagnostic scope");
         Scope scope = new Scope(world, type, position.immutable(), execution, topology);
-        CURRENT.set(scope);
+        CURRENT.set(scope); ACTIVE.incrementAndGet();
         return scope;
     }
 
@@ -44,6 +48,7 @@ public final class BlockEntityChunkQueryDiagnostic {
         final HolderObservation source;
         BlockPos read;
         Query query;
+        private boolean closed;
         Scope(ServerLevel world, String type, BlockPos position,
               RegionalServiceDispatcher.Execution execution, TopologyGeneration topology) {
             this.world = world; this.type = type; this.position = position;
@@ -65,12 +70,15 @@ public final class BlockEntityChunkQueryDiagnostic {
                 // Observation must not mutate the original exception, even when the sink fails.
             }
         }
-        @Override public void close() { CURRENT.remove(); }
+        @Override public void close() {
+            if (closed) return;
+            closed = true; CURRENT.remove(); ACTIVE.decrementAndGet();
+        }
     }
 
     public static BlockState blockState(net.minecraft.world.level.Level world, BlockPos position,
                                         Supplier<BlockState> original) {
-        Scope scope = CURRENT.get();
+        Scope scope = current();
         if (scope == null || scope.world != world) return original.get();
         BlockPos previous = scope.read;
         scope.read = position.immutable();
@@ -80,7 +88,7 @@ public final class BlockEntityChunkQueryDiagnostic {
     public static ChunkAccess chunk(ServerLevel world, int x, int z, ChunkStatus status, boolean create,
                                    Supplier<ChunkAccess> original) {
         dev.phoenium.live.PortalDestinationObservation.query(world,x,z,status,create);
-        Scope scope = CURRENT.get();
+        Scope scope = current();
         if (scope == null || scope.world != world) {
             var result=original.get();
             dev.phoenium.live.PortalDestinationObservation.result(world,x,z,status,result);
@@ -99,7 +107,7 @@ public final class BlockEntityChunkQueryDiagnostic {
     public static void selected(ServerLevel world, int x, int z, ChunkStatus status, boolean create,
                                 CompletableFuture<ChunkResult<ChunkAccess>> future) {
         dev.phoenium.live.PortalDestinationObservation.selected(world,x,z,status,future);
-        Scope scope = CURRENT.get();
+        Scope scope = current();
         if (scope == null || scope.world != world || scope.query == null) return;
         Query query = scope.query;
         if (!query.position.equals(new ChunkPos(x, z)) || query.status != status || query.create != create) return;

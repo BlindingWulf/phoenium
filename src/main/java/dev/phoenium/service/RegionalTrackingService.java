@@ -88,6 +88,7 @@ public final class RegionalTrackingService {
                     retained.candidate = sourceEntry.candidate;
                     retained.key = sourceEntry.key;
                     retained.owner = sourceEntry.owner;
+                    retained.routedView = null;
                 }
                 next.add(new RegionalTrackingPartitions.Item<>(sourceEntry.id, sourceEntry.tracker, retained,
                     sourceEntry.key, sourceEntry.owner));
@@ -119,7 +120,7 @@ public final class RegionalTrackingService {
             if (prior != null && prior.tracker != tracker)
                 throw new IllegalStateException("tracker insertion displaced a retained identity " + id);
             Entry retained = prior == null ? new Entry(id, tracker, entity, candidate, key, route(key).region()) : prior;
-            retained.candidate = candidate; retained.key = key; retained.owner = route(key).region();
+            retained.candidate = candidate; retained.key = key; retained.owner = route(key).region(); retained.routedView = null;
             retained.effectiveRange = effectiveRange;
             retained.seenConnections = seenConnections;
             index.put(new RegionalTrackingPartitions.Item<>(id, tracker, retained, key, retained.owner));
@@ -195,6 +196,7 @@ public final class RegionalTrackingService {
                 entry.candidate = candidate;
                 entry.key = key;
                 entry.owner = route(key).region();
+                entry.routedView = null;
                 entry.effectiveRange = captured[0].effectiveRange;
                 entry.seenConnections = captured[0].seenConnections;
                 index.update(entry.id, key, entry.owner);
@@ -506,9 +508,10 @@ public final class RegionalTrackingService {
                             || movementCandidate(key(candidate), relation.effectiveRange, movement)) footprint.add(key(candidate));
                 }
             } else {
+                boolean seen = entry.seenConnections.contains(player.connection);
+                if (!seen && !movementCandidate(entry.key, maxVisibleRange(), movement)) continue;
                 RangeProjection tracked = publishedRange(entry.candidate);
-                if (entry.seenConnections.contains(player.connection)
-                        || movementCandidate(entry.key, tracked.effectiveRange, movement)) footprint.addAll(tracked.footprint);
+                if (seen || movementCandidate(entry.key, tracked.effectiveRange, movement)) footprint.addAll(tracked.footprint);
             }
         }
         dispatcher.ensureClosure(footprint);
@@ -519,9 +522,20 @@ public final class RegionalTrackingService {
             dev.phoenium.topology.LiveMovementFootprint movement) {
         long radius = Math.max(1L, (range + 15L) / 16L + 1L);
         if (candidateChunk(entity, range, movement.routingDestination())) return true;
-        return movement.sweptCollision().stream().anyMatch(box -> entity.world().equals(box.world())
-            && entity.x() >= box.minX() - radius && entity.x() <= box.maxX() + radius
-            && entity.z() >= box.minZ() - radius && entity.z() <= box.maxZ() + radius);
+        for (var box : movement.sweptCollision())
+            if (entity.world().equals(box.world())
+                    && entity.x() >= box.minX() - radius && entity.x() <= box.maxX() + radius
+                    && entity.z() >= box.minZ() - radius && entity.z() <= box.maxZ() + radius) return true;
+        return false;
+    }
+
+    /** S9-D4: publishedRange's visible range is capped by the server view distance, and the candidate
+     * radius of candidateChunk/movementCandidate never shrinks as the range grows. An entity whose
+     * moving recipient has not seen it and that is outside this bound is never selected, so its
+     * range projection is not built. Unlike before, such a far entity's projection no longer runs
+     * (and cannot throw) inside an unrelated player's move. */
+    private int maxVisibleRange() {
+        return ((RegionalChunkMapAccess) level.getChunkSource().chunkMap).phoenium$getServerViewDistance() * 16;
     }
 
     /** Preserves ChunkMap.move's complete original suffix while replacing its world-wide tracker
@@ -551,6 +565,7 @@ public final class RegionalTrackingService {
                     entry.candidate = moving.candidate;
                     entry.key = moving.key;
                     entry.owner = route(moving.key).region();
+                    entry.routedView = null;
                     index.update(entry.id, entry.key, entry.owner);
                 }
                 playerTracker = entry.tracker;
@@ -562,9 +577,13 @@ public final class RegionalTrackingService {
                         selectedPlayers.add(candidate); footprint.add(receipt.key);
                     }
                 }
-            } else if (entry.seenConnections.contains(moving.session.listener())
-                    || candidateChunk(entry.key, publishedRange(entry.candidate).effectiveRange, moving.key)) {
-                selectedTrackers.add(entry.tracker); footprint.addAll(publishedRange(entry.candidate).footprint);
+            } else {
+                boolean seen = entry.seenConnections.contains(moving.session.listener());
+                if (!seen && !candidateChunk(entry.key, maxVisibleRange(), moving.key)) continue;
+                RangeProjection tracked = publishedRange(entry.candidate);
+                if (seen || candidateChunk(entry.key, tracked.effectiveRange, moving.key)) {
+                    selectedTrackers.add(entry.tracker); footprint.addAll(tracked.footprint);
+                }
             }
         }
         if (OwnershipContext.current().isPresent()) dispatcher.requireCurrentClosure(footprint);
@@ -622,7 +641,10 @@ public final class RegionalTrackingService {
         if (plan.generation != published.generation().value())
             throw new IllegalStateException("tracker migration plan changed");
         migrations += index.install(new RegionalTrackingPartitions.Plan(plan.generation, plan.owners));
-        for (Entry entry : index.values()) entry.owner = Objects.requireNonNull(plan.owners.get(entry.id));
+        for (Entry entry : index.values()) {
+            entry.owner = Objects.requireNonNull(plan.owners.get(entry.id));
+            entry.routedView = null;
+        }
     }
 
     public synchronized Measurements measurements() {
@@ -704,12 +726,17 @@ public final class RegionalTrackingService {
     }
     private void refreshCandidate(Entry entry) {
         FullEntityFacts.Candidate current = finishing.entityFacts.refreshTrackingCandidate(entry.candidate);
-        RoutingKey key = key(current);
+        // S9-D4: the view is read before route() resolves, so a stamp never names a view newer than the
+        // one the owner came from. Every other key/owner write clears the stamp.
+        RegionDirectory.View view = directory.snapshot();
         synchronized (this) {
+            if (current == entry.candidate && entry.routedView == view) return;
+            RoutingKey key = key(current);
             entry.candidate = current;
             entry.key = key;
             entry.owner = route(key).region();
             index.update(entry.id, key, entry.owner);
+            entry.routedView = view;
         }
     }
     /** Exact retained record for a live tracker callback (S9-D2: identity index instead of a copied O(n) scan). */
@@ -791,6 +818,8 @@ public final class RegionalTrackingService {
         final int id; final Object tracker; final Entity entity; FullEntityFacts.Candidate candidate; RoutingKey key; RegionId owner;
         int effectiveRange = -1;
         Set<Object> seenConnections = Set.of();
+        /** Directory view under which {@link #owner} was last resolved by refreshCandidate; null = re-resolve. */
+        RegionDirectory.View routedView;
         Entry(int id, Object tracker, Entity entity, FullEntityFacts.Candidate candidate, RoutingKey key, RegionId owner) {
             this.id = id; this.tracker = tracker; this.entity = entity; this.candidate = candidate; this.key = key; this.owner = owner;
         }

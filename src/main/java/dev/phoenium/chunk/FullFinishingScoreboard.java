@@ -125,6 +125,12 @@ public final class FullFinishingScoreboard {
         return new TrackingCut(directoryRevision, List.copyOf(result));
     }
 
+    /** S9-D4: the revision a {@link TrackingCut} taken now would carry; checked like trackingCut's own access. */
+    public long directoryRevision() {
+        FullFinishingServices.requireServer(server, FullFinishingServices.Kind.CONNECTIONS);
+        return directoryRevision;
+    }
+
     public void requireTrackingSession(TrackingCut cut, TrackingSession receipt) {
         FullFinishingServices.requireServer(server, FullFinishingServices.Kind.CONNECTIONS);
         if (cut.directoryRevision != directoryRevision || !cut.contains(receipt))

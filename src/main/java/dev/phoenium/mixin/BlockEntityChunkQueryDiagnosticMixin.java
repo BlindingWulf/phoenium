@@ -12,6 +12,8 @@ import org.spongepowered.asm.mixin.Mixin;
 abstract class BlockEntityChunkQueryDiagnosticMixin {
     @WrapMethod(method = "getBlockState")
     private BlockState phoenium$observeBlockEntityRead(BlockPos position, Operation<BlockState> original) {
+        // S9-D4: with no diagnostic scope open anywhere, blockState() would run the original unchanged.
+        if (BlockEntityChunkQueryDiagnostic.idle()) return original.call(position);
         return BlockEntityChunkQueryDiagnostic.blockState((Level) (Object) this, position, () -> original.call(position));
     }
 }

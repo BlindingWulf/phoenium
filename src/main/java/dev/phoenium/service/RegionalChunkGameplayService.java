@@ -284,9 +284,10 @@ public final class RegionalChunkGameplayService implements NaturalSpawnContinuat
      * behavior while reading only exact position/spectator publications. */
     public Player nearestNaturalSpawnPlayer(double x, double y, double z) {
         Cycle active = requireOwnedCycle();
+        boolean fresh = fresh(active.levelPlayers, finishing.entityFacts.playerPublications());
         PlayerProjection best = null; double bestDistance = -1.0;
         for (PlayerProjection retained : active.levelPlayers) {
-            PlayerProjection player = refreshPlayerProjection(retained);
+            PlayerProjection player = fresh ? retained : refreshPlayerProjection(retained);
             if (player.spectator) continue;
             double distance = player.position.distanceToSqr(x, y, z);
             if (bestDistance == -1.0 || distance < bestDistance) { best = player; bestDistance = distance; }
@@ -736,8 +737,47 @@ public final class RegionalChunkGameplayService implements NaturalSpawnContinuat
         blockEntities.put(ticker, new BlockEntityReceipt(position, key, new ResidentBlockEntityTickerBinding(level, ticker, directory, key)));
     }
 
+    /* S9-D4 (owner step a): a player cut or level-player projection is re-derived only when one of its inputs
+     * changed: the player list (order and connection), the connection directory revision, or any player's
+     * published fact, route or precise position (FullEntityFacts.playerPublications). A reused cut still
+     * revalidates every live session, and publishedPosition's access check still runs whenever it would have. */
+    private record RetainedPlayers(List<ServerPlayer> order, long directory, long facts, PlayerCut captured) { }
+    private record RetainedLevelPlayers(List<ServerPlayer> order, long facts, List<PlayerProjection> players) { }
+    private record FreshProjections(List<PlayerProjection> players, long facts) { }
+    private volatile RetainedPlayers retainedPlayers;
+    private volatile RetainedLevelPlayers retainedLevelPlayers;
+    private volatile FreshProjections freshProjections;
+
+    private static boolean sameOrder(List<ServerPlayer> retained, java.util.Collection<ServerPlayer> live) {
+        if (retained.size() != live.size()) return false;
+        int i = 0;
+        for (ServerPlayer player : live) if (retained.get(i++) != player) return false;
+        return true;
+    }
+    private void requirePublishedPositionAccess(List<?> players) {
+        if (!players.isEmpty())
+            FullFinishingServices.requireServer(finishing.server(), FullFinishingServices.Kind.ENTITY_REGISTRY);
+    }
+    /** True when {@code players} was derived at publication {@code facts}, so a refresh would rebuild equal projections. */
+    private boolean fresh(List<PlayerProjection> players, long facts) {
+        FreshProjections stamp = freshProjections;
+        if (stamp == null || stamp.players != players || stamp.facts != facts) return false;
+        requirePublishedPositionAccess(players);
+        return true;
+    }
+
     private PlayerCut capturePlayers() {
-        List<ServerPlayer> order = List.copyOf(((RegionalChunkMapAccess) map).phoenium$getPlayerMap().getAllPlayers());
+        long facts = finishing.entityFacts.playerPublications();
+        long directory = finishing.scoreboard.directoryRevision();
+        var live = ((RegionalChunkMapAccess) map).phoenium$getPlayerMap().getAllPlayers();
+        RetainedPlayers retained = retainedPlayers;
+        if (retained != null && retained.facts == facts && retained.directory == directory && sameOrder(retained.order, live)) {
+            FullFinishingScoreboard.TrackingCut cut = retained.captured.cut;
+            requirePublishedPositionAccess(retained.order);
+            for (var session : cut.sessions()) finishing.scoreboard.requireTrackingSession(cut, session);
+            return retained.captured;
+        }
+        List<ServerPlayer> order = List.copyOf(live);
         FullFinishingScoreboard.TrackingCut cut = finishing.scoreboard.trackingCut(order);
         Map<ServerPlayer, FullFinishingScoreboard.TrackingSession> sessions = new IdentityHashMap<>();
         cut.sessions().forEach(session -> sessions.put(session.player(), session));
@@ -751,23 +791,46 @@ public final class RegionalChunkGameplayService implements NaturalSpawnContinuat
             result.add(new PlayerProjection(player, session.listener(), candidate, key(candidate),
                 published.position(), candidate.fact().spectator()));
         }
-        return new PlayerCut(cut, List.copyOf(result));
+        PlayerCut captured = new PlayerCut(cut, List.copyOf(result));
+        retainedPlayers = new RetainedPlayers(order, cut.directoryRevision(), facts, captured);
+        return captured;
     }
     private List<PlayerProjection> captureLevelPlayers() {
+        long facts = finishing.entityFacts.playerPublications();
+        List<ServerPlayer> live = level.players();
+        RetainedLevelPlayers retained = retainedLevelPlayers;
+        if (retained != null && retained.facts == facts && sameOrder(retained.order, live)) {
+            boolean sameListeners = true;
+            for (PlayerProjection player : retained.players)
+                if (player.player.connection != player.listener) { sameListeners = false; break; }
+            if (sameListeners) {
+                requirePublishedPositionAccess(retained.players);
+                freshProjections = new FreshProjections(retained.players, facts);
+                return retained.players;
+            }
+        }
+        List<ServerPlayer> order = List.copyOf(live);
         List<PlayerProjection> result = new ArrayList<>();
-        for (ServerPlayer player : List.copyOf(level.players())) {
+        for (ServerPlayer player : order) {
             FullEntityFacts.PublishedPosition published = finishing.entityFacts.publishedPosition(player);
             FullEntityFacts.Candidate candidate = published.candidate();
             if (candidate.fact().world() != level) throw new IllegalStateException("natural spawn player changed world");
             result.add(new PlayerProjection(player, player.connection, candidate, key(candidate),
                 published.position(), candidate.fact().spectator()));
         }
-        return List.copyOf(result);
+        List<PlayerProjection> captured = List.copyOf(result);
+        retainedLevelPlayers = new RetainedLevelPlayers(order, facts, captured);
+        freshProjections = new FreshProjections(captured, facts);
+        return captured;
     }
     private List<PlayerProjection> refreshPlayerProjections(List<PlayerProjection> retained) {
+        long facts = finishing.entityFacts.playerPublications();
+        if (fresh(retained, facts)) return retained;
         List<PlayerProjection> refreshed = new ArrayList<>(retained.size());
         retained.forEach(player -> refreshed.add(refreshPlayerProjection(player)));
-        return List.copyOf(refreshed);
+        List<PlayerProjection> result = List.copyOf(refreshed);
+        freshProjections = new FreshProjections(result, facts);
+        return result;
     }
     private PlayerProjection refreshPlayerProjection(PlayerProjection retained) {
         FullEntityFacts.PublishedPosition published = finishing.entityFacts.publishedPosition(retained.player);
