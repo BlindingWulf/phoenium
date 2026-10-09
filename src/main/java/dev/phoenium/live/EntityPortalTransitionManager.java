@@ -159,9 +159,11 @@ public final class EntityPortalTransitionManager implements AutoCloseable {
 
     public boolean suspended(Entity entity) { return active.containsKey(key(entity)); }
 
+    /** S9-D11: {@link #advance()} would settle nothing now. */
+    public boolean quiet() { return active.isEmpty(); }
     public int advance() {
         if (OwnershipContext.current().isPresent()) throw new IllegalStateException("entity portal coordinator retained source owner");
-        if (closed || !authority.running()) return 0;
+        if (closed || !authority.running() || active.isEmpty()) return 0; // S9-D11: nothing to settle
         List<Entry> entries = new ArrayList<>(active.values());
         entries.sort(Comparator.comparingLong(entry -> entry.token.generation()));
         int settled = 0;

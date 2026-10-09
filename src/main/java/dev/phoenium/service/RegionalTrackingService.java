@@ -169,12 +169,25 @@ public final class RegionalTrackingService {
             byListener.put(session.listener(), receipt);
         }
         Map<Entry, Preview> previews = new IdentityHashMap<>();
-        for (Entry entry : entries) {
-            FullEntityFacts.Candidate candidate = finishing.entityFacts.trackingCandidate(level, entry.entity);
-            RoutingKey key = key(candidate);
-            RangeProjection relation = prepareRange(candidate);
+        // S9-D11: per entry, its preparation (candidate, key, range admission) and then its read-only preview turn;
+        // executeEach lets consecutive entries share one turn where nothing could run between them.
+        int count = entries.size();
+        FullEntityFacts.Candidate[] preparedCandidates = new FullEntityFacts.Candidate[count];
+        RoutingKey[] preparedKeys = new RoutingKey[count];
+        RangeProjection[] preparedRelations = new RangeProjection[count];
+        dispatcher.executeEach(world, count, i -> {
+            FullEntityFacts.Candidate prepared = finishing.entityFacts.trackingCandidate(level, entries.get(i).entity);
+            preparedCandidates[i] = prepared;
+            preparedKeys[i] = key(prepared);
+            preparedRelations[i] = prepareRange(prepared);
+            return preparedKeys[i];
+        }, RegionalServiceKind.TRACKING_UPDATE, i -> {
+            Entry entry = entries.get(i);
+            FullEntityFacts.Candidate candidate = preparedCandidates[i];
+            RoutingKey key = preparedKeys[i];
+            RangeProjection relation = preparedRelations[i];
             Preview[] captured = new Preview[1];
-            dispatcher.executeAndDrain(key, RegionalServiceKind.TRACKING_UPDATE, ignored -> {
+            {
                 requireEntityOwner(candidate, key);
                 requireEntry(entry, candidate);
                 RegionalTrackedEntityAccess tracker = access(entry.tracker);
@@ -190,7 +203,7 @@ public final class RegionalTrackingService {
                 });
                 captured[0] = new Preview(key, now, !now.equals(tracker.phoenium$getLastSectionPos()),
                     relation.effectiveRange, Set.copyOf(seen), Set.copyOf(seenConnections), candidate, relation);
-            });
+            }
             previews.put(entry, Objects.requireNonNull(captured[0]));
             synchronized (this) {
                 entry.candidate = candidate;
@@ -201,7 +214,7 @@ public final class RegionalTrackingService {
                 entry.seenConnections = captured[0].seenConnections;
                 index.update(entry.id, key, entry.owner);
             }
-        }
+        });
 
         // S9-D7: every level player must have a receipt whatever the entry; check it where the first entry did.
         // A uniformly routed world then admits each entry's footprint (all keys in this world) without its keys.
@@ -222,22 +235,19 @@ public final class RegionalTrackingService {
         try {
             RegionalChunkMapAccess mapAccess = (RegionalChunkMapAccess) map;
             Set<ServerPlayer> deferredPlayers = java.util.Collections.newSetFromMap(new IdentityHashMap<>());
-            for (ServerPlayer player : activePlayers) {
+            dispatcher.executeEach(world, activePlayers.size(), i -> requirePlayer(players, activePlayers.get(i)).key,
+                    RegionalServiceKind.TRACKING_UPDATE, i -> {
+                ServerPlayer player = activePlayers.get(i);
                 PlayerReceipt receipt = requirePlayer(players, player);
-                RoutingKey key = receipt.key;
-                dispatcher.executeAndDrain(key, RegionalServiceKind.TRACKING_UPDATE, ignored -> {
-                    if (currentTickPlayer(receipt, connectionCut, deferredPlayers))
-                        mapAccess.phoenium$invokeUpdateChunkTracking(player);
-                });
-            }
+                if (currentTickPlayer(receipt, connectionCut, deferredPlayers))
+                    mapAccess.phoenium$invokeUpdateChunkTracking(player);
+            });
 
             List<ServerPlayer> moved = new ArrayList<>();
-            for (Entry entry : entries) {
+            dispatcher.executeEach(world, count, i -> previews.get(entries.get(i)).key, RegionalServiceKind.TRACKING_UPDATE, i -> {
+                Entry entry = entries.get(i);
                 Preview preview = previews.get(entry);
-                List<PlayerReceipt> candidates = levelPlayers.stream().map(players::get)
-                    .filter(Objects::nonNull)
-                    .filter(player -> preview.seen.contains(player.session.player()) || candidate(preview, player.key)).toList();
-                dispatcher.executeAndDrain(preview.key, RegionalServiceKind.TRACKING_UPDATE, ignored -> {
+                {
                     // A movement packet can run while executeAndDrain reaches this owner turn.
                     // Retire the old player preview; the next tick will recapture its route.
                     if (entry.entity instanceof ServerPlayer
@@ -247,7 +257,9 @@ public final class RegionalTrackingService {
                     requireRelation(preview.relation);
                     RegionalTrackedEntityAccess tracker = access(entry.tracker);
                     if (preview.sectionChanged) {
-                        for (PlayerReceipt player : candidates) {
+                        // S9-D11: the recipient candidates are a pure selection over the retained cut; only a section
+                        // change reads them.
+                        for (PlayerReceipt player : trackingCandidates(levelPlayers, players, preview)) {
                             if (currentTickPlayer(player, connectionCut, deferredPlayers))
                                 tracker.phoenium$invokeUpdatePlayer(player.session.player());
                         }
@@ -259,14 +271,14 @@ public final class RegionalTrackingService {
                             || map.getDistanceManager().inEntityTickingRange(preview.section.chunk().pack()))
                         tracker.phoenium$getServerEntity().sendChanges();
                     synchronized (this) { updates++; }
-                });
-            }
-            if (!moved.isEmpty()) for (Entry entry : entries) {
+                }
+            });
+            if (!moved.isEmpty()) dispatcher.executeEach(world, count, i -> previews.get(entries.get(i)).key,
+                    RegionalServiceKind.TRACKING_PAIR, i -> {
+                Entry entry = entries.get(i);
                 Preview preview = previews.get(entry);
-                List<PlayerReceipt> candidates = moved.stream().map(players::get)
-                    .filter(Objects::nonNull)
-                    .filter(player -> preview.seen.contains(player.session.player()) || candidate(preview, player.key)).toList();
-                dispatcher.executeAndDrain(preview.key, RegionalServiceKind.TRACKING_PAIR, ignored -> {
+                List<PlayerReceipt> candidates = trackingCandidates(moved, players, preview);
+                {
                     if (entry.entity instanceof ServerPlayer
                             && !finishing.entityFacts.validTrackingCandidate(preview.candidate)) return;
                     requireEntityOwner(preview.candidate, preview.key);
@@ -277,8 +289,8 @@ public final class RegionalTrackingService {
                             access(entry.tracker).phoenium$invokeUpdatePlayer(player.session.player());
                     }
                     refreshProjection(entry);
-                });
-            }
+                }
+            });
         } finally {
             synchronized (this) { cycling = false; }
         }
@@ -680,7 +692,7 @@ public final class RegionalTrackingService {
     }
 
     private void requireEntityOwner(FullEntityFacts.Candidate candidate, RoutingKey key) {
-        var binding = objects.current(candidate.fact().uuid().toString()).orElseThrow(
+        var binding = objects.current(candidate.fact().objectId()).orElseThrow(
             () -> new IllegalStateException("tracked entity lacks current object ownership"));
         objects.requireCurrentOwner(binding.objectId(), binding.objectEpoch(), route(key).region());
         dispatcher.requireCurrentOwner(key);
@@ -852,6 +864,17 @@ public final class RegionalTrackingService {
     }
     private RoutingKey key(FullEntityFacts.Candidate candidate) {
         return new RoutingKey(world, candidate.position().x(), candidate.position().z());
+    }
+    /** The retained receipts of {@code from}, in order, that already see the entity or are in its candidate chunks. */
+    private List<PlayerReceipt> trackingCandidates(List<ServerPlayer> from, Map<ServerPlayer, PlayerReceipt> players,
+                                                   Preview preview) {
+        List<PlayerReceipt> selected = new ArrayList<>();
+        for (ServerPlayer value : from) {
+            PlayerReceipt player = players.get(value);
+            if (player != null && (preview.seen.contains(player.session.player()) || candidate(preview, player.key)))
+                selected.add(player);
+        }
+        return selected;
     }
     private boolean candidate(Preview entity, RoutingKey player) {
         return candidateChunk(entity.key, entity.effectiveRange, player);

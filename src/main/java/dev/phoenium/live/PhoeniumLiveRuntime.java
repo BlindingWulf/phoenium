@@ -469,6 +469,7 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
         else fullEnclosure.installStateMigration(regionalServices);
         regionalDispatcher.installBoundaryAdvancer(fullEnclosure::advance);
         regionalDispatcher.installClosureEncloser(fullEnclosure::enclose);
+        regionalDispatcher.installBoundaryIdle(fullEnclosure::idle);
         regionalDispatcher.installNeighborCascades(new dev.phoenium.service.LiveNeighborCascadeEnvironment());
         state = State.RUNNING;
         ChunkRuntimeTrace.start();
@@ -2753,6 +2754,14 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
         arrowPortalTransitions.finish(arrow);
     }
     /** Called after executeAndDrain returned, before the next entity consumes native RNG. */
+    /** S9-D11: advanceMobPortalAfterEntityCallback would do nothing now: no coordinator retains work. */
+    public boolean mobPortalsQuiet() {
+        return portalTickets.quiet() && gatewayExits.quiet() && mobPortalTransitions.quiet()
+            && entityPortalTransitions.quiet() && hurtingProjectilePortalTransitions.quiet()
+            && shulkerBulletPortalTransitions.quiet() && throwableProjectilePortalTransitions.quiet()
+            && arrowPortalTransitions.quiet() && fallingBlockPortalTransitions.quiet() && tntPortalTransitions.quiet()
+            && boatPortalTransitions.quiet() && minecartPortalTransitions.quiet() && armorStandPortalTransitions.quiet();
+    }
     public void advanceMobPortalAfterEntityCallback() {
         portalTickets.advance();
         gatewayExits.advance();

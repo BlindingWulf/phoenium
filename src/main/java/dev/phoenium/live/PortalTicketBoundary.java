@@ -80,9 +80,12 @@ public final class PortalTicketBoundary implements AutoCloseable {
     }
 
     /** Owner-free boundary. Returns the number of tickets placed under their destination owner. */
+    /** S9-D11: {@link #advance()} would settle nothing now. */
+    public boolean quiet() { return pending.isEmpty(); }
     public int advance() {
         if (OwnershipContext.current().isPresent())
             throw new IllegalStateException("portal ticket coordinator retained owner authority");
+        if (pending.isEmpty()) return 0; // S9-D11: nothing requested
         int count = 0;
         // Snapshot the queue: a replay that itself requests a ticket is handled at the next boundary.
         List<Pending> batch = new ArrayList<>(pending.size());

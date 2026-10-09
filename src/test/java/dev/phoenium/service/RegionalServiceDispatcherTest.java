@@ -296,6 +296,93 @@ final class RegionalServiceDispatcherTest {
         assertFalse(f.b.leases().hasActiveLease());
     }
 
+    /** S9-D11: a uniformly routed world with an idle boundary runs consecutive items in one owner turn. */
+    @Test
+    void executeEachSharesOneTurnInAUniformWorld() {
+        Uniform u = new Uniform(); u.dispatcher.installBoundaryIdle(() -> true);
+        long advances = u.scheduler.advances();
+        var seen = new java.util.ArrayList<String>();
+        var prepared = new java.util.ArrayList<String>();
+        u.dispatcher.executeEach(u.world, 4, i -> {
+            prepared.add(i + (OwnershipContext.current().isPresent() ? ":owned" : ":free"));
+            return new RoutingKey(u.world, i * 3, -i);
+        }, RegionalServiceKind.TRACKING_UPDATE,
+            i -> seen.add(i + "@" + OwnershipContext.current().orElseThrow().region().value()));
+        assertEquals(List.of("0:free", "1:owned", "2:owned", "3:owned"), prepared);
+        assertEquals(List.of("0@u", "1@u", "2@u", "3@u"), seen);
+        assertEquals(advances + 1, u.scheduler.advances());
+        assertEquals(0, u.dispatcher.pendingCount());
+        assertFalse(u.runtime.leases().hasActiveLease());
+    }
+
+    /** S9-D11: work queued by an item ends the shared turn, so it runs before the next item. */
+    @Test
+    void executeEachLetsQueuedWorkRunBeforeTheNextItem() {
+        Uniform u = new Uniform(); u.dispatcher.installBoundaryIdle(() -> true);
+        var order = new java.util.ArrayList<String>();
+        u.dispatcher.executeEach(u.world, 4, i -> new RoutingKey(u.world, i, 0), RegionalServiceKind.TRACKING_UPDATE, i -> {
+            order.add("item" + i);
+            if (i == 1) u.dispatcher.submit(new RoutingKey(u.world, 9, 9), RegionalServiceKind.BLOCK_EVENT,
+                execution -> order.add("queued"));
+        });
+        assertEquals(List.of("item0", "item1", "queued", "item2", "item3"), order);
+        assertEquals(0, u.dispatcher.pendingCount());
+    }
+
+    /** S9-D11: without an idle boundary, or in an explicitly routed world, every item takes its own turn. */
+    @Test
+    void executeEachTakesOneTurnPerItemUnlessUniformAndIdle() {
+        Uniform u = new Uniform();
+        long advances = u.scheduler.advances();
+        u.dispatcher.executeEach(u.world, 3, i -> new RoutingKey(u.world, i, 0), RegionalServiceKind.TRACKING_UPDATE, i -> { });
+        assertEquals(advances + 3, u.scheduler.advances());
+
+        Fixture f = new Fixture(); var dispatcher = f.dispatcher(); dispatcher.installBoundaryIdle(() -> true);
+        long explicit = f.scheduler.advances();
+        var regions = new java.util.ArrayList<RegionId>();
+        dispatcher.executeEach(f.world, 2, i -> i == 0 ? f.aKey : f.bKey, RegionalServiceKind.TRACKING_UPDATE,
+            i -> regions.add(OwnershipContext.current().orElseThrow().region()));
+        assertEquals(List.of(f.aId, f.bId), regions);
+        assertEquals(explicit + 2, f.scheduler.advances());
+        assertThrows(IllegalArgumentException.class, () -> dispatcher.executeEach(f.world, 1, i -> f.aKey,
+            RegionalServiceKind.BLOCK_EVENT, i -> { }));
+    }
+
+    /** S9-D11: a failing item trips the barrier and ends the sequence there. */
+    @Test
+    void executeEachFailureEndsTheSequenceAtItsItem() {
+        Uniform u = new Uniform(); u.dispatcher.installBoundaryIdle(() -> true);
+        var ran = new java.util.ArrayList<Integer>();
+        var failure = assertThrows(IllegalStateException.class, () -> u.dispatcher.executeEach(u.world, 4,
+            i -> new RoutingKey(u.world, i, 0), RegionalServiceKind.TRACKING_UPDATE, i -> {
+                ran.add(i);
+                if (i == 2) throw new IllegalStateException("item 2");
+            }));
+        assertEquals("item 2", failure.getMessage());
+        assertEquals(List.of(0, 1, 2), ran);
+        assertTrue(u.barrier.tripped());
+        assertFalse(u.runtime.leases().hasActiveLease());
+    }
+
+    /** One world routed entirely by its default route to one region. */
+    private static final class Uniform {
+        final WorldId world = new WorldId("uniform");
+        final RegionId id = new RegionId(world, "u");
+        final RegionRuntime runtime = Fixture.ready(id);
+        final Map<RegionId, RegionRuntime> runtimes = new LinkedHashMap<>(Map.of(id, runtime));
+        final RegionDirectory directory = new RegionDirectory();
+        final FailureBarrier barrier = new FailureBarrier();
+        final RegionScheduler scheduler;
+        final RegionalServiceDispatcher dispatcher;
+        Uniform() {
+            directory.publish(new TopologyGeneration(1), Map.of(),
+                Map.of(world, new RegionRoute(id, new TopologyGeneration(1), runtime.ownerEpoch())));
+            scheduler = new RegionScheduler(runtimes, directory, barrier);
+            var gateway = new OwnerGateway(directory, runtimes, scheduler);
+            dispatcher = new RegionalServiceDispatcher("stage9-uniform", 9, directory, runtimes, gateway, scheduler);
+        }
+    }
+
     private static final class Fixture {
         final WorldId world = new WorldId("test");
         final RegionId aId = new RegionId(world, "a");

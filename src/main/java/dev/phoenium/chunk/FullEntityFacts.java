@@ -20,9 +20,20 @@ public final class FullEntityFacts {
         long phoenium$entityIncarnation();
         int phoenium$rawEntityId();
     }
+    /** {@code objectId} is {@code uuid.toString()}, the object-ownership key, built once per UUID (S9-D11). */
     public record Fact(Entity alias, MinecraftServer server, ServerLevel world, long incarnation, long revision,
                        UUID uuid, int runtimeId, EntityType<?> type, Class<?> dispatch, String scoreboardName, boolean removed,
-                       boolean enemy, boolean creative, boolean spectator) { }
+                       boolean enemy, boolean creative, boolean spectator, String objectId) {
+        public Fact {
+            if (!objectId.equals(uuid.toString())) throw new IllegalArgumentException("fact object id is not its UUID");
+        }
+        public Fact(Entity alias, MinecraftServer server, ServerLevel world, long incarnation, long revision,
+                    UUID uuid, int runtimeId, EntityType<?> type, Class<?> dispatch, String scoreboardName, boolean removed,
+                    boolean enemy, boolean creative, boolean spectator) {
+            this(alias, server, world, incarnation, revision, uuid, runtimeId, type, dispatch, scoreboardName, removed,
+                enemy, creative, spectator, uuid.toString());
+        }
+    }
     public record Candidate(Entity alias, Fact fact, ChunkPos position, long routingRevision) { }
     public record PublishedPosition(Candidate candidate, Vec3 position) { }
     public record VehicleRelation(Candidate passenger, Candidate vehicle, long revision) { }
@@ -87,10 +98,12 @@ public final class FullEntityFacts {
             if (!(entity.level() instanceof ServerLevel level)) return;
             var service = FullFinishingServices.forServer(level.getServer());
             try (var turn = service.referenceAccess()) {
+                UUID uuid = entity.getUUID();
                 Fact fact = new Fact(entity, level.getServer(), level, access.phoenium$entityIncarnation(),
-                        previous == null ? 1 : previous.revision + 1, entity.getUUID(), access.phoenium$rawEntityId(), entity.getType(),
+                        previous == null ? 1 : previous.revision + 1, uuid, access.phoenium$rawEntityId(), entity.getType(),
                         entity.getClass(), entity.getScoreboardName(), entity.isRemoved(), entity instanceof LivingEntity living && living.canBeSeenAsEnemy(),
-                        entity instanceof Player player && player.isCreative(), entity.isSpectator());
+                        entity instanceof Player player && player.isCreative(), entity.isSpectator(),
+                        previous != null && previous.uuid.equals(uuid) ? previous.objectId : uuid.toString());
                 // A data write that changes no published scalar (e.g. effect particles rewritten by native
                 // pairing inside ChunkMap.addEntity) keeps the identity that receipts and relations captured.
                 if (sameScalars(previous, fact)) fact = previous;

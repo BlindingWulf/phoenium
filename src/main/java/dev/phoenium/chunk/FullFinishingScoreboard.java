@@ -135,6 +135,18 @@ public final class FullFinishingScoreboard {
         FullFinishingServices.requireServer(server, FullFinishingServices.Kind.CONNECTIONS);
         if (cut.directoryRevision != directoryRevision || !cut.contains(receipt))
             throw FullFinishingServices.failure(new ChunkProtocolException("tracking connection cut became stale"));
+        requireSessionIdentity(receipt);
+    }
+    /** S9-D11: {@link #requireTrackingSession} for every session of {@code cut}, in order. The access and revision
+     * checks are the same for each, so they run once; every session is a member of its own cut. */
+    public void requireTrackingCut(TrackingCut cut) {
+        if (cut.sessions().isEmpty()) return;
+        FullFinishingServices.requireServer(server, FullFinishingServices.Kind.CONNECTIONS);
+        if (cut.directoryRevision != directoryRevision)
+            throw FullFinishingServices.failure(new ChunkProtocolException("tracking connection cut became stale"));
+        for (TrackingSession receipt : cut.sessions()) requireSessionIdentity(receipt);
+    }
+    private void requireSessionIdentity(TrackingSession receipt) {
         // S9-D3: a session can pass the identity checks below only if its listener is receipt.listener, and a
         // listener's transport connection is final, so the only possible match is the session keyed by that
         // connection. This is the same answer as scanning every live session for receipt.sessionId, in O(1).

@@ -55,15 +55,19 @@ public class FastThreadLocal<T> extends ThreadLocal<T> {
     /**
      * Gives the calling thread (the server thread, at the start of {@code runServer}) fresh, empty slots. A thread
      * that bound earlier and is still alive keeps its slots, and the caller then uses the map: a slotted thread never
-     * switches mid-scope.
+     * switches mid-scope. Binding the already bound thread again keeps its slots.
      */
     public static boolean bindServerThread() {
         Thread thread = Thread.currentThread();
         Slots previous = server;
-        if (previous != null && previous.thread != thread && previous.thread.isAlive()) return false;
+        if (previous != null && previous.thread == thread) return true;
+        if (previous != null && previous.thread.isAlive()) return false;
         server = new Slots(thread);
         return true;
     }
+
+    /** Whether the calling thread reads and writes slots rather than its map (diagnostics and tests). */
+    public static boolean slotted() { return slots() != null; }
 
     private static Slots slots() {
         Thread thread = Thread.currentThread();

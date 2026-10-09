@@ -35,6 +35,28 @@ final class RegionalEntityTickLifecycleTest {
     }
 
     @Test
+    void theTickPassIsTheListForEachVisits() throws Exception {
+        Entity first = entity(201);
+        Entity second = entity(202);
+        Entity added = entity(203);
+        EntityTickList entities = new EntityTickList();
+        entities.add(first);
+        entities.add(second);
+        List<Entity> pass = RegionalChunkGameplayService.entityTickPass(entities);
+        List<Integer> visited = new ArrayList<>();
+        entities.forEach(entity -> {
+            visited.add(entity.getId());
+            if (entity == first) entities.add(added);
+        });
+        // S9-D11: an addition while forEach iterates goes to a copy, so forEach never visits it; neither does the pass
+        assertEquals(List.of(201, 202), visited);
+        assertEquals(List.of(first, second), pass);
+        List<Integer> after = new ArrayList<>();
+        entities.forEach(entity -> after.add(entity.getId()));
+        assertEquals(List.of(201, 202, 203), after);
+    }
+
+    @Test
     void entityDiscardedByQueuedOwnerWorkBeforeItsOwnerTurnIsSkipped() throws Exception {
         Entity arrow = entity(103);
         org.junit.jupiter.api.Assertions.assertFalse(RegionalChunkGameplayService.removedBeforeOwnerTurn(arrow));

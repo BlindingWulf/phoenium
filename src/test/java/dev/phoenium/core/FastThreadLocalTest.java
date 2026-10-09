@@ -55,6 +55,20 @@ class FastThreadLocalTest {
         local.remove();
     }
 
+    @Test void rebindingTheBoundThreadKeepsItsValues() throws Exception {
+        var local = new FastThreadLocal<String>();
+        AtomicReference<Object> seen = new AtomicReference<>();
+        inThread(new Thread(() -> {
+            boolean before = FastThreadLocal.slotted();
+            if (!FastThreadLocal.bindServerThread()) { seen.set("not bound"); return; }
+            local.set("kept");
+            boolean again = FastThreadLocal.bindServerThread();
+            seen.set(java.util.List.of(before, again, FastThreadLocal.slotted(), String.valueOf(local.get())));
+        }, "fast-rebind"));
+        assertEquals(java.util.List.of(false, true, true, "kept"), seen.get());
+        assertFalse(FastThreadLocal.slotted(), "the test thread is not slotted");
+    }
+
     @Test void aLiveBoundThreadKeepsItsSlots() throws Exception {
         var local = new FastThreadLocal<String>();
         var release = new java.util.concurrent.CountDownLatch(1);

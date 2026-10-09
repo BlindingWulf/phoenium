@@ -165,6 +165,11 @@ public final class RegionScheduler {
         new Selected(runtime, envelope, selection).run();
         return true;
     }
+    /** S9-D11: no owner inbox holds an envelope, so advanceOne would select nothing. */
+    public boolean inboxesEmpty() {
+        for (RegionRuntime value : runtimes.values()) if (!value.inboxEmpty()) return false;
+        return true;
+    }
     public boolean runOne(RegionRuntime runtime) {
         var head = runtime.peek().orElse(null);
         if (head != null && head.payload() instanceof TaskPayload.RegionalService service

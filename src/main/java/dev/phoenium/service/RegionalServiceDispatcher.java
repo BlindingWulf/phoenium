@@ -43,6 +43,9 @@ public final class RegionalServiceDispatcher implements RegionalServiceExecutor 
     private long nextOperation;
     private long nextSequence;
     private BooleanSupplier boundaryAdvancer = () -> false;
+    /** S9-D11: true while the topology boundary has no pending convergence or transition (the closure encloser would
+     * admit a uniformly routed key without advancing it); false until installed. */
+    private BooleanSupplier boundaryIdle = () -> false;
     private Predicate<Set<RoutingKey>> closureEncloser;
     private NeighborCascadeContinuation.Environment neighborCascades;
 
@@ -71,6 +74,9 @@ public final class RegionalServiceDispatcher implements RegionalServiceExecutor 
         neighborCascades = Objects.requireNonNull(environment, "environment");
     }
 
+    public void installBoundaryIdle(BooleanSupplier boundaryIdle) {
+        this.boundaryIdle = Objects.requireNonNull(boundaryIdle, "boundaryIdle");
+    }
     public void installClosureEncloser(Predicate<Set<RoutingKey>> closureEncloser) {
         if (this.closureEncloser != null && this.closureEncloser != closureEncloser)
             throw new IllegalStateException("regional service closure encloser already installed");
@@ -305,6 +311,61 @@ public final class RegionalServiceDispatcher implements RegionalServiceExecutor 
     private void drainSubmitted(Handle handle) {
         if (handle.state != Outcome.PENDING && settled(handle)) return;
         drain(handle);
+    }
+
+    /** One owner-turn body per item of a sequence (see {@link #executeEach}). */
+    @FunctionalInterface
+    public interface IndexedWork { void run(int index) throws Exception; }
+
+    /**
+     * S9-D11: for each {@code i} in order, {@code key = prepare.apply(i)} owner-free and then
+     * {@code executeAndDrain(key, kind, ignored -> body.run(i))}, except that while {@code world} is uniformly
+     * routed, consecutive items share one owner turn whenever nothing could have run between their per-item turns:
+     * no owner inbox holds work, no lease-release notice waits and the topology boundary is idle. The next item's
+     * {@code prepare} then runs inside the shared turn, where every helper that branches on owner authority takes
+     * its owned form: a key of a uniformly routed world admits its closure owned exactly when it would owner-free
+     * (the encloser, with an idle boundary, admits it without side effects). Each coalesced key is re-checked with
+     * {@link #requireCurrentOwner}. Otherwise the next item opens its own turn through {@link #executeAndDrain}, so
+     * queued work, a release notice or a boundary step comes first, as between per-item turns. A failure ends the
+     * sequence at its item. Every key must name {@code world}. Not for kinds that arm a neighbor cascade.
+     */
+    public void executeEach(dev.phoenium.core.WorldId world, int count, java.util.function.IntFunction<RoutingKey> prepare,
+                            RegionalServiceKind kind, IndexedWork body) {
+        Objects.requireNonNull(world, "world");
+        if (NeighborCascadeContinuation.armable(kind))
+            throw new IllegalArgumentException("a cascade kind takes one turn per item: " + kind);
+        int[] next = {0};
+        while (next[0] < count) {
+            int first = next[0];
+            RoutingKey firstKey = requireWorld(world, prepare.apply(first));
+            if (directory.uniformRoute(world) == null) {
+                executeAndDrain(firstKey, kind, ignored -> body.run(first));
+                next[0] = first + 1;
+                continue;
+            }
+            executeAndDrain(firstKey, kind, execution -> {
+                body.run(first);
+                next[0] = first + 1;
+                while (next[0] < count && coalescable(execution, world)) {
+                    int index = next[0];
+                    requireCurrentOwner(requireWorld(world, prepare.apply(index)));
+                    body.run(index);
+                    next[0] = index + 1;
+                }
+            });
+        }
+    }
+    /** S9-D11: inside {@code execution}'s turn, whether further work of uniformly routed {@code world} may share it
+     * with nothing skipped between: no owner inbox holds work, no lease-release notice waits, the topology boundary
+     * is idle (an owner-free closure would be admitted without side effects), the failure barrier is clear and
+     * {@code world} is still uniformly routed. */
+    public boolean coalescable(Execution execution, dev.phoenium.core.WorldId world) {
+        return scheduler.inboxesEmpty() && boundaryIdle.getAsBoolean() && !scheduler.failureBarrier().tripped()
+            && !execution.runtime().leases().releaseNoticesPending() && directory.uniformRoute(world) != null;
+    }
+    private static RoutingKey requireWorld(dev.phoenium.core.WorldId world, RoutingKey key) {
+        if (!key.world().equals(world)) throw new IllegalArgumentException("sequence key outside its world: " + key);
+        return key;
     }
 
     public void executeAndDrain(RoutingKey key, RegionalServiceKind kind, RegionalServiceWork body) {

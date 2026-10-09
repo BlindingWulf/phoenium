@@ -67,9 +67,11 @@ public final class FallingBlockPortalTransitionManager implements AutoCloseable 
         if (entry != null && !entry.retained) cancel(entry, "UNRETAINED_PREFIX");
         if (ticking.get() == block) ticking.set(null);
     }
+    /** S9-D11: {@link #advance()} would settle nothing now. */
+    public boolean quiet() { return active.isEmpty(); }
     public int advance() {
         if (OwnershipContext.current().isPresent()) throw new IllegalStateException("falling-block coordinator retained source owner");
-        if (closed || !authority.running()) return 0;
+        if (closed || !authority.running() || active.isEmpty()) return 0; // S9-D11: nothing to settle
         var entries = new ArrayList<>(active.values());
         entries.sort(Comparator.comparingLong(entry -> entry.token.generation()));
         int settled = 0;

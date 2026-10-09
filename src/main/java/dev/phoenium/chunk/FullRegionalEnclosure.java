@@ -27,6 +27,11 @@ public final class FullRegionalEnclosure {
         if (OwnershipContext.current().isPresent()) return false;
         return coordinator.advance();
     }
+    /** S9-D11: no pending convergence or transition, so {@link #enclose} admits a uniformly routed key without
+     * advancing the boundary. */
+    public boolean idle() {
+        return !coordinator.hasPendingConvergence() && !coordinator.hasPendingTransition();
+    }
     public void installStateMigration(RegionalStateMigration stateMigration) {
         coordinator.installStateMigration(stateMigration);
     }

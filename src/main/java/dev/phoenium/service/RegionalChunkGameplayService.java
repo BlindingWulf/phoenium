@@ -100,34 +100,48 @@ public final class RegionalChunkGameplayService implements NaturalSpawnContinuat
         var access = (RegionalSpawnStateAccess) (Object) state;
         Object2IntOpenHashMap<MobCategory> counts = access.phoenium$getMobCategoryCounts();
         PotentialCalculator potential = access.phoenium$getSpawnPotential();
-        for (Entity originalEntity : originalEntities) {
-            FullEntityFacts.Candidate candidate = finishing.entityFacts.trackingCandidate(level, originalEntity);
-            Contribution[] captured = new Contribution[1]; RoutingKey key = key(candidate);
-            dispatcher.executeAndDrain(key, RegionalServiceKind.SPAWN_STATE_CAPTURE, ignored -> {
-                requireEntity(candidate, key);
-                Entity entity = candidate.alias();
-                if (entity instanceof Mob mob && (mob.isPersistenceRequired() || mob.requiresCustomPersistence())) return;
-                MobCategory category = entity.getType().getCategory();
-                if (category == MobCategory.MISC) return;
-                BlockPos position = entity.blockPosition();
-                ((RegionalServerChunkCacheAccess) cache).phoenium$invokeGetFullChunk(ChunkPos.pack(position), chunk -> {
-                    dispatcher.requireCurrentOwner(new RoutingKey(world, chunk.getPos().x(), chunk.getPos().z()));
-                    MobSpawnSettings.MobSpawnCost cost = chunk.getNoiseBiome(QuartPos.fromBlock(position.getX()),
-                        QuartPos.fromBlock(position.getY()), QuartPos.fromBlock(position.getZ()))
-                        .value().getMobSettings().getMobSpawnCost(entity.getType());
-                    captured[0] = new Contribution(position.immutable(), category,
-                        cost == null ? 0.0 : cost.charge(), entity instanceof Mob);
-                });
-            });
-            Contribution contribution = captured[0];
+        // S9-D11: vanilla reads every entity in one pass, so the entities are selected first; each one's capture turn
+        // goes through executeEach (consecutive turns share one where nothing could run between them), and its
+        // contribution is applied right after its own capture, in iteration order, as before.
+        List<Entity> entities = new ArrayList<>();
+        for (Entity originalEntity : originalEntities) entities.add(originalEntity);
+        FullEntityFacts.Candidate[] candidates = new FullEntityFacts.Candidate[entities.size()];
+        RoutingKey[] keys = new RoutingKey[entities.size()];
+        dispatcher.executeEach(world, entities.size(), i -> {
+            candidates[i] = finishing.entityFacts.trackingCandidate(level, entities.get(i));
+            return keys[i] = key(candidates[i]);
+        }, RegionalServiceKind.SPAWN_STATE_CAPTURE, i -> {
+            FullEntityFacts.Candidate candidate = candidates[i]; RoutingKey key = keys[i];
+            candidates[i] = null;
+            Contribution contribution = spawnStateContribution(candidate, key);
             if (contribution != null) {
                 potential.addCharge(contribution.position, contribution.charge);
                 if (contribution.mob) caps.addMob(ChunkPos.containing(contribution.position), contribution.category);
                 counts.addTo(contribution.category, 1); entityContributions = Math.incrementExact(entityContributions);
             }
-        }
+        });
         active.spawnState = state;
         return state;
+    }
+
+    /** One entity's owned spawn-state read: null when it contributes nothing. */
+    private Contribution spawnStateContribution(FullEntityFacts.Candidate candidate, RoutingKey key) {
+        requireEntity(candidate, key);
+        Entity entity = candidate.alias();
+        if (entity instanceof Mob mob && (mob.isPersistenceRequired() || mob.requiresCustomPersistence())) return null;
+        MobCategory category = entity.getType().getCategory();
+        if (category == MobCategory.MISC) return null;
+        BlockPos position = entity.blockPosition();
+        Contribution[] captured = new Contribution[1];
+        ((RegionalServerChunkCacheAccess) cache).phoenium$invokeGetFullChunk(ChunkPos.pack(position), chunk -> {
+            dispatcher.requireCurrentOwner(new RoutingKey(world, chunk.getPos().x(), chunk.getPos().z()));
+            MobSpawnSettings.MobSpawnCost cost = chunk.getNoiseBiome(QuartPos.fromBlock(position.getX()),
+                QuartPos.fromBlock(position.getY()), QuartPos.fromBlock(position.getZ()))
+                .value().getMobSettings().getMobSpawnCost(entity.getType());
+            captured[0] = new Contribution(position.immutable(), category,
+                cost == null ? 0.0 : cost.charge(), entity instanceof Mob);
+        });
+        return captured[0];
     }
 
     public void collectSpawningChunks(ChunkMap expected, List<LevelChunk> output) {
@@ -347,7 +361,15 @@ public final class RegionalChunkGameplayService implements NaturalSpawnContinuat
         // its keys, so the cut is captured (and its sessions validated) once for the pass, and per entity only where
         // a closure is built (another routing, or a dragon).
         capturePlayers();
-        forEachLiveEntityTickAlias(entities, entity -> {
+        // S9-D11: the pass is the list as forEach would visit it; an entity removed before it is reached is skipped.
+        // After an entity's uniformly admitted owner turn, the following entities may tick inside it
+        // (tickFollowingEntities); each entity still ends with the owner-free portal advance, which a shared turn
+        // skips only while it would do nothing.
+        List<Entity> pass = entityTickPass(entities);
+        int[] next = {0};
+        while (next[0] < pass.size()) {
+            Entity entity = pass.get(next[0]++);
+            if (entity.isRemoved()) continue;
             // A dragon lazily reads the native 24-node heightmap ring. Selection can change
             // while the owner-free FULL inputs settle, so repeat its preflight before any
             // native body or RNG draw. A persistently moving cut waits for the next tick.
@@ -371,7 +393,7 @@ public final class RegionalChunkGameplayService implements NaturalSpawnContinuat
                 DragonHeightmapCut dragonCut = fightOrigin == null ? null : prepareDragonHeightmapInputs(dragonInputs);
                 if (fightOrigin != null && dragonCut == null) continue;
                 boolean[] stale = {false};
-                dispatcher.executeAndDrain(key, RegionalServiceKind.CHUNK_GAMEPLAY, ignored -> {
+                dispatcher.executeAndDrain(key, RegionalServiceKind.CHUNK_GAMEPLAY, execution -> {
                     if (removedBeforeOwnerTurn(entity)) return;
                     if (dragonCut != null && (!((EnderDragon) entity).getFightOrigin().equals(fightOrigin)
                             || !dragonInputRoutesCurrent(key, admittedClosure) || !dragonCut.current())) {
@@ -384,13 +406,45 @@ public final class RegionalChunkGameplayService implements NaturalSpawnContinuat
                     if (!finishing.entityFacts.validTrackingVehicle(vehicle))
                         throw new IllegalStateException("entity tick vehicle relation changed");
                     output.accept(entity);
+                    if (admittedClosure == null) tickFollowingEntities(execution, pass, next, output);
                 });
                 if (!stale[0]) break;
             }
             // The enclosing native owner callback has returned. Finish this finite
             // portal operation before the next entity tick/RNG draw in native order.
             dev.phoenium.Phoenium.liveRuntime().advanceMobPortalAfterEntityCallback();
-        });
+        }
+    }
+
+    /**
+     * S9-D11: inside an entity's uniformly admitted owner turn, the following entities of the pass tick in the same
+     * turn while their own turns would follow it with nothing in between: the turn is coalescable (no owner work
+     * queued, no release notice, idle boundary, clear barrier, still uniform) and every portal coordinator is quiet,
+     * so the owner-free advance after each entity would do nothing. Each entity keeps its preparation, owner checks
+     * and native callback, in pass order; a removed one is skipped as before; a dragon, which builds a closure and
+     * may retry, takes its own turn.
+     */
+    private void tickFollowingEntities(RegionalServiceDispatcher.Execution execution, List<Entity> pass, int[] next,
+                                       Consumer<Entity> output) {
+        var live = dev.phoenium.Phoenium.liveRuntime();
+        while (next[0] < pass.size() && live.mobPortalsQuiet() && dispatcher.coalescable(execution, world)) {
+            Entity entity = pass.get(next[0]);
+            if (entity instanceof EnderDragon) return;
+            next[0]++;
+            if (entity.isRemoved()) continue;
+            FullEntityFacts.Candidate source = finishing.entityFacts.trackingCandidate(level, entity);
+            List<FullEntityFacts.Candidate> passengers = finishing.entityFacts.trackingPassengers(source);
+            FullEntityFacts.VehicleRelation vehicle = finishing.entityFacts.trackingVehicle(source);
+            RoutingKey key = key(source);
+            if (!dispatcher.requireUniformClosure(key))
+                throw new IllegalStateException("coalesced entity tick left its uniformly routed world");
+            requireEntity(source, key);
+            if (!finishing.entityFacts.validTrackingPassengers(source, passengers))
+                throw new IllegalStateException("entity tick passenger relation changed");
+            if (!finishing.entityFacts.validTrackingVehicle(vehicle))
+                throw new IllegalStateException("entity tick vehicle relation changed");
+            output.accept(entity);
+        }
     }
 
     /** An entity tick's footprint: its own, passenger and vehicle halos, recipient players and dragon inputs. */
@@ -500,10 +554,15 @@ public final class RegionalChunkGameplayService implements NaturalSpawnContinuat
     /** EntityTickList keeps iterating its old snapshot when an entity is removed during that
      * iteration. ServerLevel's native consumer checks isRemoved() before any other entity work;
      * preserve that boundary before requiring current owner-published tracking facts. */
+    /** S9-D11: the entities EntityTickList.forEach visits, in its order. A change while it iterates goes to a copy,
+     * so it visits the list as it stood when the pass began; this is that list, taken once. */
+    static List<Entity> entityTickPass(EntityTickList entities) {
+        List<Entity> pass = new ArrayList<>();
+        entities.forEach(pass::add);
+        return pass;
+    }
     static void forEachLiveEntityTickAlias(EntityTickList entities, Consumer<Entity> output) {
-        entities.forEach(entity -> {
-            if (!entity.isRemoved()) output.accept(entity);
-        });
+        for (Entity entity : entityTickPass(entities)) if (!entity.isRemoved()) output.accept(entity);
     }
 
     /** The same native boundary at the owner turn. This entity's own drain can first deliver older
@@ -821,7 +880,7 @@ public final class RegionalChunkGameplayService implements NaturalSpawnContinuat
         if (retained != null && retained.facts == facts && retained.directory == directory && sameOrder(retained.order, live)) {
             FullFinishingScoreboard.TrackingCut cut = retained.captured.cut;
             requirePublishedPositionAccess(retained.order);
-            for (var session : cut.sessions()) finishing.scoreboard.requireTrackingSession(cut, session);
+            finishing.scoreboard.requireTrackingCut(cut);
             return retained.captured;
         }
         List<ServerPlayer> order = List.copyOf(live);
@@ -890,7 +949,7 @@ public final class RegionalChunkGameplayService implements NaturalSpawnContinuat
             published.position(), candidate.fact().spectator());
     }
     private void requireEntity(FullEntityFacts.Candidate candidate, RoutingKey key) {
-        String objectId = candidate.fact().uuid().toString();
+        String objectId = candidate.fact().objectId();
         var binding = objects.current(objectId).orElseThrow(() -> new IllegalStateException(
             "spawn-state candidate lacks regional lifecycle ownership id=" + objectId
                 + " runtimeId=" + candidate.fact().runtimeId() + " type=" + candidate.fact().type()
@@ -943,7 +1002,9 @@ public final class RegionalChunkGameplayService implements NaturalSpawnContinuat
     private static final class RetainedLocalMobCaps extends LocalMobCapCalculator {
         private final ChunkMap map; private final java.util.function.Supplier<List<PlayerProjection>> players;
         private final IdentityHashMap<ServerPlayer, Object2IntOpenHashMap<MobCategory>> counts = new IdentityHashMap<>();
-        private final Map<Long, List<PlayerProjection>> near = new HashMap<>();
+        // S9-D11: packed chunk keys; a boxed-Long HashMap collides on x ^ z and tree-bins with reflective compares
+        private final it.unimi.dsi.fastutil.longs.Long2ObjectOpenHashMap<List<PlayerProjection>> near =
+            new it.unimi.dsi.fastutil.longs.Long2ObjectOpenHashMap<>();
         RetainedLocalMobCaps(ChunkMap map, java.util.function.Supplier<List<PlayerProjection>> players) {
             super(map); this.map = map; this.players = players;
         }
@@ -959,10 +1020,18 @@ public final class RegionalChunkGameplayService implements NaturalSpawnContinuat
             return false;
         }
         private List<PlayerProjection> near(ChunkPos pos) {
-            return near.computeIfAbsent(pos.pack(), ignored -> {
-                if (!map.getDistanceManager().hasPlayersNearby(pos.pack()).toBoolean(true)) return List.of();
-                return players.get().stream().filter(player -> close(player, pos)).toList();
-            });
+            long packed = pos.pack();
+            List<PlayerProjection> found = near.get(packed);
+            if (found == null) {
+                if (!map.getDistanceManager().hasPlayersNearby(packed).toBoolean(true)) found = List.of();
+                else {
+                    List<PlayerProjection> close = new ArrayList<>();
+                    for (PlayerProjection player : players.get()) if (close(player, pos)) close.add(player);
+                    found = List.copyOf(close);
+                }
+                near.put(packed, found);
+            }
+            return found;
         }
     }
 }

@@ -12,6 +12,8 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 abstract class ServerThreadBindingMixin {
     @Inject(method = "runServer()V", at = @At("HEAD"), require = 1)
     private void phoenium$bindServerThread(CallbackInfo ci) {
-        FastThreadLocal.bindServerThread();
+        boolean bound = FastThreadLocal.bindServerThread();
+        org.slf4j.LoggerFactory.getLogger("Phoenium").info("PHOENIUM_FAST_LOCALS thread={} bound={} slotted={}",
+            Thread.currentThread().getName(), bound, FastThreadLocal.slotted());
     }
 }

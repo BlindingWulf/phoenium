@@ -102,10 +102,12 @@ public final class ThrowableProjectilePortalTransitionManager implements AutoClo
         }
     }
 
+    /** S9-D11: {@link #advance()} would settle nothing now. */
+    public boolean quiet() { return active.isEmpty(); }
     public int advance() {
         if (OwnershipContext.current().isPresent())
             throw new IllegalStateException("throwable projectile coordinator retained source owner");
-        if (closed || !authority.running()) return 0;
+        if (closed || !authority.running() || active.isEmpty()) return 0; // S9-D11: nothing to settle
         List<Entry> entries = new ArrayList<>(active.values());
         entries.sort(Comparator.comparingLong(e -> e.token.generation()));
         int settled = 0;

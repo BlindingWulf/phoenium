@@ -137,9 +137,12 @@ public final class GatewayExitBoundary implements AutoCloseable {
     }
 
     /** Owner-free boundary: runs the unmodified native lookup for every queued request. */
+    /** S9-D11: {@link #advance()} would settle nothing now. */
+    public boolean quiet() { return requests.isEmpty(); }
     public int advance() {
         if (OwnershipContext.current().isPresent())
             throw new IllegalStateException("gateway exit coordinator retained owner authority");
+        if (requests.isEmpty()) return 0; // S9-D11: nothing requested
         int count = 0;
         RuntimeException failure = null;
         for (Key key : new ArrayList<>(requests.keySet())) {

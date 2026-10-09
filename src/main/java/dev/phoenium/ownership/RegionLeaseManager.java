@@ -64,6 +64,10 @@ public final class RegionLeaseManager {
             notifyReleased(notices);
         }
     }
+    /** S9-D11: a release notice is waiting for the active lease (or selection) to end. */
+    public boolean releaseNoticesPending() {
+        metadataGate.lock(); try { return !releaseNotices.isEmpty(); } finally { metadataGate.unlock(); }
+    }
     public boolean hasClaimOrSelection() {
         metadataGate.lock(); try { return active != null || selection != null; } finally { metadataGate.unlock(); }
     }
