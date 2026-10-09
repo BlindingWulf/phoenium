@@ -105,11 +105,22 @@ public final class RegionScheduler {
         }
         return acknowledged;
     }
+    private static final Comparator<RegionRuntime> BY_ID = Comparator.comparing(RegionRuntime::id);
     public void advanceOne() {
         if (!acceptsSimulationWork()) return;
-        for (RegionRuntime runtime : runtimes.values().stream()
-                .filter(value -> value.lifecycle() == RegionLifecycle.READY && !value.transitioning() && value.inboxSize() > 0)
-                .sorted(Comparator.comparing(RegionRuntime::id)).toList()) {
+        // S9-D6: the same eligible snapshot in the same id order, without a stream per turn; a single eligible
+        // runtime (the common case: one region has queued work) needs no sort.
+        RegionRuntime only = null;
+        java.util.ArrayList<RegionRuntime> eligible = null;
+        for (RegionRuntime value : runtimes.values()) {
+            if (value.lifecycle() != RegionLifecycle.READY || value.transitioning() || value.inboxSize() <= 0) continue;
+            if (only == null && eligible == null) { only = value; continue; }
+            if (eligible == null) { eligible = new java.util.ArrayList<>(); eligible.add(only); }
+            eligible.add(value);
+        }
+        if (eligible == null) { if (only != null) runOne(only); return; }
+        eligible.sort(BY_ID);
+        for (RegionRuntime runtime : eligible) {
             if (runOne(runtime)) return;
         }
     }

@@ -145,14 +145,24 @@ public final class RegionDirectory {
         if (view.get() != replacement) throw new IllegalStateException("wrong topology publication signal");
         changed();
     }
-    public record View(TopologyGeneration generation, Map<RoutingKey, RegionRoute> routes, Map<dev.phoenium.core.WorldId, RegionRoute> worldDefaults) {
-        public View { routes = Map.copyOf(routes); worldDefaults = Map.copyOf(worldDefaults); }
+    public record View(TopologyGeneration generation, Map<RoutingKey, RegionRoute> routes,
+                       Map<dev.phoenium.core.WorldId, RegionRoute> worldDefaults,
+                       java.util.Set<dev.phoenium.core.WorldId> explicitRouteWorlds) {
+        public View(TopologyGeneration generation, Map<RoutingKey, RegionRoute> routes,
+                    Map<dev.phoenium.core.WorldId, RegionRoute> worldDefaults) {
+            this(generation, routes, worldDefaults, null);
+        }
+        /** S9-D6: explicitRouteWorlds is always derived from routes (any supplied value is ignored), so the
+         * per-resolve scan of every route key becomes one set lookup. */
+        public View {
+            routes = Map.copyOf(routes); worldDefaults = Map.copyOf(worldDefaults);
+            java.util.Set<dev.phoenium.core.WorldId> worlds = new java.util.HashSet<>();
+            for (RoutingKey routeKey : routes.keySet()) worlds.add(routeKey.world());
+            explicitRouteWorlds = java.util.Set.copyOf(worlds);
+        }
         /** True when the world carries at least one explicit route, which disables default fallback for it. */
         public boolean hasExplicitRoutesForWorld(dev.phoenium.core.WorldId world) {
-            for (RoutingKey routeKey : routes.keySet()) {
-                if (routeKey.world().equals(world)) return true;
-            }
-            return false;
+            return world != null && explicitRouteWorlds.contains(world);
         }
     }
 }

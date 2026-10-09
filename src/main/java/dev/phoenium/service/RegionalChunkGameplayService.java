@@ -250,7 +250,9 @@ public final class RegionalChunkGameplayService implements NaturalSpawnContinuat
         for (PlayerProjection player : cycle.players)
             if (Math.abs((long) player.key.x() - source.x()) <= visibleRecipientRadius
                     && Math.abs((long) player.key.z() - source.z()) <= visibleRecipientRadius) footprint.add(player.key);
-        dispatcher.ensureClosure(Set.copyOf(footprint));
+        // S9-D6: Set.copyOf of the same LinkedHashSet is deterministic; build it once for both uses.
+        Set<RoutingKey> closure = Set.copyOf(footprint);
+        dispatcher.ensureClosure(closure);
         Cycle capturedCycle = cycle;
         Consumer<Runnable> owned = body -> {
             dispatcher.requireCurrentOwner(source); capturedCycle.callbackKey = source;
@@ -263,7 +265,7 @@ public final class RegionalChunkGameplayService implements NaturalSpawnContinuat
                 naturalSpawnOrdinal = Math.incrementExact(naturalSpawnOrdinal),
                 () -> cycle == capturedCycle && naturalSpawnClosureCurrent(source, footprint))) {
             dispatcher.executeAndDrain(source, RegionalServiceKind.CHUNK_GAMEPLAY, ignored -> owned.accept(() -> spawn.original(original)));
-            spawn.finish(body -> { dispatcher.requireCurrentClosure(Set.copyOf(footprint)); owned.accept(body); });
+            spawn.finish(body -> { dispatcher.requireCurrentClosure(closure); owned.accept(body); });
         }
         chunkCallbacks = Math.incrementExact(chunkCallbacks);
     }

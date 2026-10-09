@@ -669,6 +669,9 @@ public final class FullEntityFacts {
         return null;
     }
     public static boolean foreign(Entity entity) {
+        // S9-D6: Entity.getId/getUUID/isRemoved/getScoreboardName reach this on every call. Outside any FULL
+        // reservation scope currentReservation() is null, so the answer is false whatever PUBLISHING holds.
+        if (!FullFinishingServices.fullScopeOpen()) return false;
         if (PUBLISHING.get()) return false;
         FullFinishingServices.Reservation full = FullFinishingServices.currentReservation();
         return full != null && !full.owns(entity) && !FullSavedContextInputs.ownsSelectorCandidate(entity);

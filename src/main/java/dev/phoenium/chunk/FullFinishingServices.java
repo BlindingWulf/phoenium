@@ -26,6 +26,12 @@ public final class FullFinishingServices {
     private static final Map<Object, WorldResource> ENVIRONMENTS = new IdentityHashMap<>();
     private static final ReentrantLock DIRECTORY = new ReentrantLock();
     private static final ThreadLocal<Scope> CURRENT = new ThreadLocal<>();
+    /** S9-D6: FULL reservation scopes entered and not yet closed, on all threads. A scope is counted after it
+     * becomes its thread's CURRENT and uncounted once, after its close restored the parent; a nested scope is
+     * full only through an open counted ancestor. Zero therefore proves currentReservation() is null on every
+     * thread, without the ThreadLocal probe. */
+    private static final java.util.concurrent.atomic.AtomicInteger OPEN_FULL_SCOPES = new java.util.concurrent.atomic.AtomicInteger();
+    public static boolean fullScopeOpen() { return OPEN_FULL_SCOPES.get() != 0; }
     private static final int MAX_RESERVATIONS = 256;
     private final MinecraftServer server;
     public final FullLegacyOwners legacyOwners;
@@ -206,7 +212,10 @@ public final class FullFinishingServices {
         } finally { metadata.unlock(); }
     }
 
-    public static boolean finishing() { Scope scope = CURRENT.get(); return scope != null && scope.full(); }
+    public static boolean finishing() {
+        if (OPEN_FULL_SCOPES.get() == 0) return false;
+        Scope scope = CURRENT.get(); return scope != null && scope.full();
+    }
     /** Bounded diagnostics only: describes the current thread's service capability without granting one. */
     public static String currentTurn(MinecraftServer server) {
         Scope scope = CURRENT.get();
@@ -254,6 +263,7 @@ public final class FullFinishingServices {
         scope.requireCurrent(); return scope.fullReservation();
     }
     public static Reservation currentReservation() {
+        if (OPEN_FULL_SCOPES.get() == 0) return null;
         Scope scope = CURRENT.get();
         if (scope == null || !scope.full()) return null;
         scope.requireCurrent(); return scope.fullReservation();
@@ -504,7 +514,7 @@ public final class FullFinishingServices {
                         || !revisions.equals(cut)) throw new ChunkProtocolException("stale finishing service reservation at original suffix");
                 entered = true;
                 Scope scope = new Scope(FullFinishingServices.this, parent, this, null, sequence);
-                scope.claim = claim; active = scope; fullEntries++; CURRENT.set(scope); return scope;
+                scope.claim = claim; active = scope; fullEntries++; CURRENT.set(scope); OPEN_FULL_SCOPES.incrementAndGet(); return scope;
             } finally { metadata.unlock(); }
         }
         @Override public void close() {
@@ -564,6 +574,7 @@ public final class FullFinishingServices {
             }
             finally { service.metadata.unlock(); }
             if (parent == null) CURRENT.remove(); else CURRENT.set(parent);
+            if (reservation != null) OPEN_FULL_SCOPES.decrementAndGet();
             try { if (reservation != null) reservation.requireHealthy(); }
             finally { service.tryFinishShutdown(); }
         }
