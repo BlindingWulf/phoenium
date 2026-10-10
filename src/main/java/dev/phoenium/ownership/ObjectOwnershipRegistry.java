@@ -22,9 +22,12 @@ public final class ObjectOwnershipRegistry {
      * entries keeps a REMOVED record for every object ever admitted (a re-admission continues its incarnation and
      * object epoch), so it grows with entity churn; current-owner lookups only ever accept live records. */
     private final Map<String, ObjectOwnership> live = new java.util.HashMap<>();
+    /** S9-D17: entry writes (store, close), counted under the gate after the write; read without it. */
+    private volatile long writes;
     private void store(String objectId, ObjectOwnership binding) {
         entries.put(objectId, binding);
         if (binding.state() == ObjectOwnership.State.REMOVED) live.remove(objectId); else live.put(objectId, binding);
+        writes++;
     }
     private final ReentrantLock metadataGate = new ReentrantLock();
     private boolean closed;
@@ -192,6 +195,37 @@ public final class ObjectOwnershipRegistry {
         if (found == null) return Optional.empty();
         return Optional.of(requireOwner(found, objectId, found.binding.objectEpoch(), executingRegion));
     }
+    /** S9-D17: a requireCurrentOwnerIfPresent answer that a caller may retain and offer back. */
+    public static final class OwnerAnswer {
+        private final String objectId; private final RegionId region; private final RegionDirectory.View view;
+        private final long writes; private final Current found;
+        private OwnerAnswer(String objectId, RegionId region, RegionDirectory.View view, long writes, Current found) {
+            this.objectId = objectId; this.region = region; this.view = view; this.writes = writes; this.found = found;
+        }
+        public ObjectOwnership binding() { return found.binding; }
+    }
+    /**
+     * S9-D17: requireCurrentOwnerIfPresent(objectId, executingRegion), with {@code retained} an earlier answer (or
+     * null). currentLocked's result is a function of the entries and the directory view (its only mutation, a
+     * route re-stamp, is itself a counted write), so while no entry was written since that answer and the view is
+     * the one it resolved in, it is the same binding and route; requireOwner, with its ownership-context check,
+     * runs on every call. Returns the answer to retain, or null where requireCurrentOwnerIfPresent is empty.
+     */
+    public OwnerAnswer requireCurrentOwner(String objectId, RegionId executingRegion, OwnerAnswer retained) {
+        RegionDirectory.View view = directory.snapshot();
+        if (retained != null && retained.writes == writes && retained.view == view && retained.objectId == objectId
+                && retained.region.equals(executingRegion)) {
+            requireOwner(retained.found, objectId, retained.found.binding.objectEpoch(), executingRegion);
+            return retained;
+        }
+        Current found; long written;
+        metadataGate.lock();
+        try { found = currentLocked(objectId); written = writes; } finally { metadataGate.unlock(); }
+        if (found == null) return null;
+        requireOwner(found, objectId, found.binding.objectEpoch(), executingRegion);
+        // the view read first is the one the resolution used when it is still published after it
+        return new OwnerAnswer(objectId, executingRegion, directory.snapshot() == view ? view : null, written, found);
+    }
     // S9-D12: the route is the one current() decided against (the binding's owner is that route's region); the
     // former second resolution re-read the same published view.
     private static ObjectOwnership requireOwner(Current found, String objectId, OwnerEpoch expectedObjectEpoch, RegionId executingRegion) {
@@ -208,7 +242,7 @@ public final class ObjectOwnershipRegistry {
     public void close() {
         if (OwnershipContext.current().isPresent()) throw new IllegalStateException("object registry closed under ownership");
         metadataGate.lock();
-        try { closed = true; entries.clear(); live.clear(); }
+        try { closed = true; entries.clear(); live.clear(); writes++; }
         finally { metadataGate.unlock(); }
     }
     public int playerCount() { return (int) entries.values().stream().filter(value -> value.kind() == OwnedObjectKind.PLAYER && value.state() == ObjectOwnership.State.OWNED).count(); }

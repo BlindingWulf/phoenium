@@ -176,6 +176,10 @@ public final class RegionalTrackingService {
         RangeProjection[] preparedRelations = new RangeProjection[count];
         // S9-D16: entry i's preview at index i (entries are distinct; every pass below walks the same indices)
         Preview[] previews = new Preview[count];
+        // S9-D17: read before any candidate below is looked up, so it never claims a later publication (as in
+        // refreshCandidates): each previewed non-player entry is then verified at it, and a move before the next
+        // publication keeps its candidate without a lookup or a re-route.
+        long stamp = finishing.entityFacts.nonPlayerPublications();
         dispatcher.executeEach(world, count, i -> {
             FullEntityFacts.Candidate prepared = finishing.entityFacts.trackingCandidate(level, entries.get(i).entity);
             preparedCandidates[i] = prepared;
@@ -189,7 +193,7 @@ public final class RegionalTrackingService {
             RangeProjection relation = preparedRelations[i];
             Preview[] captured = new Preview[1];
             {
-                requireEntityOwner(candidate, key);
+                requireEntityOwner(entry, candidate, key);
                 requireEntry(entry, candidate);
                 RegionalTrackedEntityAccess tracker = access(entry.tracker);
                 SectionPos now = SectionPos.of(entry.entity);
@@ -213,11 +217,14 @@ public final class RegionalTrackingService {
                     relation.effectiveRange, seenListeners, candidate, relation);
             }
             previews[i] = Objects.requireNonNull(captured[0]);
+            // S9-D17: read before route() resolves the owner (as refreshCandidate does), so it never names a later view
+            RegionDirectory.View routedIn = directory.snapshot();
             synchronized (this) {
                 entry.candidate = candidate;
                 entry.key = key;
                 entry.owner = route(key).region();
-                entry.routedView = null;
+                entry.routedView = routedIn;
+                if (!(entry.entity instanceof net.minecraft.world.entity.player.Player)) entry.verifiedAt = stamp;
                 entry.effectiveRange = captured[0].effectiveRange;
                 entry.seenConnections = captured[0].seenConnections;
                 index.update(entry.id, key, entry.owner);
@@ -260,7 +267,7 @@ public final class RegionalTrackingService {
                     // Retire the old player preview; the next tick will recapture its route.
                     if (entry.entity instanceof ServerPlayer
                             && !finishing.entityFacts.validTrackingCandidate(preview.candidate)) return;
-                    requireEntityOwner(preview.candidate, preview.key);
+                    requireEntityOwner(entry, preview.candidate, preview.key);
                     requireEntryRelation(entry, preview.candidate, preview.relation);
                     RegionalTrackedEntityAccess tracker = access(entry.tracker);
                     if (preview.sectionChanged) {
@@ -288,7 +295,7 @@ public final class RegionalTrackingService {
                 {
                     if (entry.entity instanceof ServerPlayer
                             && !finishing.entityFacts.validTrackingCandidate(preview.candidate)) return;
-                    requireEntityOwner(preview.candidate, preview.key);
+                    requireEntityOwner(entry, preview.candidate, preview.key);
                     requireEntryRelation(entry, preview.candidate, preview.relation);
                     for (PlayerReceipt player : candidates) {
                         if (currentTickPlayer(player, connectionCut, deferredPlayers))
@@ -315,7 +322,7 @@ public final class RegionalTrackingService {
             RangeProjection relation = prepareRange(entry.candidate);
             var seen = new java.util.concurrent.atomic.AtomicReference<Set<Object>>();
             dispatcher.executeAndDrain(entry.key, RegionalServiceKind.TRACKING_UPDATE, ignored -> {
-                requireEntityOwner(entry.candidate, entry.key);
+                requireEntityOwner(entry, entry.candidate, entry.key);
                 requireEntry(entry, entry.candidate);
                 requireRelation(relation);
                 Set<Object> exact = java.util.Collections.newSetFromMap(new IdentityHashMap<>());
@@ -425,7 +432,7 @@ public final class RegionalTrackingService {
         if (player != plan.source.alias()) throw new IllegalStateException("addEntity reverse pairing player changed");
         if (!plan.selectedTrackers.contains(trackerIdentity)) return;
         Entry entry = retainedTracker(trackerIdentity, "addEntity reverse pairing tracker is not retained");
-        requireEntityOwner(entry.candidate, entry.key);
+        requireEntityOwner(entry, entry.candidate, entry.key);
         requireEntry(entry, entry.candidate);
         requireRelation(publishedRange(entry.candidate));
         finishing.scoreboard.requireTrackingSession(plan.connections,
@@ -502,7 +509,7 @@ public final class RegionalTrackingService {
         if (player != plan.entity) throw new IllegalStateException("removeEntity reverse player changed");
         if (!plan.selectedTrackers.contains(trackerIdentity)) return;
         Entry entry = retainedTracker(trackerIdentity, "removeEntity tracker is not retained");
-        requireEntityOwner(entry.candidate, entry.key);
+        requireEntityOwner(entry, entry.candidate, entry.key);
         requireEntry(entry, entry.candidate);
         requireRelation(publishedRange(entry.candidate));
         finishing.scoreboard.requireTrackingSession(plan.connections, plan.players.get(player).session);
@@ -580,8 +587,7 @@ public final class RegionalTrackingService {
         FullFinishingScoreboard.TrackingCut cut = finishing.scoreboard.trackingCut(connectionPlayers);
         Map<ServerPlayer, PlayerReceipt> players = playerReceipts(cut);
         PlayerReceipt moving = requirePlayer(players, player);
-        Map<Object, PlayerReceipt> listeners = new IdentityHashMap<>();
-        players.values().forEach(receipt -> listeners.put(receipt.session.listener(), receipt));
+        // S9-D17: (a listener-to-receipt map built here was never read)
         List<Entry> entries;
         synchronized (this) { entries = index.values(); }
         RangeProjection movingRelation = prepareRange(moving.candidate);
@@ -706,7 +712,7 @@ public final class RegionalTrackingService {
         Entry entry = retainedTracker(trackerIdentity, "move tracker is not retained");
         // The tracked entity can enter removal after selection; its own removeEntity broadcast owns the exit.
         if (removalInProgress(entry.entity, player)) return null;
-        requireEntityOwner(entry.candidate, entry.key);
+        requireEntityOwner(entry, entry.candidate, entry.key);
         requireEntry(entry, entry.candidate);
         // S9-D14: the relation is built from the current facts (its source route checked) right after requireEntry
         // validated that source, so only its closure is checked; the same relation then gives the refreshed range.
@@ -751,6 +757,13 @@ public final class RegionalTrackingService {
         return tracked != moving && tracked.isRemoved();
     }
 
+    /** requireEntityOwner for a retained entry's entity, reusing the entry's owner answer while it stands. */
+    private void requireEntityOwner(Entry entry, FullEntityFacts.Candidate candidate, RoutingKey key) {
+        var answer = objects.requireCurrentOwner(candidate.fact().objectId(), route(key).region(), entry.ownerAnswer);
+        if (answer == null) throw new IllegalStateException("tracked entity lacks current object ownership");
+        entry.ownerAnswer = answer;
+        dispatcher.requireCurrentOwner(key);
+    }
     private void requireEntityOwner(FullEntityFacts.Candidate candidate, RoutingKey key) {
         objects.requireCurrentOwnerIfPresent(candidate.fact().objectId(), route(key).region()).orElseThrow(
             () -> new IllegalStateException("tracked entity lacks current object ownership"));
@@ -833,16 +846,11 @@ public final class RegionalTrackingService {
         long stamp = finishing.entityFacts.nonPlayerPublications();
         // S9-D16: a non-player entry verified at this stamp and routed in the current view is a no-op below (its
         // retained candidate is written back, equal to its own, and its route is current), so only the others are
-        // passed on. refreshTrackingCandidates' per-world checks run first for every entry, in order, as it makes
-        // them before any lookup; it repeats them for the entries passed on.
-        net.minecraft.server.level.ServerLevel checked = null;
-        for (Entry entry : entries) {
-            var world = Objects.requireNonNull(entry.candidate, "retained").fact().world();
-            if (world != checked) {
-                FullFinishingServices.requireWorld(world, FullFinishingServices.Kind.ENTITY_REGISTRY);
-                checked = world;
-            }
-        }
+        // passed on. refreshTrackingCandidates' per-world checks run first, as it makes them before any lookup; it
+        // repeats them for the entries passed on. S9-D17: every retained candidate is this tracker's level's (each
+        // comes from trackingCandidate(level, ...), which requires it, or from a refresh, which keeps its world), so
+        // those checks are this one check.
+        FullFinishingServices.requireWorld(level, FullFinishingServices.Kind.ENTITY_REGISTRY);
         RegionDirectory.View routedIn = directory.snapshot();
         List<Entry> changing = null;
         for (int i = 0; i < entries.size(); i++) {
@@ -1013,6 +1021,8 @@ public final class RegionalTrackingService {
         RegionDirectory.View routedView;
         /** S9-D7: nonPlayerPublications read before the last refresh that validated {@link #candidate}. */
         long verifiedAt = Long.MIN_VALUE;
+        /** S9-D17: the entity's last current-owner answer (ObjectOwnershipRegistry.requireCurrentOwner). */
+        ObjectOwnershipRegistry.OwnerAnswer ownerAnswer;
         Entry(int id, Object tracker, Entity entity, FullEntityFacts.Candidate candidate, RoutingKey key, RegionId owner) {
             this.id = id; this.tracker = tracker; this.entity = entity; this.candidate = candidate; this.key = key; this.owner = owner;
         }

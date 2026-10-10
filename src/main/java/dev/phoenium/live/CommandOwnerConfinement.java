@@ -86,5 +86,5 @@ public final class CommandOwnerConfinement {
         throw new IllegalStateException("command source cannot act as an entity owned by another region");
     }
 
-    static WorldId worldOf(Level level) { return new WorldId(level.dimension().identifier().toString()); }
+    static WorldId worldOf(Level level) { return WorldId.of(level.dimension().identifier().toString()); }
 }

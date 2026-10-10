@@ -1210,7 +1210,7 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
 
     /** Test-only route evidence reads the immutable directory; it grants no gameplay authority. */
     public String routeDiagnostic(String worldName, int x, int z) {
-        WorldId world = new WorldId(worldName);
+        WorldId world = WorldId.of(worldName);
         RoutingKey key = new RoutingKey(world, x, z);
         RegionRoute route = directory.resolve(key).orElse(null);
         if (route == null) {
@@ -1228,7 +1228,7 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
      * neither the route nor the thread identity grants authority to the observer.
      */
     public ChunkRuntimeTrace.RouteContext chunkTraceRoute(String worldName, int x, int z) {
-        WorldId world = new WorldId(worldName);
+        WorldId world = WorldId.of(worldName);
         RegionRoute route = directory.resolve(new RoutingKey(world, x, z)).orElse(null);
         var active = OwnershipContext.current();
         boolean hasContext = active.isPresent();
@@ -2200,7 +2200,7 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
             fact.oldRegion(), fact.newRegion()));
     }
     private boolean acceptsGameplay() { return !gameplayAdmissionClosed && isRunning(); }
-    private static WorldId worldId(ServerLevel level) { return new WorldId(level.dimension().identifier().toString()); }
+    private static WorldId worldId(ServerLevel level) { return WorldId.of(level.dimension().identifier().toString()); }
     private static String projectileType(Entity entity) {
         var key = BuiltInRegistries.ENTITY_TYPE.getKey(entity.getType());
         return key == null ? null : key.toString();

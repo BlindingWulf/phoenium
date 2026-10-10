@@ -26,7 +26,7 @@ public record ContainerCloseFootprint(List<Target> targets, Set<RoutingKey> clos
         Set<Container> seen = Collections.newSetFromMap(new IdentityHashMap<>());
         if (menu instanceof ChestMenu chest) collect(chest.getContainer(), seen, targets);
         for (var slot : menu.slots) collect(slot.container, seen, targets);
-        var world = new WorldId(player.level().dimension().identifier().toString());
+        var world = WorldId.of(player.level().dimension().identifier().toString());
         var seeds = new LinkedHashSet<RoutingKey>();
         seeds.add(new RoutingKey(world, player.chunkPosition().x(), player.chunkPosition().z()));
         for (Target target : targets) {

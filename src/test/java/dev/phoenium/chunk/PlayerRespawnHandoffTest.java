@@ -252,6 +252,28 @@ final class PlayerRespawnHandoffTest {
             h.rollback(); f.assertEmpty();
         }
     }
+    /** S9-D17: a checked cut is retained only while no session is written, and its players' connections (state
+     * outside the scoreboard) are read on every check. */
+    @Test void aCheckedTrackingCutRereadsConnectionsAndFollowsTheDirectory() throws Exception {
+        try (var f = new Fixture()) {
+            FullFinishingScoreboard.TrackingCut cut;
+            try (var turn = f.service.referenceAccess()) {
+                cut = f.service.scoreboard.trackingCut(List.of(f.player));
+                f.service.scoreboard.requireTrackingCut(cut);
+                f.service.scoreboard.requireTrackingCut(cut);
+                var listener = f.player.connection;
+                f.player.connection = null;
+                assertThrows(ChunkProtocolException.class, () -> f.service.scoreboard.requireTrackingCut(cut));
+                f.player.connection = listener;
+                f.service.scoreboard.requireTrackingCut(cut);
+            }
+            var h = f.open();
+            try (var turn = f.service.referenceAccess()) {
+                assertThrows(ChunkProtocolException.class, () -> f.service.scoreboard.requireTrackingCut(cut));
+            }
+            h.rollback(); f.assertEmpty();
+        }
+    }
     @ParameterizedTest @EnumSource(FailurePoint.class)
     void eachFailurePrefixRollsBackAndSameUuidReconnects(FailurePoint point) throws Exception {
         try (var f = new Fixture()) {

@@ -58,7 +58,7 @@ public final class RegionalWorldServices implements RegionalStateMigration {
         try {
             if (Thread.holdsLock(this))
                 throw new IllegalStateException("regional world callbacks cannot run under the binding monitor");
-            WorldId world = new WorldId(level.dimension().identifier().toString());
+            WorldId world = WorldId.of(level.dimension().identifier().toString());
             blockTicks = level.getBlockTicks();
             fluidTicks = level.getFluidTicks();
             var blockAccess = (RegionalLevelTicksAccess<Block>) blockTicks;
@@ -346,7 +346,7 @@ public final class RegionalWorldServices implements RegionalStateMigration {
         List<net.minecraft.world.entity.Entity> aliases = List.copyOf(selection.get());
         var sources = new java.util.ArrayList<dev.phoenium.chunk.FullEntityFacts.Candidate>();
         var relations = new java.util.ArrayList<List<dev.phoenium.chunk.FullEntityFacts.Candidate>>();
-        WorldId world = new WorldId(level.dimension().identifier().toString());
+        WorldId world = WorldId.of(level.dimension().identifier().toString());
         var chunk = net.minecraft.world.level.ChunkPos.unpack(chunkKey);
         var key = new dev.phoenium.topology.RoutingKey(world, chunk.x(), chunk.z());
         var footprint = new java.util.LinkedHashSet<dev.phoenium.topology.RoutingKey>();

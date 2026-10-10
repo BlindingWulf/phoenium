@@ -227,7 +227,7 @@ public final class RegionalSaveBinding {
     }
 
     public static RoutingKey key(ServerLevel level, ChunkPos pos) {
-        return new RoutingKey(new WorldId(level.dimension().identifier().toString()), pos.x(), pos.z());
+        return new RoutingKey(WorldId.of(level.dimension().identifier().toString()), pos.x(), pos.z());
     }
     private static RegionDirectory.SaveCut retainTopologyCut(RegionalSaveCoordinator coordinator, ServerLevel level) {
         RegionDirectory.SaveCut[] cut = {null};

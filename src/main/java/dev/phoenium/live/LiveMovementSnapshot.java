@@ -36,7 +36,7 @@ public record LiveMovementSnapshot(LiveMovementFootprint footprint, Disposition 
                         boolean changingDimension, double x, double y, double z, AABB bounds, double maxUpStep) {
         public static State of(ServerPlayer player) {
             Entity vehicle = player.getVehicle();
-            return new State(new WorldId(player.level().dimension().identifier().toString()), vehicle != null,
+            return new State(WorldId.of(player.level().dimension().identifier().toString()), vehicle != null,
                 vehicle != null && !vehicle.isRemoved() && vehicle.level() == player.level(),
                 player.noPhysics, player.isSleeping(), player.isChangingDimension(),
                 player.getX(), player.getY(), player.getZ(), player.getBoundingBox(), player.maxUpStep());

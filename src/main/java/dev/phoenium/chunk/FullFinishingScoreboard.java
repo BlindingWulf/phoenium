@@ -28,13 +28,16 @@ public final class FullFinishingScoreboard {
     private final ThreadLocal<Membership> membership = new dev.phoenium.core.FastThreadLocal<>();
     private final ThreadLocal<Broadcast> broadcast = new dev.phoenium.core.FastThreadLocal<>();
     private long nextSession, nextRespawn, sequence, accepted, uncertain, committed, completed, directoryRevision;
+    /** S9-D17: advanced by every write to {@code sessions} or to a Session's state, player, listener, uuid or respawn
+     * (Session is private, so every such write is in this class). Equal reads bracket an interval with none. */
+    private long sessionWrites;
     private int catchup;
     FullFinishingScoreboard(FullFinishingServices service) { this.service = service; server = service.server(); }
 
     /** Called before the actual initial scoreboard snapshot, before vanilla's list insertion. */
     public void initialSync(ServerPlayer player) {
         require(); Session session = session(player, true);
-        session.state = State.INITIALIZING; session.syncGeneration++; session.snapshot = sequence;
+        sessionWrites++; session.state = State.INITIALIZING; session.syncGeneration++; session.snapshot = sequence;
         catchup -= session.catchup.size(); session.catchup.clear(); directoryRevision++;
     }
     public void failedPlacement(ServerPlayer player) { remove(player, true); }
@@ -43,15 +46,15 @@ public final class FullFinishingScoreboard {
         require(); Session session = session(player, true);
         if (session.respawn != null) session.respawn.registered(player);
         else if (PlayerRespawnHandoff.retired(player)) throw new ChunkProtocolException("retired respawn incarnation cannot register");
-        session.player = player; session.listener = player.connection;
+        sessionWrites++; session.player = player; session.listener = player.connection;
         session.uuid = player.getUUID(); session.name = player.getGameProfile().name();
         order.remove(session); order.add(session);
         while (!session.catchup.isEmpty()) {
             Delta delta = session.catchup.removeFirst(); catchup--;
             try { session.listener.send(delta.packet); accepted++; session.lastAccepted = delta.sequence; }
-            catch (Throwable failure) { uncertain++; session.state = State.CLOSED; throw failure; }
+            catch (Throwable failure) { uncertain++; sessionWrites++; session.state = State.CLOSED; throw failure; }
         }
-        session.state = State.LIVE; directoryRevision++; service.changed(FullFinishingServices.Kind.CONNECTIONS);
+        sessionWrites++; session.state = State.LIVE; directoryRevision++; service.changed(FullFinishingServices.Kind.CONNECTIONS);
     }
     /** Exact List.remove edge: a respawn removes addressability but keeps its session. */
     public void remove(ServerPlayer player, boolean disconnect) {
@@ -63,7 +66,7 @@ public final class FullFinishingScoreboard {
                 access.phoenium$deathRemovalCompleted(false);
                 access.phoenium$creditsRemovalCompleted(false);
             }
-            session.state = State.CLOSED; catchup -= session.catchup.size(); session.catchup.clear();
+            sessionWrites++; session.state = State.CLOSED; catchup -= session.catchup.size(); session.catchup.clear();
             sessions.remove(session.connection); session.player = null; session.listener = null;
         }
         service.changed(FullFinishingServices.Kind.CONNECTIONS);
@@ -120,7 +123,7 @@ public final class FullFinishingScoreboard {
                     || session.listener != player.connection)
                 throw FullFinishingServices.failure(
                     new ChunkProtocolException("tracking player lacks a current live connection session"));
-            result.add(new TrackingSession(session.id, player, session.listener, session.uuid, transitioning ? transition : null));
+            result.add(new TrackingSession(session.id, player, session.listener, session.uuid, transitioning ? transition : null, session));
         }
         return new TrackingCut(directoryRevision, List.copyOf(result));
     }
@@ -144,14 +147,35 @@ public final class FullFinishingScoreboard {
         FullFinishingServices.requireServer(server, FullFinishingServices.Kind.CONNECTIONS);
         if (cut.directoryRevision != directoryRevision)
             throw FullFinishingServices.failure(new ChunkProtocolException("tracking connection cut became stale"));
-        for (TrackingSession receipt : cut.sessions()) requireSessionIdentity(receipt);
+        // S9-D17: a cut that passed with no session write since, none of its receipts in a respawn transition and
+        // none of its sessions holding a respawn, has the same looked-up sessions with the same fields; of each
+        // receipt's checks only its player's connection and respawn retirement read anything else, so those alone
+        // run again (any failure takes the full checks, which fail as before).
+        CheckedCut checked = checkedCut;
+        if (checked != null && checked.cut == cut && checked.writes == sessionWrites && outsideChecksHold(cut)) return;
+        boolean retainable = true;
+        for (TrackingSession receipt : cut.sessions()) {
+            Session session = requireSessionIdentity(receipt);
+            if (receipt.transition != null || session.respawn != null) retainable = false;
+        }
+        if (retainable) checkedCut = new CheckedCut(cut, sessionWrites);
     }
-    private void requireSessionIdentity(TrackingSession receipt) {
+    private record CheckedCut(TrackingCut cut, long writes) { }
+    private CheckedCut checkedCut;
+    private static boolean outsideChecksHold(TrackingCut cut) {
+        for (TrackingSession receipt : cut.sessions())
+            if (receipt.player.connection != receipt.listener || PlayerRespawnHandoff.retired(receipt.player)) return false;
+        return true;
+    }
+    private Session requireSessionIdentity(TrackingSession receipt) {
         // S9-D3: a session can pass the identity checks below only if its listener is receipt.listener, and a
         // listener's transport connection is final, so the only possible match is the session keyed by that
         // connection. This is the same answer as scanning every live session for receipt.sessionId, in O(1).
-        Session session = receipt.listener instanceof ConnectionAccess access
-            ? sessions.get(access.phoenium$serviceConnection()) : null;
+        // S9-D17: a LIVE session is always the one mapped for its connection (every unmapping or replacement closes
+        // it first), and a receipt's bound session is the one its listener's (final) connection mapped when the cut
+        // was taken; so while that session is LIVE it is the lookup's answer.
+        Session session = receipt.bound instanceof Session bound && bound.state == State.LIVE ? bound
+            : receipt.listener instanceof ConnectionAccess access ? sessions.get(access.phoenium$serviceConnection()) : null;
         if (session != null && session.id != receipt.sessionId) session = null;
         if (receipt.transition != null) receipt.transition.require(receipt.player, receipt.sessionId);
         if (session == null || session.state != State.LIVE
@@ -161,6 +185,7 @@ public final class FullFinishingScoreboard {
                 || session.listener != receipt.listener || !Objects.equals(session.uuid, receipt.uuid)
                 || receipt.player.connection != receipt.listener)
             throw FullFinishingServices.failure(new ChunkProtocolException("tracking connection identity changed"));
+        return session;
     }
 
     public record TrackingCut(long directoryRevision, List<TrackingSession> sessions, Set<TrackingSession> members) {
@@ -181,8 +206,26 @@ public final class FullFinishingScoreboard {
         @Override public int hashCode() { return 31 * Long.hashCode(directoryRevision) + sessions.hashCode(); }
         @Override public String toString() { return "TrackingCut[directoryRevision=" + directoryRevision + ", sessions=" + sessions + "]"; }
     }
+    /** S9-D17: {@code bound} is the scoreboard's own session the receipt was cut from (null for a receipt built
+     * elsewhere); it is not part of the receipt's value, which stays that of its five original components. */
     public record TrackingSession(long sessionId, ServerPlayer player,
-                                  ServerGamePacketListenerImpl listener, UUID uuid, PlayerRespawnHandoff.Tracking transition) { }
+                                  ServerGamePacketListenerImpl listener, UUID uuid, PlayerRespawnHandoff.Tracking transition,
+                                  Object bound) {
+        public TrackingSession(long sessionId, ServerPlayer player, ServerGamePacketListenerImpl listener, UUID uuid,
+                               PlayerRespawnHandoff.Tracking transition) {
+            this(sessionId, player, listener, uuid, transition, null);
+        }
+        @Override public boolean equals(Object other) {
+            return other instanceof TrackingSession that && sessionId == that.sessionId && Objects.equals(player, that.player)
+                && Objects.equals(listener, that.listener) && Objects.equals(uuid, that.uuid)
+                && Objects.equals(transition, that.transition);
+        }
+        @Override public int hashCode() { return Objects.hash(sessionId, player, listener, uuid, transition); }
+        @Override public String toString() {
+            return "TrackingSession[sessionId=" + sessionId + ", player=" + player + ", listener=" + listener + ", uuid=" + uuid
+                + ", transition=" + transition + "]";
+        }
+    }
 
     PlayerRespawnHandoff openRespawn(PlayerRespawnHandoff.Directory directory, ServerPlayer player) {
         require(); Session session = session(player, false);
@@ -208,7 +251,7 @@ public final class FullFinishingScoreboard {
         if (session == null || session.state != State.LIVE || session.player != player || session.respawn != null)
             throw new ChunkProtocolException("respawn requires one exact current live session");
         PlayerRespawnHandoff handoff = new PlayerRespawnHandoff(service, directory, player, ++nextRespawn, session.id, session.connection);
-        session.respawn = handoff; directoryRevision++; return handoff;
+        sessionWrites++; session.respawn = handoff; directoryRevision++; return handoff;
     }
     public PlayerRespawnHandoff respawn(ServerPlayer player) {
         Session session = session(player, false);
@@ -232,13 +275,13 @@ public final class FullFinishingScoreboard {
     void abortRespawn(PlayerRespawnHandoff handoff) {
         require(); Session session = requireRespawn(handoff);
         order.remove(session); catchup -= session.catchup.size(); session.catchup.clear();
-        sessions.remove(session.connection); session.state = State.CLOSED;
+        sessionWrites++; sessions.remove(session.connection); session.state = State.CLOSED;
         session.player = null; session.listener = null; directoryRevision++;
         service.changed(FullFinishingServices.Kind.CONNECTIONS);
     }
     void detachRespawn(PlayerRespawnHandoff handoff) {
         require(); Session session = sessions.get(handoff.connection);
-        if (session != null && session.id == handoff.sessionId && session.respawn == handoff) session.respawn = null;
+        if (session != null && session.id == handoff.sessionId && session.respawn == handoff) { sessionWrites++; session.respawn = null; }
     }
     private Session requireRespawn(PlayerRespawnHandoff handoff) {
         Session session = sessions.get(handoff.connection);
@@ -268,11 +311,11 @@ public final class FullFinishingScoreboard {
         Session found = sessions.get(connection);
         if (found == null && create) {
             found = new Session(++nextSession, connection, player.connection, player, player.getUUID(), player.getGameProfile().name());
-            sessions.put(connection, found);
+            sessionWrites++; sessions.put(connection, found);
         } else if (found != null && found.listener != player.connection) {
             // An actual listener replacement creates a new ordered stream, even on one channel.
             catchup -= found.catchup.size(); found.catchup.clear(); order.remove(found);
-            found.state = State.CLOSED;
+            sessionWrites++; found.state = State.CLOSED;
             if (create) {
                 found = new Session(++nextSession, connection, player.connection, player, player.getUUID(), player.getGameProfile().name());
                 sessions.put(connection, found);
@@ -400,6 +443,7 @@ public final class FullFinishingScoreboard {
     void close() {
         if (sessions.values().stream().anyMatch(session -> session.respawn != null))
             throw new ChunkProtocolException("server close retained an open respawn handoff");
+        sessionWrites++;
         for (Session session : sessions.values()) {
             session.catchup.clear(); session.player = null; session.listener = null; session.state = State.CLOSED;
         }

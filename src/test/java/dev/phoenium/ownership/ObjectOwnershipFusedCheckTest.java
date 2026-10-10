@@ -57,6 +57,40 @@ class ObjectOwnershipFusedCheckTest {
         assertEquals(unownedOriginal.getMessage(), unowned.getMessage());
     }
 
+    /** S9-D17: a retained answer stands only while no entry was written and the view is the same. */
+    @Test
+    void aRetainedOwnerAnswerStandsOnlyWhileEntriesAndViewAreUnchanged() {
+        String mob = "mob";
+        objects.admit(mob, OwnedObjectKind.ENTITY, key);
+        try (var owner = OwnershipContext.enter(serial, new LeaseEpoch(1), OperationCategory.OWNER_TASK)) {
+            var first = objects.requireCurrentOwner(mob, serial, null);
+            assertEquals(objects.current(mob).orElseThrow(), first.binding());
+            assertSame(first, objects.requireCurrentOwner(mob, serial, first));
+            // the context check still runs on a retained answer
+            assertThrows(IllegalStateException.class, () -> objects.requireCurrentOwner(mob, other, first));
+            // any entry write retires the answer: another object's admission, then this object's removal
+            objects.admit("other-mob", OwnedObjectKind.ENTITY, key);
+            var second = objects.requireCurrentOwner(mob, serial, first);
+            assertNotSame(first, second);
+            assertEquals(first.binding(), second.binding());
+            objects.remove(mob);
+            assertNull(objects.requireCurrentOwner(mob, serial, second));
+        }
+        // outside any owner context a retained answer fails as the full check does
+        objects.admit("third", OwnedObjectKind.ENTITY, key);
+        ObjectOwnershipRegistry.OwnerAnswer[] held = new ObjectOwnershipRegistry.OwnerAnswer[1];
+        try (var owner = OwnershipContext.enter(serial, new LeaseEpoch(2), OperationCategory.OWNER_TASK)) {
+            held[0] = objects.requireCurrentOwner("third", serial, null);
+        }
+        assertThrows(IllegalStateException.class, () -> objects.requireCurrentOwner("third", serial, held[0]));
+        // a new view whose default names another region is checked in full (the binding is no longer current)
+        TopologyGeneration second = new TopologyGeneration(2);
+        directory.publish(second, Map.of(), Map.of(world, new RegionRoute(other, second, new OwnerEpoch(1))));
+        try (var owner = OwnershipContext.enter(serial, new LeaseEpoch(3), OperationCategory.OWNER_TASK)) {
+            assertNull(objects.requireCurrentOwner("third", serial, held[0]));
+        }
+    }
+
     @Test
     void defaultResolutionFollowsEveryPublishedView() {
         assertEquals(serial, directory.resolve(key).orElseThrow().region());

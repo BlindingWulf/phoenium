@@ -88,11 +88,12 @@ abstract class ServerChunkCacheMixin {
         return selected;
     }
 
-    @WrapOperation(method = "getChunk(IILnet/minecraft/world/level/chunk/status/ChunkStatus;Z)Lnet/minecraft/world/level/chunk/ChunkAccess;",
+    // S9-D17: a condition-only wrapper (no Operation per getChunk slow path); the store runs exactly when it did.
+    @com.llamalad7.mixinextras.injector.v2.WrapWithCondition(method = "getChunk(IILnet/minecraft/world/level/chunk/status/ChunkStatus;Z)Lnet/minecraft/world/level/chunk/ChunkAccess;",
         at = @At(value = "INVOKE", target = "Lnet/minecraft/server/level/ServerChunkCache;storeInCache(JLnet/minecraft/world/level/chunk/ChunkAccess;Lnet/minecraft/world/level/chunk/status/ChunkStatus;)V"),
         require = 1, expect = 1)
-    private void phoenium$keepInitializedResultPrivate(ServerChunkCache cache, long position, ChunkAccess chunk,
-                                                       ChunkStatus status, Operation<Void> original) {
-        if (!FullFinishingQueries.usesPrivateResult()) original.call(cache, position, chunk, status);
+    private boolean phoenium$keepInitializedResultPrivate(ServerChunkCache cache, long position, ChunkAccess chunk,
+                                                          ChunkStatus status) {
+        return !FullFinishingQueries.usesPrivateResult();
     }
 }
