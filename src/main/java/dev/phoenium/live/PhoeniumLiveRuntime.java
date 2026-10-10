@@ -1077,6 +1077,10 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
                                                ServerPlayer player, Runnable original) {
         return regionalServiceBound() && regionalServices.movedTrackingPlayer(map, tracker, player, original);
     }
+    /** S9-D14: whether ChunkMap.move's original updatePlayer runs for this tracker (true without regional services). */
+    public boolean regionalTrackingAdmitMovedPlayer(net.minecraft.server.level.ChunkMap map, Object tracker, ServerPlayer player) {
+        return !regionalServiceBound() || regionalServices.admitMovedTrackingPlayer(map, tracker, player);
+    }
     public void regionalTrackingSourceAdded(net.minecraft.server.level.ChunkMap map, Entity entity) {
         if (regionalServiceBound()) regionalServices.trackingSourceAdded(map, entity);
     }

@@ -466,11 +466,25 @@ public final class RegionalWorldServices implements RegionalStateMigration {
     public boolean movedTrackingPlayer(ChunkMap map, Object tracker,
                                        net.minecraft.server.level.ServerPlayer player, Runnable original) {
         RegionalChunkMapAccess access = (RegionalChunkMapAccess) map;
+        // S9-D14: a selected tracker's callback inside a regional move: the moving player's plan names this level's
+        // tracking service, so the world lookup (a monitor and a map probe per selected tracker) is skipped.
+        RegionalTrackingService moving = RegionalTrackingService.movingService(player, access.phoenium$getLevel());
+        if (moving != null) { moving.movedPlayerUpdate(tracker, player, original); return true; }
         WorldServices services;
         synchronized (this) { services = worlds.get(access.phoenium$getLevel()); }
         if (services == null) return false;
         services.tracking().movedPlayerUpdate(tracker, player, original);
         return true;
+    }
+
+    /** S9-D14: admission for ChunkMap.move's original updatePlayer; true where no regional tracking serves the map. */
+    public boolean admitMovedTrackingPlayer(ChunkMap map, Object tracker, net.minecraft.server.level.ServerPlayer player) {
+        RegionalChunkMapAccess access = (RegionalChunkMapAccess) map;
+        RegionalTrackingService moving = RegionalTrackingService.movingService(player, access.phoenium$getLevel());
+        if (moving != null) return moving.admitMovedPlayer(tracker, player);
+        WorldServices services;
+        synchronized (this) { services = worlds.get(access.phoenium$getLevel()); }
+        return services == null || services.tracking().admitMovedPlayer(tracker, player);
     }
 
     public void trackingSourceAdded(ChunkMap map, net.minecraft.world.entity.Entity entity) {

@@ -80,6 +80,14 @@ final class FullStructureMutationTurns {
         return tryReadExact(operation, holders);
     }
 
+    /** S9-D14: the same never-waiting read turn, taken inside the reading query's owner turn on the observation thread. */
+    Read tryReadNaturalSpawnOwned(NaturalSpawnStructureQuery operation, GenerationChunkHolder holder) {
+        if (Thread.currentThread() != observationThread || OwnershipContext.current().isEmpty())
+            throw new ChunkProtocolException("owned natural-spawn structure read requires its owner turn on the observation thread");
+        if (!operation.current()) return null;
+        return tryReadExact(operation, List.of(holder));
+    }
+
     private Read tryReadExact(Object operation, Collection<GenerationChunkHolder> holders) {
         var distinct = distinct(holders);
         metadataGate.lock(); try {

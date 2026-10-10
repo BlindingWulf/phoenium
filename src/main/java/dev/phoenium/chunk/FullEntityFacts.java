@@ -40,6 +40,10 @@ public final class FullEntityFacts {
     public record Cut(ServerLevel world, long revision, List<Candidate> candidates) { }
     record Estimate(ServerLevel world, long revision, int candidates) { }
     private record Route(ChunkPos position, long revision) { }
+    /** S9-D14: {@code Objects.equals(route, new Route(position, revision))} without the probe record. */
+    private static boolean sameRoute(Route route, ChunkPos position, long revision) {
+        return route != null && route.revision == revision && Objects.equals(route.position, position);
+    }
     private static final AtomicLong INCARNATIONS = new AtomicLong();
     private static final ThreadLocal<Boolean> PUBLISHING = dev.phoenium.core.FastThreadLocal.withInitial(() -> false);
     private final FullFinishingServices service;
@@ -407,7 +411,7 @@ public final class FullEntityFacts {
                     || access.phoenium$referenceFact() != candidate.fact
                     || access.phoenium$entityIncarnation() != candidate.fact.incarnation) return false;
             Route route = routes.get(candidate.alias);
-            return Objects.equals(route, new Route(candidate.position, candidate.routingRevision));
+            return sameRoute(route, candidate.position, candidate.routingRevision);
         } finally { candidateMetadata.unlock(); }
     }
 
@@ -464,7 +468,7 @@ public final class FullEntityFacts {
     private boolean validCandidateLocked(Candidate candidate) {
         if (!(candidate.alias instanceof Access access) || access.phoenium$referenceFact() != candidate.fact
                 || access.phoenium$entityIncarnation() != candidate.fact.incarnation) return false;
-        return Objects.equals(routes.get(candidate.alias), new Route(candidate.position, candidate.routingRevision));
+        return sameRoute(routes.get(candidate.alias), candidate.position, candidate.routingRevision);
     }
     private void removeRelationsLocked(Entity entity) {
         long revision = Math.incrementExact(routingSequence); routingSequence = revision;
@@ -540,7 +544,7 @@ public final class FullEntityFacts {
             FreshPassengerAdmission admission = pendingPassengerIdentities.get(vehicle.alias);
             if (admission != null) admission.validate();
             if (!(vehicle.alias instanceof Access access) || access.phoenium$referenceFact() != vehicle.fact
-                    || !Objects.equals(routes.get(vehicle.alias), new Route(vehicle.position, vehicle.routingRevision)))
+                    || !sameRoute(routes.get(vehicle.alias), vehicle.position, vehicle.routingRevision))
                 throw new ChunkProtocolException("tracking vehicle relation source became stale");
             List<Entity> aliases = orderedDescendants(vehicle.alias,
                 alias -> passengerRelations.getOrDefault(alias, List.of()));
@@ -571,7 +575,7 @@ public final class FullEntityFacts {
             FreshPassengerAdmission admission = pendingPassengerIdentities.get(vehicle.alias);
             if (admission != null) admission.validate();
             if (!(vehicle.alias instanceof Access access) || access.phoenium$referenceFact() != vehicle.fact
-                    || !Objects.equals(routes.get(vehicle.alias), new Route(vehicle.position, vehicle.routingRevision))) return false;
+                    || !sameRoute(routes.get(vehicle.alias), vehicle.position, vehicle.routingRevision)) return false;
             List<Entity> current = orderedDescendants(vehicle.alias,
                 alias -> passengerRelations.getOrDefault(alias, List.of()));
             if (current.size() != retained.size()) return false;
@@ -582,7 +586,7 @@ public final class FullEntityFacts {
                 if (passengerAdmission != null && passengerAdmission != admission) return false;
                 if (!(alias instanceof Access passenger) || passenger.phoenium$referenceFact() != expected.fact
                         || passenger.phoenium$entityIncarnation() != expected.fact.incarnation
-                        || !Objects.equals(routes.get(alias), new Route(expected.position, expected.routingRevision))) return false;
+                        || !sameRoute(routes.get(alias), expected.position, expected.routingRevision)) return false;
             }
             return true;
         } finally { candidateMetadata.unlock(); }
@@ -647,7 +651,7 @@ public final class FullEntityFacts {
             if (candidateRevisions.getOrDefault(cut.world, 0L) != cut.revision) return false;
             for (Candidate candidate : cut.candidates) {
                 if (!(candidate.alias instanceof Access access) || access.phoenium$referenceFact() != candidate.fact
-                        || !Objects.equals(routes.get(candidate.alias), new Route(candidate.position, candidate.routingRevision))) return false;
+                        || !sameRoute(routes.get(candidate.alias), candidate.position, candidate.routingRevision)) return false;
             }
             return true;
         } finally { candidateMetadata.unlock(); }
@@ -666,7 +670,7 @@ public final class FullEntityFacts {
             for (Candidate expected : cut.candidates) {
                 if (!iterator.hasNext() || iterator.next() != expected.alias) return false;
                 if (!(expected.alias instanceof Access access) || access.phoenium$referenceFact() != expected.fact
-                        || !Objects.equals(routes.get(expected.alias), new Route(expected.position, expected.routingRevision))) return false;
+                        || !sameRoute(routes.get(expected.alias), expected.position, expected.routingRevision)) return false;
             }
             while (iterator.hasNext()) {
                 Entity entity = iterator.next();

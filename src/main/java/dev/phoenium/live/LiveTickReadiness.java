@@ -60,18 +60,24 @@ public final class LiveTickReadiness {
         private final ServerLevel level;
         private final List<Input> inputs;
         private final Budget budget;
-        private final int pending;
+        private final int pending, count;
         private Receipt(ServerLevel level, List<Input> inputs, Budget budget) {
             this.level = level; this.inputs = inputs; this.budget = budget;
             this.pending = (int) inputs.stream().filter(input -> !input.future.isDone()).count();
+            this.count = inputs.size();
+        }
+        /** S9-D14: a zero-budget receipt: it holds nothing, so it records only the counts it reports. */
+        private Receipt(ServerLevel level, int pending, int count) {
+            this.level = level; this.inputs = null; this.budget = null; this.pending = pending; this.count = count;
         }
         /**
          * Same candidates and slots, and either every original ticking future has settled or the tick budget has passed.
          * A candidate still outstanding after the budget is not ticked: its {@code getTickingChunk()} stays null, exactly
-         * as vanilla skips a chunk whose ticking future has not completed.
+         * as vanilla skips a chunk whose ticking future has not completed. A zero-budget receipt is always current: its
+         * budget had passed when it was taken, and it observes no candidate identity.
          */
-        public boolean current() { return sameCandidates(inputs, level) && (budget.expired() || settled(inputs)); }
-        public int count() { return inputs.size(); }
+        public boolean current() { return inputs == null || sameCandidates(inputs, level) && (budget.expired() || settled(inputs)); }
+        public int count() { return count; }
         /** Candidates whose original ticking future was still outstanding when this receipt was taken. */
         public int pending() { return pending; }
     }
@@ -89,7 +95,21 @@ public final class LiveTickReadiness {
         if (budgetNanos < 0) throw new IllegalArgumentException("negative readiness budget");
         Objects.requireNonNull(clock, "clock");
         requireCoordinator(level);
+        if (budgetNanos == 0) return zeroBudget(level);
         return observeUntilSettled(level, new Budget(clock, clock.getAsLong() + budgetNanos));
+    }
+    /**
+     * S9-D14: a zero budget (the live default since S9-D8) has expired before the first observation, so the tick is
+     * never held and the candidate and slot observation decides nothing. One walk counts the candidates whose
+     * original ticking future is outstanding (the receipt's only report) instead of capturing every provider slot
+     * and re-walking the candidates to confirm them.
+     */
+    private static Receipt zeroBudget(ServerLevel level) {
+        int[] counts = {0, 0};
+        try (var holders = tickCandidates(level)) {
+            holders.forEach(holder -> { counts[1]++; if (!holder.getTickingChunkFuture().isDone()) counts[0]++; });
+        }
+        return new Receipt(level, counts[0], counts[1]);
     }
     /** A receipt observes a producer slot; it does not prevent native slot replacement. The original budget still applies. */
     public static Receipt refresh(Receipt receipt) {

@@ -164,6 +164,46 @@ public final class NaturalSpawnStructureQuery implements AutoCloseable {
             entryIndex++; startIndex = 0; matched = false;
         }
     }
+    /**
+     * S9-D14: answers this query inside its owner turn when that needs no structure start: the reference chunk is a
+     * ticking chunk of the current owner, read under the same never-waiting structure read turn, and no referenced
+     * structure with a spawn override for this category (or the fortress, when tested) has a start to read. The
+     * answer is the one advance() publishes after reading those references: every reference copied, no start fact,
+     * the biome fallback. Otherwise nothing is read or published and the query yields as before. The yield path's
+     * create-mode future for an already ticking chunk only adds a one-tick UNKNOWN ticket, which cannot change that
+     * chunk's load state; this path does not request it.
+     */
+    public boolean resolveOwned() {
+        var active = OwnershipContext.current().orElse(null);
+        if (active == null || result.isDone() || !current()) return false;
+        ChunkPos at = ChunkPos.containing(position);
+        ChunkHolder holder = runtime.visible(at);
+        LevelChunk chunk = holder == null ? null : holder.getTickingChunk();
+        if (chunk == null) return false;
+        RoutingKey key = new RoutingKey(runtime.authority.world(), at.x(), at.z());
+        var route = runtime.authority.directory().resolve(key).orElse(null);
+        if (route == null || !route.region().equals(active.region())
+                || runtime.authority.directory().pendingChange(key).filter(change -> !change.completed()).isPresent()) return false;
+        try (var turn = runtime.structureMutations.tryReadNaturalSpawnOwned(this, holder)) {
+            if (turn == null) return false;
+            turn.require(this, holder);
+            var refs = ((FullStructureInputs.ChunkView) chunk).phoenium$structureReferences();
+            if (refs == null) return false;
+            List<ReferenceFact> copy = new ArrayList<>();
+            if (fortress != null) {
+                var starts = refs.get(fortress);
+                if (starts != null && !starts.isEmpty()) return false;
+                copy.add(new ReferenceFact(fortress, List.of()));
+            }
+            for (var entry : refs.entrySet()) {
+                if (entry.getKey().spawnOverrides().get(category) != null && !entry.getValue().isEmpty()) return false;
+                copy.add(new ReferenceFact(entry.getKey(), entry.getValue().longStream().boxed().toList()));
+            }
+            allReferences.addAll(copy);
+        }
+        publish(false, fallback);
+        return true;
+    }
     private Demand demand(ChunkPos pos, ChunkStatus status) { return demands.computeIfAbsent(new Key(pos, status), Demand::new); }
     private <T> T read(Demand demand, Supplier<T> copy) {
         try (var turn = runtime.structureMutations.tryReadNaturalSpawn(this, List.of(demand.holder))) {

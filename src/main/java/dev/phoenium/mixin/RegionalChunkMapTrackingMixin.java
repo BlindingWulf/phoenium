@@ -80,14 +80,15 @@ abstract class RegionalChunkMapTrackingMixin {
             original.call(tracker, players);
     }
 
-    @WrapOperation(method = "move", at = @At(value = "INVOKE",
+    // S9-D14: ChunkMap.move calls updatePlayer for every tracker in the level; a conditional wrap decides each call
+    // without the per-call Operation. A selected tracker's checks run before its original updatePlayer and its
+    // projection refresh after the original move (RegionalTrackingService.admitMovedPlayer).
+    @com.llamalad7.mixinextras.injector.v2.WrapWithCondition(method = "move", at = @At(value = "INVOKE",
         target = "Lnet/minecraft/server/level/ChunkMap$TrackedEntity;updatePlayer(Lnet/minecraft/server/level/ServerPlayer;)V"), require = 1)
-    private void phoenium$regionalTrackingMovedPlayer(@Coerce Object tracker, ServerPlayer player,
-                                                      Operation<Void> original) {
-        // S9-D5: a tracker the active regional move plan did not select is a no-op in movedPlayerUpdate.
-        if (dev.phoenium.service.TrackingMoveMarks.unselected(tracker, player)) return;
-        if (!Phoenium.liveRuntime().regionalTrackingMovedPlayer((ChunkMap) (Object) this, tracker, player,
-                () -> original.call(tracker, player))) original.call(tracker, player);
+    private boolean phoenium$regionalTrackingMovedPlayer(@Coerce Object tracker, ServerPlayer player) {
+        // S9-D5: a tracker the active regional move plan did not select is a no-op.
+        if (dev.phoenium.service.TrackingMoveMarks.unselected(tracker, player)) return false;
+        return Phoenium.liveRuntime().regionalTrackingAdmitMovedPlayer((ChunkMap) (Object) this, tracker, player);
     }
 
     @Inject(method = "tick()V", at = @At("HEAD"), cancellable = true)

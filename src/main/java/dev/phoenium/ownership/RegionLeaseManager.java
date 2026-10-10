@@ -11,11 +11,16 @@ import java.util.concurrent.locks.ReentrantLock;
 public final class RegionLeaseManager {
     private final RegionId region;
     private long nextEpoch;
-    private RegionLease active;
+    // S9-D14: every write is under the metadata gate; the owner checks read these without it (a held gate only
+    // ordered a single read, which a volatile read is). The one two-field change, promote(), writes active before
+    // clearing selection, so a reader of selection then active never sees neither.
+    private volatile RegionLease active;
     private boolean admissionClosed;
-    private Selection selection;
+    private volatile Selection selection;
     private final ReentrantLock metadataGate = new ReentrantLock();
     private final Set<ReleaseNotice> releaseNotices = new LinkedHashSet<>();
+    /** releaseNotices.size(), republished under the gate after every change. */
+    private volatile int releaseNoticeCount;
 
     public RegionLeaseManager(RegionId region) { this.region = region; }
     public RegionLease acquire() {
@@ -59,17 +64,16 @@ public final class RegionLeaseManager {
                 if (closed) return;
                 if (selection != this) throw new IllegalStateException("foreign regional delivery selection");
                 selection = null; closed = true;
-                notices = List.copyOf(releaseNotices); releaseNotices.clear();
+                notices = List.copyOf(releaseNotices); releaseNotices.clear(); releaseNoticeCount = 0;
             } finally { metadataGate.unlock(); }
             notifyReleased(notices);
         }
     }
     /** S9-D11: a release notice is waiting for the active lease (or selection) to end. */
-    public boolean releaseNoticesPending() {
-        metadataGate.lock(); try { return !releaseNotices.isEmpty(); } finally { metadataGate.unlock(); }
-    }
+    public boolean releaseNoticesPending() { return releaseNoticeCount != 0; }
     public boolean hasClaimOrSelection() {
-        metadataGate.lock(); try { return active != null || selection != null; } finally { metadataGate.unlock(); }
+        // S9-D14: selection first; see the field order note.
+        return selection != null || active != null;
     }
     public void closeAdmission() {
         metadataGate.lock(); try { admissionClosed = true; } finally { metadataGate.unlock(); }
@@ -81,22 +85,19 @@ public final class RegionLeaseManager {
         } finally { metadataGate.unlock(); }
     }
     void requireCurrent(RegionLease lease) {
-        metadataGate.lock(); try {
-            if (active != lease) throw new IllegalStateException("stale or foreign lease: " + lease.region());
-            OwnershipContext.require(region, lease.epoch());
-        } finally { metadataGate.unlock(); }
+        if (active != lease) throw new IllegalStateException("stale or foreign lease: " + lease.region());
+        OwnershipContext.require(region, lease.epoch());
     }
     public void requireCurrent(LeaseEpoch epoch) {
-        metadataGate.lock(); try {
-            if (active == null || !active.epoch().equals(epoch)) throw new IllegalStateException("stale or absent lease for " + region);
-            OwnershipContext.require(region, epoch);
-        } finally { metadataGate.unlock(); }
+        RegionLease current = active;
+        if (current == null || !current.epoch().equals(epoch)) throw new IllegalStateException("stale or absent lease for " + region);
+        OwnershipContext.require(region, epoch);
     }
     List<ReleaseNotice> release(RegionLease lease) {
         metadataGate.lock(); try {
             if (active != lease) throw new IllegalStateException("stale or foreign lease release: " + lease.region());
             var notices = List.copyOf(releaseNotices);
-            releaseNotices.clear();
+            releaseNotices.clear(); releaseNoticeCount = 0;
             active = null;
             return notices;
         } finally { metadataGate.unlock(); }
@@ -108,7 +109,7 @@ public final class RegionLeaseManager {
         metadataGate.lock(); try {
             if (active != null || selection != null) {
                 var notice = new ReleaseNotice(notification);
-                releaseNotices.add(notice);
+                releaseNotices.add(notice); releaseNoticeCount = releaseNotices.size();
                 return notice;
             }
         } finally { metadataGate.unlock(); }
@@ -124,7 +125,7 @@ public final class RegionLeaseManager {
             if (current != null) current.run();
         }
         @Override public void close() {
-            metadataGate.lock(); try { releaseNotices.remove(this); notification = null; }
+            metadataGate.lock(); try { releaseNotices.remove(this); releaseNoticeCount = releaseNotices.size(); notification = null; }
             finally { metadataGate.unlock(); }
         }
     }
@@ -139,9 +140,7 @@ public final class RegionLeaseManager {
         if (failure instanceof Error problem) throw problem;
         if (failure != null) throw new IllegalStateException("regional lease release notification failed", failure);
     }
-    public boolean hasActiveLease() {
-        metadataGate.lock(); try { return active != null; } finally { metadataGate.unlock(); }
-    }
+    public boolean hasActiveLease() { return active != null; }
     public LeaseEpoch currentEpoch() {
         metadataGate.lock(); try { return active == null ? new LeaseEpoch(nextEpoch) : active.epoch(); }
         finally { metadataGate.unlock(); }

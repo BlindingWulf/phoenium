@@ -40,6 +40,19 @@ final class LiveTickReadinessTest {
         assertSame(original, f.holder.getTickingChunkFuture()); assertSame(f.actual, original.join().orElse(null));
     }
 
+    /** S9-D14: the live default (zero budget) never holds the tick; its receipt reports the outstanding count. */
+    @Test void zeroBudgetNeverWaitsAndCountsOutstandingOriginalFutures() throws Exception {
+        var f = new Fixture();
+        f.delivery = ready -> fail("a zero readiness budget never waits");
+        var receipt = LiveTickReadiness.awaitWithin(f.level, 0, System::nanoTime);
+        assertEquals(1, receipt.count()); assertEquals(1, receipt.pending()); assertTrue(receipt.current());
+        assertSame(receipt, LiveTickReadiness.refresh(receipt));
+        assertEquals(0, f.waits); assertFalse(f.input.isDone());
+        f.input.complete(ChunkResult.of(f.actual));
+        var settled = LiveTickReadiness.awaitWithin(f.level, 0, System::nanoTime);
+        assertEquals(1, settled.count()); assertEquals(0, settled.pending()); assertEquals(0, f.waits);
+    }
+
     @Test void holderAndFutureReplacementReobservesWithoutCancellingTheOldProducer() throws Exception {
         var f = new Fixture(); var old = f.input;
         var replacement = f.newHolder(); var next = new CompletableFuture<ChunkResult<LevelChunk>>();

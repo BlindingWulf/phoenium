@@ -35,7 +35,10 @@ public final class FullFinishingServices {
     /** S9-D7: whether this thread's current scope is a FULL one: the condition currentReservation() checks before
      * its requireCurrent. False proves currentReservation() is null here, also while other threads hold one. */
     public static boolean fullScopeOnThisThread() {
-        if (OPEN_FULL_SCOPES.get() == 0) return false;
+        // S9-D14: the counter is written by every thread's FULL scopes (C2ME's workers among them), so on the server
+        // thread and gameplay workers reading it costs more than their own scope slot; it stays the fast negative
+        // for every other thread. Either way the answer is the scope's.
+        if (!dev.phoenium.core.FastThreadLocal.slotted() && OPEN_FULL_SCOPES.get() == 0) return false;
         Scope scope = CURRENT.get();
         return scope != null && scope.full();
     }
@@ -220,7 +223,7 @@ public final class FullFinishingServices {
     }
 
     public static boolean finishing() {
-        if (OPEN_FULL_SCOPES.get() == 0) return false;
+        if (!dev.phoenium.core.FastThreadLocal.slotted() && OPEN_FULL_SCOPES.get() == 0) return false;
         Scope scope = CURRENT.get(); return scope != null && scope.full();
     }
     /** Bounded diagnostics only: describes the current thread's service capability without granting one. */
@@ -270,7 +273,7 @@ public final class FullFinishingServices {
         scope.requireCurrent(); return scope.fullReservation();
     }
     public static Reservation currentReservation() {
-        if (OPEN_FULL_SCOPES.get() == 0) return null;
+        if (!dev.phoenium.core.FastThreadLocal.slotted() && OPEN_FULL_SCOPES.get() == 0) return null;
         Scope scope = CURRENT.get();
         if (scope == null || !scope.full()) return null;
         scope.requireCurrent(); return scope.fullReservation();

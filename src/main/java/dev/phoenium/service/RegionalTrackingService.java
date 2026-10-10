@@ -192,17 +192,25 @@ public final class RegionalTrackingService {
                 requireEntry(entry, candidate);
                 RegionalTrackedEntityAccess tracker = access(entry.tracker);
                 SectionPos now = SectionPos.of(entry.entity);
-                Set<ServerPlayer> seen = java.util.Collections.newSetFromMap(new IdentityHashMap<>());
-                Set<Object> seenConnections = java.util.Collections.newSetFromMap(new IdentityHashMap<>());
-                tracker.phoenium$getSeenBy().forEach(connection -> {
-                    PlayerReceipt receipt = byListener.get(connection);
-                    if (receipt == null)
-                        throw new IllegalStateException("tracked connection is absent from the retained live session cut");
-                    seen.add(receipt.session.player());
-                    seenConnections.add(connection);
-                });
+                var seenBy = tracker.phoenium$getSeenBy();
+                Set<ServerPlayer> seenPlayers; Set<Object> seenListeners;
+                if (seenBy.isEmpty()) {
+                    // S9-D14: most tracked entities have no viewer; their (empty) copies are the empty set.
+                    seenPlayers = Set.of(); seenListeners = Set.of();
+                } else {
+                    Set<ServerPlayer> seen = java.util.Collections.newSetFromMap(new IdentityHashMap<>());
+                    Set<Object> seenConnections = java.util.Collections.newSetFromMap(new IdentityHashMap<>());
+                    seenBy.forEach(connection -> {
+                        PlayerReceipt receipt = byListener.get(connection);
+                        if (receipt == null)
+                            throw new IllegalStateException("tracked connection is absent from the retained live session cut");
+                        seen.add(receipt.session.player());
+                        seenConnections.add(connection);
+                    });
+                    seenPlayers = Set.copyOf(seen); seenListeners = Set.copyOf(seenConnections);
+                }
                 captured[0] = new Preview(key, now, !now.equals(tracker.phoenium$getLastSectionPos()),
-                    relation.effectiveRange, Set.copyOf(seen), Set.copyOf(seenConnections), candidate, relation);
+                    relation.effectiveRange, seenPlayers, seenListeners, candidate, relation);
             }
             previews.put(entry, Objects.requireNonNull(captured[0]));
             synchronized (this) {
@@ -253,8 +261,7 @@ public final class RegionalTrackingService {
                     if (entry.entity instanceof ServerPlayer
                             && !finishing.entityFacts.validTrackingCandidate(preview.candidate)) return;
                     requireEntityOwner(preview.candidate, preview.key);
-                    requireEntry(entry, preview.candidate);
-                    requireRelation(preview.relation);
+                    requireEntryRelation(entry, preview.candidate, preview.relation);
                     RegionalTrackedEntityAccess tracker = access(entry.tracker);
                     if (preview.sectionChanged) {
                         // S9-D11: the recipient candidates are a pure selection over the retained cut; only a section
@@ -282,8 +289,7 @@ public final class RegionalTrackingService {
                     if (entry.entity instanceof ServerPlayer
                             && !finishing.entityFacts.validTrackingCandidate(preview.candidate)) return;
                     requireEntityOwner(preview.candidate, preview.key);
-                    requireEntry(entry, preview.candidate);
-                    requireRelation(preview.relation);
+                    requireEntryRelation(entry, preview.candidate, preview.relation);
                     for (PlayerReceipt player : candidates) {
                         if (currentTickPlayer(player, connectionCut, deferredPlayers))
                             access(entry.tracker).phoenium$invokeUpdatePlayer(player.session.player());
@@ -618,15 +624,19 @@ public final class RegionalTrackingService {
             if (!dispatcher.requireUniformClosure(moving.key)) dispatcher.requireCurrentClosure(footprint);
         } else if (!dispatcher.ensureUniformClosure(moving.key)) dispatcher.ensureClosure(footprint);
         MovePlan plan = new MovePlan(player, playerTracker, movingRelation, cut, players,
-            Set.copyOf(selectedPlayers), Set.copyOf(selectedTrackers));
+            Set.copyOf(selectedPlayers), Set.copyOf(selectedTrackers), this, new ArrayList<>());
         Runnable body = () -> {
             dispatcher.requireCurrentOwner(moving.key);
             requireRelation(movingRelation);
             activeMove.set(plan);
             // S9-D5: TrackingMoveMarks lets the original loop skip unselected trackers' callbacks.
             TrackingMoveMarks.mark(plan.selectedTrackers, player, plan);
-            try { original.run(); }
-            finally {
+            try {
+                original.run();
+                // S9-D14: each admitted tracker's refresh, after its original updatePlayer as before, from the
+                // relation its admission built (nothing in the move changes a tracked entity's passengers).
+                for (Updated updated : plan.updated) refreshProjection(updated.entry, updated.relation);
+            } finally {
                 TrackingMoveMarks.unmark(plan.selectedTrackers, player, plan);
                 activeMove.set(null);
             }
@@ -649,19 +659,46 @@ public final class RegionalTrackingService {
         refreshProjection(entry);
     }
 
+    /**
+     * S9-D14: the service whose move plan {@code player} carries, when that service tracks {@code level}. A plan is
+     * on the player only while its service's movePlayer runs the original ChunkMap.move of its own level, so this is
+     * the service a lookup by that level finds; null otherwise (the caller then looks it up).
+     */
+    public static RegionalTrackingService movingService(ServerPlayer player, Object level) {
+        return player instanceof TrackingMoveMarks.Mover mover && mover.phoenium$activeMovePlan() instanceof MovePlan plan
+            && plan.service.level == level ? plan.service : null;
+    }
+
     public void movedPlayerUpdate(Object trackerIdentity, ServerPlayer player, Runnable original) {
+        Updated admitted = admitMove(trackerIdentity, player);
+        if (admitted == null) return;
+        original.run();
+        refreshProjection(admitted.entry, admitted.relation);
+    }
+    /** S9-D14: movedPlayerUpdate's checks; true when the original updatePlayer runs, its refresh then following the
+     * original move. */
+    public boolean admitMovedPlayer(Object trackerIdentity, ServerPlayer player) {
+        Updated admitted = admitMove(trackerIdentity, player);
+        if (admitted == null) return false;
+        activeMove.get().updated.add(admitted);
+        return true;
+    }
+    private record Updated(Entry entry, RangeProjection relation) { }
+    private Updated admitMove(Object trackerIdentity, ServerPlayer player) {
         MovePlan plan = Objects.requireNonNull(activeMove.get(), "unprepared move updatePlayer call");
         if (player != plan.player) throw new IllegalStateException("move player alias changed");
-        if (!plan.selectedTrackers.contains(trackerIdentity)) return;
+        if (!plan.selectedTrackers.contains(trackerIdentity)) return null;
         Entry entry = retainedTracker(trackerIdentity, "move tracker is not retained");
         // The tracked entity can enter removal after selection; its own removeEntity broadcast owns the exit.
-        if (removalInProgress(entry.entity, player)) return;
+        if (removalInProgress(entry.entity, player)) return null;
         requireEntityOwner(entry.candidate, entry.key);
         requireEntry(entry, entry.candidate);
-        requireRelation(publishedRange(entry.candidate));
+        // S9-D14: the relation is built from the current facts (its source route checked) right after requireEntry
+        // validated that source, so only its closure is checked; the same relation then gives the refreshed range.
+        RangeProjection relation = publishedRange(entry.candidate);
+        if (!dispatcher.requireUniformClosure(key(relation.source))) dispatcher.requireCurrentClosure(relation.footprint);
         finishing.scoreboard.requireTrackingSession(plan.connections, plan.players.get(player).session);
-        original.run();
-        refreshProjection(entry);
+        return new Updated(entry, relation);
     }
 
     public synchronized MigrationPlan planMigration(RegionDirectory.View proposed) {
@@ -815,8 +852,9 @@ public final class RegionalTrackingService {
         return entry;
     }
 
-    private void refreshProjection(Entry entry) {
-        entry.effectiveRange = publishedRange(entry.candidate).effectiveRange;
+    private void refreshProjection(Entry entry) { refreshProjection(entry, publishedRange(entry.candidate)); }
+    private void refreshProjection(Entry entry, RangeProjection relation) {
+        entry.effectiveRange = relation.effectiveRange;
         // S9-D10: seenConnections is only ever asked contains(); a retained copy with the same members is the same
         // answer, so a move that left the tracker's seenBy unchanged (nearly every move) keeps it uncopied.
         var live = access(entry.tracker).phoenium$getSeenBy();
@@ -859,8 +897,22 @@ public final class RegionalTrackingService {
         return new RangeProjection(source, visible,
             Set.copyOf(footprint), passengers);
     }
+    /**
+     * S9-D14: requireEntry(entry, candidate) then requireRelation(relation). When the relation's source is that
+     * candidate, requireEntry has just validated it on this thread, so the relation check goes on to its closure and
+     * passenger graph (whose check still requires the source's current fact and route).
+     */
+    private void requireEntryRelation(Entry entry, FullEntityFacts.Candidate candidate, RangeProjection relation) {
+        requireEntry(entry, candidate);
+        if (relation.source != candidate) { requireRelation(relation); return; }
+        if (!dispatcher.requireUniformClosure(key(relation.source))) dispatcher.requireCurrentClosure(relation.footprint);
+        if (!finishing.entityFacts.validTrackingPassengers(relation.source, relation.passengers))
+            throw new IllegalStateException("tracking passenger relation changed");
+    }
     private void requireRelation(RangeProjection projection) {
-        dispatcher.requireCurrentClosure(projection.footprint);
+        // S9-D14: every footprint key names this world (the source's and its passengers'); while it is uniformly
+        // routed, the source key's owner check is each key's (S9-D7).
+        if (!dispatcher.requireUniformClosure(key(projection.source))) dispatcher.requireCurrentClosure(projection.footprint);
         if (!finishing.entityFacts.validTrackingCandidate(projection.source))
             throw new IllegalStateException("tracking relation source identity changed");
         if (!finishing.entityFacts.validTrackingPassengers(projection.source, projection.passengers))
@@ -947,7 +999,8 @@ public final class RegionalTrackingService {
     private record MovePlan(ServerPlayer player, Object playerTracker, RangeProjection playerRelation,
                             FullFinishingScoreboard.TrackingCut connections,
                             Map<ServerPlayer, PlayerReceipt> players,
-                            Set<ServerPlayer> selectedPlayers, Set<Object> selectedTrackers) {
+                            Set<ServerPlayer> selectedPlayers, Set<Object> selectedTrackers,
+                            RegionalTrackingService service, List<Updated> updated) {
         MovePlan {
             players = Map.copyOf(players);
             selectedPlayers = Set.copyOf(selectedPlayers);

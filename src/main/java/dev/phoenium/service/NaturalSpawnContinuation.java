@@ -180,7 +180,8 @@ public final class NaturalSpawnContinuation {
                     var biome = level.getBiome(pos);
                     if (category == MobCategory.WATER_AMBIENT && biome.is(BiomeTags.REDUCED_WATER_AMBIENT_SPAWNS)
                             && level.getRandom().nextFloat() < 0.98F) { pc = Pc.NEXT_GROUP; continue; }
-                    query(biome.value().getMobSettings().getMobs(category)); pc = Pc.SELECT_RESULT; return;
+                    pc = Pc.SELECT_RESULT;
+                    if (!query(biome.value().getMobSettings().getMobs(category))) return;
                 }
                 case SELECT_RESULT -> {
                     var selected = query.snapshot().spawns().getRandom(level.getRandom());
@@ -195,7 +196,8 @@ public final class NaturalSpawnContinuation {
                     if (type.getCategory() == MobCategory.MISC || !type.canSpawnFarFromPlayer()
                             && distance > type.getCategory().getDespawnDistance() * type.getCategory().getDespawnDistance()
                             || !type.canSummon()) { pc = Pc.NEXT_ATTEMPT; continue; }
-                    query(level.getBiome(pos).value().getMobSettings().getMobs(category)); pc = Pc.CHECK_RESULT; return;
+                    pc = Pc.CHECK_RESULT;
+                    if (!query(level.getBiome(pos).value().getMobSettings().getMobs(category))) return;
                 }
                 case CHECK_RESULT -> {
                     boolean contains = query.snapshot().spawns().contains(spawnData); query = null;
@@ -229,9 +231,13 @@ public final class NaturalSpawnContinuation {
             }
         } finally { profiler.pop(); }
     }
-    private void query(net.minecraft.util.random.WeightedList<MobSpawnSettings.SpawnerData> fallback) {
+    /** Reaches a mobsAt query; true when it was answered in this owner turn (S9-D14), false to yield for it. */
+    private boolean query(net.minecraft.util.random.WeightedList<MobSpawnSettings.SpawnerData> fallback) {
         boolean fortress = category == MobCategory.MONSTER && level.getBlockState(pos.below()).is(Blocks.NETHER_BRICKS);
         queryGeneration = Math.incrementExact(queryGeneration);
         query = new NaturalSpawnStructureQuery(capture.structures, chunk, pos, category, fortress, fallback, capture::current);
+        if (!query.resolveOwned()) return false;
+        query.close();
+        return true;
     }
 }
