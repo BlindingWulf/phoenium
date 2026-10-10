@@ -28,6 +28,7 @@ public final class Phoenium implements DedicatedServerModInitializer {
 
     @Override
     public void onInitializeServer() {
+        SupportedStack.require(LOGGER);   // S9-E16 (S8-F1): refuse an unsupported stack before any world loads
         if (EngineConfig.ENABLED) {
             TileEngine.install();
             if (Boolean.getBoolean("phoenium.test.diagnostics")) {

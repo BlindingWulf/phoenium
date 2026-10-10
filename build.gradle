@@ -172,6 +172,10 @@ tasks.register('a3Harness', Jar) {
 
 loom {
     runs {
+        // S9-E16: the dev classpath has no C2ME, so the dev runServer starts as an unsupported stack on purpose
+        server {
+            property 'phoenium.allowUnsupportedStack', 'true'
+        }
         clientGameTest {
             client()
             name 'Phoenium Client GameTest'

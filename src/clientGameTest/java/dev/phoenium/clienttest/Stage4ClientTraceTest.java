@@ -57,6 +57,8 @@ public final class Stage4ClientTraceTest implements FabricClientGameTest {
             List<String> command = new ArrayList<>(List.of(Path.of(System.getProperty("java.home"), "bin",
                 System.getProperty("os.name", "").toLowerCase().contains("win") ? "java.exe" : "java").toString(),
                 "-Xmx2G", "-Dphoenium.test.diagnostics=true",
+                // S9-E16: the trace server is fabric-api only (no C2ME) on purpose
+                "-Dphoenium.allowUnsupportedStack=true",
                 "-Dphoenium.stage4.candidate=" + candidate,
                 // Both modes need the frozen movement contract's explicit finite authority.
                 // The shared startup probe assigns the reference domain to A; candidate keeps

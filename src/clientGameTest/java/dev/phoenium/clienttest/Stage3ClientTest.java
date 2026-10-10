@@ -2264,6 +2264,8 @@ public final class Stage3ClientTest implements FabricClientGameTest {
                 System.getProperty("os.name", "").toLowerCase().contains("win") ? "java.exe" : "java");
             List<String> command = new ArrayList<>(List.of(
                 java.toString(), "-Xmx2G",
+                // S9-E16: this owner-region topology server is fabric-api only (no C2ME) on purpose
+                "-Dphoenium.allowUnsupportedStack=true",
                 "-Dphoenium.stage3.explicitTopology=true",
                 "-Dphoenium.test.chunkFixtureSupport=true",
                 "-Dphoenium.test.chunkBindingTrace=true",
