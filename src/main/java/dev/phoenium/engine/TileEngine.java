@@ -25,11 +25,9 @@ import net.minecraft.util.profiling.InactiveProfiler;
 import net.minecraft.util.profiling.Profiler;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.MobCategory;
-import net.minecraft.world.entity.animal.bee.Bee;
 import net.minecraft.world.entity.animal.dolphin.Dolphin;
 import net.minecraft.world.entity.boss.enderdragon.EnderDragon;
 import net.minecraft.world.entity.boss.wither.WitherBoss;
-import net.minecraft.world.entity.npc.villager.AbstractVillager;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.entity.projectile.throwableitemprojectile.ThrownEnderpearl;
 import net.minecraft.world.entity.raid.Raider;
@@ -90,6 +88,8 @@ public final class TileEngine {
     private static final LongAdder LOAD_SERVICES = new LongAdder();
     private static final LongAdder STORAGE_SERVICES = new LongAdder();
     private static final LongAdder WRITE_SERVICES = new LongAdder();
+    private static final LongAdder VILLAGE_SERVICES = new LongAdder();
+    private static final LongAdder STRUCTURE_SERVICES = new LongAdder();
     private static long services;
     private static long serviceNanos;
     private static final AtomicInteger TRAP_LOGS = new AtomicInteger();
@@ -150,13 +150,20 @@ public final class TileEngine {
         LOGGER.info("PHOENIUM_STAGE2 stopped lifecycle=STOPPED mode=engine-tiles {}", counters());
     }
 
+    /** The engine's state and counters, for the test diagnostics command (server thread). */
+    public static String diagnostics() {
+        return "mode=engine-tiles lifecycle=" + (running ? "RUNNING" : "STOPPED") + " workers=" + EngineConfig.WORKERS
+            + " parallel=" + (pool == null ? "OFF" : "TILES") + " " + counters();
+    }
+
     public static String counters() {
         return ENTITY.describe("entity") + " parallelEntities=" + parallelEntities + " serialEntities=" + serialEntities
             + " " + CHUNK.describe("chunk") + " spawnChunks=" + spawnChunks + " tickChunks=" + tickChunks + " chunkFallbacks=" + chunkFallbacks
             + " serialFallbacks=" + serialFallbacks + " loadServices=" + LOAD_SERVICES.sum() + " storageServices=" + STORAGE_SERVICES.sum()
-            + " writeServices=" + WRITE_SERVICES.sum() + " services=" + services + " serviceUs=" + serviceNanos / 1000
+            + " writeServices=" + WRITE_SERVICES.sum() + " villageServices=" + VILLAGE_SERVICES.sum()
+            + " structureServices=" + STRUCTURE_SERVICES.sum() + " services=" + services + " serviceUs=" + serviceNanos / 1000
             + " loadTraps=" + LOAD_TRAPS.sum() + " writeTraps=" + WRITE_TRAPS.sum() + " storageTraps=" + STORAGE_TRAPS.sum()
-            + " transforms=" + EngineConfig.transforms();
+            + " " + EngineTracker.counters() + " transforms=" + EngineConfig.transforms();
     }
 
     /** The wrapped EntityTickList.forEach of ServerLevel.tick. */
@@ -317,6 +324,24 @@ public final class TileEngine {
         return service(work);
     }
 
+    /**
+     * S9-E4: PoiManager.sectionsToVillage first runs the village-distance tracker's pending updates (a write). From a tile
+     * with updates pending, the server thread runs them; with none pending the call only reads.
+     */
+    public static void villageUpdates(Runnable work) {
+        VILLAGE_SERVICES.increment();
+        service(() -> {
+            work.run();
+            return null;
+        });
+    }
+
+    /** S9-E4: a structure search from a tile (a cartographer's map trade) reads and fills shared caches: the server thread runs it. */
+    public static <T> T structureSearch(Supplier<T> work) {
+        STRUCTURE_SERVICES.increment();
+        return service(work);
+    }
+
     // ---- traps (services off) ----
 
     /** Services off: a chunk request a tile thread cannot answer without loading is counted, logged, answered empty. */
@@ -363,9 +388,13 @@ public final class TileEngine {
      */
     public static boolean inColour() { return colourRunning; }
 
-    /** Whether the serial set takes the entity: it acts across distances or shared structures a tile cannot claim. */
+    /**
+     * Whether the serial set takes the entity: it acts across distances or shared structures a tile cannot claim.
+     * S9-E4: villagers and bees run in tiles (their POIs lie within 48 blocks, inside the claim; POI dirty marks and the
+     * village-distance tracker's updates are deferred or serviced, structure searches serviced).
+     */
     static boolean serial(Entity entity) {
-        if (entity instanceof Player || entity instanceof Raider || entity instanceof AbstractVillager || entity instanceof Bee
+        if (entity instanceof Player || entity instanceof Raider
                 || entity instanceof ThrownEnderpearl || entity instanceof EnderDragon || entity instanceof WitherBoss
                 || entity instanceof MinecartHopper || entity instanceof MinecartCommandBlock || entity.portalProcess != null
                 // a fed dolphin searches for structures 50 chunks away (a tamed pet's teleport is deferred instead)

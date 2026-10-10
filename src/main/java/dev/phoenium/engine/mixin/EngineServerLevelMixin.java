@@ -7,13 +7,16 @@ import dev.phoenium.engine.TileContext;
 import dev.phoenium.engine.TileEngine;
 import java.util.function.Consumer;
 import net.minecraft.core.BlockPos;
+import net.minecraft.tags.TagKey;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.chunk.LevelChunk;
 import net.minecraft.world.level.entity.EntityTickList;
+import net.minecraft.world.level.levelgen.structure.Structure;
 import net.minecraft.world.level.pathfinder.PathTypeCache;
+import org.jspecify.annotations.Nullable;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
@@ -39,6 +42,14 @@ abstract class EngineServerLevelMixin {
     @WrapMethod(method = "tickChunk")
     private void phoenium$recordTickChunk(LevelChunk chunk, int tickSpeed, Operation<Void> original) {
         if (!TileEngine.recordTickChunk((ServerLevel) (Object) this, chunk, tickSpeed)) original.call(chunk, tickSpeed);
+    }
+
+    /** S9-E4: a structure search from a tile (a cartographer's map trade) runs on the server thread with no tile running. */
+    @WrapMethod(method = "findNearestMapStructure")
+    private @Nullable BlockPos phoenium$structureSearch(TagKey<Structure> tag, BlockPos origin, int radius, boolean createReference,
+                                                       Operation<BlockPos> original) {
+        if (TileEngine.current() == null) return original.call(tag, origin, radius, createReference);
+        return TileEngine.structureSearch(() -> original.call(tag, origin, radius, createReference));
     }
 
     @Inject(method = "blockEvent", at = @At("HEAD"), cancellable = true)

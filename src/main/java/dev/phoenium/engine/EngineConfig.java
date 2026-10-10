@@ -39,6 +39,12 @@ public final class EngineConfig {
      * false keeps the S9-E1 traps (an empty answer for a load, the write done in place), counted and logged.
      */
     public static final boolean SERVICES = !"false".equalsIgnoreCase(System.getProperty("phoenium.engine.services"));
+    /**
+     * S9-E4 {@code phoenium.engine.tracker} (default true): ChunkMap's tracker loops skip each check of a tracked entity
+     * against a player that cannot change anything (the entity is beyond the player's view distance + 1 chunks and the
+     * player does not see it); false runs every check as vanilla does.
+     */
+    public static final boolean TRACKER = !"false".equalsIgnoreCase(System.getProperty("phoenium.engine.tracker"));
 
     /** Blocks between a tile's edge and its claim's edge. */
     public static int claimReachBlocks() { return CLAIM_RADIUS << (TILE_SHIFT + 4); }
@@ -46,7 +52,7 @@ public final class EngineConfig {
     public static String describe() {
         return "engine=tiles tileShift=" + TILE_SHIFT + " tileChunks=" + (1 << TILE_SHIFT) + " claimRadius=" + CLAIM_RADIUS
             + " colours=" + COLOURS + " reachBlocks=" + claimReachBlocks() + " strict=" + STRICT + " chunks=" + CHUNKS
-            + " schedule=" + (DAG ? "dag" : "colours") + " services=" + SERVICES;
+            + " schedule=" + (DAG ? "dag" : "colours") + " services=" + SERVICES + " tracker=" + TRACKER;
     }
 
     private static final java.util.concurrent.ConcurrentLinkedQueue<String> TRANSFORMS = new java.util.concurrent.ConcurrentLinkedQueue<>();

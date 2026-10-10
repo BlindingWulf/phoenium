@@ -28,6 +28,9 @@ public final class Phoenium implements DedicatedServerModInitializer {
     public void onInitializeServer() {
         if (EngineConfig.ENABLED) {
             TileEngine.install();
+            if (Boolean.getBoolean("phoenium.test.diagnostics")) {
+                CommandRegistrationCallback.EVENT.register(Phoenium::registerEngineDiagnosticsCommand);
+            }
             return;
         }
         ServerLifecycleEvents.SERVER_STARTED.register(LIVE::start);
@@ -36,6 +39,19 @@ public final class Phoenium implements DedicatedServerModInitializer {
             CommandRegistrationCallback.EVENT.register(Phoenium::registerDiagnosticsCommand);
         }
         LOGGER.info("PHOENIUM_STAGE2 entrypoint registered once; live integration awaits server start.");
+    }
+
+    /** S9-E4: engine mode's test diagnostics: the engine's counters (phases, services, traps, tracker) on demand. */
+    private static void registerEngineDiagnosticsCommand(CommandDispatcher<CommandSourceStack> dispatcher,
+                                                         net.minecraft.commands.CommandBuildContext registryAccess,
+                                                         Commands.CommandSelection selection) {
+        dispatcher.register(Commands.literal("phoenium")
+            .then(Commands.literal("diagnostics")
+                .executes(context -> {
+                    String response = TileEngine.diagnostics();
+                    context.getSource().sendSuccess(() -> Component.literal(response), false);
+                    return 1;
+                })));
     }
 
     private static void registerDiagnosticsCommand(CommandDispatcher<CommandSourceStack> dispatcher,
