@@ -1,0 +1,29 @@
+{
+  "required": true,
+  "package": "dev.phoenium.engine.mixin",
+  "plugin": "dev.phoenium.engine.mixin.EngineMixinPlugin",
+  "compatibilityLevel": "JAVA_25",
+  "mixins": [
+    "EngineAdvancementsMixin",
+    "EngineChunkCacheMixin",
+    "EngineChunkMapAccess",
+    "EngineChunkMapMixin",
+    "EngineClassInstanceMultiMapMixin",
+    "EngineCriterionTriggerMixin",
+    "EngineEntityManagerMixin",
+    "EngineLevelChunkMixin",
+    "EngineLevelMixin",
+    "EngineLevelTicksMixin",
+    "EngineMinecraftServerMixin",
+    "EnginePoiManagerMixin",
+    "EngineScoreboardMixin",
+    "EngineSectionCallbackMixin",
+    "EngineSectionStorageMixin",
+    "EngineServerLevelMixin",
+    "EngineServerPlayerMixin",
+    "EngineStatsMixin",
+    "EngineTamableAnimalMixin",
+    "EngineWalkNodeEvaluatorAccess"
+  ],
+  "injectors": { "defaultRequire": 1 }
+}

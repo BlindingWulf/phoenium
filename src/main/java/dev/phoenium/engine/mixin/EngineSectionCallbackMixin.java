@@ -1,0 +1,62 @@
+package dev.phoenium.engine.mixin;
+
+import dev.phoenium.engine.TileContext;
+import dev.phoenium.engine.TileEngine;
+import net.minecraft.core.SectionPos;
+import net.minecraft.world.entity.Entity;
+import net.minecraft.world.level.entity.EntityAccess;
+import org.spongepowered.asm.mixin.Final;
+import org.spongepowered.asm.mixin.Mixin;
+import org.spongepowered.asm.mixin.Shadow;
+import org.spongepowered.asm.mixin.Unique;
+import org.spongepowered.asm.mixin.injection.At;
+import org.spongepowered.asm.mixin.injection.Inject;
+import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
+
+/**
+ * S9-E1 (engine mode only): while a tile runs, no entity changes section membership. A move into another section is
+ * applied after the colour (once per phase per entity; the entity stays in its old section meanwhile, which entity
+ * queries' 2-block inflation covers at normal speeds). A removal is applied after the colour, once; isRemoved() is
+ * already true, and later moves of that entity are ignored.
+ */
+@Mixin(targets = "net.minecraft.world.level.entity.PersistentEntitySectionManager$Callback")
+abstract class EngineSectionCallbackMixin {
+    @Shadow @Final private EntityAccess entity;
+    @Shadow private long currentSectionKey;
+
+    @Unique private long phoenium$movePhase = -1L;
+    @Unique private boolean phoenium$removeDeferred;
+
+    @Shadow public abstract void onMove();
+
+    @Shadow public abstract void onRemove(Entity.RemovalReason reason);
+
+    @Inject(method = "onMove", at = @At("HEAD"), cancellable = true)
+    private void phoenium$deferMove(CallbackInfo ci) {
+        TileContext context = TileEngine.current();
+        if (context == null) return;
+        if (this.phoenium$removeDeferred) {
+            ci.cancel();
+            return;
+        }
+        if (SectionPos.asLong(this.entity.blockPosition()) == this.currentSectionKey) return;
+        ci.cancel();
+        long phase = TileEngine.phaseId();
+        if (this.phoenium$movePhase == phase) return;
+        this.phoenium$movePhase = phase;
+        context.defer(() -> {
+            this.phoenium$movePhase = -1L;
+            if (!this.phoenium$removeDeferred) this.onMove();
+        });
+    }
+
+    @Inject(method = "onRemove", at = @At("HEAD"), cancellable = true)
+    private void phoenium$deferRemove(Entity.RemovalReason reason, CallbackInfo ci) {
+        TileContext context = TileEngine.current();
+        if (context == null) return;
+        ci.cancel();
+        if (this.phoenium$removeDeferred) return;
+        this.phoenium$removeDeferred = true;
+        context.defer(() -> this.onRemove(reason));
+    }
+}

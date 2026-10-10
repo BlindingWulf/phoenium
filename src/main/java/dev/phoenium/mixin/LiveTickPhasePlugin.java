@@ -1,4 +1,5 @@
 package dev.phoenium.mixin;
+import dev.phoenium.engine.EngineConfig;
 import dev.phoenium.live.LiveTickPhaseBoundary;
 import java.util.List;
 import java.util.Set;
@@ -8,7 +9,8 @@ import org.spongepowered.asm.mixin.extensibility.IMixinInfo;
 public final class LiveTickPhasePlugin implements IMixinConfigPlugin {
     public void onLoad(String mixinPackage) { }
     public String getRefMapperConfig() { return null; }
-    public boolean shouldApplyMixin(String target, String mixin) { return true; }
+    /** S9-E1: engine mode bypasses the ownership machinery; its tick-phase adapters are not applied. */
+    public boolean shouldApplyMixin(String target, String mixin) { return !EngineConfig.ENABLED; }
     public void acceptTargets(Set<String> own, Set<String> other) { }
     public List<String> getMixins() { return null; }
     public void preApply(String target, ClassNode node, String mixin, IMixinInfo info) { }

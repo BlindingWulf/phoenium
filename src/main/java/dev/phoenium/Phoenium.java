@@ -3,6 +3,8 @@ package dev.phoenium;
 import com.mojang.brigadier.CommandDispatcher;
 import com.mojang.brigadier.arguments.IntegerArgumentType;
 import com.mojang.brigadier.arguments.StringArgumentType;
+import dev.phoenium.engine.EngineConfig;
+import dev.phoenium.engine.TileEngine;
 import dev.phoenium.live.ChunkRuntimeTrace;
 import dev.phoenium.live.PhoeniumLiveRuntime;
 import net.fabricmc.api.DedicatedServerModInitializer;
@@ -19,10 +21,15 @@ import org.slf4j.LoggerFactory;
 /** Server-only Stage 2 lifecycle root. */
 public final class Phoenium implements DedicatedServerModInitializer {
     private static final Logger LOGGER = LoggerFactory.getLogger("Phoenium");
-    private static final PhoeniumLiveRuntime LIVE = new PhoeniumLiveRuntime(LOGGER);
+    /** S9-E1: null in engine mode, where the ownership machinery is bypassed and its mixins are not applied. */
+    private static final PhoeniumLiveRuntime LIVE = EngineConfig.ENABLED ? null : new PhoeniumLiveRuntime(LOGGER);
 
     @Override
     public void onInitializeServer() {
+        if (EngineConfig.ENABLED) {
+            TileEngine.install();
+            return;
+        }
         ServerLifecycleEvents.SERVER_STARTED.register(LIVE::start);
         // The stopServer wrapper acknowledges LIVE after vanilla drains retained chunk work.
         if (Boolean.getBoolean("phoenium.test.diagnostics")) {

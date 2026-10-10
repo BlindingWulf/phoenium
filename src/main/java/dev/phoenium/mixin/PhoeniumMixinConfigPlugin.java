@@ -1,5 +1,6 @@
 package dev.phoenium.mixin;
 
+import dev.phoenium.engine.EngineConfig;
 import java.util.List;
 import java.util.Set;
 import java.io.IOException;
@@ -18,6 +19,9 @@ public final class PhoeniumMixinConfigPlugin implements IMixinConfigPlugin {
     private static final String BASE_LEVEL = "dev.phoenium.mixin.FullFinishingLevelQueriesMixin";
     private static final String LITHIUM_LEVEL = "dev.phoenium.mixin.LithiumFullFinishingLevelQueriesMixin";
     private static final String GEYSER_FLOODGATE_SKIN = "dev.phoenium.mixin.GeyserFloodgateSkinUploaderMixin";
+    private static final Set<String> ENGINE_RETAINED = Set.of(
+        "dev.phoenium.mixin.TrackedEntityRangeFastPathMixin",
+        "dev.phoenium.mixin.PublishedDirectHolderSetMixin");
     private boolean lithium;
     private boolean lithiumChunkAccess;
     private boolean geyserFloodgate;
@@ -32,6 +36,11 @@ public final class PhoeniumMixinConfigPlugin implements IMixinConfigPlugin {
     @Override public String getRefMapperConfig() { return null; }
 
     @Override public boolean shouldApplyMixin(String targetClassName, String mixinClassName) {
+        // S9-E1: engine mode is L5 plus the tile engine; of these mixins it keeps only the standalone ones
+        if (EngineConfig.ENABLED) {
+            if (mixinClassName.equals(GEYSER_FLOODGATE_SKIN)) return geyserFloodgate;
+            return ENGINE_RETAINED.contains(mixinClassName);
+        }
         if (mixinClassName.equals("dev.phoenium.mixin.MobDecisionMixin")
                 || mixinClassName.equals("dev.phoenium.mixin.MobDecisionGoalSelectorMixin"))
             return dev.phoenium.live.MobDecisionScheduler.Settings.fromProperties().enabled();
