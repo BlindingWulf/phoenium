@@ -62,6 +62,11 @@ public final class EngineConfig {
     public static final boolean SPAWN_MEMO = !"false".equalsIgnoreCase(System.getProperty("phoenium.engine.spawnMemo"));
     /** S9-E7 {@code phoenium.engine.spawnMemo.check}: every N-th spawn state of a level is also built the vanilla way and compared; 0 = never. */
     public static final int SPAWN_MEMO_CHECK = clamp(Integer.getInteger("phoenium.engine.spawnMemo.check", 400), 0, 1 << 20);
+    /**
+     * S9-E8 {@code phoenium.engine.protection.check}: ticks between checks of every protection membership (A3, projectile
+     * cap, pearl cap) against its object (stale tile/world, orphan); 0 = never. Only with a protection enabled.
+     */
+    public static final int PROTECTION_CHECK = clamp(Integer.getInteger("phoenium.engine.protection.check", 20), 0, 1 << 20);
 
     /** Blocks between a tile's edge and its claim's edge. */
     public static int claimReachBlocks() { return CLAIM_RADIUS << (TILE_SHIFT + 4); }
@@ -71,7 +76,7 @@ public final class EngineConfig {
             + " colours=" + COLOURS + " reachBlocks=" + claimReachBlocks() + " strict=" + STRICT + " chunks=" + CHUNKS
             + " schedule=" + (DAG ? "dag" : "colours") + " services=" + SERVICES + " tracker=" + TRACKER + " trackerIndex=" + TRACKER_INDEX
             + " trackerIndexCheck=" + TRACKER_INDEX_CHECK + " trackerIndexFull=" + TRACKER_INDEX_FULL
-            + " spawnMemo=" + SPAWN_MEMO + " spawnMemoCheck=" + SPAWN_MEMO_CHECK;
+            + " spawnMemo=" + SPAWN_MEMO + " spawnMemoCheck=" + SPAWN_MEMO_CHECK + " protectionCheck=" + PROTECTION_CHECK;
     }
 
     private static final java.util.concurrent.ConcurrentLinkedQueue<String> TRANSFORMS = new java.util.concurrent.ConcurrentLinkedQueue<>();

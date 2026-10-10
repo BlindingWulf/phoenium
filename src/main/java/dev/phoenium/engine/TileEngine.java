@@ -107,14 +107,22 @@ public final class TileEngine {
         long tileNanos;
         long applyNanos;
         long serialNanos;
+        /** S9-E8: per phase, the longest dependency chain of measured tile times (dag) or the sum of each colour's largest tile. */
+        long criticalNanos;
+        /** S9-E8: per phase, the largest single tile time. */
+        long largestNanos;
 
         String describe(String prefix) {
             return prefix + "Phases=" + phases + " " + prefix + "ColourRuns=" + colourRuns + " " + prefix + "ParallelRuns=" + parallelRuns
                 + " " + prefix + "Tiles=" + tiles + " " + prefix + "MaxColourTiles=" + maxColourTiles + " " + prefix + "Deferred=" + deferredApplied
                 + " " + prefix + "PhaseUs=" + phaseNanos / 1000 + " " + prefix + "TileUs=" + tileNanos / 1000 + " " + prefix + "ApplyUs="
-                + applyNanos / 1000 + " " + prefix + "SerialUs=" + serialNanos / 1000;
+                + applyNanos / 1000 + " " + prefix + "SerialUs=" + serialNanos / 1000 + " " + prefix + "CriticalUs=" + criticalNanos / 1000
+                + " " + prefix + "LargestUs=" + largestNanos / 1000;
         }
     }
+
+    /** True on the server thread of a running engine. */
+    public static boolean onServerThread() { return Thread.currentThread() == serverThread; }
 
     /** The context of the tile this thread is running, or null (also for every thread outside engine mode). */
     public static TileContext current() {
@@ -167,7 +175,7 @@ public final class TileEngine {
             + " structureServices=" + STRUCTURE_SERVICES.sum() + " services=" + services + " serviceUs=" + serviceNanos / 1000
             + " loadTraps=" + LOAD_TRAPS.sum() + " writeTraps=" + WRITE_TRAPS.sum() + " storageTraps=" + STORAGE_TRAPS.sum()
             + " " + EngineTracker.counters() + " " + EngineSpawnMemo.counters() + " " + EngineProtections.describe()
-            + " transforms=" + EngineConfig.transforms();
+            + " " + EngineTimers.counters() + " transforms=" + EngineConfig.transforms();
     }
 
     /** The wrapped EntityTickList.forEach of ServerLevel.tick. */
@@ -525,6 +533,7 @@ public final class TileEngine {
         }
 
         private void runColours(TileBody body, long phaseId, long gameTime, boolean parallel) {
+            long phaseLargest = 0L;
             for (ArrayList<TileWork> work : colours) {
                 int count = work.size();
                 if (count == 0) continue;
@@ -545,6 +554,10 @@ public final class TileEngine {
                         for (int i = 0; i < count; i++) runner.run(order[i], MAIN);
                     }
                     Arrays.fill(order, 0, count, null);
+                    long colourLargest = 0L;
+                    for (int i = 0; i < count; i++) colourLargest = Math.max(colourLargest, work.get(i).nanos);
+                    stats.criticalNanos += colourLargest;
+                    phaseLargest = Math.max(phaseLargest, colourLargest);
                     long applyStart = System.nanoTime();
                     for (int i = 0; i < count; i++) apply(work.get(i));
                     stats.applyNanos += System.nanoTime() - applyStart;
@@ -552,6 +565,7 @@ public final class TileEngine {
                     colourRunning = false;
                 }
             }
+            stats.largestNanos += phaseLargest;
         }
 
         /** Every tile in one job; a tile waits only for its lower-colour neighbours; effects apply after the job. */
@@ -587,6 +601,23 @@ public final class TileEngine {
             try {
                 pool.run(new EngineWorkerPool.DagJob(order, roots, total, runner), MAIN);
                 Arrays.fill(order, 0, roots, null);
+                // S9-E8: the longest chain of measured tile times (colour order is a topological order of the dag)
+                long critical = 0L;
+                long largest = 0L;
+                for (ArrayList<TileWork> work : colours) {
+                    for (int i = 0, n = work.size(); i < n; i++) {
+                        TileWork tile = work.get(i);
+                        long finish = tile.earliest + tile.nanos;
+                        critical = Math.max(critical, finish);
+                        largest = Math.max(largest, tile.nanos);
+                        for (int k = 0; k < tile.successorCount; k++) {
+                            TileWork next = tile.successors[k];
+                            if (next.earliest < finish) next.earliest = finish;
+                        }
+                    }
+                }
+                stats.criticalNanos += critical;
+                stats.largestNanos += largest;
                 long applyStart = System.nanoTime();
                 for (ArrayList<TileWork> work : colours) {
                     for (int i = 0, n = work.size(); i < n; i++) apply(work.get(i));

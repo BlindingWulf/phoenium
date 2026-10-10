@@ -41,7 +41,11 @@ public final class Phoenium implements DedicatedServerModInitializer {
         LOGGER.info("PHOENIUM_STAGE2 entrypoint registered once; live integration awaits server start.");
     }
 
-    /** S9-E4: engine mode's test diagnostics: the engine's counters (phases, services, traps, tracker) on demand. */
+    /**
+     * S9-E4: engine mode's test diagnostics: the engine's counters (phases, services, traps, tracker) on demand. S9-E8:
+     * {@code phoenium mark <label>} logs them as {@code PHOENIUM_ENGINE mark <label> ...} and answers briefly (an RCON
+     * reply is one packet), so a harness can diff two marks (the measure window) from the server log.
+     */
     private static void registerEngineDiagnosticsCommand(CommandDispatcher<CommandSourceStack> dispatcher,
                                                          net.minecraft.commands.CommandBuildContext registryAccess,
                                                          Commands.CommandSelection selection) {
@@ -51,7 +55,15 @@ public final class Phoenium implements DedicatedServerModInitializer {
                     String response = TileEngine.diagnostics();
                     context.getSource().sendSuccess(() -> Component.literal(response), false);
                     return 1;
-                })));
+                }))
+            .then(Commands.literal("mark")
+                .then(Commands.argument("label", StringArgumentType.word())
+                    .executes(context -> {
+                        String label = StringArgumentType.getString(context, "label");
+                        LOGGER.info("PHOENIUM_ENGINE mark {} {}", label, TileEngine.diagnostics());
+                        context.getSource().sendSuccess(() -> Component.literal("PHOENIUM_MARK " + label), false);
+                        return 1;
+                    }))));
     }
 
     private static void registerDiagnosticsCommand(CommandDispatcher<CommandSourceStack> dispatcher,

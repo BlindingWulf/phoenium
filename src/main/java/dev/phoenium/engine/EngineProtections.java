@@ -8,6 +8,7 @@ import dev.phoenium.live.PearlOwnerAccess;
 import dev.phoenium.live.ProjectileMembershipLedger;
 import dev.phoenium.region.RegionId;
 import java.util.ArrayDeque;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.IdentityHashMap;
 import java.util.List;
@@ -24,6 +25,8 @@ import net.minecraft.world.entity.Mob;
 import net.minecraft.world.entity.projectile.Projectile;
 import net.minecraft.world.entity.projectile.throwableitemprojectile.ThrownEnderpearl;
 import net.minecraft.world.level.ChunkPos;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * S9-E5 (engine mode only): the Stage 7 protections with the engine's scopes. Policies, properties and defaults are default
@@ -42,10 +45,22 @@ import net.minecraft.world.level.ChunkPos;
  * the cleanup follows the identity to its current membership (default mode reroutes it to the current owner). An object
  * gone by then settles as a rejection. The incarnation is the native entity id (new for every entity object, including a
  * reload of the same UUID).
+ *
+ * <p>S9-E8: a membership follows its object when the object's tile changes, not at its next decision, load or
+ * classification. The transition is the entity's section change as the engine applies it (PersistentEntitySectionManager
+ * Callback.onMove storing the new section: inline on the server thread, or after the tile's colour / phase for a move made
+ * in a tile; every tile change is a section change). There the A3 membership is relocated (MobDecisionScheduler.relocate,
+ * which keeps the pending deadline, as default mode does when the owner region changes) and a projectile is readmitted to
+ * its new tile with its admission age. A dimension change, a conversion and an unload are a removal plus an add of an
+ * entity object, i.e. a retirement plus an admission. Every {@link EngineConfig#PROTECTION_CHECK} ticks (start of the server
+ * tick: no tile running, every deferred move and removal applied) each membership is checked against its object: no live
+ * object (orphan) or another tile / world than the object's (stale) is counted, logged and repaired; the six counters and
+ * projectileLateRelocations (a tile change first seen at classification) must stay 0.
  */
 public final class EngineProtections {
     private EngineProtections() { }
 
+    private static final Logger LOGGER = LoggerFactory.getLogger("Phoenium");
     private static final MobDecisionScheduler MOBS = new MobDecisionScheduler(MobDecisionScheduler.Settings.fromProperties());
     private static final ProjectileMembershipLedger PROJECTILES = new ProjectileMembershipLedger();
     private static final PearlMembershipLedger PEARLS = new PearlMembershipLedger();
@@ -70,6 +85,19 @@ public final class EngineProtections {
     private static long pearlAdmissions;
     private static long pearlExecutions;
     private static long pearlRejections;
+    // S9-E8 transitions and self-check (server thread)
+    private static long mobRelocations;
+    private static long projectileLateRelocations;
+    private static long checkTicks;
+    private static long protectionChecks;
+    private static long mobStale;
+    private static long mobOrphans;
+    private static long projectileStale;
+    private static long projectileOrphans;
+    private static long pearlStale;
+    private static long pearlOrphans;
+    private static final java.util.concurrent.atomic.LongAdder OFF_THREAD = new java.util.concurrent.atomic.LongAdder();
+    private static int faultLogs;
     private static volatile boolean closed;
 
     private record Cleanup(Entity entity, boolean pearl) { }
@@ -80,6 +108,7 @@ public final class EngineProtections {
         ServerEntityEvents.ENTITY_LOAD.register(EngineProtections::loaded);
         ServerEntityEvents.ENTITY_UNLOAD.register(EngineProtections::unloaded);
         ServerTickEvents.END_SERVER_TICK.register(EngineProtections::drain);
+        ServerTickEvents.START_SERVER_TICK.register(EngineProtections::check);
     }
 
     /** The engine tile holding a chunk, as a region identity for the default-mode scheduler and ledger scopes. */
@@ -191,14 +220,127 @@ public final class EngineProtections {
         }
     }
 
-    /** From the entity phase's classification (server thread): a projectile now in another tile moves its membership. */
+    /**
+     * S9-E8: the entity's section change was stored (server thread; from the section callback): its memberships move to the
+     * tile it is in now. Not expected in a tile (a tile's section changes are applied after its colour or phase) nor off the
+     * server thread (counted as protectionOffThread; the self-check repairs what it left).
+     */
+    public static void sectionMoved(Entity entity) {
+        if (!ANY || closed || !(entity.level() instanceof ServerLevel level)) return;
+        TileContext context = TileEngine.current();
+        if (context != null) {
+            context.defer(() -> sectionMoved(entity));
+            return;
+        }
+        if (!TileEngine.onServerThread()) {
+            OFF_THREAD.increment();
+            return;
+        }
+        RegionId tile = null;
+        if (MOB_DECISIONS && entity instanceof Mob && MobDecisionContext.category(entity.getClass()) != null) {
+            String id = entity.getUUID().toString();
+            MobDecisionScheduler.Scope scope = MOBS.scopeOf(id);
+            tile = tile(level, entity.chunkPosition());
+            if (scope != null && !scope.region().equals(tile)) {
+                MOBS.relocate(id, entity.getId(), tile);
+                mobRelocations++;
+            }
+        }
+        if (PROJECTILE_CAP) {
+            ProjectileMembershipLedger.Membership membership = PROJECTILE_MEMBERS.get(entity);
+            if (membership != null) {
+                if (tile == null) tile = tile(level, entity.chunkPosition());
+                if (!membership.scope().region().equals(tile)) {
+                    projectileRelocations++;
+                    admitProjectile(entity, tile);
+                }
+            }
+        }
+    }
+
+    /**
+     * From the entity phase's classification (server thread): a projectile now in another tile moves its membership. Since
+     * S9-E8 the section change has moved it already; a move first seen here is counted (projectileLateRelocations, must be 0).
+     */
     static void classified(ServerLevel level, Entity entity, ChunkPos chunk) {
         ProjectileMembershipLedger.Membership membership = PROJECTILE_MEMBERS.get(entity);
         if (membership == null || closed) return;
         RegionId tile = tile(level, chunk);
         if (membership.scope().region().equals(tile)) return;
+        projectileLateRelocations++;
+        fault("projectile relocated late", entity, membership.scope().region(), tile);
         projectileRelocations++;
         admitProjectile(entity, tile);
+    }
+
+    /**
+     * S9-E8 self-check, every {@link EngineConfig#PROTECTION_CHECK} ticks at the start of the server tick (no tile running,
+     * every deferred move and removal applied): each membership against its object. Repairs what it counts.
+     */
+    private static void check(MinecraftServer server) {
+        if (closed || EngineConfig.PROTECTION_CHECK <= 0 || ++checkTicks % EngineConfig.PROTECTION_CHECK != 0) return;
+        if (TileEngine.current() != null || !TileEngine.onServerThread()) return;
+        protectionChecks++;
+        Map<WorldId, ServerLevel> levels = new HashMap<>();
+        for (ServerLevel level : server.getAllLevels()) levels.put(WorldId.of(level.dimension().identifier().toString()), level);
+        if (MOB_DECISIONS) {
+            for (MobDecisionScheduler.MemberView member : MOBS.snapshot().members()) {
+                ServerLevel level = levels.get(member.scope().region().world());
+                Entity entity = level == null ? null : level.getEntity(UUID.fromString(member.id()));
+                if (entity == null || entity.isRemoved() || entity.getId() != member.incarnation()) {
+                    mobOrphans++;
+                    fault("A3 orphan", member.id(), member.scope().region(), null);
+                    MOBS.retire(member.id(), member.incarnation());
+                    continue;
+                }
+                RegionId tile = tile(level, entity.chunkPosition());
+                if (!tile.equals(member.scope().region())) {
+                    mobStale++;
+                    fault("A3 stale", entity, member.scope().region(), tile);
+                    MOBS.relocate(member.id(), member.registryIncarnation(), tile);
+                }
+            }
+        }
+        for (Entity entity : new ArrayList<>(PROJECTILE_MEMBERS.keySet())) {
+            ProjectileMembershipLedger.Membership membership = PROJECTILE_MEMBERS.get(entity);
+            if (membership == null) continue;
+            if (entity.isRemoved() || !(entity.level() instanceof ServerLevel level)) {
+                projectileOrphans++;
+                fault("projectile orphan", entity, membership.scope().region(), null);
+                PROJECTILE_MEMBERS.remove(entity, membership);
+                PROJECTILE_ALIASES.remove(membership.identity(), entity);
+                PROJECTILES.retire(membership.objectId(), membership.incarnation());
+                continue;
+            }
+            RegionId tile = tile(level, entity.chunkPosition());
+            if (!tile.equals(membership.scope().region())) {
+                projectileStale++;
+                fault("projectile stale", entity, membership.scope().region(), tile);
+                projectileRelocations++;
+                admitProjectile(entity, tile);
+            }
+        }
+        for (Entity entity : new ArrayList<>(PEARL_MEMBERS.keySet())) {
+            PearlMembershipLedger.Membership membership = PEARL_MEMBERS.get(entity);
+            if (membership == null) continue;
+            boolean live = !entity.isRemoved() && entity.level() instanceof ServerLevel;
+            WorldId world = live ? WorldId.of(entity.level().dimension().identifier().toString()) : null;
+            if (live && world.equals(membership.scope().world())) continue;
+            if (live) pearlStale++; else pearlOrphans++;
+            fault(live ? "pearl stale" : "pearl orphan", entity, null, null);
+            PEARL_MEMBERS.remove(entity, membership);
+            PEARL_ALIASES.remove(membership.identity(), entity);
+            PEARLS.retire(membership.objectId(), membership.incarnation());
+            if (live && entity instanceof ThrownEnderpearl pearl) admitPearl(pearl, (ServerLevel) entity.level());
+        }
+    }
+
+    private static void fault(String what, Object object, RegionId had, RegionId now) {
+        if (faultLogs >= 10) return;
+        faultLogs++;
+        String name = object instanceof Entity entity ? entity.getType() + " " + entity.getUUID() + " id " + entity.getId()
+            + " at " + entity.chunkPosition() : String.valueOf(object);
+        LOGGER.warn("PHOENIUM_ENGINE protection {}: {} membership {} object tile {}", what, name, had, now);
     }
 
     /** End of the server tick: each selected member still live is discarded once, under its current membership. */
@@ -267,6 +409,10 @@ public final class EngineProtections {
             + " mobDecisions=" + (MOB_DECISIONS ? "ON" : "OFF") + " mobDecisionThreshold=" + MOBS.settings().threshold()
             + " mobDecisionMemberships=" + mobs.memberships() + " mobDecisionScopes=" + mobs.scopes()
             + " mobDecisionAllowed=" + mobs.allowed() + " mobDecisionDeferred=" + mobs.deferred()
-            + " mobDecisionDeadlines=" + mobs.deadlines();
+            + " mobDecisionDeadlines=" + mobs.deadlines()
+            + " mobDecisionRelocations=" + mobRelocations + " projectileLateRelocations=" + projectileLateRelocations
+            + " protectionChecks=" + protectionChecks + " mobDecisionStale=" + mobStale + " mobDecisionOrphans=" + mobOrphans
+            + " projectileStale=" + projectileStale + " projectileOrphans=" + projectileOrphans + " pearlStale=" + pearlStale
+            + " pearlOrphans=" + pearlOrphans + " protectionOffThread=" + OFF_THREAD.sum();
     }
 }

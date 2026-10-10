@@ -32,6 +32,8 @@ final class TileWork {
     /** Neighbours of a lower colour while the schedule is built; the job counts them down. */
     int predecessors;
     final AtomicInteger pending = new AtomicInteger();
+    /** S9-E8: the earliest start of this tile in the dag given its predecessors' measured times (critical path, server thread). */
+    long earliest;
 
     void reset(long key, int tileX, int tileZ, int colour) {
         this.key = key;
@@ -51,6 +53,7 @@ final class TileWork {
         successorCount = 0;
         predecessors = 0;
         pending.set(0);
+        earliest = 0L;
     }
 
     void addSuccessor(TileWork next) {

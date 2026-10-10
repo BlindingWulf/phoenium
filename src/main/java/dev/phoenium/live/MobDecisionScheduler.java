@@ -56,6 +56,12 @@ public final class MobDecisionScheduler {
         });
     }
 
+    /** The scope holding the member, or null (read-only; S9-E8 engine relocation and self-check). */
+    public Scope scopeOf(String id) {
+        Member member = members.get(id);
+        return member == null ? null : member.scope;
+    }
+
     public void retire(String id, long nativeIncarnation) {
         if (!settings.enabled || closed) return;
         members.computeIfPresent(id, (key, member) -> {

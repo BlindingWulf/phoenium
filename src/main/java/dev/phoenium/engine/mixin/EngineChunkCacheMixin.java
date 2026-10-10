@@ -5,6 +5,7 @@ import com.llamalad7.mixinextras.injector.wrapoperation.Operation;
 import com.llamalad7.mixinextras.injector.wrapoperation.WrapOperation;
 import dev.phoenium.engine.EngineConfig;
 import dev.phoenium.engine.EngineSpawnMemo;
+import dev.phoenium.engine.EngineTimers;
 import dev.phoenium.engine.TileContext;
 import dev.phoenium.engine.TileEngine;
 import java.util.List;
@@ -56,8 +57,13 @@ abstract class EngineChunkCacheMixin {
         target = "Lnet/minecraft/world/level/NaturalSpawner;createState(ILjava/lang/Iterable;Lnet/minecraft/world/level/NaturalSpawner$ChunkGetter;Lnet/minecraft/world/level/LocalMobCapCalculator;)Lnet/minecraft/world/level/NaturalSpawner$SpawnState;"))
     private NaturalSpawner.SpawnState phoenium$spawnState(int spawnableChunks, Iterable<Entity> entities, NaturalSpawner.ChunkGetter getter,
                                                          LocalMobCapCalculator caps, Operation<NaturalSpawner.SpawnState> original) {
-        if (!EngineConfig.SPAWN_MEMO) return original.call(spawnableChunks, entities, getter, caps);
-        return EngineSpawnMemo.createState(this.phoenium$spawnMemo, spawnableChunks, entities, getter, caps, original);
+        long start = EngineTimers.start();
+        try {
+            if (!EngineConfig.SPAWN_MEMO) return original.call(spawnableChunks, entities, getter, caps);
+            return EngineSpawnMemo.createState(this.phoenium$spawnMemo, spawnableChunks, entities, getter, caps, original);
+        } finally {
+            EngineTimers.add(EngineTimers.SPAWN_STATE, start);
+        }
     }
 
     @WrapMethod(method = "tickSpawningChunk")
