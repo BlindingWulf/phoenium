@@ -255,6 +255,8 @@ loom {
             property 'phoenium.s8f7.control', providers.gradleProperty('s8f7Control').orElse('false').get()
             property 'phoenium.s8f7.mode', providers.gradleProperty('s8f7Mode').orElse('regression').get()
             property 'phoenium.s8f7.carrot', providers.gradleProperty('s8f7Carrot').orElse('').get()
+            // S9-E5: extra server JVM options, e.g. -Ps8f7ServerArgs="-Dphoenium.engine.tiles=true -Dphoenium.engine.workers=3"
+            property 'phoenium.s8f7.serverArgs', providers.gradleProperty('s8f7ServerArgs').orElse('').get()
             property 'phoenium.client.gametest.evidence', providers.gradleProperty('s8f7Evidence').map { file(it).absolutePath }
                     .orElse(layout.buildDirectory.file('client-gametest/evidence/S8F7-MOUNTED-PORTAL.json')
                     .map { it.asFile.absolutePath }).get()

@@ -748,10 +748,15 @@ public final class Stage8MountedPortalClientTest {
         receipt.put("serverLog", serverLog.toAbsolutePath().toString());
         Path java = Path.of(System.getProperty("java.home"), "bin",
             System.getProperty("os.name", "").toLowerCase().contains("win") ? "java.exe" : "java");
-        server = new ProcessBuilder(java.toString(), "-Xmx2G", "-Dphoenium.test.diagnostics=true",
-                "-Dphoenium.gameplay.workers=" + Integer.getInteger("phoenium.s8f7.workers", 1),
-                "-Djava.net.useSystemProxies=false", "-Dminecraft.api.session.host=http://127.0.0.1:9",
-                "-Dminecraft.api.services.host=http://127.0.0.1:9", "-jar", "fabric-server-launch.jar", "nogui")
+        List<String> command = new ArrayList<>(List.of(java.toString(), "-Xmx2G", "-Dphoenium.test.diagnostics=true",
+                "-Dphoenium.gameplay.workers=" + Integer.getInteger("phoenium.s8f7.workers", 1)));
+        // S9-E5: extra server JVM options from -Ps8f7ServerArgs (engine mode: -Dphoenium.engine.tiles=true ...)
+        String serverArgs = System.getProperty("phoenium.s8f7.serverArgs", "").trim();
+        if (!serverArgs.isEmpty()) command.addAll(Arrays.asList(serverArgs.split("\\s+")));
+        receipt.put("serverArgs", serverArgs);
+        command.addAll(List.of("-Djava.net.useSystemProxies=false", "-Dminecraft.api.session.host=http://127.0.0.1:9",
+                "-Dminecraft.api.services.host=http://127.0.0.1:9", "-jar", "fabric-server-launch.jar", "nogui"));
+        server = new ProcessBuilder(command)
             .directory(directory.toFile()).redirectErrorStream(true)
             .redirectOutput(ProcessBuilder.Redirect.appendTo(serverLog.toFile())).start();
         boolean geyser = mods.keySet().stream().anyMatch(name -> name.toLowerCase(Locale.ROOT).startsWith("geyser"));

@@ -29,6 +29,7 @@ import net.minecraft.world.entity.animal.dolphin.Dolphin;
 import net.minecraft.world.entity.boss.enderdragon.EnderDragon;
 import net.minecraft.world.entity.boss.wither.WitherBoss;
 import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.entity.projectile.Projectile;
 import net.minecraft.world.entity.projectile.throwableitemprojectile.ThrownEnderpearl;
 import net.minecraft.world.entity.raid.Raider;
 import net.minecraft.world.entity.vehicle.minecart.MinecartCommandBlock;
@@ -129,6 +130,7 @@ public final class TileEngine {
     public static void install() {
         ServerLifecycleEvents.SERVER_STARTED.register(TileEngine::start);
         ServerLifecycleEvents.SERVER_STOPPING.register(TileEngine::stop);
+        EngineProtections.install();
         LOGGER.info("PHOENIUM_STAGE2 entrypoint registered once; engine mode ({}) awaits server start.", EngineConfig.describe());
     }
 
@@ -147,6 +149,7 @@ public final class TileEngine {
     private static void stop(MinecraftServer server) {
         running = false;
         if (pool != null) pool.stop();
+        EngineProtections.close();
         LOGGER.info("PHOENIUM_STAGE2 stopped lifecycle=STOPPED mode=engine-tiles {}", counters());
     }
 
@@ -163,7 +166,7 @@ public final class TileEngine {
             + " writeServices=" + WRITE_SERVICES.sum() + " villageServices=" + VILLAGE_SERVICES.sum()
             + " structureServices=" + STRUCTURE_SERVICES.sum() + " services=" + services + " serviceUs=" + serviceNanos / 1000
             + " loadTraps=" + LOAD_TRAPS.sum() + " writeTraps=" + WRITE_TRAPS.sum() + " storageTraps=" + STORAGE_TRAPS.sum()
-            + " " + EngineTracker.counters() + " transforms=" + EngineConfig.transforms();
+            + " " + EngineTracker.counters() + " " + EngineProtections.describe() + " transforms=" + EngineConfig.transforms();
     }
 
     /** The wrapped EntityTickList.forEach of ServerLevel.tick. */
@@ -486,6 +489,7 @@ public final class TileEngine {
         }
 
         void classify(Entity entity) {
+            if (EngineProtections.PROJECTILE_CAP && entity instanceof Projectile) EngineProtections.classified(level, entity, entity.chunkPosition());
             if (serial(entity)) {
                 serial.add(entity);
                 return;

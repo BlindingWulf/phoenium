@@ -1,6 +1,8 @@
 package dev.phoenium.live;
 
 import dev.phoenium.Phoenium;
+import dev.phoenium.engine.EngineConfig;
+import dev.phoenium.engine.EngineProtections;
 import java.util.Set;
 import net.minecraft.world.entity.Mob;
 import net.minecraft.world.entity.ai.goal.*;
@@ -32,6 +34,8 @@ public final class MobDecisionContext {
     }
     public static boolean allow(Goal goal) {
         Mob mob = CURRENT.get();
-        return mob == null || !reviewedGoal(goal.getClass()) || Phoenium.liveRuntime().allowMobDecision(mob);
+        if (mob == null || !reviewedGoal(goal.getClass())) return true;
+        // S9-E5: engine mode keeps the policy, with the engine tile as its scope
+        return EngineConfig.ENABLED ? EngineProtections.allowMobDecision(mob) : Phoenium.liveRuntime().allowMobDecision(mob);
     }
 }

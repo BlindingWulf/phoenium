@@ -5,6 +5,9 @@ import com.mojang.brigadier.arguments.StringArgumentType;
 import com.mojang.brigadier.arguments.DoubleArgumentType;
 import dev.phoenium.Phoenium;
 import dev.phoenium.chunk.FullEntityFacts;
+import dev.phoenium.engine.EngineConfig;
+import dev.phoenium.engine.EngineProtections;
+import dev.phoenium.engine.TileEngine;
 import dev.phoenium.live.MobDecisionContext;
 import dev.phoenium.ownership.ObjectOwnershipRegistry;
 import dev.phoenium.service.RegionalServiceDispatcher;
@@ -22,7 +25,12 @@ import java.lang.reflect.Field;
 import java.nio.file.*;
 import java.util.*;
 
-/** Bounded observation-only counters plus explicit owner-routed fixture commands. Never production. */
+/**
+ * Bounded observation-only counters plus explicit owner-routed fixture commands. Never production. S9-E5: in engine mode
+ * (no owner regions) the policy, diagnostics and re-observation come from the engine (EngineProtections, TileEngine), the
+ * fixture navigation runs on the server thread (the command's own thread, no tile running) and the incarnation is the native
+ * entity id.
+ */
 public final class MobDecisionServerProbe implements DedicatedServerModInitializer {
     private static final Map<String, Observation> OBSERVED = new java.util.concurrent.ConcurrentHashMap<>();
     private static final Map<Class<?>,Field> MOB_FIELDS = new java.util.concurrent.ConcurrentHashMap<>();
@@ -66,7 +74,9 @@ public final class MobDecisionServerProbe implements DedicatedServerModInitializ
             })))
             .then(Commands.literal("reobserve").executes(context->{
                 int n=0; for(var level:context.getSource().getServer().getAllLevels()) for(var entity:level.getAllEntities())
-                    if(entity.entityTags().contains("a3")){Phoenium.liveRuntime().onEntityAddressable(entity);n++;}
+                    if(entity.entityTags().contains("a3")){
+                        if(EngineConfig.ENABLED)EngineProtections.observeMob(entity);else Phoenium.liveRuntime().onEntityAddressable(entity);
+                        n++;}
                 int count=n;context.getSource().sendSuccess(()->Component.literal("A3_REOBSERVE "+count),false);return n;
             }))
             .then(Commands.literal("navigate").then(Commands.argument("tag",StringArgumentType.word())
@@ -84,6 +94,7 @@ public final class MobDecisionServerProbe implements DedicatedServerModInitializ
         ServerLifecycleEvents.SERVER_STOPPED.register(server->snapshot(server,"stopped"));
     }
     private static void owned(Entity entity,Runnable body) {
+        if(EngineConfig.ENABLED){body.run();return;}
         try {
             var runtime=Phoenium.liveRuntime();
             Field objectsField=runtime.getClass().getDeclaredField("objects");objectsField.setAccessible(true);
@@ -98,10 +109,11 @@ public final class MobDecisionServerProbe implements DedicatedServerModInitializ
     public static void snapshot(MinecraftServer server,String label) {
         if(!label.matches("[A-Za-z0-9_-]+"))throw new IllegalArgumentException("invalid snapshot label");
         Map<String,Object> report=new LinkedHashMap<>();
-        report.put("label",label);report.put("policy",Phoenium.liveRuntime().mobDecisionSnapshot());
+        boolean engine=EngineConfig.ENABLED;
+        report.put("label",label);report.put("policy",engine?EngineProtections.mobDecisionSnapshot():Phoenium.liveRuntime().mobDecisionSnapshot());
         report.put("nativeObservations",OBSERVED);
-        report.put("diagnostics",Phoenium.liveRuntime().diagnostics().toLogLine());
-        report.put("fullDiagnostics",Phoenium.liveRuntime().fullDiagnostics());
+        report.put("diagnostics",engine?TileEngine.diagnostics():Phoenium.liveRuntime().diagnostics().toLogLine());
+        report.put("fullDiagnostics",engine?TileEngine.diagnostics():Phoenium.liveRuntime().fullDiagnostics());
         List<Map<String,Object>> entities=new ArrayList<>();
         if(!label.equals("stopped"))for(var level:server.getAllLevels())for(var entity:level.getAllEntities())if(entity.entityTags().contains("a3")) {
             Map<String,Object> e=new LinkedHashMap<>();
@@ -111,7 +123,8 @@ public final class MobDecisionServerProbe implements DedicatedServerModInitializ
             e.put("velocity",List.of(entity.getDeltaMovement().x,entity.getDeltaMovement().y,entity.getDeltaMovement().z));
             e.put("passengers",entity.getPassengers().stream().map(p->p.getUUID().toString()).toList());
             e.put("vehicle",entity.getVehicle()==null?"":entity.getVehicle().getUUID().toString());
-            if(entity instanceof FullEntityFacts.Access access)e.put("incarnation",access.phoenium$entityIncarnation());
+            if(engine)e.put("incarnation",(long)entity.getId());
+            else if(entity instanceof FullEntityFacts.Access access)e.put("incarnation",access.phoenium$entityIncarnation());
             if(entity instanceof LivingEntity living) {
                 e.put("health",living.getHealth());e.put("effects",living.getActiveEffects().stream().map(effect->Map.of("type",effect.getEffect().toString(),"duration",effect.getDuration())).toList());
             }

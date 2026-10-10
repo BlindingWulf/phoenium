@@ -39,6 +39,10 @@ public final class PhoeniumMixinConfigPlugin implements IMixinConfigPlugin {
         // S9-E1: engine mode is L5 plus the tile engine; of these mixins it keeps only the standalone ones
         if (EngineConfig.ENABLED) {
             if (mixinClassName.equals(GEYSER_FLOODGATE_SKIN)) return geyserFloodgate;
+            // S9-E5: A3's selector hooks, when A3 is enabled, consult the engine's scheduler (EngineProtections)
+            if (mixinClassName.equals("dev.phoenium.mixin.MobDecisionMixin")
+                    || mixinClassName.equals("dev.phoenium.mixin.MobDecisionGoalSelectorMixin"))
+                return dev.phoenium.live.MobDecisionScheduler.Settings.fromProperties().enabled();
             return ENGINE_RETAINED.contains(mixinClassName);
         }
         if (mixinClassName.equals("dev.phoenium.mixin.MobDecisionMixin")
