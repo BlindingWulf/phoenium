@@ -45,6 +45,16 @@ public final class EngineConfig {
      * player does not see it); false runs every check as vanilla does.
      */
     public static final boolean TRACKER = !"false".equalsIgnoreCase(System.getProperty("phoenium.engine.tracker"));
+    /**
+     * S9-E6 {@code phoenium.engine.trackerIndex} (default true; needs {@link #TRACKER}): ChunkMap.move and the
+     * moved-players pass of ChunkMap.tick visit only the tracked entities the tracker filter passes (found in a tile
+     * index of tracked entities and a reverse index of what each player sees) instead of every tracked entity.
+     */
+    public static final boolean TRACKER_INDEX = TRACKER && !"false".equalsIgnoreCase(System.getProperty("phoenium.engine.trackerIndex"));
+    /** S9-E6 {@code phoenium.engine.trackerIndex.check}: ticks between comparisons of the index with the entity map; 0 = none. */
+    public static final int TRACKER_INDEX_CHECK = clamp(Integer.getInteger("phoenium.engine.trackerIndex.check", 20), 0, 1 << 20);
+    /** S9-E6 {@code phoenium.engine.trackerIndex.full}: every N-th comparison also checks the reverse index member by member. */
+    public static final int TRACKER_INDEX_FULL = clamp(Integer.getInteger("phoenium.engine.trackerIndex.full", 10), 1, 1 << 20);
 
     /** Blocks between a tile's edge and its claim's edge. */
     public static int claimReachBlocks() { return CLAIM_RADIUS << (TILE_SHIFT + 4); }
@@ -52,7 +62,8 @@ public final class EngineConfig {
     public static String describe() {
         return "engine=tiles tileShift=" + TILE_SHIFT + " tileChunks=" + (1 << TILE_SHIFT) + " claimRadius=" + CLAIM_RADIUS
             + " colours=" + COLOURS + " reachBlocks=" + claimReachBlocks() + " strict=" + STRICT + " chunks=" + CHUNKS
-            + " schedule=" + (DAG ? "dag" : "colours") + " services=" + SERVICES + " tracker=" + TRACKER;
+            + " schedule=" + (DAG ? "dag" : "colours") + " services=" + SERVICES + " tracker=" + TRACKER + " trackerIndex=" + TRACKER_INDEX
+            + " trackerIndexCheck=" + TRACKER_INDEX_CHECK + " trackerIndexFull=" + TRACKER_INDEX_FULL;
     }
 
     private static final java.util.concurrent.ConcurrentLinkedQueue<String> TRANSFORMS = new java.util.concurrent.ConcurrentLinkedQueue<>();

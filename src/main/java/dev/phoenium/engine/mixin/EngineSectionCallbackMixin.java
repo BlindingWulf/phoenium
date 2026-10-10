@@ -1,10 +1,13 @@
 package dev.phoenium.engine.mixin;
 
+import dev.phoenium.engine.EngineConfig;
+import dev.phoenium.engine.EngineTrackerIndex;
 import dev.phoenium.engine.TileContext;
 import dev.phoenium.engine.TileEngine;
 import net.minecraft.core.SectionPos;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.level.entity.EntityAccess;
+import org.objectweb.asm.Opcodes;
 import org.spongepowered.asm.mixin.Final;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Shadow;
@@ -18,6 +21,9 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
  * applied after the colour (once per phase per entity; the entity stays in its old section meanwhile, which entity
  * queries' 2-block inflation covers at normal speeds). A removal is applied after the colour, once; isRemoved() is
  * already true, and later moves of that entity are ignored.
+ *
+ * <p>S9-E6: once a section change is stored (inline, or applied after the colour), the entity's tracker follows in the
+ * tracker index ({@link EngineTrackerIndex}).
  */
 @Mixin(targets = "net.minecraft.world.level.entity.PersistentEntitySectionManager$Callback")
 abstract class EngineSectionCallbackMixin {
@@ -48,6 +54,12 @@ abstract class EngineSectionCallbackMixin {
             this.phoenium$movePhase = -1L;
             if (!this.phoenium$removeDeferred) this.onMove();
         });
+    }
+
+    @Inject(method = "onMove", at = @At(value = "FIELD", opcode = Opcodes.PUTFIELD, shift = At.Shift.AFTER,
+        target = "Lnet/minecraft/world/level/entity/PersistentEntitySectionManager$Callback;currentSectionKey:J"))
+    private void phoenium$trackerFollows(CallbackInfo ci) {
+        if (EngineConfig.TRACKER_INDEX && this.entity instanceof Entity moved) EngineTrackerIndex.sectionMoved(moved);
     }
 
     @Inject(method = "onRemove", at = @At("HEAD"), cancellable = true)

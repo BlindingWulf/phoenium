@@ -30,5 +30,5 @@ public final class EngineTracker {
         return false;
     }
 
-    static String counters() { return "trackerChecks=" + checks + " trackerSkipped=" + skipped; }
+    static String counters() { return "trackerChecks=" + checks + " trackerSkipped=" + skipped + " " + EngineTrackerIndex.counters(); }
 }

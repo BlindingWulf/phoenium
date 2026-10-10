@@ -32,6 +32,7 @@
     "EngineStatsMixin",
     "EngineTamableAnimalMixin",
     "EngineTrackedEntityAccess",
+    "EngineTrackedEntityMixin",
     "EngineWalkNodeEvaluatorAccess"
   ],
   "injectors": { "defaultRequire": 1 }
