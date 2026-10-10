@@ -6,6 +6,8 @@ import dev.phoenium.engine.EngineTimers;
 import java.util.function.BooleanSupplier;
 import net.minecraft.server.level.ChunkMap;
 import net.minecraft.server.level.ServerChunkCache;
+import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.util.profiling.ProfilerFiller;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 
@@ -34,5 +36,18 @@ abstract class EngineChunkCacheTimersMixin {
     private void phoenium$timeChunkUnload(ChunkMap chunkMap, BooleanSupplier haveTime, Operation<Void> original) {
         long start = EngineTimers.start();
         try { original.call(chunkMap, haveTime); } finally { EngineTimers.add(EngineTimers.CHUNK_UNLOAD, start); }
+    }
+
+    // S9-E10: the changed chunks' broadcast at the end of tickChunks, and the player's ChunkMap.move
+    @WrapOperation(method = "tickChunks()V", at = @At(value = "INVOKE", target = "Lnet/minecraft/server/level/ServerChunkCache;broadcastChangedChunks(Lnet/minecraft/util/profiling/ProfilerFiller;)V"))
+    private void phoenium$timeChunkBroadcast(ServerChunkCache cache, ProfilerFiller profiler, Operation<Void> original) {
+        long start = EngineTimers.start();
+        try { original.call(cache, profiler); } finally { EngineTimers.add(EngineTimers.CHUNK_BROADCAST, start); }
+    }
+
+    @WrapOperation(method = "move(Lnet/minecraft/server/level/ServerPlayer;)V", at = @At(value = "INVOKE", target = "Lnet/minecraft/server/level/ChunkMap;move(Lnet/minecraft/server/level/ServerPlayer;)V"))
+    private void phoenium$timePlayerMove(ChunkMap chunkMap, ServerPlayer player, Operation<Void> original) {
+        long start = EngineTimers.start();
+        try { original.call(chunkMap, player); } finally { EngineTimers.add(EngineTimers.PLAYER_MOVE, start); }
     }
 }

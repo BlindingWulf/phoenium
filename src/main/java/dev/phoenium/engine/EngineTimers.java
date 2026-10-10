@@ -41,9 +41,20 @@ public final class EngineTimers {
     public static final int TRACKER_CHUNKS = 20;
     public static final int TRACKER_SEND = 21;
     public static final int TRACKER_MOVED = 22;
+    /**
+     * S9-E10: the players' share of the serial work. MOVE_PACKETS: handling the queued move packets (inside PACKETS);
+     * PLAYER_MOVE: ChunkMap.move(player) wherever the chunk source calls it (inside a move packet, a teleport, a tick);
+     * PLAYER_TICKS: ServerPlayer.doTick() from the connection tick (inside CONNECTIONS); CHUNK_BROADCAST: the changed
+     * chunks' block updates sent at the end of tickChunks (inside TICK_CHUNKS).
+     */
+    public static final int MOVE_PACKETS = 23;
+    public static final int PLAYER_MOVE = 24;
+    public static final int PLAYER_TICKS = 25;
+    public static final int CHUNK_BROADCAST = 26;
     private static final String[] NAMES = {"Packets", "ServerTick", "Autosave", "Children", "Levels", "LevelTicks", "Raids",
         "ChunkSource", "Distance", "TickChunks", "SpawnState", "Tracker", "ChunkUnload", "BlockEvents", "Entities",
-        "BlockEntities", "EntityManager", "Connections", "PlayerList", "ChunkSend", "TrackerChunks", "TrackerSend", "TrackerMoved"};
+        "BlockEntities", "EntityManager", "Connections", "PlayerList", "ChunkSend", "TrackerChunks", "TrackerSend", "TrackerMoved",
+        "MovePackets", "PlayerMove", "PlayerTicks", "ChunkBroadcast"};
     private static final long[] NANOS = new long[NAMES.length];
     private static long frames;
 

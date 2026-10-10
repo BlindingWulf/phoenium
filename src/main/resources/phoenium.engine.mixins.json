@@ -23,6 +23,8 @@
     "EngineLocalMobCapAccess",
     "EngineMinecraftServerMixin",
     "EngineMobCountsAccess",
+    "EngineMovePacketTimersMixin",
+    "EnginePlayerTickTimersMixin",
     "EnginePoiManagerMixin",
     "EnginePointChargeAccess",
     "EnginePotentialAccess",
