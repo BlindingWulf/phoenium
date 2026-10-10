@@ -91,6 +91,26 @@ public final class EngineConfig {
     /** S9-E9 {@code phoenium.engine.spawnSlices.min}: entities per slice at least; fewer entities than this count serially. */
     public static final int SPAWN_SLICE_MIN = clamp(Integer.getInteger("phoenium.engine.spawnSlices.min", 512), 1, 1 << 24);
 
+    /**
+     * S9-E11 {@code phoenium.engine.spins} (default 8192, D29's): rounds of Thread.onSpinWait (about 0.2-0.5 ms at 8192)
+     * before a waiting thread parks: a tile thread between jobs or without a ready tile, the server thread waiting for a
+     * job's last tile.
+     */
+    public static final int SPINS = clamp(Integer.getInteger("phoenium.engine.spins", 8_192), 0, 1 << 24);
+    /**
+     * S9-E11 {@code phoenium.engine.idleParkUs} (default 1000, D29's): a tile thread without a job parks this long at a
+     * time. A published job unparks every tile thread, so a longer park only removes the idle polling.
+     */
+    public static final int IDLE_PARK_US = clamp(Integer.getInteger("phoenium.engine.idleParkUs", 1_000), 20, 1_000_000);
+    /**
+     * S9-E11 {@code phoenium.engine.dagWake} (default false, D29's polling): in a dag job a tile thread with no ready tile
+     * parks up to {@link #DAG_PARK_US} and is unparked when a finished tile readies another or the job ends, instead of
+     * polling every 20 us until the phase ends. The server thread keeps polling (it serves the tiles' requests).
+     */
+    public static final boolean DAG_WAKE = Boolean.getBoolean("phoenium.engine.dagWake");
+    /** S9-E11 {@code phoenium.engine.dagParkUs} (default 1000): with dagWake, the longest single park of a waiting tile thread. */
+    public static final int DAG_PARK_US = clamp(Integer.getInteger("phoenium.engine.dagParkUs", 1_000), 20, 1_000_000);
+
     /** Blocks between a tile's edge and its claim's edge. */
     public static int claimReachBlocks() { return CLAIM_RADIUS << (TILE_SHIFT + 4); }
 
@@ -101,7 +121,8 @@ public final class EngineConfig {
             + " trackerIndexCheck=" + TRACKER_INDEX_CHECK + " trackerIndexFull=" + TRACKER_INDEX_FULL
             + " spawnMemo=" + SPAWN_MEMO + " spawnMemoCheck=" + SPAWN_MEMO_CHECK + " protectionCheck=" + PROTECTION_CHECK
             + " sendFlush=" + SEND_FLUSH + " trackerSend=" + TRACKER_SEND + " trackerSendMin=" + TRACKER_SEND_MIN
-            + " spawnSlices=" + SPAWN_SLICES + " spawnSlicesMin=" + SPAWN_SLICE_MIN;
+            + " spawnSlices=" + SPAWN_SLICES + " spawnSlicesMin=" + SPAWN_SLICE_MIN
+            + " spins=" + SPINS + " idleParkUs=" + IDLE_PARK_US + " dagWake=" + DAG_WAKE + " dagParkUs=" + DAG_PARK_US;
     }
 
     private static final java.util.concurrent.ConcurrentLinkedQueue<String> TRANSFORMS = new java.util.concurrent.ConcurrentLinkedQueue<>();

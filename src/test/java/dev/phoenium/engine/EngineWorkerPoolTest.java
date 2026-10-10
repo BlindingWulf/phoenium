@@ -160,6 +160,45 @@ class EngineWorkerPoolTest {
         }
     }
 
+    /** S9-E11: with dagWake, no spinning and long parks, every dag job still finishes at once and in order. */
+    @Test
+    void aDagJobWithWakeAndLongParksStillFinishesPromptly() {
+        long longPark = 2_000_000_000L;
+        EngineWorkerPool pool = new EngineWorkerPool(3, java.util.function.Supplier::get,
+            new EngineWorkerPool.Waiting(0, longPark, true, longPark));
+        try {
+            TileContext own = new TileContext();
+            long start = System.nanoTime();
+            for (int round = 0; round < 60; round++) {
+                Grid grid = new Grid(3 + round % 10, 2 + round % 7);
+                int n = grid.tiles.length;
+                AtomicIntegerArray runs = new AtomicIntegerArray(n);
+                long[] started = new long[n];
+                long[] finished = new long[n];
+                AtomicLong clock = new AtomicLong();
+                pool.run(new EngineWorkerPool.DagJob(grid.roots, grid.rootCount, n, (tile, context) -> {
+                    int self = grid.index(tile);
+                    started[self] = clock.incrementAndGet();
+                    spin(50 + (self * 37) % 300);
+                    runs.incrementAndGet(self);
+                    finished[self] = clock.incrementAndGet();
+                }), own);
+                for (int i = 0; i < n; i++) assertEquals(1, runs.get(i), "runs of tile " + i);
+                for (TileWork tile : grid.tiles) {
+                    for (int s = 0; s < tile.successorCount; s++) {
+                        TileWork next = tile.successors[s];
+                        assertTrue(finished[grid.index(tile)] < started[grid.index(next)], "successor started before its predecessor finished");
+                    }
+                }
+            }
+            // a lost wake-up would cost a 2 s park; 60 rounds of a few ms of work each must take far less
+            long millis = (System.nanoTime() - start) / 1_000_000L;
+            assertTrue(millis < 1_500L, "60 dag rounds took " + millis + " ms");
+        } finally {
+            pool.stop();
+        }
+    }
+
     @Test
     void aDagJobDrainsAfterAFailure() {
         EngineWorkerPool pool = new EngineWorkerPool(2);

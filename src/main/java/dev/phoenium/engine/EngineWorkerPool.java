@@ -12,7 +12,7 @@ import java.util.function.Supplier;
  * the job has finished. A {@link ColourJob} hands out one colour's tiles from a shared index (work stealing); a
  * {@link DagJob} (S9-E3) hands out a tile once its lower-colour neighbours are done; a {@link ForJob} (S9-E9) hands out
  * blocks of a parallel for outside any tile. Between jobs the threads spin briefly, then park until the next job is
- * published.
+ * published. S9-E11: how long they spin and park is a {@link Waiting} (from {@link EngineConfig}; D29's by default).
  *
  * <p>S9-E3 services: a running tile that needs what only the server thread may do with nothing else running (load a
  * chunk or a POI column, write outside its claim) pauses with {@link Job#service}; once no other tile is running
@@ -21,8 +21,20 @@ import java.util.function.Supplier;
  * progress around it differs.
  */
 final class EngineWorkerPool {
-    /** About 0.2-0.5 ms of Thread.onSpinWait before a waiting thread parks. */
-    private static final int SPINS = 8_192;
+    /**
+     * S9-E11: how the threads wait. {@code spins} rounds of Thread.onSpinWait before a waiting thread parks; a tile thread
+     * without a job parks {@code idleParkNanos} at a time; with {@code dagWake} a tile thread with no ready tile in a dag
+     * job parks up to {@code dagParkNanos} and is unparked by a finished tile that readies another or by the job's end.
+     */
+    record Waiting(int spins, long idleParkNanos, boolean dagWake, long dagParkNanos) {
+        /** D29: 8192 spins, 1 ms idle parks, dag waits poll every 20 us. */
+        static final Waiting D29 = new Waiting(8_192, 1_000_000L, false, 20_000L);
+
+        static Waiting configured() {
+            return new Waiting(EngineConfig.SPINS, EngineConfig.IDLE_PARK_US * 1_000L, EngineConfig.DAG_WAKE,
+                EngineConfig.DAG_PARK_US * 1_000L);
+        }
+    }
 
     /** Runs a service's work on the server thread (TileEngine leaves the running tile around it). */
     interface ServiceRunner {
@@ -53,6 +65,11 @@ final class EngineWorkerPool {
         volatile boolean serviceWanted;
         /** Set by {@link EngineWorkerPool#run} before the job is published. */
         ServiceRunner serviceRunner = Supplier::get;
+        /** S9-E11: set by {@link EngineWorkerPool#run}: the pool's waiting and the tile threads a release may unpark. */
+        Waiting waiting = Waiting.D29;
+        Thread[] wakeTargets = new Thread[0];
+        /** S9-E11: tile threads parked (or about to park) for a ready tile of this job. */
+        final AtomicInteger sleepers = new AtomicInteger();
 
         Job(int count, Runner runner) {
             this.runner = runner;
@@ -79,7 +96,17 @@ final class EngineWorkerPool {
             } finally {
                 active.decrementAndGet();
                 release(tile);
-                if (remaining.decrementAndGet() == 0) LockSupport.unpark(coordinator);
+                if (remaining.decrementAndGet() == 0) {
+                    LockSupport.unpark(coordinator);
+                    if (waiting.dagWake()) wakeSleepers();
+                }
+            }
+        }
+
+        /** S9-E11: unparks the tile threads if any is parked for this job (a parked one re-checks and goes on or parks again). */
+        final void wakeSleepers() {
+            if (sleepers.get() > 0) {
+                for (Thread target : wakeTargets) LockSupport.unpark(target);
             }
         }
 
@@ -152,8 +179,8 @@ final class EngineWorkerPool {
             }
         }
 
-        private static int pause(int idle) {
-            if (idle < SPINS) {
+        private int pause(int idle) {
+            if (idle < waiting.spins()) {
                 Thread.onSpinWait();
                 return idle + 1;
             }
@@ -204,10 +231,19 @@ final class EngineWorkerPool {
                     idle = 0;
                     runOne(tile, context);
                 } else {
-                    if (Thread.currentThread() == coordinator) serve();
-                    if (idle < SPINS) {
+                    boolean server = Thread.currentThread() == coordinator;
+                    if (server) serve();
+                    if (idle < waiting.spins()) {
                         idle++;
                         Thread.onSpinWait();
+                    } else if (waiting.dagWake() && !server) {
+                        // S9-E11: announce, re-check, park; a release that readies a tile (or the job's end) unparks us
+                        sleepers.incrementAndGet();
+                        try {
+                            if (ready.isEmpty() && remaining.get() != 0) LockSupport.parkNanos(this, waiting.dagParkNanos());
+                        } finally {
+                            sleepers.decrementAndGet();
+                        }
                     } else {
                         LockSupport.parkNanos(this, 20_000L);
                     }
@@ -218,10 +254,15 @@ final class EngineWorkerPool {
         @Override
         void release(TileWork tile) {
             TileWork[] next = tile.successors;
+            boolean readied = false;
             for (int i = 0, n = tile.successorCount; i < n; i++) {
                 TileWork successor = next[i];
-                if (successor.pending.decrementAndGet() == 0) ready.add(successor);
+                if (successor.pending.decrementAndGet() == 0) {
+                    ready.add(successor);
+                    readied = true;
+                }
             }
+            if (readied && waiting.dagWake()) wakeSleepers();
         }
     }
 
@@ -302,11 +343,11 @@ final class EngineWorkerPool {
                     seen = published;
                     published.work(context);
                     idle = 0;
-                } else if (idle < SPINS) {
+                } else if (idle < waiting.spins()) {
                     idle++;
                     Thread.onSpinWait();
                 } else {
-                    LockSupport.parkNanos(this, 1_000_000L);
+                    LockSupport.parkNanos(this, waiting.idleParkNanos());
                 }
             }
         }
@@ -314,15 +355,21 @@ final class EngineWorkerPool {
 
     private final Worker[] workers;
     private final ServiceRunner serviceRunner;
+    private final Waiting waiting;
     private volatile Job job;
     private volatile boolean stopping;
 
     EngineWorkerPool(int threads) {
-        this(threads, Supplier::get);
+        this(threads, Supplier::get, Waiting.D29);
     }
 
     EngineWorkerPool(int threads, ServiceRunner serviceRunner) {
+        this(threads, serviceRunner, Waiting.configured());
+    }
+
+    EngineWorkerPool(int threads, ServiceRunner serviceRunner, Waiting waiting) {
         this.serviceRunner = serviceRunner;
+        this.waiting = waiting;
         workers = new Worker[threads];
         for (int i = 0; i < threads; i++) workers[i] = new Worker(i + 1);
         for (Worker worker : workers) worker.start();
@@ -343,6 +390,8 @@ final class EngineWorkerPool {
     /** Server thread: runs every tile of the job (here and on the tile threads); rethrows the first tile failure. */
     void run(Job published, TileContext own) {
         published.serviceRunner = serviceRunner;
+        published.waiting = waiting;
+        published.wakeTargets = workers;
         job = published;
         for (Worker worker : workers) LockSupport.unpark(worker);
         try {
@@ -350,7 +399,7 @@ final class EngineWorkerPool {
             int spins = 0;
             while (published.remaining.get() != 0) {
                 published.serve();
-                if (spins < SPINS) {
+                if (spins < waiting.spins()) {
                     spins++;
                     Thread.onSpinWait();
                 } else {
