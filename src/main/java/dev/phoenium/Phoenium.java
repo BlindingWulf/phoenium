@@ -2,8 +2,10 @@ package dev.phoenium;
 
 import com.mojang.brigadier.CommandDispatcher;
 import com.mojang.brigadier.arguments.IntegerArgumentType;
+import com.mojang.brigadier.arguments.LongArgumentType;
 import com.mojang.brigadier.arguments.StringArgumentType;
 import dev.phoenium.engine.EngineConfig;
+import dev.phoenium.engine.EngineTestReseed;
 import dev.phoenium.engine.TileEngine;
 import dev.phoenium.live.ChunkRuntimeTrace;
 import dev.phoenium.live.PhoeniumLiveRuntime;
@@ -63,7 +65,17 @@ public final class Phoenium implements DedicatedServerModInitializer {
                         LOGGER.info("PHOENIUM_ENGINE mark {} {}", label, TileEngine.diagnostics());
                         context.getSource().sendSuccess(() -> Component.literal("PHOENIUM_MARK " + label), false);
                         return 1;
-                    }))));
+                    })))
+            .then(Commands.literal("test")
+                .then(Commands.literal("reseed")
+                    .then(Commands.argument("seed", LongArgumentType.longArg())
+                        .executes(context -> {
+                            String response = EngineTestReseed.reseed(context.getSource().getServer(),
+                                LongArgumentType.getLong(context, "seed"));
+                            LOGGER.info("PHOENIUM_ENGINE {}", response);
+                            context.getSource().sendSuccess(() -> Component.literal(response), false);
+                            return 1;
+                        })))));
     }
 
     private static void registerDiagnosticsCommand(CommandDispatcher<CommandSourceStack> dispatcher,

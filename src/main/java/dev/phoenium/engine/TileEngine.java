@@ -174,7 +174,8 @@ public final class TileEngine {
             + " writeServices=" + WRITE_SERVICES.sum() + " villageServices=" + VILLAGE_SERVICES.sum()
             + " structureServices=" + STRUCTURE_SERVICES.sum() + " services=" + services + " serviceUs=" + serviceNanos / 1000
             + " loadTraps=" + LOAD_TRAPS.sum() + " writeTraps=" + WRITE_TRAPS.sum() + " storageTraps=" + STORAGE_TRAPS.sum()
-            + " " + EngineTracker.counters() + " " + EngineSpawnMemo.counters() + " " + EngineProtections.describe()
+            + " " + EngineTracker.counters() + " " + EngineSpawnMemo.counters() + " spawnCapOvershoot=" + EngineSpawnOverlay.overshoot()
+            + " " + EngineProtections.describe()
             + " " + EngineTimers.counters() + " transforms=" + EngineConfig.transforms();
     }
 

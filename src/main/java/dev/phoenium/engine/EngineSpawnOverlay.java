@@ -34,6 +34,10 @@ import net.minecraft.world.level.chunk.ChunkAccess;
  */
 public final class EngineSpawnOverlay {
     private static final MobCategory[] CATEGORIES = MobCategory.values();
+    /** S9-E8b: spawns merged past the per-player local cap (server thread: the deferred merges run there). */
+    private static long overshoot;
+
+    static long overshoot() { return overshoot; }
 
     private NaturalSpawner.SpawnState state;
     private PotentialCalculator basePotential;
@@ -135,6 +139,9 @@ public final class EngineSpawnOverlay {
         double spawnedCharge = charge;
         context.defer(() -> {
             EngineSpawnStateAccess access = (EngineSpawnStateAccess) shared;
+            // S9-E8b: a spawn the merged per-player local counts would already have refused (another tile spawned near the
+            // same players earlier in this tick): the overlay's cap overshoot, measured (vanilla counts every spawn at once)
+            if (!access.phoenium$localMobCaps().canSpawn(category, chunkPos)) overshoot++;
             access.phoenium$potential().addCharge(pos, spawnedCharge);
             access.phoenium$mobCategoryCounts().addTo(category, 1);
             access.phoenium$localMobCaps().addMob(chunkPos, category);

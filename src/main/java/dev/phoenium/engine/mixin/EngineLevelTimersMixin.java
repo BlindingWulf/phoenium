@@ -16,8 +16,13 @@ import net.minecraft.world.ticks.LevelTicks;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 
-/** S9-E8 (engine mode only): a level tick's server-thread sections for {@link EngineTimers}. */
-@Mixin(ServerLevel.class)
+/**
+ * S9-E8 (engine mode only): a level tick's server-thread sections for {@link EngineTimers}. S9-E8b: priority 3000, applied
+ * after the engine's own ServerLevel wrappers (2000), so each timer is the outermost wrapper of its call and times the
+ * whole section; at the default priority the entities timer sat inside the tile-phase wrapper and timed only the
+ * classification pass.
+ */
+@Mixin(value = ServerLevel.class, priority = 3000)
 abstract class EngineLevelTimersMixin {
     @WrapOperation(method = "tick", at = @At(value = "INVOKE", target = "Lnet/minecraft/world/ticks/LevelTicks;tick(JILjava/util/function/BiConsumer;)V"))
     private void phoenium$timeLevelTicks(LevelTicks<?> ticks, long gameTime, int max, BiConsumer<?, ?> runner, Operation<Void> original) {

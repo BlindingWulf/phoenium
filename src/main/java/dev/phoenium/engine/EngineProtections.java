@@ -55,7 +55,9 @@ import org.slf4j.LoggerFactory;
  * entity object, i.e. a retirement plus an admission. Every {@link EngineConfig#PROTECTION_CHECK} ticks (start of the server
  * tick: no tile running, every deferred move and removal applied) each membership is checked against its object: no live
  * object (orphan) or another tile / world than the object's (stale) is counted, logged and repaired; the six counters and
- * projectileLateRelocations (a tile change first seen at classification) must stay 0.
+ * projectileLateRelocations (a tile change first seen at classification) must stay 0. S9-E8b: a pearl whose resolvable
+ * owning player differs from its membership's (an owner reassigned after admission) is counted as pearlOwnerStale (must be
+ * 0) and readmitted under its current owner.
  */
 public final class EngineProtections {
     private EngineProtections() { }
@@ -96,6 +98,7 @@ public final class EngineProtections {
     private static long projectileOrphans;
     private static long pearlStale;
     private static long pearlOrphans;
+    private static long pearlOwnerStale;
     private static final java.util.concurrent.atomic.LongAdder OFF_THREAD = new java.util.concurrent.atomic.LongAdder();
     private static int faultLogs;
     private static volatile boolean closed;
@@ -325,9 +328,14 @@ public final class EngineProtections {
             if (membership == null) continue;
             boolean live = !entity.isRemoved() && entity.level() instanceof ServerLevel;
             WorldId world = live ? WorldId.of(entity.level().dimension().identifier().toString()) : null;
-            if (live && world.equals(membership.scope().world())) continue;
-            if (live) pearlStale++; else pearlOrphans++;
-            fault(live ? "pearl stale" : "pearl orphan", entity, null, null);
+            // S9-E8b: the owning player too (a resolvable owner other than the membership's); an unresolvable owner is not
+            // counted (PearlOwnerAccess resolves a live ServerPlayer only)
+            UUID owner = live && entity instanceof ThrownEnderpearl thrown ? PearlOwnerAccess.playerId(thrown) : null;
+            boolean ownerMoved = owner != null && !owner.equals(membership.scope().playerId());
+            if (live && world.equals(membership.scope().world()) && !ownerMoved) continue;
+            if (!live) pearlOrphans++; else if (!world.equals(membership.scope().world())) pearlStale++; else pearlOwnerStale++;
+            fault(!live ? "pearl orphan" : ownerMoved && world.equals(membership.scope().world()) ? "pearl owner stale" : "pearl stale",
+                entity, null, null);
             PEARL_MEMBERS.remove(entity, membership);
             PEARL_ALIASES.remove(membership.identity(), entity);
             PEARLS.retire(membership.objectId(), membership.incarnation());
@@ -413,6 +421,6 @@ public final class EngineProtections {
             + " mobDecisionRelocations=" + mobRelocations + " projectileLateRelocations=" + projectileLateRelocations
             + " protectionChecks=" + protectionChecks + " mobDecisionStale=" + mobStale + " mobDecisionOrphans=" + mobOrphans
             + " projectileStale=" + projectileStale + " projectileOrphans=" + projectileOrphans + " pearlStale=" + pearlStale
-            + " pearlOrphans=" + pearlOrphans + " protectionOffThread=" + OFF_THREAD.sum();
+            + " pearlOrphans=" + pearlOrphans + " pearlOwnerStale=" + pearlOwnerStale + " protectionOffThread=" + OFF_THREAD.sum();
     }
 }
