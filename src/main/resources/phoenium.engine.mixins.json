@@ -5,6 +5,9 @@
   "compatibilityLevel": "JAVA_25",
   "mixins": [
     "EngineAdvancementsMixin",
+    "EngineAutosaveChunksMixin",
+    "EngineAutosaveEntitiesMixin",
+    "EngineAutosaveMixin",
     "EngineChunkCacheAccess",
     "EngineChunkCacheMixin",
     "EngineChunkCacheTimersMixin",

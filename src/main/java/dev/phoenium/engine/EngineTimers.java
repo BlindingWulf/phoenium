@@ -51,10 +51,12 @@ public final class EngineTimers {
     public static final int PLAYER_MOVE = 24;
     public static final int PLAYER_TICKS = 25;
     public static final int CHUNK_BROADCAST = 26;
+    /** S9-E12: the spread autosave's chunk saves and entity stores in later ticks (inside CHUNK_UNLOAD and ENTITY_MANAGER). */
+    public static final int AUTOSAVE_SPREAD = 27;
     private static final String[] NAMES = {"Packets", "ServerTick", "Autosave", "Children", "Levels", "LevelTicks", "Raids",
         "ChunkSource", "Distance", "TickChunks", "SpawnState", "Tracker", "ChunkUnload", "BlockEvents", "Entities",
         "BlockEntities", "EntityManager", "Connections", "PlayerList", "ChunkSend", "TrackerChunks", "TrackerSend", "TrackerMoved",
-        "MovePackets", "PlayerMove", "PlayerTicks", "ChunkBroadcast"};
+        "MovePackets", "PlayerMove", "PlayerTicks", "ChunkBroadcast", "AutosaveSpread"};
     private static final long[] NANOS = new long[NAMES.length];
     private static long frames;
 

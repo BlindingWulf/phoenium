@@ -111,6 +111,20 @@ public final class EngineConfig {
     /** S9-E11 {@code phoenium.engine.dagParkUs} (default 1000): with dagWake, the longest single park of a waiting tile thread. */
     public static final int DAG_PARK_US = clamp(Integer.getInteger("phoenium.engine.dagParkUs", 1_000), 20, 1_000_000);
 
+    /**
+     * S9-E12 {@code phoenium.engine.autosaveSpread} (default false): the periodic autosave (every 6000 ticks, players
+     * online) saves the player files and level data in its tick as vanilla does, and its chunk saves and entity stores over
+     * the following ticks ({@link EngineAutosave}). /save-all and the shutdown save stay synchronous.
+     */
+    public static final boolean AUTOSAVE_SPREAD = Boolean.getBoolean("phoenium.engine.autosaveSpread");
+    /** S9-E12 {@code phoenium.engine.autosaveSpread.entities} (default true): the entity stores spread too; false stores them in the autosave tick. */
+    public static final boolean AUTOSAVE_SPREAD_ENTITIES = AUTOSAVE_SPREAD
+        && !"false".equalsIgnoreCase(System.getProperty("phoenium.engine.autosaveSpread.entities"));
+    /** S9-E12 {@code phoenium.engine.autosaveSpread.chunks} (default 64): saves per level queue and tick at most. */
+    public static final int AUTOSAVE_CHUNKS = clamp(Integer.getInteger("phoenium.engine.autosaveSpread.chunks", 64), 1, 1 << 20);
+    /** S9-E12 {@code phoenium.engine.autosaveSpread.budgetUs} (default 2000): time per level queue and tick at most (one key always runs). */
+    public static final int AUTOSAVE_BUDGET_US = clamp(Integer.getInteger("phoenium.engine.autosaveSpread.budgetUs", 2_000), 50, 1_000_000);
+
     /** Blocks between a tile's edge and its claim's edge. */
     public static int claimReachBlocks() { return CLAIM_RADIUS << (TILE_SHIFT + 4); }
 
@@ -122,7 +136,9 @@ public final class EngineConfig {
             + " spawnMemo=" + SPAWN_MEMO + " spawnMemoCheck=" + SPAWN_MEMO_CHECK + " protectionCheck=" + PROTECTION_CHECK
             + " sendFlush=" + SEND_FLUSH + " trackerSend=" + TRACKER_SEND + " trackerSendMin=" + TRACKER_SEND_MIN
             + " spawnSlices=" + SPAWN_SLICES + " spawnSlicesMin=" + SPAWN_SLICE_MIN
-            + " spins=" + SPINS + " idleParkUs=" + IDLE_PARK_US + " dagWake=" + DAG_WAKE + " dagParkUs=" + DAG_PARK_US;
+            + " spins=" + SPINS + " idleParkUs=" + IDLE_PARK_US + " dagWake=" + DAG_WAKE + " dagParkUs=" + DAG_PARK_US
+            + " autosaveSpread=" + AUTOSAVE_SPREAD + " autosaveSpreadEntities=" + AUTOSAVE_SPREAD_ENTITIES
+            + " autosaveSpreadChunks=" + AUTOSAVE_CHUNKS + " autosaveSpreadBudgetUs=" + AUTOSAVE_BUDGET_US;
     }
 
     private static final java.util.concurrent.ConcurrentLinkedQueue<String> TRANSFORMS = new java.util.concurrent.ConcurrentLinkedQueue<>();
