@@ -8,6 +8,9 @@ import net.minecraft.server.level.ChunkHolder;
 import net.minecraft.server.level.ChunkMap;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.util.Util;
+import net.minecraft.world.level.chunk.ChunkAccess;
+import net.minecraft.world.level.chunk.ImposterProtoChunk;
+import net.minecraft.world.level.chunk.LevelChunk;
 import org.spongepowered.asm.mixin.Final;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Shadow;
@@ -21,6 +24,10 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
  * does and records the visible holders' keys; each ChunkMap.tick(haveTime) after it (where vanilla saves eagerly) runs
  * vanilla's saveChunkIfNeeded for the next keys ({@link EngineAutosave}). Any other saveAllChunks (a flush, a full save
  * not from a spreading autosave) runs as vanilla and drops the queue.
+ *
+ * <p>S9-E15: each key's outcome is counted with saveChunkIfNeeded's own conditions, in its order (no visible holder, not
+ * accessible since the last save, not ready or not a level/imposter chunk, nothing unsaved, inside the 10 s cooldown);
+ * those read-only checks return what saveChunkIfNeeded would return, and the eligible keys go through it as before.
  */
 @Mixin(ChunkMap.class)
 abstract class EngineAutosaveChunksMixin {
@@ -42,7 +49,7 @@ abstract class EngineAutosaveChunksMixin {
             ci.cancel();
             return;
         }
-        EngineAutosave.fullSave(this.phoenium$saves);
+        EngineAutosave.fullSaveChunks(this.phoenium$saves);
     }
 
     @Inject(method = "tick(Ljava/util/function/BooleanSupplier;)V", at = @At("TAIL"))
@@ -51,7 +58,15 @@ abstract class EngineAutosaveChunksMixin {
         long now = Util.getMillis();
         EngineAutosave.drainChunks(this.phoenium$saves, key -> {
             ChunkHolder holder = this.getVisibleChunkIfPresent(key);
-            return holder != null && this.saveChunkIfNeeded(holder, now);
+            if (holder == null) return EngineAutosave.chunkOutcome(EngineAutosave.CHUNK_GONE);
+            if (!holder.wasAccessibleSinceLastSave()) return EngineAutosave.chunkOutcome(EngineAutosave.CHUNK_IDLE);
+            ChunkAccess chunk = holder.isReadyForSaving() ? holder.getLatestChunk() : null;
+            if (!(chunk instanceof ImposterProtoChunk) && !(chunk instanceof LevelChunk)) {
+                return EngineAutosave.chunkOutcome(EngineAutosave.CHUNK_NOT_READY);
+            }
+            if (!chunk.isUnsaved()) return EngineAutosave.chunkOutcome(EngineAutosave.CHUNK_CLEAN);
+            if (now < this.nextChunkSaveTime.getOrDefault(key, -1L)) return EngineAutosave.chunkOutcome(EngineAutosave.CHUNK_COOLDOWN);
+            return EngineAutosave.chunkOutcome(this.saveChunkIfNeeded(holder, now) ? EngineAutosave.CHUNK_SAVED : EngineAutosave.CHUNK_NOT_WRITTEN);
         });
     }
 }

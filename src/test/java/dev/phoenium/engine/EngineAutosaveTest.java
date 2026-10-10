@@ -89,4 +89,34 @@ class EngineAutosaveTest {
         assertFalse(spread.drop());
         assertEquals(0, spread.drain(key -> true, 10, Long.MAX_VALUE, () -> 0L));
     }
+
+    @Test
+    void theLeadingKindTakesTurnsAmongTheBusyKinds() {
+        int[] all = {1, 1, 1};
+        assertEquals(EngineAutosave.CHUNKS, EngineAutosave.nextLead(-1, all));
+        assertEquals(EngineAutosave.ENTITIES, EngineAutosave.nextLead(EngineAutosave.CHUNKS, all));
+        assertEquals(EngineAutosave.PLAYERS, EngineAutosave.nextLead(EngineAutosave.ENTITIES, all));
+        assertEquals(EngineAutosave.CHUNKS, EngineAutosave.nextLead(EngineAutosave.PLAYERS, all));
+        int[] players = {0, 0, 1};
+        assertEquals(EngineAutosave.PLAYERS, EngineAutosave.nextLead(EngineAutosave.PLAYERS, players), "the only busy kind leads again");
+        assertEquals(EngineAutosave.PLAYERS, EngineAutosave.nextLead(-1, players));
+        assertEquals(-1, EngineAutosave.nextLead(EngineAutosave.CHUNKS, new int[] {0, 0, 0}));
+    }
+
+    @Test
+    void theTickBudgetIsSharedAndOnlyTheLeadDrainsWhileItHasWork() {
+        // defaults: 2000 us per queue and 2000 us per tick for all queues together (S9-E15)
+        assertEquals(2_000, EngineConfig.AUTOSAVE_TICK_BUDGET_US);
+        int[] busy = {2, 1, 1};
+        int lead = EngineAutosave.CHUNKS;
+        assertEquals(2_000_000L, EngineAutosave.budgetNanos(EngineAutosave.CHUNKS, lead, busy, 0L));
+        assertEquals(500_000L, EngineAutosave.budgetNanos(EngineAutosave.CHUNKS, lead, busy, 1_500_000L), "the second chunk queue gets what is left");
+        assertEquals(-1L, EngineAutosave.budgetNanos(EngineAutosave.CHUNKS, lead, busy, 2_000_000L), "spent: wait for the next tick");
+        assertEquals(-1L, EngineAutosave.budgetNanos(EngineAutosave.ENTITIES, lead, busy, 0L), "not the lead: wait");
+        assertEquals(-1L, EngineAutosave.budgetNanos(EngineAutosave.PLAYERS, lead, busy, 0L));
+        int[] leadDone = {0, 1, 1};
+        assertEquals(1_200_000L, EngineAutosave.budgetNanos(EngineAutosave.ENTITIES, lead, leadDone, 800_000L),
+            "the lead kind finished this tick: the others may use the rest");
+        assertEquals(2_000_000L, EngineAutosave.budgetNanos(EngineAutosave.PLAYERS, -1, busy, 0L), "no lead (no tick hook): own budget");
+    }
 }

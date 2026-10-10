@@ -63,6 +63,11 @@ public final class EngineConfig {
     /** S9-E7 {@code phoenium.engine.spawnMemo.check}: every N-th spawn state of a level is also built the vanilla way and compared; 0 = never. */
     public static final int SPAWN_MEMO_CHECK = clamp(Integer.getInteger("phoenium.engine.spawnMemo.check", 400), 0, 1 << 20);
     /**
+     * S9-E15 {@code phoenium.engine.spawnMemo.liveCheck} (default false): a check also builds a vanilla state on the live
+     * chunk availability (D33's comparison) and counts its differences (spawnMemoLiveDiffs, informational).
+     */
+    public static final boolean SPAWN_MEMO_LIVE_CHECK = Boolean.getBoolean("phoenium.engine.spawnMemo.liveCheck");
+    /**
      * S9-E8 {@code phoenium.engine.protection.check}: ticks between checks of every protection membership (A3, projectile
      * cap, pearl cap) against its object (stale tile/world, orphan); 0 = never. Only with a protection enabled.
      */
@@ -130,6 +135,13 @@ public final class EngineConfig {
     public static final int AUTOSAVE_CHUNKS = clamp(Integer.getInteger("phoenium.engine.autosaveSpread.chunks", 64), 1, 1 << 20);
     /** S9-E12 {@code phoenium.engine.autosaveSpread.budgetUs} (default 2000): time per level queue and tick at most (one key always runs). */
     public static final int AUTOSAVE_BUDGET_US = clamp(Integer.getInteger("phoenium.engine.autosaveSpread.budgetUs", 2_000), 50, 1_000_000);
+    /**
+     * S9-E15 {@code phoenium.engine.autosaveSpread.tickBudgetUs} (default 2000; 0 = none, D33's per-queue budgets only): the
+     * time all spread queues together (chunks, entities, players, every level) may use in one server tick. A queue whose
+     * turn comes after the tick's budget is spent drains nothing in that tick (it keeps its place); the first drain of a
+     * tick still runs at least one key, so one key's save can exceed the budget (I/O can block past any budget).
+     */
+    public static final int AUTOSAVE_TICK_BUDGET_US = clamp(Integer.getInteger("phoenium.engine.autosaveSpread.tickBudgetUs", 2_000), 0, 1_000_000);
 
     /**
      * S9-E13 R-C2 {@code phoenium.engine.moveSplit} (default false; needs {@link #TRACKER_INDEX}): a move packet's
@@ -141,6 +153,12 @@ public final class EngineConfig {
     public static final int MOVE_SPLIT_MIN = clamp(Integer.getInteger("phoenium.engine.moveSplit.min", 4), 1, 1 << 20);
     /** S9-E13 {@code phoenium.engine.moveSplit.check}: every N-th parallel flush also evaluates each move serially and compares; 0 = never. */
     public static final int MOVE_SPLIT_CHECK = clamp(Integer.getInteger("phoenium.engine.moveSplit.check", 0), 0, 1 << 20);
+    /**
+     * S9-E15 {@code phoenium.engine.moveSplit.early} (default true): before a player's queued packet other than a move or a
+     * packet known not to read the tracking state, that player's deferred move runs (vanilla's whole move), so the packet's
+     * broadcasts reach the observers the move made (gate-draft-rc2 F1). false = D33's behaviour.
+     */
+    public static final boolean MOVE_SPLIT_EARLY = !"false".equalsIgnoreCase(System.getProperty("phoenium.engine.moveSplit.early"));
 
     /** Blocks between a tile's edge and its claim's edge. */
     public static int claimReachBlocks() { return CLAIM_RADIUS << (TILE_SHIFT + 4); }
@@ -150,14 +168,16 @@ public final class EngineConfig {
             + " colours=" + COLOURS + " reachBlocks=" + claimReachBlocks() + " strict=" + STRICT + " chunks=" + CHUNKS
             + " schedule=" + (DAG ? "dag" : "colours") + " services=" + SERVICES + " tracker=" + TRACKER + " trackerIndex=" + TRACKER_INDEX
             + " trackerIndexCheck=" + TRACKER_INDEX_CHECK + " trackerIndexFull=" + TRACKER_INDEX_FULL
-            + " spawnMemo=" + SPAWN_MEMO + " spawnMemoCheck=" + SPAWN_MEMO_CHECK + " protectionCheck=" + PROTECTION_CHECK
+            + " spawnMemo=" + SPAWN_MEMO + " spawnMemoCheck=" + SPAWN_MEMO_CHECK + " spawnMemoLiveCheck=" + SPAWN_MEMO_LIVE_CHECK + " protectionCheck=" + PROTECTION_CHECK
             + " sendFlush=" + SEND_FLUSH + " trackerSend=" + TRACKER_SEND + " trackerSendMin=" + TRACKER_SEND_MIN
             + " spawnSlices=" + SPAWN_SLICES + " spawnSlicesMin=" + SPAWN_SLICE_MIN
             + " spins=" + SPINS + " idleParkUs=" + IDLE_PARK_US + " dagWake=" + DAG_WAKE + " dagParkUs=" + DAG_PARK_US
             + " autosaveSpread=" + AUTOSAVE_SPREAD + " autosaveSpreadEntities=" + AUTOSAVE_SPREAD_ENTITIES
             + " autosaveSpreadPlayers=" + AUTOSAVE_SPREAD_PLAYERS
             + " autosaveSpreadChunks=" + AUTOSAVE_CHUNKS + " autosaveSpreadBudgetUs=" + AUTOSAVE_BUDGET_US
-            + " moveSplit=" + MOVE_SPLIT + " moveSplitMin=" + MOVE_SPLIT_MIN + " moveSplitCheck=" + MOVE_SPLIT_CHECK;
+            + " autosaveSpreadTickBudgetUs=" + AUTOSAVE_TICK_BUDGET_US
+            + " moveSplit=" + MOVE_SPLIT + " moveSplitMin=" + MOVE_SPLIT_MIN + " moveSplitCheck=" + MOVE_SPLIT_CHECK
+            + " moveSplitEarly=" + MOVE_SPLIT_EARLY;
     }
 
     private static final java.util.concurrent.ConcurrentLinkedQueue<String> TRANSFORMS = new java.util.concurrent.ConcurrentLinkedQueue<>();

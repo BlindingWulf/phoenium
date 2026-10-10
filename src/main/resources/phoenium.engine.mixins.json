@@ -32,6 +32,7 @@
     "EnginePoiManagerMixin",
     "EnginePointChargeAccess",
     "EnginePotentialAccess",
+    "EngineQueuedPacketMixin",
     "EngineScoreboardMixin",
     "EngineSectionCallbackMixin",
     "EngineSectionStorageMixin",

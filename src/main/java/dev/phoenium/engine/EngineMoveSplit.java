@@ -45,6 +45,12 @@ import org.slf4j.LoggerFactory;
  * after the move's apply, so it reads the updated chunk view as in vanilla. A move whose evaluation or apply throws (a
  * third-party hook) is logged and counted (moveSplitFailures, must stay 0) and run once more as vanilla's whole move; the
  * other moves of the flush go on.
+ *
+ * <p>S9-E15 F1 ({@link EngineConfig#MOVE_SPLIT_EARLY}): a player's queued packet after its own move in the same frame (a
+ * swing, an attack, a use, any packet not known to leave the tracking state alone) first runs that player's deferred move
+ * as vanilla's whole move ({@link #beforePacket}), so the packet's broadcasts reach the observers the move made, as in
+ * vanilla's order. No deferred move has been evaluated yet at that point, so the others are evaluated after it, as if
+ * this player's packets had come first, which vanilla allows (it orders packets only within one connection).
  */
 public final class EngineMoveSplit {
     private EngineMoveSplit() { }
@@ -123,6 +129,7 @@ public final class EngineMoveSplit {
     private static long checks;
     private static long mismatch;
     private static long workNanos;
+    private static long early;
 
     // ---- the hooks ----
 
@@ -174,6 +181,32 @@ public final class EngineMoveSplit {
         if (pending == null) return false;
         pending.waypoints = true;
         return true;
+    }
+
+    /** S9-E15: whether a deferred move waits (the queued-packet hook's cheap test, server thread). */
+    public static boolean anyPending() { return !PENDING.isEmpty(); }
+
+    /**
+     * S9-E15 F1: before a queued packet of {@code player} that may read or broadcast through the tracking state (server
+     * thread, while the frame's packets drain): the player's deferred move, if any, runs now as vanilla's whole move.
+     */
+    public static void beforePacket(ServerPlayer player) {
+        if (!EngineConfig.MOVE_SPLIT_EARLY || PENDING.isEmpty() || !TileEngine.onServerThread() || TileEngine.current() != null) return;
+        Pending pending = BY_PLAYER.remove(player);
+        if (pending == null) return;
+        PENDING.remove(pending);
+        if (lastDeferred == player) lastDeferred = null;
+        early++;
+        if (player.isRemoved() || player.level() != pending.map.phoenium$level()) {
+            skipped++;
+            return;
+        }
+        try {
+            pending.map.phoenium$moveNow(player);
+            waypoints(pending);
+        } catch (RuntimeException | LinkageError failure) {
+            failed(pending, "early move", failure);
+        }
     }
 
     /** ChunkMap.move's tracker loop is left out (the apply has run its checks). */
@@ -364,6 +397,6 @@ public final class EngineMoveSplit {
             + " moveSplitParallel=" + parallelFlushes + " moveSplitSerial=" + serialFlushes + " moveSplitEntries=" + entries
             + " moveSplitSkipped=" + skipped + " moveSplitChanges=" + changes + " moveSplitRechecked=" + rechecked
             + " moveSplitChecks=" + checks + " moveSplitWorkUs=" + workNanos / 1000 + " moveSplitMismatch=" + mismatch
-            + " moveSplitStray=" + STRAY.sum() + " moveSplitFailures=" + FAILURES.sum();
+            + " moveSplitStray=" + STRAY.sum() + " moveSplitFailures=" + FAILURES.sum() + " moveSplitEarly=" + early;
     }
 }

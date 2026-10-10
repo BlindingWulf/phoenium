@@ -8,15 +8,18 @@ import dev.phoenium.engine.mixin.EnginePotentialAccess;
 import dev.phoenium.engine.mixin.EngineSpawnStateAccess;
 import it.unimi.dsi.fastutil.longs.Long2ObjectMap;
 import it.unimi.dsi.fastutil.longs.Long2ObjectOpenHashMap;
+import it.unimi.dsi.fastutil.longs.LongOpenHashSet;
 import it.unimi.dsi.fastutil.objects.Object2IntMap;
 import it.unimi.dsi.fastutil.objects.Object2IntOpenHashMap;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.atomic.LongAdder;
 import java.util.function.Consumer;
 import net.minecraft.server.level.ChunkMap;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.Entity;
+import net.minecraft.world.entity.Mob;
 import net.minecraft.world.entity.MobCategory;
 import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.level.LocalMobCapCalculator;
@@ -46,6 +49,16 @@ import org.slf4j.LoggerFactory;
  * Per entity a slice reads only the entity, its chunk's biome and the chunk map; the players-near lookups first run the
  * natural-spawn distance tracker's pending updates, a write, so the server thread runs them before the slices start and
  * the slices' lookups only read. The check above compares the merged state with the vanilla one.
+ *
+ * <p>S9-E15: a check pins the chunk availability both builds read ({@link Pinned}). With C2ME's chunk system the full-chunk
+ * futures are published and demoted by its scheduler threads, so a chunk can become loaded or stop being loaded while
+ * the server thread builds a state; D33's check rebuilt the vanilla state a moment after the memo's against the live
+ * availability, and the one s19b difference (CREATURE 138 vs 137 in the join storm) is what a chunk demoted in between
+ * gives. Pinned, the two builds see the same chunks, so spawnMemoStale counts only differences of the memo's own
+ * counting (must stay 0); spawnMemoPinMisses (a query outside the pinned set) must stay 0 too. Informational:
+ * spawnMemoSmeared/SmearedChunks (checks whose pinned chunks changed availability by the end of the check) and
+ * spawnMemoLiveDiffs (the memo state against a vanilla state on the live availability, D33's comparison). Vanilla's own
+ * state reads that availability entity by entity, so under C2ME it is no single instant either.
  */
 public final class EngineSpawnMemo implements NaturalSpawner.ChunkGetter {
     private static final Logger LOGGER = LoggerFactory.getLogger("Phoenium");
@@ -62,6 +75,10 @@ public final class EngineSpawnMemo implements NaturalSpawner.ChunkGetter {
     private static long sliceStates;
     private static long sliceCount;
     private static long sliceWorkNanos;
+    private static long pinMisses;
+    private static long smeared;
+    private static long smearedChunks;
+    private static long liveDiffs;
 
     /** A level's memo settings (the engine's ServerChunkCache mixin keeps one per level). */
     public static final class Level {
@@ -137,6 +154,62 @@ public final class EngineSpawnMemo implements NaturalSpawner.ChunkGetter {
         }
     }
 
+    /**
+     * S9-E15: a check's chunk availability, pinned: every chunk the counted entities query (createState's own filter and
+     * key) is asked of the live getter once, on the server thread, before the builds; both builds then read this (read
+     * only, so the slices may share it). A query outside the set goes to the live getter and is counted.
+     */
+    static final class Pinned implements NaturalSpawner.ChunkGetter {
+        private final NaturalSpawner.ChunkGetter live;
+        private final Long2ObjectOpenHashMap<LevelChunk> loaded = new Long2ObjectOpenHashMap<>();
+        private final LongOpenHashSet absent = new LongOpenHashSet();
+        final LongAdder misses = new LongAdder();
+
+        Pinned(NaturalSpawner.ChunkGetter live, List<Entity> entities) {
+            this.live = live;
+            LevelChunk[] found = new LevelChunk[1];
+            for (Entity entity : entities) {
+                if (entity instanceof Mob mob && (mob.isPersistenceRequired() || mob.requiresCustomPersistence())) continue;
+                if (entity.getType().getCategory() == MobCategory.MISC) continue;
+                long key = ChunkPos.pack(entity.blockPosition());
+                if (this.loaded.containsKey(key) || this.absent.contains(key)) continue;
+                found[0] = null;
+                live.query(key, chunk -> found[0] = chunk);
+                if (found[0] != null) this.loaded.put(key, found[0]);
+                else this.absent.add(key);
+            }
+        }
+
+        @Override
+        public void query(long pos, Consumer<LevelChunk> consumer) {
+            LevelChunk chunk = this.loaded.get(pos);
+            if (chunk != null) {
+                consumer.accept(chunk);
+                return;
+            }
+            if (this.absent.contains(pos)) return;
+            this.misses.increment();
+            this.live.query(pos, consumer);
+        }
+
+        /** Server thread: the pinned chunks whose live availability (or chunk object) is now different. */
+        int changed() {
+            int changed = 0;
+            LevelChunk[] found = new LevelChunk[1];
+            for (Long2ObjectMap.Entry<LevelChunk> entry : this.loaded.long2ObjectEntrySet()) {
+                found[0] = null;
+                this.live.query(entry.getLongKey(), chunk -> found[0] = chunk);
+                if (found[0] != entry.getValue()) changed++;
+            }
+            for (long key : this.absent) {
+                found[0] = null;
+                this.live.query(key, chunk -> found[0] = chunk);
+                if (found[0] != null) changed++;
+            }
+            return changed;
+        }
+    }
+
     private final NaturalSpawner.ChunkGetter getter;
     private final Caps caps;
     private final Long2ObjectOpenHashMap<Chunk> chunks;
@@ -181,28 +254,58 @@ public final class EngineSpawnMemo implements NaturalSpawner.ChunkGetter {
         ChunkMap chunkMap = ((EngineLocalMobCapAccess) vanillaCaps).phoenium$chunkMap();
         Iterable<Entity> counted = entities;
         ArrayList<Entity> list = level.entities;
+        boolean check = EngineConfig.SPAWN_MEMO_CHECK > 0 && ++level.states % EngineConfig.SPAWN_MEMO_CHECK == 0;
         try {
-            NaturalSpawner.SpawnState state = null;
-            // S9-E9: slice when the last state counted enough entities for two slices
-            if (EngineConfig.SPAWN_SLICES && level.lastEntities >= 2 * EngineConfig.SPAWN_SLICE_MIN && TileEngine.canRunParallel()) {
+            NaturalSpawner.ChunkGetter source = getter;
+            Pinned pinned = null;
+            if (check) {
+                // S9-E15: one entity list and one chunk availability for the memo's build and the reference
                 for (Entity entity : entities) list.add(entity);
                 counted = list;
+                pinned = new Pinned(getter, list);
+                source = pinned;
+            }
+            NaturalSpawner.SpawnState state = null;
+            boolean slicing = false;
+            // S9-E9: slice when the last state counted enough entities for two slices
+            if (EngineConfig.SPAWN_SLICES && level.lastEntities >= 2 * EngineConfig.SPAWN_SLICE_MIN && TileEngine.canRunParallel()) {
+                if (counted != list) {
+                    for (Entity entity : entities) list.add(entity);
+                    counted = list;
+                }
+                slicing = true;
                 level.lastEntities = list.size();
-                state = sliced(level, chunkMap, spawnableChunks, list, getter, original);
+                state = sliced(level, chunkMap, spawnableChunks, list, source, original);
             }
             if (state == null) {
                 Caps caps = new Caps(chunkMap, Thread.currentThread());
-                EngineSpawnMemo memo = new EngineSpawnMemo(getter, caps, level.expected);
+                EngineSpawnMemo memo = new EngineSpawnMemo(source, caps, level.expected);
                 state = original.call(spawnableChunks, counted, memo, caps);
                 memo.addCounters();
                 level.expected = Math.max(16, memo.chunks.size());
-                if (counted != list) level.lastEntities = (int) Math.min(Integer.MAX_VALUE, memo.queries);
+                if (!slicing) level.lastEntities = (int) Math.min(Integer.MAX_VALUE, memo.queries);
             }
             calls++;
-            if (EngineConfig.SPAWN_MEMO_CHECK > 0 && ++level.states % EngineConfig.SPAWN_MEMO_CHECK == 0) {
-                NaturalSpawner.SpawnState reference = original.call(spawnableChunks, counted, getter, new LocalMobCapCalculator(chunkMap));
+            if (check) {
+                NaturalSpawner.SpawnState reference = original.call(spawnableChunks, counted, pinned, new LocalMobCapCalculator(chunkMap));
                 checks++;
+                pinMisses += pinned.misses.sum();
                 String difference = difference(state, reference);
+                // informational: D33's comparison (live availability, a moment later), and how much of it moved meanwhile
+                String liveDifference = EngineConfig.SPAWN_MEMO_LIVE_CHECK
+                    ? difference(state, original.call(spawnableChunks, counted, getter, new LocalMobCapCalculator(chunkMap))) : null;
+                int changed = pinned.changed();
+                if (changed > 0) {
+                    smeared++;
+                    smearedChunks += changed;
+                }
+                if (liveDifference != null) {
+                    liveDiffs++;
+                    if (liveDiffs <= 10) {
+                        LOGGER.info("PHOENIUM_ENGINE spawnMemo live availability moved (informational; pinned check {}): {} changedChunks={}",
+                            difference == null ? "equal" : "different", liveDifference, changed);
+                    }
+                }
                 if (difference != null) {
                     stale++;
                     if (stale <= 10) LOGGER.warn("PHOENIUM_ENGINE spawnMemo stale (using the vanilla state): {}", difference);
@@ -324,6 +427,8 @@ public final class EngineSpawnMemo implements NaturalSpawner.ChunkGetter {
     static String counters() {
         return "spawnMemoCalls=" + calls + " spawnMemoQueries=" + totalQueries + " spawnMemoHits=" + totalHits + " spawnMemoChunks=" + totalChunks
             + " spawnMemoFastMobs=" + totalFastMobs + " spawnMemoChecks=" + checks + " spawnMemoStale=" + stale
-            + " spawnSliceStates=" + sliceStates + " spawnSlices=" + sliceCount + " spawnSliceWorkUs=" + sliceWorkNanos / 1000;
+            + " spawnSliceStates=" + sliceStates + " spawnSlices=" + sliceCount + " spawnSliceWorkUs=" + sliceWorkNanos / 1000
+            + " spawnMemoPinMisses=" + pinMisses + " spawnMemoSmeared=" + smeared + " spawnMemoSmearedChunks=" + smearedChunks
+            + " spawnMemoLiveDiffs=" + liveDiffs;
     }
 }

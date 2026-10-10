@@ -2,6 +2,7 @@ package dev.phoenium.engine.mixin;
 
 import com.llamalad7.mixinextras.injector.wrapoperation.Operation;
 import com.llamalad7.mixinextras.injector.wrapoperation.WrapOperation;
+import dev.phoenium.engine.EngineAutosave;
 import dev.phoenium.engine.EngineMoveSplit;
 import dev.phoenium.engine.EngineTimers;
 import java.util.function.BooleanSupplier;
@@ -30,6 +31,7 @@ abstract class EngineServerTimersMixin {
     @WrapOperation(method = "processPacketsAndTick", at = @At(value = "INVOKE", target = "Lnet/minecraft/server/MinecraftServer;tickServer(Ljava/util/function/BooleanSupplier;)V"))
     private void phoenium$timeServerTick(MinecraftServer server, BooleanSupplier haveTime, Operation<Void> original) {
         long start = EngineTimers.start();
+        EngineAutosave.tickStart();   // S9-E15: the spread autosave's per-tick budget and leading queue kind
         try { original.call(server, haveTime); } finally { EngineTimers.add(EngineTimers.SERVER_TICK, start); EngineTimers.frame(); }
     }
 

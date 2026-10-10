@@ -40,18 +40,20 @@ abstract class EngineAutosaveEntitiesMixin<T extends EntityAccess> implements En
             ci.cancel();
             return;
         }
-        EngineAutosave.fullSave(this.phoenium$stores);
+        EngineAutosave.fullSaveEntities(this.phoenium$stores);
     }
 
     @Inject(method = "saveAll", at = @At("HEAD"))
     private void phoenium$fullEntitySave(CallbackInfo ci) {
-        EngineAutosave.fullSave(this.phoenium$stores);
+        EngineAutosave.fullSaveEntities(this.phoenium$stores);
     }
 
     @Override
     public void phoenium$drainEntityStores() {
         if (!this.phoenium$stores.busy()) return;
+        // S9-E15: each key's outcome is counted (stored, hidden chunk stored and unloaded, or pending: load in flight)
         EngineAutosave.drainEntities(this.phoenium$stores, key -> this.chunkVisibility.get(key) == Visibility.HIDDEN
-            ? this.processChunkUnload(key) : this.storeChunkSections(key, entity -> { }));
+            ? EngineAutosave.entityOutcome(this.processChunkUnload(key) ? EngineAutosave.ENTITY_UNLOADED : EngineAutosave.ENTITY_PENDING)
+            : EngineAutosave.entityOutcome(this.storeChunkSections(key, entity -> { }) ? EngineAutosave.ENTITY_STORED : EngineAutosave.ENTITY_PENDING));
     }
 }
