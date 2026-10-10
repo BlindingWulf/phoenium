@@ -727,6 +727,7 @@ public final class RegionalChunkGameplayService implements NaturalSpawnContinuat
         boolean runs = level.tickRateManager().runsNormally();
         int capacity = dispatcher.workerConfig().workers() * dispatcher.workerConfig().callbacksPerRegion();
         while (iterator.hasNext()) {
+            if (tickUniformRun(iterator, runs)) continue;
             List<TickingBlockEntity> window = new ArrayList<>(capacity);
             LinkedHashSet<RoutingKey> sources = new LinkedHashSet<>();
             while (iterator.hasNext() && window.size() < capacity) {
@@ -786,7 +787,7 @@ public final class RegionalChunkGameplayService implements NaturalSpawnContinuat
                         });
                         dispatcher.executeAndDrain(receipt.key, RegionalServiceKind.BLOCK_ENTITY_TICK, execution -> {
                             dispatcher.requireCurrentClosure(receipt.key, 1);
-                            try (var diagnostic = blockEntityQueries.enter(level, ticker.getType(), receipt.position,
+                            try (var diagnostic = blockEntityQueries.enter(level, ticker::getType, receipt.position,
                                     execution, directory.snapshot().generation())) {
                                 if (!receipt.binding.ready()) { removed[0] = true; return; }
                                 removed[0] = tickTicker(ticker, runs, receipt.position, level::shouldTickBlocksAt, vaultTick::original);
@@ -796,7 +797,7 @@ public final class RegionalChunkGameplayService implements NaturalSpawnContinuat
                             dispatcher.requireCurrentClosure(receipt.key, 1);
                             // The retained operation identity remains the original tick ordinal;
                             // each actual resume has a fresh current BLOCK_ENTITY_TICK claim.
-                            try (var diagnostic = blockEntityQueries.enter(level, ticker.getType(), receipt.position,
+                            try (var diagnostic = blockEntityQueries.enter(level, ticker::getType, receipt.position,
                                     execution, directory.snapshot().generation())) {
                                 body.run();
                             }
@@ -809,6 +810,105 @@ public final class RegionalChunkGameplayService implements NaturalSpawnContinuat
         }
         access.phoenium$tickingBlockEntities(false);
     }
+
+    /**
+     * S9-D15: while the world is uniformly routed its one owner runs every ticker, and a local cohort
+     * ({@link #tryLocalSegment}) would run serially on that owner as well. From the iterator's next ticker this runs
+     * the window loop's serial protocol: an unready ticker is skipped owner-free (and dropped once retired); a ready
+     * one admits its closure and runs in its own turn with its Vault continuation, as there. Further tickers then
+     * join that turn in list order while it is coalescable ({@link RegionalServiceDispatcher#coalescable}: no owner
+     * inbox work, no release notice, an idle boundary, the world still uniformly routed; between their own turns
+     * nothing could run) and the turn's first ticker left no Vault suffix to await. A joined ticker is activated,
+     * its closure re-checked under the shared owner and its original tick run as in the serial body; activation
+     * and that check are consecutive in one turn, so the serial body's second readiness check is the activation.
+     * A Vault ticker never joins; it opens the next turn. Removals and binding closes are applied owner-free after
+     * the turn, in list order, as the serial loop applies them. Returns false, having consumed nothing, when the
+     * world is not uniformly routed.
+     */
+    private boolean tickUniformRun(ListIterator<TickingBlockEntity> iterator, boolean runs) {
+        if (directory.uniformRoute(world) == null) return false;
+        TickingBlockEntity ticker = iterator.next();
+        BlockEntityReceipt receipt = blockEntities.get(ticker);
+        if (receipt == null) throw new IllegalStateException("unpublished block entity ticker in original list");
+        if (!receipt.binding.activate()) {
+            if (receipt.binding.state() == ResidentBlockEntityTickerBinding.State.RETIRED) {
+                iterator.remove(); blockEntities.remove(ticker);
+            }
+            return true;
+        }
+        dispatcher.ensureClosure(receipt.key, 1);
+        boolean[] removed = {false};
+        List<JoinedTicker> joined = new ArrayList<>();
+        try (var vaultTick = new VaultBlockEntityTickContinuation(level, ticker, directory, receipt.key,
+                vaultTickOrdinal = Math.incrementExact(vaultTickOrdinal),
+                () -> dispatcher.naturalSpawnOpen() && receipt.binding.source() != null
+                    && receipt.binding.source().providerRuntimeOpen(),
+                dispatcher::requireNaturalSpawnOwnerFree).sourceBinding(receipt.binding.source())) {
+            vaultTick.bindingFailure(observation -> {
+                if (vaultBindingFailureReported.compareAndSet(false, true))
+                    org.slf4j.LoggerFactory.getLogger("Phoenium").error(
+                        "PHOENIUM_VAULT_FIRST_TICK_BINDING_FAILURE dispatcherOpen={} {}",
+                        dispatcher.naturalSpawnOpen(), observation.get());
+            });
+            dispatcher.executeAndDrain(receipt.key, RegionalServiceKind.BLOCK_ENTITY_TICK, execution -> {
+                dispatcher.requireCurrentClosure(receipt.key, 1);
+                try (var diagnostic = blockEntityQueries.enter(level, ticker::getType, receipt.position,
+                        execution, directory.snapshot().generation())) {
+                    if (!receipt.binding.ready()) { removed[0] = true; return; }
+                    removed[0] = tickTicker(ticker, runs, receipt.position, level::shouldTickBlocksAt, vaultTick::original);
+                }
+                // A retained Vault suffix is awaited owner-free before any later ticker, as between serial turns.
+                if (vaultTick.query() == null) joinUniformTurn(iterator, execution, runs, joined);
+            });
+            vaultTick.finish(dispatcher, (execution, body) -> {
+                dispatcher.requireCurrentClosure(receipt.key, 1);
+                try (var diagnostic = blockEntityQueries.enter(level, ticker::getType, receipt.position,
+                        execution, directory.snapshot().generation())) {
+                    body.run();
+                }
+            });
+        }
+        for (int index = 0; index <= joined.size(); index++) iterator.previous();
+        if (iterator.next() != ticker) throw new IllegalStateException("original ticker iterator changed during a shared turn");
+        if (removed[0]) { receipt.binding.close(); iterator.remove(); blockEntities.remove(ticker); }
+        for (JoinedTicker entry : joined) {
+            if (iterator.next() != entry.ticker) throw new IllegalStateException("original ticker iterator changed during a shared turn");
+            switch (entry.outcome) {
+                case CLOSE -> { entry.receipt.binding.close(); iterator.remove(); blockEntities.remove(entry.ticker); }
+                case DROP -> { iterator.remove(); blockEntities.remove(entry.ticker); }
+                case KEEP -> { }
+            }
+        }
+        return true;
+    }
+    /** S9-D15: the tickers after a shared turn's first, run inside that turn (see {@link #tickUniformRun}). */
+    private void joinUniformTurn(ListIterator<TickingBlockEntity> iterator, RegionalServiceDispatcher.Execution execution,
+                                 boolean runs, List<JoinedTicker> joined) {
+        java.util.function.Predicate<BlockPos> shouldTick = level::shouldTickBlocksAt;
+        while (iterator.hasNext() && dispatcher.coalescable(execution, world)) {
+            TickingBlockEntity ticker = iterator.next();
+            BlockEntityReceipt receipt = blockEntities.get(ticker);
+            if (receipt == null) throw new IllegalStateException("unpublished block entity ticker in original list");
+            if (ticker instanceof LocalNativeTickerAccess access
+                    && access.phoenium$localBlockEntity() instanceof net.minecraft.world.level.block.entity.vault.VaultBlockEntity) {
+                iterator.previous(); return;
+            }
+            if (!receipt.binding.activate()) {
+                joined.add(new JoinedTicker(ticker, receipt,
+                    receipt.binding.state() == ResidentBlockEntityTickerBinding.State.RETIRED ? Joined.DROP : Joined.KEEP));
+                continue;
+            }
+            dispatcher.requireCurrentClosure(receipt.key, 1);
+            boolean removed;
+            try (var diagnostic = blockEntityQueries.enter(level, ticker::getType, receipt.position,
+                    execution, directory.snapshot().generation())) {
+                removed = tickTicker(ticker, runs, receipt.position, shouldTick);
+            }
+            joined.add(new JoinedTicker(ticker, receipt, removed ? Joined.CLOSE : Joined.KEEP));
+        }
+    }
+    private enum Joined { KEEP, CLOSE, DROP }
+    private record JoinedTicker(TickingBlockEntity ticker, BlockEntityReceipt receipt, Joined outcome) { }
 
     private IdentityHashMap<TickingBlockEntity, LocalBlockEntityTick.Selection> selectLocalWindow(List<TickingBlockEntity> window) {
         var result = new IdentityHashMap<TickingBlockEntity, LocalBlockEntityTick.Selection>();

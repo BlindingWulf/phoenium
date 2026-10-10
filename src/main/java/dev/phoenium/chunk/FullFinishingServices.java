@@ -59,6 +59,8 @@ public final class FullFinishingServices {
     private volatile Reservation reserved;
     private volatile boolean stopped;
     private boolean shutdownStarted, cleanupStarted;
+    /** S9-D15: set with shutdownStarted, before it; read without the metadata lock by forServer's fast path. */
+    private volatile boolean shutdownSignalled;
 
     private FullFinishingServices(MinecraftServer server) {
         this.server = Objects.requireNonNull(server);
@@ -82,8 +84,15 @@ public final class FullFinishingServices {
         var runtime = ((FullGenerationSource) world.getChunkSource().chunkMap).phoenium$fullRegistration();
         return runtime != null && runtime.level() == world && runtime.authority.services() == lifetime.services() ? holder : null;
     }
+    /** S9-D15: the last service forServer returned before its shutdown began (entity data writes ask on every set). */
+    private static volatile FullFinishingServices served;
     public static FullFinishingServices forServer(MinecraftServer server) {
         Objects.requireNonNull(server);
+        // S9-D15: a registered service whose shutdown has not begun is the one the lookup returns: its server is not
+        // terminated (a server is only terminated without a service, or once its service is removed after shutdown)
+        // and tryFinishShutdown does nothing before shutdown starts.
+        FullFinishingServices last = served;
+        if (last != null && last.server == server && !last.shutdownSignalled) return last;
         FullFinishingServices service;
         DIRECTORY.lock();
         try {
@@ -92,6 +101,7 @@ public final class FullFinishingServices {
         }
         finally { DIRECTORY.unlock(); }
         service.tryFinishShutdown();
+        if (!service.shutdownSignalled) served = service;
         return service;
     }
     public static void stopped(MinecraftServer server) {
@@ -413,6 +423,7 @@ public final class FullFinishingServices {
         metadata.lock();
         try {
             stopped = true;
+            shutdownSignalled = true;
             shutdownStarted = true;
             for (Reservation reservation : List.copyOf(reservations.values())) {
                 if (!reservation.entered) reservation.closeLocked();
@@ -553,12 +564,16 @@ public final class FullFinishingServices {
         private final Reservation reservation;
         private final Phase phase;
         private final long sequence;
+        /** S9-D15: whether this scope is FULL. Its reservation, parent and service are final, so the answer is the
+         * one the parent walk gives on every call; entity getters ask it on nearly every call. */
+        private final boolean full;
         private ChunkStageClaim claim;
         private boolean closed;
         private Scope(FullFinishingServices service, Scope parent, Reservation reservation, Phase phase, long sequence) {
             this.service = service; this.parent = parent; this.reservation = reservation; this.phase = phase; this.sequence = sequence;
+            this.full = reservation != null || parent != null && parent.service == service && parent.full;
         }
-        private boolean full() { return reservation != null || parent != null && parent.service == service && parent.full(); }
+        private boolean full() { return full; }
         private Reservation fullReservation() { return reservation != null ? reservation : parent == null ? null : parent.fullReservation(); }
         private void requireCurrent() {
             if (closed || CURRENT.get() != this || service.active != this)

@@ -66,6 +66,18 @@ public class FastThreadLocal<T> extends ThreadLocal<T> {
         return true;
     }
 
+    /** S9-D15 diagnostics: the calling thread, whether it is slotted, the bound server thread and this class's
+     * identity and loader (a status line on the server thread shows whether its binding holds). */
+    public static String describe() {
+        Thread thread = Thread.currentThread();
+        Slots bound = server;
+        return "thread=" + thread.getName() + "#" + thread.threadId() + " slotted=" + slotted()
+            + " bound=" + (bound == null ? "none" : bound.thread.getName() + "#" + bound.thread.threadId()
+                + (bound.thread.isAlive() ? "" : "(dead)"))
+            + " class=" + Integer.toHexString(System.identityHashCode(FastThreadLocal.class))
+            + " loader=" + FastThreadLocal.class.getClassLoader();
+    }
+
     /** Whether the calling thread reads and writes slots rather than its map (diagnostics and tests). */
     public static boolean slotted() { return slots() != null; }
 

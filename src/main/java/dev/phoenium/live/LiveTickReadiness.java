@@ -107,9 +107,15 @@ public final class LiveTickReadiness {
     private static Receipt zeroBudget(ServerLevel level) {
         int[] counts = {0, 0};
         try (var holders = tickCandidates(level)) {
-            holders.forEach(holder -> { counts[1]++; if (!holder.getTickingChunkFuture().isDone()) counts[0]++; });
+            // S9-D15: C2ME's getTickingChunkFuture wraps its BLOCK_TICKING slot in a new handle() future per call; the
+            // wrapper is done exactly when that slot is, so the slot itself is asked.
+            holders.forEach(holder -> { counts[1]++; if (!tickingDone(holder)) counts[0]++; });
         }
         return new Receipt(level, counts[0], counts[1]);
+    }
+    private static boolean tickingDone(ChunkHolder holder) {
+        if (C2meReadinessSlot.supports(holder)) return ((CompletableFuture<?>) C2meReadinessSlot.identity(holder)).isDone();
+        return holder.getTickingChunkFuture().isDone();
     }
     /** A receipt observes a producer slot; it does not prevent native slot replacement. The original budget still applies. */
     public static Receipt refresh(Receipt receipt) {

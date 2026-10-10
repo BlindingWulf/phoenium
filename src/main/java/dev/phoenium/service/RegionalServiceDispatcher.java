@@ -86,6 +86,9 @@ public final class RegionalServiceDispatcher implements RegionalServiceExecutor 
     /** Owner-free preflight that converges a finite chunk halo before any original callback runs. */
     public void ensureClosure(RoutingKey center, int radius) {
         if (radius < 0) throw new IllegalArgumentException("negative regional service closure radius");
+        // S9-D15: every key of the halo names center's world, so ensureUniformClosure decides it while that world is
+        // uniformly routed (see there); otherwise, or when the encloser declines, the halo converges as before.
+        if (ensureUniformClosure(center)) return;
         ensureClosure(new dev.phoenium.topology.TopologyPlanner().requiredClosure(Set.of(center), radius));
     }
 
@@ -144,6 +147,10 @@ public final class RegionalServiceDispatcher implements RegionalServiceExecutor 
 
     /** Revalidation for nested producer effects after the owner-free closure was admitted. */
     public void requireCurrentClosure(RoutingKey center, int radius) {
+        if (radius < 0) throw new IllegalArgumentException("negative radius");
+        // S9-D15: the halo names center's world; while it is uniformly routed every halo key's owner check is
+        // center's (requireUniformClosure).
+        if (requireUniformClosure(center)) return;
         requireCurrentClosure(new dev.phoenium.topology.TopologyPlanner().requiredClosure(Set.of(center), radius));
     }
 

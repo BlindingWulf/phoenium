@@ -33,6 +33,11 @@ public final class BlockEntityChunkQueryDiagnostic {
 
     public Scope enter(ServerLevel world, String type, BlockPos position,
                        RegionalServiceDispatcher.Execution execution, TopologyGeneration topology) {
+        return enter(world, () -> type, position, execution, topology);
+    }
+    /** S9-D15: the type is read only for a failure report (a ticker's getType formats its registry key). */
+    public Scope enter(ServerLevel world, Supplier<String> type, BlockPos position,
+                       RegionalServiceDispatcher.Execution execution, TopologyGeneration topology) {
         if (CURRENT.get() != null) throw new IllegalStateException("nested block entity diagnostic scope");
         Scope scope = new Scope(world, type, position.immutable(), execution, topology);
         CURRENT.set(scope); ACTIVE.incrementAndGet();
@@ -41,27 +46,29 @@ public final class BlockEntityChunkQueryDiagnostic {
 
     public final class Scope implements AutoCloseable {
         final ServerLevel world;
-        final String type;
+        final Supplier<String> type;
         final BlockPos position;
         final RegionalServiceDispatcher.Execution execution;
         final TopologyGeneration topology;
-        final HolderObservation source;
+        /** S9-D15: the source chunk's holder at entry; its observation is formatted only for a failure report, where
+         * its lifecycle currentness, ticket level and FULL-slot readiness are read. */
+        final ChunkHolder source;
         BlockPos read;
         Query query;
         private boolean closed;
-        Scope(ServerLevel world, String type, BlockPos position,
+        Scope(ServerLevel world, Supplier<String> type, BlockPos position,
               RegionalServiceDispatcher.Execution execution, TopologyGeneration topology) {
             this.world = world; this.type = type; this.position = position;
             this.execution = execution; this.topology = topology;
-            this.source = observe(world, ChunkPos.containing(position));
+            this.source = holder(world, ChunkPos.containing(position));
         }
         void report(Query query, Throwable failure) {
             if (read == null || !reported.compareAndSet(false, true)) return;
             try {
                 HolderObservation atFailure = observe(world, query.position);
-                sink.accept(new Failure(type, position, ChunkPos.containing(position), read, query.position,
+                sink.accept(new Failure(type.get(), position, ChunkPos.containing(position), read, query.position,
                         query.status.toString(), query.create, execution.kind().name(), execution.worldInstance(),
-                        execution.operationId(), topology, OwnershipContext.current().orElse(null), source,
+                        execution.operationId(), topology, OwnershipContext.current().orElse(null), observe(source),
                         query.holder, atFailure, identity(query.selected), readiness(query.selected),
                         query.holder != null && identity(query.selected).equals(query.holder.fullSlot()),
                         ChunkPos.containing(position).equals(query.position), false,
@@ -150,8 +157,11 @@ public final class BlockEntityChunkQueryDiagnostic {
                 +" providerPublication="+(provider==null?"UNAVAILABLE":System.identityHashCode(provider));
         } catch(Throwable unavailable) {return " holder=UNAVAILABLE lifetime=UNAVAILABLE providerPublication=UNAVAILABLE";}
     }
-    private static HolderObservation observe(ServerLevel world, ChunkPos position) {
-        ChunkHolder holder = ((FullInputView) world.getChunkSource().chunkMap).phoenium$visibleInput(position.pack());
+    private static ChunkHolder holder(ServerLevel world, ChunkPos position) {
+        return ((FullInputView) world.getChunkSource().chunkMap).phoenium$visibleInput(position.pack());
+    }
+    private static HolderObservation observe(ServerLevel world, ChunkPos position) { return observe(holder(world, position)); }
+    private static HolderObservation observe(ChunkHolder holder) {
         if (holder == null) return new HolderObservation("ABSENT", null, false, -1, "ABSENT", "ABSENT");
         FullHolderEvidence evidence = (FullHolderEvidence) holder;
         var lifetime = evidence.phoenium$lifetime();

@@ -115,6 +115,18 @@ public final class ChunkLifecycleRegistry {
     void releaseRetired(ChunkCustodyModel.LifecycleId id) {
         metadataGate.lock(); try {
             if (!custody.canReleaseRetiredLifecycle(id)) throw new ChunkProtocolException("holder cleanup before terminal acknowledgment");
+            // S9-D15: entries of an id are created only by activateHolder, at the slot the id names and for the
+            // holder its custody record names, and each map keeps one entry per key: so the entries the scans
+            // below remove are the slot's and that holder's, when they carry the id. A slot that no longer holds
+            // the id leaves its holder unknown here, and the scans run as before.
+            Slot slot = new Slot(id.worldInstanceSequence(), id.chunkKey());
+            Entry atSlot = current.get(slot);
+            if (atSlot != null && atSlot.id.equals(id)) {
+                current.remove(slot);
+                Entry bound = byHolder.get(atSlot.holder);
+                if (bound != null && bound.id.equals(id)) byHolder.remove(atSlot.holder);
+                return;
+            }
             byHolder.values().removeIf(entry -> entry.id.equals(id));
             current.values().removeIf(entry -> entry.id.equals(id));
         } finally { metadataGate.unlock(); }

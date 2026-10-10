@@ -108,26 +108,54 @@ public final class RegionDirectory {
      * live topology outside the explicit test fixture: one default-routed region per world. */
     public RegionRoute uniformRoute(dev.phoenium.core.WorldId world) {
         if (pending.get() != null) return null;
+        Objects.requireNonNull(world, "world"); // as worldDefaults().get(null) threw
         View current = view.get();
-        return current.hasExplicitRoutesForWorld(world) ? null : current.worldDefaults().get(world);
+        // S9-D15: hasExplicitRoutesForWorld ? null : worldDefaults.get, from the view's world table.
+        DefaultResolutions table = defaults(current);
+        int index = table.index(world);
+        return index < 0 ? null : table.uniform[index];
     }
     /** True when every key names {@code world}. */
     public static boolean sameWorld(java.util.Collection<RoutingKey> keys, dev.phoenium.core.WorldId world) {
         for (RoutingKey key : keys) if (!key.world().equals(world)) return false;
         return true;
     }
-    /** S9-D12: one view's world-default resolutions, built once per published view. */
-    private record DefaultResolutions(View view, Map<dev.phoenium.core.WorldId, Optional<RegionRoute>> routes) { }
-    private volatile DefaultResolutions defaultResolutions;
-    private Optional<RegionRoute> defaultResolution(View current, dev.phoenium.core.WorldId world) {
-        DefaultResolutions cached = defaultResolutions;
-        if (cached == null || cached.view != current) {
-            Map<dev.phoenium.core.WorldId, Optional<RegionRoute>> routes = new java.util.HashMap<>();
-            current.worldDefaults().forEach((value, route) -> routes.put(value, Optional.of(route)));
-            defaultResolutions = cached = new DefaultResolutions(current, Map.copyOf(routes));
+    /** S9-D12: one view's world-default resolutions, built once per published view. S9-D15: a view has a few worlds
+     * and callers pass the same WorldId instances, so the table is scanned by identity before equality, and it also
+     * holds each world's uniformRoute answer (its default unless the world carries explicit routes). */
+    private static final class DefaultResolutions {
+        final View view;
+        final dev.phoenium.core.WorldId[] worlds;
+        final Optional<RegionRoute>[] routes;
+        final RegionRoute[] uniform;
+        @SuppressWarnings("unchecked")
+        DefaultResolutions(View view) {
+            this.view = view;
+            int size = view.worldDefaults().size();
+            worlds = new dev.phoenium.core.WorldId[size]; routes = new Optional[size]; uniform = new RegionRoute[size];
+            int i = 0;
+            for (var entry : view.worldDefaults().entrySet()) {
+                worlds[i] = entry.getKey(); routes[i] = Optional.of(entry.getValue());
+                uniform[i] = view.hasExplicitRoutesForWorld(entry.getKey()) ? null : entry.getValue();
+                i++;
+            }
         }
-        Optional<RegionRoute> found = cached.routes.get(world);
-        return found != null ? found : Optional.empty();
+        int index(dev.phoenium.core.WorldId world) {
+            for (int i = 0; i < worlds.length; i++) if (worlds[i] == world) return i;
+            for (int i = 0; i < worlds.length; i++) if (worlds[i].equals(world)) return i;
+            return -1;
+        }
+    }
+    private volatile DefaultResolutions defaultResolutions;
+    private DefaultResolutions defaults(View current) {
+        DefaultResolutions cached = defaultResolutions;
+        if (cached == null || cached.view != current) defaultResolutions = cached = new DefaultResolutions(current);
+        return cached;
+    }
+    private Optional<RegionRoute> defaultResolution(View current, dev.phoenium.core.WorldId world) {
+        DefaultResolutions table = defaults(current);
+        int index = table.index(world);
+        return index < 0 ? Optional.empty() : table.routes[index];
     }
     public Optional<RegionRoute> resolve(RoutingKey key) {
         View current = view.get();
