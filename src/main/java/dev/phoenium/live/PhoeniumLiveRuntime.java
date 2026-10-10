@@ -488,6 +488,36 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
         logStatus("started");
     }
 
+    /** S9-D19: on unless -Dphoenium.packets.drainBeforeTick=false (then the first world tick drains it, as before). */
+    private static final boolean DRAIN_PACKET_WORK = !"false".equals(System.getProperty("phoenium.packets.drainBeforeTick"));
+    private long packetWorkDrains;
+
+    /**
+     * S9-D19: called from processPacketsAndTick after the queued packets were handled and before tickServer. The owner
+     * work those packets admitted (movement, interaction, block and container replays, each checked against its
+     * admission ticket when it runs) is delivered here in its FIFO order, through drainBeforeSelection under a
+     * SERVER_TASK serial turn, instead of by the first world tick's drain inside tickServer. Vanilla runs those
+     * handlers at packet time, before tickServer, so this is where their work belongs. Nothing else is reordered:
+     * the same envelopes run in the same order, before every world's tick, as they did at the first one's start.
+     * Without a serial turn (a FULL reservation or another serial phase holds the service) the work stays queued for
+     * the tick, as before. A failure fences simulation as a failed tick does.
+     */
+    public void drainAdmittedPacketWork(MinecraftServer server) {
+        if (!DRAIN_PACKET_WORK || !acceptsGameplay() || scheduler == null || regionalDispatcher == null) return;
+        if (pendingTick != null || OwnershipContext.current().isPresent())
+            throw new IllegalStateException("packet work drained inside a world tick or an owner turn");
+        if (scheduler.inboxesEmpty()) return;
+        try (var turn = dev.phoenium.chunk.FullFinishingServices.forServer(server).tryServerTaskTurn()) {
+            if (turn == null) return;
+            regionalDispatcher.drainBeforeSelection();
+            packetWorkDrains++;
+        } catch (RuntimeException | Error failure) {
+            failClosed(failure, null);
+            scheduler.quiesce();
+            throw failure;
+        }
+    }
+
     /** Called only from the redirect around MinecraftServer.tickChildren' single ServerLevel.tick invoke. */
     public void dispatchLevelTick(ServerLevel level, BooleanSupplier shouldKeepTicking) {
         intercepts++;
@@ -3082,7 +3112,9 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
             + " topology=" + topologySummary());
         logger.info("PHOENIUM_S8F6_CASCADE_TOTALS {} {}", event, dev.phoenium.service.NeighborCascadeContinuation.totals());
         logger.info("PHOENIUM_FAST_LOCALS_STATUS {} {}", event, dev.phoenium.core.FastThreadLocal.describe());
-        logger.info("PHOENIUM_QUEUED_STATUS {} queued={}", event, RegionRuntime.queued());
+        logger.info("PHOENIUM_QUEUED_STATUS {} queued={} packetWorkDrains={} drainBeforeTick={} trackerMoves={}", event,
+            RegionRuntime.queued(), packetWorkDrains, DRAIN_PACKET_WORK,
+            dev.phoenium.service.RegionalTrackingService.moveCounts());
     }
 
     private sealed interface PendingPacket permits PendingMove, PendingInteract, PendingBlockPacket, PendingUseItem, PendingVehicleMove {

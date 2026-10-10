@@ -106,6 +106,7 @@
     "FullInputPublicationMixin",
     "FullProductionMapMixin",
     "FullFinishingSerialMixin",
+    "PacketWorkDrainMixin",
     "RegionalChunkSaveMixin",
     "FullFinishingWorldContextMixin",
     "FullFinishingEnvironmentMixin",

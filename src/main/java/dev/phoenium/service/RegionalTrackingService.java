@@ -58,6 +58,19 @@ public final class RegionalTrackingService {
      * removed entry is never selected); an addition, another stamp or another view ends it. */
     private record Verified(long additions, long stamp, RegionDirectory.View view) { }
     private Verified verified;
+    /** S9-D19: movePlayer's selections by the path they took (all worlds), for the status line: the cell index, or the
+     * full list because nothing was verified, an entry was added, a non-player fact was published, the view or route
+     * changed, or the index changed during selection; and the full-list passes that recorded a Verified. */
+    private static final int MOVE_FAST = 0, MOVE_UNVERIFIED = 1, MOVE_ADDED = 2, MOVE_PUBLISHED = 3, MOVE_VIEW = 4,
+        MOVE_INDEX = 5, MOVE_RECORDED = 6;
+    private static final java.util.concurrent.atomic.LongAdder[] MOVE_COUNTS = new java.util.concurrent.atomic.LongAdder[7];
+    static { for (int i = 0; i < MOVE_COUNTS.length; i++) MOVE_COUNTS[i] = new java.util.concurrent.atomic.LongAdder(); }
+    public static String moveCounts() {
+        return "fast=" + MOVE_COUNTS[MOVE_FAST].sum() + ",unverified=" + MOVE_COUNTS[MOVE_UNVERIFIED].sum()
+            + ",added=" + MOVE_COUNTS[MOVE_ADDED].sum() + ",published=" + MOVE_COUNTS[MOVE_PUBLISHED].sum()
+            + ",view=" + MOVE_COUNTS[MOVE_VIEW].sum() + ",index=" + MOVE_COUNTS[MOVE_INDEX].sum()
+            + ",recorded=" + MOVE_COUNTS[MOVE_RECORDED].sum();
+    }
     /** S9-D18: each indexed entry under every listener of its seenConnections (kept by setSeen and forgetViewers). */
     private final IdentityHashMap<Object, Set<Entry>> viewers = new IdentityHashMap<>();
     /** S9-D18: the player entries of the index list {@code playerEntriesOf}, in its order. */
@@ -629,10 +642,15 @@ public final class RegionalTrackingService {
         // order (the only entries refreshCandidates then refreshes, as over the whole list), and selects as before.
         // Only a uniformly routed world, whose closure reads no footprint order, takes this; others keep the list.
         List<Entry> live = null;
-        if (standing != null && standing.additions == entriesAdditions
-                && standing.stamp == finishing.entityFacts.nonPlayerPublications()
-                && standing.view == directory.snapshot() && directory.uniformRoute(world) != null)
+        // S9-D19: the same checks in the same order, each counted by the path it leaves on (moveCounts)
+        int path = standing == null ? MOVE_UNVERIFIED : standing.additions != entriesAdditions ? MOVE_ADDED
+            : standing.stamp != finishing.entityFacts.nonPlayerPublications() ? MOVE_PUBLISHED
+            : standing.view != directory.snapshot() || directory.uniformRoute(world) == null ? MOVE_VIEW : MOVE_FAST;
+        if (path == MOVE_FAST) {
             live = nearbyEntries(entries, entriesAdditions, moving, maxVisible, player);
+            if (live == null) path = MOVE_INDEX;
+        }
+        MOVE_COUNTS[path].increment();
         if (live == null) {
             live = new ArrayList<>(entries.size());
             boolean skipped = false;
@@ -642,7 +660,10 @@ public final class RegionalTrackingService {
             }
             Pass pass = refreshCandidates(live);
             // every non-player entry of the list was verified (none was skipped as in removal)
-            if (pass != null && !skipped) synchronized (this) { verified = new Verified(entriesAdditions, pass.stamp, pass.view); }
+            if (pass != null && !skipped) {
+                synchronized (this) { verified = new Verified(entriesAdditions, pass.stamp, pass.view); }
+                MOVE_COUNTS[MOVE_RECORDED].increment();
+            }
         } else refreshCandidates(live);
         for (Entry entry : live) {
             if (entry.entity == player) {

@@ -312,6 +312,10 @@ public final class FullFinishingServices {
         }
     }
 
+    /** S9-D19: a SERVER_TASK serial turn, or null while another serial turn or a FULL reservation holds the service
+     * (the caller then leaves its work to a later turn), as runServerTask takes one. */
+    public Scope tryServerTaskTurn() { return tryTurn(Phase.SERVER_TASK); }
+
     /** C2ME can reserve FULL on a producer while the server polls its original task queue. */
     private Scope tryTurn(Phase phase) {
         metadata.lock();
