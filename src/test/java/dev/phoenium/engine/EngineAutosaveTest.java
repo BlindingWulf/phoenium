@@ -56,6 +56,28 @@ class EngineAutosaveTest {
     }
 
     @Test
+    void playerQueueSavesEachOnceAndSkipsTheOnesThatLeft() {
+        EngineAutosave.Queue<String> queue = new EngineAutosave.Queue<>();
+        assertFalse(queue.begin(new String[] {"a", "b", "gone", "c"}));
+        java.util.List<String> saved = new java.util.ArrayList<>();
+        long[] now = {0L};
+        int drains = 0;
+        while (queue.busy()) {
+            // each save takes 6 ms of a 2 ms budget: one player per tick; "gone" left meanwhile and is skipped
+            queue.drain(name -> {
+                if (name.equals("gone")) return false;
+                now[0] += 6_000_000L;
+                return saved.add(name);
+            }, 64, 2_000_000L, () -> now[0]);
+            drains++;
+        }
+        assertEquals(java.util.List.of("a", "b", "c"), saved);
+        assertEquals(3, drains, "the skipped player does not cost a tick of its own");
+        assertTrue(queue.begin(new String[] {"x"}) == false);
+        assertTrue(queue.drop());
+    }
+
+    @Test
     void anUnfinishedQueueIsReportedAndReplacedAndAFullSaveDropsIt() {
         EngineAutosave.Spread spread = new EngineAutosave.Spread();
         spread.begin(keys(100));

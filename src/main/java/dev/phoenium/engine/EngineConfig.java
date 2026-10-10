@@ -120,6 +120,12 @@ public final class EngineConfig {
     /** S9-E12 {@code phoenium.engine.autosaveSpread.entities} (default true): the entity stores spread too; false stores them in the autosave tick. */
     public static final boolean AUTOSAVE_SPREAD_ENTITIES = AUTOSAVE_SPREAD
         && !"false".equalsIgnoreCase(System.getProperty("phoenium.engine.autosaveSpread.entities"));
+    /**
+     * S9-E14 {@code phoenium.engine.autosaveSpread.players} (default true): the player saves (player data, stats,
+     * advancements) spread too, after the autosave tick; false saves them in the autosave tick.
+     */
+    public static final boolean AUTOSAVE_SPREAD_PLAYERS = AUTOSAVE_SPREAD
+        && !"false".equalsIgnoreCase(System.getProperty("phoenium.engine.autosaveSpread.players"));
     /** S9-E12 {@code phoenium.engine.autosaveSpread.chunks} (default 64): saves per level queue and tick at most. */
     public static final int AUTOSAVE_CHUNKS = clamp(Integer.getInteger("phoenium.engine.autosaveSpread.chunks", 64), 1, 1 << 20);
     /** S9-E12 {@code phoenium.engine.autosaveSpread.budgetUs} (default 2000): time per level queue and tick at most (one key always runs). */
@@ -149,6 +155,7 @@ public final class EngineConfig {
             + " spawnSlices=" + SPAWN_SLICES + " spawnSlicesMin=" + SPAWN_SLICE_MIN
             + " spins=" + SPINS + " idleParkUs=" + IDLE_PARK_US + " dagWake=" + DAG_WAKE + " dagParkUs=" + DAG_PARK_US
             + " autosaveSpread=" + AUTOSAVE_SPREAD + " autosaveSpreadEntities=" + AUTOSAVE_SPREAD_ENTITIES
+            + " autosaveSpreadPlayers=" + AUTOSAVE_SPREAD_PLAYERS
             + " autosaveSpreadChunks=" + AUTOSAVE_CHUNKS + " autosaveSpreadBudgetUs=" + AUTOSAVE_BUDGET_US
             + " moveSplit=" + MOVE_SPLIT + " moveSplitMin=" + MOVE_SPLIT_MIN + " moveSplitCheck=" + MOVE_SPLIT_CHECK;
     }

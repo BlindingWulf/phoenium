@@ -17,12 +17,12 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
 /**
  * S9-E12 (engine mode only): a spreading autosave's PersistentEntitySectionManager.autoSave() records the keys of the
- * chunks it would store; each tick() after it (where vanilla unloads) runs vanilla's per-chunk step for the next keys:
- * unload a hidden chunk, else store its entities ({@link EngineAutosave}). saveAll() (shutdown, flush) and a
+ * chunks it would store; after each tick() (where vanilla unloads) of a level that is not noSave (save-off), ServerLevel
+ * runs vanilla's per-chunk step for the next keys: unload a hidden chunk, else store its entities ({@link EngineAutosave}). saveAll() (shutdown, flush) and a
  * non-spreading autoSave run as vanilla and drop the queue.
  */
 @Mixin(PersistentEntitySectionManager.class)
-abstract class EngineAutosaveEntitiesMixin<T extends EntityAccess> {
+abstract class EngineAutosaveEntitiesMixin<T extends EntityAccess> implements EngineAutosave.EntityStores {
     @Shadow @Final private Long2ObjectMap<Visibility> chunkVisibility;
 
     @Unique private final EngineAutosave.Spread phoenium$stores = new EngineAutosave.Spread();
@@ -48,8 +48,8 @@ abstract class EngineAutosaveEntitiesMixin<T extends EntityAccess> {
         EngineAutosave.fullSave(this.phoenium$stores);
     }
 
-    @Inject(method = "tick", at = @At("TAIL"))
-    private void phoenium$drainEntityStores(CallbackInfo ci) {
+    @Override
+    public void phoenium$drainEntityStores() {
         if (!this.phoenium$stores.busy()) return;
         EngineAutosave.drainEntities(this.phoenium$stores, key -> this.chunkVisibility.get(key) == Visibility.HIDDEN
             ? this.processChunkUnload(key) : this.storeChunkSections(key, entity -> { }));

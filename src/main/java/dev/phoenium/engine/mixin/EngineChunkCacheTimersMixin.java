@@ -8,6 +8,7 @@ import java.util.function.BooleanSupplier;
 import net.minecraft.server.level.ChunkMap;
 import net.minecraft.server.level.ServerChunkCache;
 import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.server.waypoints.ServerWaypointManager;
 import net.minecraft.util.profiling.ProfilerFiller;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
@@ -51,5 +52,11 @@ abstract class EngineChunkCacheTimersMixin {
         if (EngineMoveSplit.defer(chunkMap, player)) return;   // S9-E13: a move packet's, run after the queued packets
         long start = EngineTimers.start();
         try { original.call(chunkMap, player); } finally { EngineTimers.add(EngineTimers.PLAYER_MOVE, start); }
+    }
+
+    /** S9-E13: the waypoint update after a deferred ChunkMap.move runs after that move's apply (it reads the chunk view). */
+    @WrapOperation(method = "move(Lnet/minecraft/server/level/ServerPlayer;)V", at = @At(value = "INVOKE", target = "Lnet/minecraft/server/waypoints/ServerWaypointManager;updatePlayer(Lnet/minecraft/server/level/ServerPlayer;)V"))
+    private void phoenium$deferWaypoints(ServerWaypointManager manager, ServerPlayer player, Operation<Void> original) {
+        if (!EngineMoveSplit.deferWaypoints(player)) original.call(manager, player);
     }
 }

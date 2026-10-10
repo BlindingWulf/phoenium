@@ -2,6 +2,7 @@ package dev.phoenium.engine.mixin;
 
 import com.llamalad7.mixinextras.injector.wrapoperation.Operation;
 import com.llamalad7.mixinextras.injector.wrapoperation.WrapOperation;
+import dev.phoenium.engine.EngineAutosave;
 import dev.phoenium.engine.EngineTimers;
 import java.util.function.BiConsumer;
 import java.util.function.BooleanSupplier;
@@ -63,6 +64,10 @@ abstract class EngineLevelTimersMixin {
     @WrapOperation(method = "tick", at = @At(value = "INVOKE", target = "Lnet/minecraft/world/level/entity/PersistentEntitySectionManager;tick()V"))
     private void phoenium$timeEntityManager(PersistentEntitySectionManager<?> manager, Operation<Void> original) {
         long start = EngineTimers.start();
-        try { original.call(manager); } finally { EngineTimers.add(EngineTimers.ENTITY_MANAGER, start); }
+        try {
+            original.call(manager);
+            // S9-E12: a spreading autosave's next entity stores, unless the level is noSave (save-off), as vanilla skips saving then
+            if (!((ServerLevel) (Object) this).noSave()) ((EngineAutosave.EntityStores) manager).phoenium$drainEntityStores();
+        } finally { EngineTimers.add(EngineTimers.ENTITY_MANAGER, start); }
     }
 }

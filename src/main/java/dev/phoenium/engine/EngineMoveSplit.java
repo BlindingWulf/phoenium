@@ -40,6 +40,11 @@ import org.slf4j.LoggerFactory;
  * run stays vanilla's). Fewer than {@link EngineConfig#MOVE_SPLIT_MIN} moves, or an index that cannot answer, run the
  * deferred moves serially as vanilla's move. moveSplitStray (an evaluation record with no move being evaluated) must
  * stay 0.
+ *
+ * <p>ServerChunkCache.move's waypoint update (locator bar) after a deferred ChunkMap.move is deferred with it and runs right
+ * after the move's apply, so it reads the updated chunk view as in vanilla. A move whose evaluation or apply throws (a
+ * third-party hook) is logged and counted (moveSplitFailures, must stay 0) and run once more as vanilla's whole move; the
+ * other moves of the flush go on.
  */
 public final class EngineMoveSplit {
     private EngineMoveSplit() { }
@@ -69,6 +74,8 @@ public final class EngineMoveSplit {
         final Target map;
         final ServerPlayer player;
         boolean valid;
+        boolean failed;
+        boolean waypoints;
         final ArrayList<Object> trackers = new ArrayList<>();
         final ArrayList<ServerPlayer> targets = new ArrayList<>();
 
@@ -87,6 +94,8 @@ public final class EngineMoveSplit {
 
     private static final Logger LOGGER = LoggerFactory.getLogger("Phoenium");
     private static final AtomicInteger MISMATCH_LOGS = new AtomicInteger();
+    private static final AtomicInteger FAILURE_LOGS = new AtomicInteger();
+    private static final LongAdder FAILURES = new LongAdder();
     private static final LongAdder STRAY = new LongAdder();
     private static final ThreadLocal<Pending> RECORDING = new ThreadLocal<>();
     /** Set by the server thread around an evaluation; the tile threads see it through the job's publication. */
@@ -95,6 +104,8 @@ public final class EngineMoveSplit {
     private static boolean draining;
     private static int movePackets;
     private static boolean restOnly;
+    /** The player of the last ChunkMap.move this hook deferred (ServerChunkCache.move's waypoint update follows it). */
+    private static ServerPlayer lastDeferred;
     private static int checkCountdown;
     private static final ArrayList<Pending> PENDING = new ArrayList<>();
     private static final Reference2ObjectOpenHashMap<ServerPlayer, Pending> BY_PLAYER = new Reference2ObjectOpenHashMap<>();
@@ -137,6 +148,7 @@ public final class EngineMoveSplit {
 
     /** ServerChunkCache.move's ChunkMap.move(player): true if deferred to the end of the queued packets. */
     public static boolean defer(Object chunkMap, ServerPlayer player) {
+        lastDeferred = null;
         if (!draining || movePackets == 0 || player.isPassenger() || !TileEngine.onServerThread() || TileEngine.current() != null) return false;
         Target map = (Target) chunkMap;
         if (player.level() != map.phoenium$level()) return false;
@@ -150,6 +162,17 @@ public final class EngineMoveSplit {
             return false;
         }
         deferred++;
+        lastDeferred = player;
+        return true;
+    }
+
+    /** ServerChunkCache.move's waypoint update right after a deferred ChunkMap.move: true if it waits for that move's apply. */
+    public static boolean deferWaypoints(ServerPlayer player) {
+        if (lastDeferred != player || !TileEngine.onServerThread()) return false;
+        lastDeferred = null;
+        Pending pending = BY_PLAYER.get(player);
+        if (pending == null) return false;
+        pending.waypoints = true;
         return true;
     }
 
@@ -174,6 +197,7 @@ public final class EngineMoveSplit {
 
     /** After the queued packets (server thread): evaluates the deferred moves in parallel, then applies them in order. */
     public static void flush() {
+        lastDeferred = null;
         int count = PENDING.size();
         if (count == 0) return;
         long start = EngineTimers.start();
@@ -207,8 +231,16 @@ public final class EngineMoveSplit {
             serialFlushes++;
             for (int i = 0; i < count; i++) {
                 Pending pending = PENDING.get(i);
-                if (pending.valid) pending.map.phoenium$moveNow(pending.player);
-                else skipped++;
+                if (!pending.valid) {
+                    skipped++;
+                    continue;
+                }
+                try {
+                    pending.map.phoenium$moveNow(pending.player);
+                    waypoints(pending);
+                } catch (RuntimeException | LinkageError failure) {
+                    failed(pending, "serial move", failure);
+                }
             }
         } finally {
             PENDING.clear();
@@ -234,8 +266,34 @@ public final class EngineMoveSplit {
         RECORDING.set(pending);
         try {
             pending.map.phoenium$evaluateMove(pending.player);
+        } catch (RuntimeException | LinkageError failure) {
+            pending.failed = true;   // applied as vanilla's whole move on the server thread
+            failed(pending, "evaluation", failure);
         } finally {
             RECORDING.set(null);
+        }
+    }
+
+    /** After a deferred move's apply: its deferred waypoint update, as ServerChunkCache.move does after ChunkMap.move. */
+    private static void waypoints(Pending pending) {
+        if (pending.waypoints && pending.player.isReceivingWaypoints()) pending.map.phoenium$level().getWaypointManager().updatePlayer(pending.player);
+    }
+
+    private static void failed(Pending pending, String where, Throwable failure) {
+        FAILURES.increment();
+        if (FAILURE_LOGS.incrementAndGet() <= 5) {
+            LOGGER.error("PHOENIUM_ENGINE moveSplit {} failed for {}", where, pending.player.getScoreboardName(), failure);
+        }
+    }
+
+    /** A move whose evaluation or apply failed: vanilla's whole move (tracker loop included), once. */
+    private static void recover(Pending pending) {
+        restOnly = false;
+        try {
+            pending.map.phoenium$moveNow(pending.player);
+            waypoints(pending);
+        } catch (RuntimeException | LinkageError failure) {
+            failed(pending, "recovery move", failure);
         }
     }
 
@@ -248,18 +306,28 @@ public final class EngineMoveSplit {
                 skipped++;
                 continue;
             }
-            if (check) check(pending);
-            for (int i = 0, n = pending.trackers.size(); i < n; i++) {
-                ((EngineTrackedEntityAccess) pending.trackers.get(i)).phoenium$updatePlayer(pending.targets.get(i));
-            }
-            changes += pending.trackers.size();
-            if (!VIEW_CHANGED.isEmpty()) rechecked += pending.map.phoenium$recheckOwn(pending.player, VIEW_CHANGED);
             Object view = pending.player.getChunkTrackingView();
-            restOnly = true;
-            try {
-                pending.map.phoenium$moveNow(pending.player);
-            } finally {
-                restOnly = false;
+            if (pending.failed) {
+                recover(pending);
+            } else {
+                try {
+                    if (check) check(pending);
+                    for (int i = 0, n = pending.trackers.size(); i < n; i++) {
+                        ((EngineTrackedEntityAccess) pending.trackers.get(i)).phoenium$updatePlayer(pending.targets.get(i));
+                    }
+                    changes += pending.trackers.size();
+                    if (!VIEW_CHANGED.isEmpty()) rechecked += pending.map.phoenium$recheckOwn(pending.player, VIEW_CHANGED);
+                    restOnly = true;
+                    try {
+                        pending.map.phoenium$moveNow(pending.player);
+                    } finally {
+                        restOnly = false;
+                    }
+                    waypoints(pending);
+                } catch (RuntimeException | LinkageError failure) {
+                    failed(pending, "apply", failure);
+                    recover(pending);
+                }
             }
             if (pending.player.getChunkTrackingView() != view) VIEW_CHANGED.add(pending.player);
         }
@@ -296,6 +364,6 @@ public final class EngineMoveSplit {
             + " moveSplitParallel=" + parallelFlushes + " moveSplitSerial=" + serialFlushes + " moveSplitEntries=" + entries
             + " moveSplitSkipped=" + skipped + " moveSplitChanges=" + changes + " moveSplitRechecked=" + rechecked
             + " moveSplitChecks=" + checks + " moveSplitWorkUs=" + workNanos / 1000 + " moveSplitMismatch=" + mismatch
-            + " moveSplitStray=" + STRAY.sum();
+            + " moveSplitStray=" + STRAY.sum() + " moveSplitFailures=" + FAILURES.sum();
     }
 }
