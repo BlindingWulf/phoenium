@@ -2,12 +2,14 @@ package dev.phoenium.engine;
 
 import dev.phoenium.engine.mixin.EngineChunkMapAccess;
 import java.util.IdentityHashMap;
+import net.minecraft.core.BlockPos;
 import net.minecraft.server.level.ChunkHolder;
 import net.minecraft.server.level.ServerChunkCache;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.util.RandomSource;
 import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.level.Level;
+import net.minecraft.world.level.NaturalSpawner;
 import net.minecraft.world.level.chunk.ChunkAccess;
 import net.minecraft.world.level.chunk.LevelChunk;
 import net.minecraft.world.level.chunk.status.ChunkStatus;
@@ -37,13 +39,19 @@ public final class TileContext {
     private final LevelChunk[] cacheChunks = new LevelChunk[4];
     private int cacheNext;
     long trapped;
+    /** S9-E3: this tile's Level.randValue (getBlockRandomPos and Lithium's chunk-random helpers). */
+    int randValue;
+    /** S9-E3: this tile's copy of Lithium's cached random-tick position. */
+    final BlockPos.MutableBlockPos randomPos = new BlockPos.MutableBlockPos();
+    private EngineSpawnOverlay spawn;
 
     void enter(ServerLevel level, TileWork tile, long phase, long colourRun, long seed) {
         if (this.phase != phase) {
             this.phase = phase;
             clearChunkCache();
         }
-        if (this.colour != colourRun) {
+        // a new colour (or, for colourRun < 0, every run) starts with an empty path-type cache
+        if (colourRun < 0 || this.colour != colourRun) {
             this.colour = colourRun;
             pathTypes.reset();
         }
@@ -54,6 +62,8 @@ public final class TileContext {
         minTileZ = tile.tileZ - radius;
         maxTileZ = tile.tileZ + radius;
         random.setSeed(seed);
+        randValue = (int) TileGeometry.mix(seed ^ 0x6A09E667F3BCC909L);
+        if (spawn != null) spawn.reset();
         this.tile = tile;
     }
 
@@ -79,6 +89,12 @@ public final class TileContext {
     /** This thread's path-type cache (ServerLevel.getPathTypeCache for a tile thread). */
     public PathTypeCache pathTypes() { return pathTypes; }
 
+    /** S9-E3: the running tile's view of this tick's natural-spawn state (shared state read-only, own spawns added). */
+    public EngineSpawnOverlay spawn(NaturalSpawner.SpawnState state) {
+        if (spawn == null) spawn = new EngineSpawnOverlay();
+        return spawn.bind(state);
+    }
+
     CollectingNeighborUpdater neighborUpdater(Level owner, int maxChainedNeighborUpdates) {
         CollectingNeighborUpdater updater = updaters.get(owner);
         if (updater == null) {
@@ -88,7 +104,7 @@ public final class TileContext {
         return updater;
     }
 
-    /** ServerChunkCache.getChunk for this thread: loaded chunks only; a miss that asks to load is a trap. */
+    /** ServerChunkCache.getChunk for this thread: present chunks directly; a miss that asks to load is a load service. */
     public ChunkAccess chunk(ServerChunkCache cache, int x, int z, ChunkStatus status, boolean load) {
         ChunkAccess found;
         if (status == ChunkStatus.FULL) found = fullChunk(cache, x, z);
@@ -97,7 +113,7 @@ public final class TileContext {
             found = holder == null ? null : holder.getChunkIfPresent(status);
         }
         if (found != null || !load) return found;
-        return TileEngine.loadTrap(this, cache, x, z, status);
+        return TileEngine.loadChunk(this, cache, x, z, status);
     }
 
     /** ServerChunkCache.getChunkNow for this thread. */

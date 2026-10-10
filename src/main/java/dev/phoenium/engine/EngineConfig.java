@@ -22,13 +22,31 @@ public final class EngineConfig {
     public static final int COLOURS = PERIOD * PERIOD;
     /** Traps (a load-miss chunk request, a block write outside the claim) throw instead of being counted. */
     public static final boolean STRICT = Boolean.getBoolean("phoenium.engine.strict");
+    /**
+     * S9-E3 {@code phoenium.engine.chunks} (default true): the chunk phase of ServerChunkCache.tickChunks (inhabited
+     * time, thunder, natural spawning, precipitation and random block ticks) runs in tiles too.
+     */
+    public static final boolean CHUNKS = !"false".equalsIgnoreCase(System.getProperty("phoenium.engine.chunks"));
+    /**
+     * S9-E3 {@code phoenium.engine.schedule}: {@code colours} (default) runs one colour at a time and applies its deferred
+     * effects before the next; {@code dag} starts a tile as soon as its lower-colour neighbours (claims that touch) are
+     * done and applies every deferred effect after the phase, in the same colour-then-tile order.
+     */
+    public static final boolean DAG = "dag".equalsIgnoreCase(System.getProperty("phoenium.engine.schedule", "colours"));
+    /**
+     * S9-E3 {@code phoenium.engine.services} (default true): a tile that must load a chunk or a POI column, or write
+     * outside its claim, pauses while the server thread does it with no other tile running (what vanilla does inline);
+     * false keeps the S9-E1 traps (an empty answer for a load, the write done in place), counted and logged.
+     */
+    public static final boolean SERVICES = !"false".equalsIgnoreCase(System.getProperty("phoenium.engine.services"));
 
     /** Blocks between a tile's edge and its claim's edge. */
     public static int claimReachBlocks() { return CLAIM_RADIUS << (TILE_SHIFT + 4); }
 
     public static String describe() {
         return "engine=tiles tileShift=" + TILE_SHIFT + " tileChunks=" + (1 << TILE_SHIFT) + " claimRadius=" + CLAIM_RADIUS
-            + " colours=" + COLOURS + " reachBlocks=" + claimReachBlocks() + " strict=" + STRICT;
+            + " colours=" + COLOURS + " reachBlocks=" + claimReachBlocks() + " strict=" + STRICT + " chunks=" + CHUNKS
+            + " schedule=" + (DAG ? "dag" : "colours") + " services=" + SERVICES;
     }
 
     private static final java.util.concurrent.ConcurrentLinkedQueue<String> TRANSFORMS = new java.util.concurrent.ConcurrentLinkedQueue<>();
