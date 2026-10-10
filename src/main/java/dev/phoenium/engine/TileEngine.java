@@ -166,7 +166,8 @@ public final class TileEngine {
             + " writeServices=" + WRITE_SERVICES.sum() + " villageServices=" + VILLAGE_SERVICES.sum()
             + " structureServices=" + STRUCTURE_SERVICES.sum() + " services=" + services + " serviceUs=" + serviceNanos / 1000
             + " loadTraps=" + LOAD_TRAPS.sum() + " writeTraps=" + WRITE_TRAPS.sum() + " storageTraps=" + STORAGE_TRAPS.sum()
-            + " " + EngineTracker.counters() + " " + EngineProtections.describe() + " transforms=" + EngineConfig.transforms();
+            + " " + EngineTracker.counters() + " " + EngineSpawnMemo.counters() + " " + EngineProtections.describe()
+            + " transforms=" + EngineConfig.transforms();
     }
 
     /** The wrapped EntityTickList.forEach of ServerLevel.tick. */

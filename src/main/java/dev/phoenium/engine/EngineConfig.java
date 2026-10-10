@@ -55,6 +55,13 @@ public final class EngineConfig {
     public static final int TRACKER_INDEX_CHECK = clamp(Integer.getInteger("phoenium.engine.trackerIndex.check", 20), 0, 1 << 20);
     /** S9-E6 {@code phoenium.engine.trackerIndex.full}: every N-th comparison also checks the reverse index member by member. */
     public static final int TRACKER_INDEX_FULL = clamp(Integer.getInteger("phoenium.engine.trackerIndex.full", 10), 1, 1 << 20);
+    /**
+     * S9-E7 {@code phoenium.engine.spawnMemo} (default true): NaturalSpawner.createState looks each chunk up once per call,
+     * with the count maps its mobs increment, instead of once per counted entity; false runs it as vanilla does.
+     */
+    public static final boolean SPAWN_MEMO = !"false".equalsIgnoreCase(System.getProperty("phoenium.engine.spawnMemo"));
+    /** S9-E7 {@code phoenium.engine.spawnMemo.check}: every N-th spawn state of a level is also built the vanilla way and compared; 0 = never. */
+    public static final int SPAWN_MEMO_CHECK = clamp(Integer.getInteger("phoenium.engine.spawnMemo.check", 400), 0, 1 << 20);
 
     /** Blocks between a tile's edge and its claim's edge. */
     public static int claimReachBlocks() { return CLAIM_RADIUS << (TILE_SHIFT + 4); }
@@ -63,7 +70,8 @@ public final class EngineConfig {
         return "engine=tiles tileShift=" + TILE_SHIFT + " tileChunks=" + (1 << TILE_SHIFT) + " claimRadius=" + CLAIM_RADIUS
             + " colours=" + COLOURS + " reachBlocks=" + claimReachBlocks() + " strict=" + STRICT + " chunks=" + CHUNKS
             + " schedule=" + (DAG ? "dag" : "colours") + " services=" + SERVICES + " tracker=" + TRACKER + " trackerIndex=" + TRACKER_INDEX
-            + " trackerIndexCheck=" + TRACKER_INDEX_CHECK + " trackerIndexFull=" + TRACKER_INDEX_FULL;
+            + " trackerIndexCheck=" + TRACKER_INDEX_CHECK + " trackerIndexFull=" + TRACKER_INDEX_FULL
+            + " spawnMemo=" + SPAWN_MEMO + " spawnMemoCheck=" + SPAWN_MEMO_CHECK;
     }
 
     private static final java.util.concurrent.ConcurrentLinkedQueue<String> TRANSFORMS = new java.util.concurrent.ConcurrentLinkedQueue<>();

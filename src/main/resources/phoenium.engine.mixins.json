@@ -22,6 +22,8 @@
     "EngineMinecraftServerMixin",
     "EngineMobCountsAccess",
     "EnginePoiManagerMixin",
+    "EnginePointChargeAccess",
+    "EnginePotentialAccess",
     "EngineScoreboardMixin",
     "EngineSectionCallbackMixin",
     "EngineSectionStorageMixin",
