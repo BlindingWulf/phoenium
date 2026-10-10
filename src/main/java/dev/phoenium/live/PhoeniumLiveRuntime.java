@@ -740,9 +740,10 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
             java.util.List<net.minecraft.world.level.chunk.LevelChunk> output) {
         requireRegionalServiceLifetime(); regionalServices.collectSpawningChunks(cache, map, output);
     }
+    /** {@code ticker} runs the native tickSpawningChunk call for any chunk of the same loop (S9-D13). */
     public void regionalSpawningChunkCallback(ServerChunkCache cache, net.minecraft.world.level.chunk.LevelChunk chunk,
-            boolean canSpawn, Runnable original) {
-        requireRegionalServiceLifetime(); regionalServices.spawningChunkCallback(cache, chunk, canSpawn, original);
+            boolean canSpawn, java.util.function.Consumer<net.minecraft.world.level.chunk.LevelChunk> ticker) {
+        requireRegionalServiceLifetime(); regionalServices.spawningChunkCallback(cache, chunk, canSpawn, ticker);
     }
     public void regionalBroadcastChunkCallback(ServerChunkCache cache, net.minecraft.world.level.chunk.LevelChunk chunk, Runnable original) {
         requireRegionalServiceLifetime(); regionalServices.broadcastChunkCallback(cache, chunk, original);

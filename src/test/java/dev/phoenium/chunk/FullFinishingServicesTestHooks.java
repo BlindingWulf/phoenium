@@ -20,11 +20,19 @@ public final class FullFinishingServicesTestHooks {
             throw new AssertionError(wrapped.getCause());
         } catch (ReflectiveOperationException failure) { throw new AssertionError(failure); }
     }
-    public static UUID getUUID(Entity entity) { return FullEntityFacts.uuid(entity, () -> original(Entity.class, entity, "getUUID", new Class<?>[0])); }
-    public static int getId(Entity entity) { return FullEntityFacts.id(entity, () -> original(Entity.class, entity, "getId", new Class<?>[0])); }
-    public static boolean isRemoved(Entity entity) { return FullEntityFacts.removed(entity, () -> original(Entity.class, entity, "isRemoved", new Class<?>[0])); }
-    public static String getScoreboardName(Entity entity) { return FullEntityFacts.scoreboardName(entity, () -> original(Entity.class, entity, "getScoreboardName", new Class<?>[0])); }
-    public static Holder<EntityType<?>> typeHolder(Entity entity) { return FullEntityFacts.type(entity, () -> original(Entity.class, entity, "typeHolder", new Class<?>[0])); }
+    // S9-D13: as FullEntityFactMixin: the getter body runs, then a foreign alias's value is replaced by its fact.
+    public static UUID getUUID(Entity entity) { return FullEntityFacts.uuid(entity, (UUID) original(Entity.class, entity, "getUUID", new Class<?>[0])); }
+    public static int getId(Entity entity) {
+        // getId()'s two id field reads, each substituted (FullEntityFactMixin's ModifyExpressionValue).
+        int raw = ((FullEntityFacts.Access) entity).phoenium$rawEntityId();
+        if (FullEntityFacts.idField(entity, raw) == 0) throw new IllegalStateException("Tried to access entity ID before ID assignment");
+        return FullEntityFacts.idField(entity, raw);
+    }
+    public static boolean isRemoved(Entity entity) { return FullEntityFacts.removed(entity, (boolean) (Boolean) original(Entity.class, entity, "isRemoved", new Class<?>[0])); }
+    public static String getScoreboardName(Entity entity) { return FullEntityFacts.scoreboardName(entity, (String) original(Entity.class, entity, "getScoreboardName", new Class<?>[0])); }
+    @SuppressWarnings("unchecked") public static Holder<EntityType<?>> typeHolder(Entity entity) {
+        return FullEntityFacts.type(entity, (Holder<EntityType<?>>) original(Entity.class, entity, "typeHolder", new Class<?>[0]));
+    }
     private static void write(Entity entity, String method, Class<?>[] parameters, Object... args) {
         try (var turn = FullEntityFacts.writer(entity)) { try { original(Entity.class, entity, method, parameters, args); } finally { FullEntityFacts.publish(entity); } }
     }

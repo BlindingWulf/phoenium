@@ -33,7 +33,11 @@ final class RegionalTrackingPartitions<T> {
     T value(int id) { Item<T> item = ordered.get(id); return item == null ? null : item.value; }
     List<T> values() {
         List<T> current = values;
-        if (current == null) values = current = ordered.values().stream().map(Item::value).toList();
+        if (current == null) {
+            var built = new ArrayList<T>(ordered.size());
+            for (Item<T> item : ordered.values()) built.add(item.value);
+            values = current = java.util.Collections.unmodifiableList(built);
+        }
         return current;
     }
     /** O(1) equivalent of the first value in source order whose record identity is exactly {@code identity}. */
@@ -72,6 +76,16 @@ final class RegionalTrackingPartitions<T> {
 
     void reorder(List<Identity> sourceOrder) {
         if (sourceOrder.size() != ordered.size()) throw new IllegalStateException("tracker source order size changed");
+        // S9-D13: a source order that is already the retained order changes nothing (each record still validated)
+        boolean same = true;
+        var retained = ordered.values().iterator();
+        for (Identity identity : sourceOrder) {
+            Item<T> current = retained.next();
+            if (current.id != identity.id) { same = false; break; }
+            if (current.identity != identity.identity)
+                throw new IllegalStateException("tracker source order identity changed " + identity.id);
+        }
+        if (same) return;
         var replacement = new LinkedHashMap<Integer, Item<T>>();
         for (Identity identity : sourceOrder) {
             Item<T> item = ordered.get(identity.id);
@@ -80,7 +94,11 @@ final class RegionalTrackingPartitions<T> {
             if (replacement.put(identity.id, item) != null)
                 throw new IllegalStateException("duplicate tracker source order id " + identity.id);
         }
-        ordered.clear(); ordered.putAll(replacement); rebuild();
+        ordered.clear(); ordered.putAll(replacement);
+        values = null;
+        // S9-D13: a reorder keeps every record, so the partitions (read only by their count) and the identity counts
+        // are unchanged; the identity index depends on order only through an identity that several records share.
+        if (identityCounts.size() != ordered.size()) rebuild();
     }
 
     T remove(int id, Object expectedIdentity) {

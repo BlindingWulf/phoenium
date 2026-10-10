@@ -1,5 +1,7 @@
 package dev.phoenium.live;
 
+import dev.phoenium.core.BoundMethod;
+import java.lang.invoke.MethodHandles;
 import java.lang.reflect.Field;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
@@ -79,7 +81,16 @@ final class C2meReadinessSlot {
         }
     }
 
-    static Access reflective(Method backing, Method future, Object blockTicking) {
+    private static final MethodHandles.Lookup LOOKUP = MethodHandles.lookup();
+
+    // S9-D13: the readiness walk asks every holder's slot identity each tick; the two provider methods are bound
+    // once (BoundMethod: Method.invoke's answers and exceptions, without its per-call array and access check).
+    static Access reflective(Method backingMethod, Method futureMethod, Object blockTicking) {
+        BoundMethod backing, future;
+        try { backing = BoundMethod.of(LOOKUP, backingMethod); future = BoundMethod.of(LOOKUP, futureMethod); }
+        catch (IllegalAccessException failure) {
+            return holder -> { throw new IllegalStateException("cannot access pinned C2ME readiness slot", failure); };
+        }
         return holder -> {
             try {
                 Object backingHolder = backing.invoke(holder);

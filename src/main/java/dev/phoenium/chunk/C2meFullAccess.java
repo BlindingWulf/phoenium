@@ -1,5 +1,7 @@
 package dev.phoenium.chunk;
 
+import dev.phoenium.core.BoundMethod;
+import java.lang.invoke.MethodHandles;
 import java.lang.reflect.Field;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
@@ -142,6 +144,9 @@ final class C2meFullAccess {
     private interface StateAccess { StateParts read(Object state); }
     private interface PublicationAccess { Object published(ChunkMap map, long packed); }
 
+    // S9-D13: provider accessors are bound once per provider class (BoundMethod), not reflected per read.
+    private static final MethodHandles.Lookup LOOKUP = MethodHandles.lookup();
+
     private static final ClassValue<ContextAccess> CONTEXT_ACCESS = new ClassValue<>() {
         @Override protected ContextAccess computeValue(Class<?> type) {
             if (!isNamedType(type, CONTEXT)) throw drift(new NoSuchMethodException("unexpected context " + type.getName()));
@@ -179,10 +184,10 @@ final class C2meFullAccess {
         @Override protected StateAccess computeValue(Class<?> type) {
             if (!isNamedType(type, STATE)) throw drift(new NoSuchMethodException("unexpected state " + type.getName()));
             try {
-                Method chunk = type.getMethod("chunk");
-                Method proto = type.getMethod("protoChunk");
-                Method reached = type.getMethod("reachedStatus");
-                Method wasFull = type.getMethod("wasFullChunk");
+                BoundMethod chunk = BoundMethod.of(LOOKUP, type.getMethod("chunk"));
+                BoundMethod proto = BoundMethod.of(LOOKUP, type.getMethod("protoChunk"));
+                BoundMethod reached = BoundMethod.of(LOOKUP, type.getMethod("reachedStatus"));
+                BoundMethod wasFull = BoundMethod.of(LOOKUP, type.getMethod("wasFullChunk"));
                 return state -> {
                     try {
                         Object c = chunk.invoke(state), p = proto.invoke(state), r = reached.invoke(state), w = wasFull.invoke(state);
@@ -201,12 +206,12 @@ final class C2meFullAccess {
     private static final ClassValue<PublicationAccess> PUBLICATION_ACCESS = new ClassValue<>() {
         @Override protected PublicationAccess computeValue(Class<?> type) {
             try {
-                Method current = findZeroArgumentMethod(type, "getCurrentChunkHolders");
+                BoundMethod current = BoundMethod.of(LOOKUP, findZeroArgumentMethod(type, "getCurrentChunkHolders"));
                 return (map, packed) -> {
                     try {
                         Object holders = current.invoke(map);
                         if (holders == null) throw new ChunkProtocolException("C2ME currentChunkHolders is null");
-                        Method get = longGet(holders.getClass());
+                        BoundMethod get = longGet(holders.getClass());
                         return get.invoke(holders, packed);
                     } catch (InvocationTargetException failure) {
                         throw drift(failure.getCause() == null ? failure : failure.getCause());
@@ -272,9 +277,14 @@ final class C2meFullAccess {
         }
     }
 
-    private static ContextAccess reflective(Method holder, Method tacs, Method system, Method getKey,
-                                             Method getFuture, Method getUserData, Method getItem,
-                                             Method getSystemHolder, Field accessible, Field sending, Field delayed) {
+    private static ContextAccess reflective(Method holderMethod, Method tacsMethod, Method systemMethod, Method getKeyMethod,
+                                             Method getFutureMethod, Method getUserDataMethod, Method getItemMethod,
+                                             Method getSystemHolderMethod, Field accessible, Field sending, Field delayed)
+            throws IllegalAccessException {
+        BoundMethod holder = BoundMethod.of(LOOKUP, holderMethod), tacs = BoundMethod.of(LOOKUP, tacsMethod),
+            system = BoundMethod.of(LOOKUP, systemMethod), getKey = BoundMethod.of(LOOKUP, getKeyMethod),
+            getFuture = BoundMethod.of(LOOKUP, getFutureMethod), getUserData = BoundMethod.of(LOOKUP, getUserDataMethod),
+            getItem = BoundMethod.of(LOOKUP, getItemMethod), getSystemHolder = BoundMethod.of(LOOKUP, getSystemHolderMethod);
         return new ContextAccess() {
             @Override public Parts read(Object context, Kind kind) {
                 try {
@@ -334,12 +344,14 @@ final class C2meFullAccess {
     /** S9-D7: findLongGet per holder-map class, resolved once; Class.getMethods copies every public method. */
     private static final ClassValue<Object> LONG_GET = new ClassValue<>() {
         @Override protected Object computeValue(Class<?> type) {
-            try { return findLongGet(type); } catch (NoSuchMethodException missing) { return missing; }
+            try { return BoundMethod.of(LOOKUP, findLongGet(type)); }
+            catch (ReflectiveOperationException missing) { return missing; }
         }
     };
-    private static Method longGet(Class<?> type) throws NoSuchMethodException {
+    private static BoundMethod longGet(Class<?> type) throws ReflectiveOperationException {
         Object found = LONG_GET.get(type);
-        if (found instanceof Method method) return method;
+        if (found instanceof BoundMethod method) return method;
+        if (found instanceof IllegalAccessException denied) throw new IllegalAccessException(denied.getMessage());
         throw new NoSuchMethodException(((NoSuchMethodException) found).getMessage());
     }
 

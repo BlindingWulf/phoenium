@@ -38,8 +38,9 @@ abstract class RegionalChunkGameplayMixin {
         target = "Lnet/minecraft/server/level/ServerChunkCache;tickSpawningChunk(Lnet/minecraft/world/level/chunk/LevelChunk;JLjava/util/List;Lnet/minecraft/world/level/NaturalSpawner$SpawnState;)V"))
     private void phoenium$spawningChunk(ServerChunkCache cache, LevelChunk chunk, long timeDiff,
             List<MobCategory> categories, NaturalSpawner.SpawnState state, Operation<Void> original) {
+        // S9-D13: the same native call for any chunk of this loop, so a shared turn can tick the following entries
         Phoenium.liveRuntime().regionalSpawningChunkCallback(cache, chunk, !categories.isEmpty(),
-            () -> original.call(cache, chunk, timeDiff, categories, state));
+            next -> original.call(cache, next, timeDiff, categories, state));
     }
 
     @WrapOperation(method = "tickChunks(Lnet/minecraft/util/profiling/ProfilerFiller;J)V", at = @At(value = "INVOKE",

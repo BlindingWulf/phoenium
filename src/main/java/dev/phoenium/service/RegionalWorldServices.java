@@ -114,8 +114,8 @@ public final class RegionalWorldServices implements RegionalStateMigration {
         gameplay(cache).collectSpawningChunks(map, output);
     }
     public void spawningChunkCallback(ServerChunkCache cache, net.minecraft.world.level.chunk.LevelChunk chunk,
-            boolean canSpawn, Runnable original) {
-        gameplay(cache).spawningChunkCallback(chunk, canSpawn, original);
+            boolean canSpawn, java.util.function.Consumer<net.minecraft.world.level.chunk.LevelChunk> ticker) {
+        gameplay(cache).spawningChunkCallback(chunk, canSpawn, ticker);
     }
     public void broadcastChunkCallback(ServerChunkCache cache, net.minecraft.world.level.chunk.LevelChunk chunk, Runnable original) {
         gameplay(cache).broadcastChunkCallback(chunk, original);

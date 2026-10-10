@@ -153,8 +153,16 @@ public final class RegionalChunkGameplayService implements NaturalSpawnContinuat
             ChunkHolder holder = ((RegionalVisibleChunkAccess) map).phoenium$visible(packed);
             if (holder == null) continue;
             LevelChunk chunk = holder.getTickingChunk();
-            if (chunk != null && active.players.stream().anyMatch(player -> close(player, holder.getPos()))) output.add(chunk);
+            if (chunk != null && anyClose(active.players, holder.getPos())) output.add(chunk);
         }
+        // S9-D13: vanilla shuffles this list in place, then visits it in order with one spawning callback per entry
+        active.spawning = output;
+        active.spawningCalls = 0;
+        active.spawningNext = 0;
+    }
+    private static boolean anyClose(List<PlayerProjection> players, ChunkPos chunk) {
+        for (PlayerProjection player : players) if (close(player, chunk)) return true;
+        return false;
     }
 
     public void forEachBlockTickingChunk(ChunkMap expected, Consumer<LevelChunk> output) {
@@ -164,28 +172,81 @@ public final class RegionalChunkGameplayService implements NaturalSpawnContinuat
         // with a NullPointerException inside next(). Select the keys first, then run the callbacks over the copy.
         var keys = new it.unimi.dsi.fastutil.longs.LongArrayList();
         map.getDistanceManager().forEachEntityTickingChunk(keys::add);
-        for (int i = 0; i < keys.size(); i++) {
-            ChunkHolder holder = ((RegionalVisibleChunkAccess) map).phoenium$visible(keys.getLong(i));
-            if (holder == null) continue;
-            LevelChunk chunk = holder.getTickingChunk();
-            if (chunk != null) blockTickCallback(chunk, () -> output.accept(chunk));
-        }
+        // S9-D13: one cursor over the selected keys; a callback's shared turn may take the following chunks (tickAhead)
+        int[] cursor = {0};
+        ChunkAhead ahead = new ChunkAhead() {
+            @Override public LevelChunk next() {
+                while (cursor[0] < keys.size()) {
+                    ChunkHolder holder = ((RegionalVisibleChunkAccess) map).phoenium$visible(keys.getLong(cursor[0]++));
+                    if (holder == null) continue;
+                    LevelChunk chunk = holder.getTickingChunk();
+                    if (chunk != null) return chunk;
+                }
+                return null;
+            }
+            @Override public int terrainRadius(WeatherCut weather) { return 1; }
+            @Override public Runnable original(LevelChunk chunk) { return () -> output.accept(chunk); }
+        };
+        LevelChunk chunk;
+        while ((chunk = ahead.next()) != null) chunkCallback(chunk, 1, ahead.original(chunk), ahead);
     }
 
     /** The pinned built-in NaturalSpawner groups reach three chunk keys from their selected source.
      * Radius eight is admitted only when the exact retained rain/thunder prefix can reach the
      * pinned 128-block lightning-rod POI query. A callback with no spawning categories and no
      * thunder has only its selected chunk's inhabited-time mutation. */
-    public void spawningChunkCallback(LevelChunk chunk, boolean canSpawn, Runnable original) {
+    public void spawningChunkCallback(LevelChunk chunk, boolean canSpawn, Consumer<LevelChunk> ticker) {
         Cycle active = requireCycle();
+        // S9-D13: vanilla visits the collected list in order, one callback per entry. An entry that an earlier
+        // callback's shared turn already ticked is skipped; a loop that is not that list takes no run-ahead.
+        int position = active.spawningCalls++;
+        List<LevelChunk> list = active.spawning;
+        if (list != null && (position >= list.size() || list.get(position) != chunk)) {
+            if (position < active.spawningNext)
+                throw new IllegalStateException("spawning loop diverged from its collected list after a shared turn");
+            active.spawning = list = null;
+        }
+        if (list != null) {
+            if (position < active.spawningNext) return;
+            active.spawningNext = position + 1;
+        }
         boolean raining = level.isRaining();
         boolean thundering = raining && level.isThundering();
         active.weather = new WeatherCut(raining, thundering);
-        try { chunkCallback(chunk, thundering ? 8 : canSpawn ? 3 : 0, original); }
-        finally { active.weather = null; }
+        try {
+            chunkCallback(chunk, thundering ? 8 : canSpawn ? 3 : 0, () -> ticker.accept(chunk),
+                list == null ? null : new SpawningAhead(active, list, canSpawn, ticker));
+        } finally { active.weather = null; }
     }
-    public void blockTickCallback(LevelChunk chunk, Runnable original) { chunkCallback(chunk, 1, original); }
-    public void broadcastChunkCallback(LevelChunk chunk, Runnable original) { chunkCallback(chunk, 0, original); }
+    public void blockTickCallback(LevelChunk chunk, Runnable original) { chunkCallback(chunk, 1, original, null); }
+    public void broadcastChunkCallback(LevelChunk chunk, Runnable original) { chunkCallback(chunk, 0, original, null); }
+
+    /** S9-D13: the rest of a chunk callback loop, which a callback's shared turn may tick ahead. */
+    private interface ChunkAhead {
+        /** Takes the loop's next chunk (its own callback will then do nothing), or null at the loop's end. */
+        LevelChunk next();
+        /** The weather cut that chunk's own callback would take now (spawning callbacks only). */
+        default WeatherCut weather() { return null; }
+        int terrainRadius(WeatherCut weather);
+        Runnable original(LevelChunk chunk);
+    }
+    private final class SpawningAhead implements ChunkAhead {
+        private final Cycle active; private final List<LevelChunk> list; private final boolean canSpawn;
+        private final Consumer<LevelChunk> ticker;
+        SpawningAhead(Cycle active, List<LevelChunk> list, boolean canSpawn, Consumer<LevelChunk> ticker) {
+            this.active = active; this.list = list; this.canSpawn = canSpawn; this.ticker = ticker;
+        }
+        @Override public LevelChunk next() {
+            if (active.spawning != list || active.spawningNext >= list.size()) return null;
+            return list.get(active.spawningNext++);
+        }
+        @Override public WeatherCut weather() {
+            boolean raining = level.isRaining();
+            return new WeatherCut(raining, raining && level.isThundering());
+        }
+        @Override public int terrainRadius(WeatherCut weather) { return weather.thundering ? 8 : canSpawn ? 3 : 0; }
+        @Override public Runnable original(LevelChunk chunk) { return () -> ticker.accept(chunk); }
+    }
     /** Custom spawners select terrain from current players or the original retained siege
      * origin. The widest player-relative path is the trader's meeting POI plus spawn search;
      * seven chunk keys cover it and the final 2x3x2 probe. */
@@ -253,35 +314,100 @@ public final class RegionalChunkGameplayService implements NaturalSpawnContinuat
         if (type == net.minecraft.world.entity.npc.wanderingtrader.WanderingTraderSpawner.class) return counter <= 1 ? 7 : -1;
         throw new IllegalStateException("unreviewed custom spawner " + type.getName());
     }
-    private void chunkCallback(LevelChunk chunk, int terrainRadius, Runnable original) {
+    private void chunkCallback(LevelChunk chunk, int terrainRadius, Runnable original, ChunkAhead ahead) {
         requireCycle(); Objects.requireNonNull(chunk); Objects.requireNonNull(original);
         cycle.players = capturePlayers().players;
         cycle.levelPlayers = captureLevelPlayers();
-        RoutingKey source = new RoutingKey(world, chunk.getPos().x(), chunk.getPos().z());
-        int visibleRecipientRadius = Math.min(recipientRadius,
-            ((RegionalChunkMapAccess) map).phoenium$getServerViewDistance() + 2);
-        // S9-D7: built from these captured inputs only when a check needs its keys (a world that is not
-        // uniformly routed), so every use sees the same footprint as the former eager construction.
-        ChunkFootprint footprint = new ChunkFootprint(source, terrainRadius, cycle.players, visibleRecipientRadius);
-        if (!dispatcher.ensureUniformClosure(source)) dispatcher.ensureClosure(footprint.closure());
-        Cycle capturedCycle = cycle;
-        Consumer<Runnable> owned = body -> {
-            dispatcher.requireCurrentOwner(source); capturedCycle.callbackKey = source;
+        ChunkCall call = new ChunkCall(chunk, terrainRadius, cycle, original);
+        boolean uniform = dispatcher.ensureUniformClosure(call.source);
+        if (!uniform) dispatcher.ensureClosure(call.footprint.closure());
+        ChunkCall[] pending = {null};
+        try {
+            try (call) {
+                call.open();
+                dispatcher.executeAndDrain(call.source, RegionalServiceKind.CHUNK_GAMEPLAY, execution -> {
+                    call.tick();
+                    // S9-D13: this callback's finish would do nothing, so the loop's following chunks may tick here
+                    if (uniform && ahead != null && call.spawn.settled()) {
+                        call.close();
+                        pending[0] = tickAhead(execution, ahead, call.cycle);
+                    }
+                });
+                call.finish();
+            }
+            chunkCallbacks = Math.incrementExact(chunkCallbacks);
+            if (pending[0] != null) {
+                pending[0].finish();
+                chunkCallbacks = Math.incrementExact(chunkCallbacks);
+            }
+        } finally { if (pending[0] != null) pending[0].close(); }
+    }
+
+    /**
+     * S9-D13: inside a uniformly admitted chunk callback's turn whose natural spawn settled, the loop's following
+     * chunks tick in the same turn while their own callbacks would follow it with nothing in between: the turn is
+     * coalescable, and each chunk's natural spawn settles inside it (its owner-free finish would do nothing). Each
+     * chunk keeps its own callback's weather cut, player capture, owner check, natural-spawn capture and owned
+     * body, in loop order; the loop's own callback for it then does nothing. A chunk whose natural spawn yields
+     * ends the shared turn and is returned, still open and with its weather cut, for its owner-free finish.
+     */
+    private ChunkCall tickAhead(RegionalServiceDispatcher.Execution execution, ChunkAhead ahead, Cycle active) {
+        active.weather = null;
+        while (dispatcher.coalescable(execution, world)) {
+            LevelChunk chunk = ahead.next();
+            if (chunk == null) return null;
+            WeatherCut weather = ahead.weather();
+            active.weather = weather;
+            active.players = capturePlayers().players;
+            active.levelPlayers = captureLevelPlayers();
+            ChunkCall call = new ChunkCall(chunk, ahead.terrainRadius(weather), active, ahead.original(chunk));
+            if (!dispatcher.requireUniformClosure(call.source))
+                throw new IllegalStateException("shared chunk turn left its uniformly routed world");
+            try { call.open().tick(); }
+            catch (RuntimeException | Error failure) { call.close(); active.weather = null; throw failure; }
+            if (!call.spawn.settled()) return call;
+            call.close();
+            chunkCallbacks = Math.incrementExact(chunkCallbacks);
+            active.weather = null;
+        }
+        return null;
+    }
+
+    /** One chunk callback: its key and footprint, its native body under the owner, and its natural-spawn capture. */
+    private final class ChunkCall implements AutoCloseable {
+        final LevelChunk chunk; final Cycle cycle; final Runnable original;
+        final RoutingKey source; final ChunkFootprint footprint;
+        NaturalSpawnContinuation.Capture spawn;
+        ChunkCall(LevelChunk chunk, int terrainRadius, Cycle cycle, Runnable original) {
+            this.chunk = chunk; this.cycle = cycle; this.original = original;
+            source = new RoutingKey(world, chunk.getPos().x(), chunk.getPos().z());
+            int visibleRecipientRadius = Math.min(recipientRadius,
+                ((RegionalChunkMapAccess) map).phoenium$getServerViewDistance() + 2);
+            // S9-D7: built from these captured inputs only when a check needs its keys (a world that is not
+            // uniformly routed), so every use sees the same footprint as the former eager construction.
+            footprint = new ChunkFootprint(source, terrainRadius, cycle.players, visibleRecipientRadius);
+        }
+        ChunkCall open() {
+            spawn = new NaturalSpawnContinuation.Capture(RegionalChunkGameplayService.this, dispatcher, level, chunk,
+                source, naturalSpawnOrdinal = Math.incrementExact(naturalSpawnOrdinal),
+                () -> RegionalChunkGameplayService.this.cycle == cycle && naturalSpawnClosureCurrent(source, footprint));
+            return this;
+        }
+        void owned(Runnable body) {
+            dispatcher.requireCurrentOwner(source); cycle.callbackKey = source;
             try {
-                capturedCycle.levelPlayers = refreshPlayerProjections(capturedCycle.levelPlayers);
+                cycle.levelPlayers = refreshPlayerProjections(cycle.levelPlayers);
                 body.run();
-            } finally { capturedCycle.callbackKey = null; capturedCycle.nearestPlayer = null; }
-        };
-        try (var spawn = new NaturalSpawnContinuation.Capture(this, dispatcher, level, chunk, source,
-                naturalSpawnOrdinal = Math.incrementExact(naturalSpawnOrdinal),
-                () -> cycle == capturedCycle && naturalSpawnClosureCurrent(source, footprint))) {
-            dispatcher.executeAndDrain(source, RegionalServiceKind.CHUNK_GAMEPLAY, ignored -> owned.accept(() -> spawn.original(original)));
+            } finally { cycle.callbackKey = null; cycle.nearestPlayer = null; }
+        }
+        void tick() { owned(() -> spawn.original(original)); }
+        void finish() {
             spawn.finish(body -> {
                 if (!dispatcher.requireUniformClosure(source)) dispatcher.requireCurrentClosure(footprint.closure());
-                owned.accept(body);
+                owned(body);
             });
         }
-        chunkCallbacks = Math.incrementExact(chunkCallbacks);
+        @Override public void close() { if (spawn != null) spawn.close(); }
     }
 
     private boolean naturalSpawnClosureCurrent(RoutingKey source, ChunkFootprint footprint) {
@@ -988,6 +1114,9 @@ public final class RegionalChunkGameplayService implements NaturalSpawnContinuat
         RoutingKey callbackKey;
         WeatherCut weather;
         NaturalSpawner.SpawnState spawnState;
+        /** S9-D13: the collected spawning list, the callbacks vanilla has made over it, and its first unticked entry. */
+        List<LevelChunk> spawning;
+        int spawningCalls, spawningNext;
         Cycle(FullFinishingScoreboard.TrackingCut connectionCut, List<PlayerProjection> players) {
             this.connectionCut = connectionCut; this.players = players;
         }

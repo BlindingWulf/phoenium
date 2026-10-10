@@ -1,5 +1,7 @@
 package dev.phoenium.chunk;
 
+import dev.phoenium.core.BoundMethod;
+import java.lang.invoke.MethodHandles;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.lang.reflect.Proxy;
@@ -244,9 +246,15 @@ final class C2meReadAccess {
         };
     }
 
-    private static ContextAccess reflective(Method holder, Method tacs, Method system, Method getKey,
-                                             Method getFuture, Method fromVanilla, Method getHolder,
-                                             Method getUserData) {
+    // S9-D13: the provider accessors are bound once per context class (BoundMethod), not reflected per capture.
+    private static final MethodHandles.Lookup LOOKUP = MethodHandles.lookup();
+    private static ContextAccess reflective(Method holderMethod, Method tacsMethod, Method systemMethod, Method getKeyMethod,
+                                             Method getFutureMethod, Method fromVanillaMethod, Method getHolderMethod,
+                                             Method getUserDataMethod) throws IllegalAccessException {
+        BoundMethod holder = BoundMethod.of(LOOKUP, holderMethod), tacs = BoundMethod.of(LOOKUP, tacsMethod),
+            system = BoundMethod.of(LOOKUP, systemMethod), getKey = BoundMethod.of(LOOKUP, getKeyMethod),
+            getFuture = BoundMethod.of(LOOKUP, getFutureMethod), fromVanilla = BoundMethod.of(LOOKUP, fromVanillaMethod),
+            getHolder = BoundMethod.of(LOOKUP, getHolderMethod), getUserData = BoundMethod.of(LOOKUP, getUserDataMethod);
         return (context, position) -> {
             try {
                 Object backing = holder.invoke(context);

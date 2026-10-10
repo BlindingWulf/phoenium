@@ -40,6 +40,30 @@ final class RegionalTrackingPartitionsTest {
     }
 
     @Test
+    void reorderKeepsRecordsAndValidatesEvenWhenTheOrderIsUnchanged() {
+        var index = new RegionalTrackingPartitions<String>();
+        Object one = new Object(), two = new Object(), three = new Object();
+        index.replaceAll(List.of(item(1, one, "one", aKey, a), item(2, two, "two", bKey, b), item(3, three, "three", cKey, c)));
+        List<String> before = index.values();
+        // S9-D13: the retained order again changes nothing, not even the cached values list
+        index.reorder(List.of(new RegionalTrackingPartitions.Identity(1, one), new RegionalTrackingPartitions.Identity(2, two),
+            new RegionalTrackingPartitions.Identity(3, three)));
+        assertSame(before, index.values());
+        assertThrows(IllegalStateException.class, () -> index.reorder(List.of(new RegionalTrackingPartitions.Identity(1, one),
+            new RegionalTrackingPartitions.Identity(2, new Object()), new RegionalTrackingPartitions.Identity(3, three))));
+        index.reorder(List.of(new RegionalTrackingPartitions.Identity(3, three), new RegionalTrackingPartitions.Identity(1, one),
+            new RegionalTrackingPartitions.Identity(2, two)));
+        assertEquals(List.of("three", "one", "two"), index.values());
+        assertEquals(3, index.partitionCount());
+        assertEquals("two", index.valueByIdentity(two));
+        index.update(2, aKey, a);
+        assertEquals(2, index.partitionCount(), "a reorder left the partitions exact for later updates");
+        assertEquals("two", index.remove(2, two));
+        assertEquals(List.of("three", "one"), index.values());
+        assertNull(index.valueByIdentity(two));
+    }
+
+    @Test
     void migrationMovesCompleteRecordsAndKeepsUnrelatedOwnerDistinct() {
         var index = new RegionalTrackingPartitions<String>();
         Object first = new Object(), second = new Object(), far = new Object();

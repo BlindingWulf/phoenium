@@ -1,5 +1,7 @@
 package dev.phoenium.mixin;
 
+import com.llamalad7.mixinextras.injector.ModifyExpressionValue;
+import com.llamalad7.mixinextras.injector.ModifyReturnValue;
 import com.llamalad7.mixinextras.injector.wrapmethod.WrapMethod;
 import com.llamalad7.mixinextras.injector.wrapoperation.*;
 import dev.phoenium.chunk.*;
@@ -27,16 +29,18 @@ abstract class FullEntityFactMixin implements FullEntityFacts.Access {
         FullEntityFacts.constructed(entity);
         original.call(entity, x, y, z);
     }
-    @WrapMethod(method = "getUUID()Ljava/util/UUID;")
-    private UUID phoenium$uuid(Operation<UUID> original) { return FullEntityFacts.uuid((Entity) (Object) this, original::call); }
-    @WrapMethod(method = "getScoreboardName()Ljava/lang/String;")
-    private String phoenium$scoreboardName(Operation<String> original) { return FullEntityFacts.scoreboardName((Entity) (Object) this, original::call); }
-    @WrapMethod(method = "getId()I")
-    private int phoenium$id(Operation<Integer> original) { return FullEntityFacts.id((Entity) (Object) this, original::call); }
-    @WrapMethod(method = "isRemoved()Z")
-    private boolean phoenium$removed(Operation<Boolean> original) { return FullEntityFacts.removed((Entity) (Object) this, original::call); }
-    @WrapMethod(method = "typeHolder()Lnet/minecraft/core/Holder;")
-    private Holder<EntityType<?>> phoenium$type(Operation<Holder<EntityType<?>>> original) { return FullEntityFacts.type((Entity) (Object) this, original::call); }
+    // S9-D13: these getters run on every entity access; a WrapMethod allocated an Operation, a supplier and (getId)
+    // a boxed Integer per call. Their bodies are plain field reads, so the fact substitution now takes their value.
+    @ModifyReturnValue(method = "getUUID()Ljava/util/UUID;", at = @At("RETURN"), require = 1)
+    private UUID phoenium$uuid(UUID own) { return FullEntityFacts.uuid((Entity) (Object) this, own); }
+    @ModifyReturnValue(method = "getScoreboardName()Ljava/lang/String;", at = @At("RETURN"), require = 1)
+    private String phoenium$scoreboardName(String own) { return FullEntityFacts.scoreboardName((Entity) (Object) this, own); }
+    @ModifyExpressionValue(method = "getId()I", at = @At(value = "FIELD", target = "Lnet/minecraft/world/entity/Entity;id:I", opcode = Opcodes.GETFIELD), require = 2)
+    private int phoenium$id(int own) { return FullEntityFacts.idField((Entity) (Object) this, own); }
+    @ModifyReturnValue(method = "isRemoved()Z", at = @At("RETURN"), require = 1)
+    private boolean phoenium$removed(boolean own) { return FullEntityFacts.removed((Entity) (Object) this, own); }
+    @ModifyReturnValue(method = "typeHolder()Lnet/minecraft/core/Holder;", at = @At("RETURN"), require = 1)
+    private Holder<EntityType<?>> phoenium$type(Holder<EntityType<?>> own) { return FullEntityFacts.type((Entity) (Object) this, own); }
     @WrapMethod(method = "setId(I)V")
     private void phoenium$idWriter(int value, Operation<Void> original) {
         Entity entity = (Entity) (Object) this;

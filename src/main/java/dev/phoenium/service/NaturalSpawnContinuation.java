@@ -101,6 +101,8 @@ public final class NaturalSpawnContinuation {
                         + (continuation.query == null ? "query=NONE" : continuation.query.observation())));
         }
         boolean current() { return !closed && valid.getAsBoolean() && dispatcher.naturalSpawnOpen() && structures.naturalSpawnOpen(); }
+        /** S9-D13: finish() would do nothing: no native spawn was captured, or it ran to completion. */
+        public boolean settled() { return continuation == null || continuation.pc == Pc.DONE; }
         public void finish(Consumer<Runnable> ownerBody) {
             if (continuation == null) return;
             var loop = ((ChunkMapLoadAccess) level.getChunkSource().chunkMap).phoenium$mainExecutor();

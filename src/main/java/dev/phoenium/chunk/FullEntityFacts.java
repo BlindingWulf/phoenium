@@ -727,6 +727,21 @@ public final class FullEntityFacts {
     public static Holder<EntityType<?>> type(Entity entity, Supplier<Holder<EntityType<?>>> original) {
         return foreign(entity) ? require(entity).type.builtInRegistryHolder() : original.get();
     }
+    // S9-D13: the hot getters' value forms. The getter body (a plain field read with no side effect) has already
+    // produced its own value, so no Operation, supplier or boxed result is allocated per call; a foreign alias still
+    // answers from its owner-published fact exactly as the supplier forms above do.
+    public static UUID uuid(Entity entity, UUID own) { return foreign(entity) ? require(entity).uuid : own; }
+    public static String scoreboardName(Entity entity, String own) { return foreign(entity) ? require(entity).scoreboardName : own; }
+    public static boolean removed(Entity entity, boolean own) { return foreign(entity) ? require(entity).removed : own; }
+    public static Holder<EntityType<?>> type(Entity entity, Holder<EntityType<?>> own) {
+        return foreign(entity) ? require(entity).type.builtInRegistryHolder() : own;
+    }
+    /**
+     * S9-D13: Entity.getId() reads its id field twice, once for the unassigned (zero) check and once for the result;
+     * each read of a foreign alias answers the published runtime id, so the zero check and the result are id(Entity,
+     * IntSupplier)'s.
+     */
+    public static int idField(Entity entity, int own) { return foreign(entity) ? require(entity).runtimeId : own; }
     public Map<String, Long> measurements() { return Map.of(
             "factsPublished", published, "insertions", insertions, "removals", removals,
             "addressable", directories.values().stream().mapToLong(Map::size).sum(),
