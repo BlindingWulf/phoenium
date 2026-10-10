@@ -522,11 +522,23 @@ public final class RegionalServiceDispatcher implements RegionalServiceExecutor 
         }
     }
 
+    /** S9-D16: the last requireCurrentOwner that passed for a key of a world without explicit routes: the owner
+     * context it passed under, the directory view it resolved in, and that world. In that (immutable) view every key
+     * of the world resolves to the world's default route. Under one owner context the lease it checked stays
+     * current (the context closes before its lease is released) and the runtime's owner epoch is unchanged (a
+     * transition changes it only for regions holding no lease or selection), so a check of any key of that world
+     * under the same context and view passes as that one did. A new context or view is checked in full. */
+    private record OwnerCheck(OwnershipContext.Active active, RegionDirectory.View view, dev.phoenium.core.WorldId world) { }
+    private OwnerCheck lastOwnerCheck;
     /** Validates an original producer mutation that is already executing inside an owner body. */
     public void requireCurrentOwner(RoutingKey key) {
         Objects.requireNonNull(key, "key");
+        OwnerCheck last = lastOwnerCheck;
+        if (last != null && last.view == directory.snapshot() && (last.world == key.world() || last.world.equals(key.world()))
+                && last.active == OwnershipContext.current().orElse(null)) return;
         var active = OwnershipContext.current().orElseThrow(
             () -> new IllegalStateException("regional service producer has no owner context"));
+        RegionDirectory.View view = directory.snapshot();
         RegionRoute current = directory.resolve(key).orElseThrow(
             () -> new IllegalStateException("regional service producer key became unresolved"));
         if (!current.region().equals(active.region()))
@@ -537,6 +549,10 @@ public final class RegionalServiceDispatcher implements RegionalServiceExecutor 
         runtime.leases().requireCurrent(active.lease());
         if (!current.ownerEpoch().equals(runtime.ownerEpoch()))
             throw new IllegalStateException("regional service producer runtime owner epoch is stale");
+        // The view read before the resolution is the one it used when it is still published after it.
+        if (directory.snapshot() == view && !view.hasExplicitRoutesForWorld(key.world())
+                && current.equals(view.worldDefaults().get(key.world())))
+            lastOwnerCheck = new OwnerCheck(active, view, key.world());
     }
 
     @Override

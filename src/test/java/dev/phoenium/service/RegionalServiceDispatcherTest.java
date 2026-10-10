@@ -364,6 +364,30 @@ final class RegionalServiceDispatcherTest {
         assertFalse(u.runtime.leases().hasActiveLease());
     }
 
+    /** S9-D16: a passed owner check stands only under its own owner context and directory view. */
+    @Test
+    void uniformOwnerCheckStandsOnlyUnderItsContextAndView() {
+        Uniform u = new Uniform();
+        RoutingKey origin = new RoutingKey(u.world, 0, 0), far = new RoutingKey(u.world, 40, -7);
+        u.dispatcher.executeAndDrain(origin, RegionalServiceKind.TRACKING_UPDATE, execution -> {
+            u.dispatcher.requireCurrentOwner(origin);
+            u.dispatcher.requireCurrentOwner(far);
+        });
+        // the turn's context is gone: no owner context, whatever passed inside it
+        assertThrows(IllegalStateException.class, () -> u.dispatcher.requireCurrentOwner(origin));
+        var outcome = new java.util.ArrayList<String>();
+        u.dispatcher.executeAndDrain(origin, RegionalServiceKind.TRACKING_UPDATE, execution -> {
+            u.dispatcher.requireCurrentOwner(far);
+            // a view whose default names another region is checked in full under the same context
+            u.directory.publish(new TopologyGeneration(2), Map.of(), Map.of(u.world,
+                new RegionRoute(new RegionId(u.world, "v"), new TopologyGeneration(2), u.runtime.ownerEpoch())));
+            try { u.dispatcher.requireCurrentOwner(far); outcome.add("passed"); }
+            catch (IllegalStateException expected) { outcome.add(expected.getMessage()); }
+        });
+        assertEquals(1, outcome.size());
+        assertTrue(outcome.get(0).contains("foreign owner"), outcome.get(0));
+    }
+
     /** One world routed entirely by its default route to one region. */
     private static final class Uniform {
         final WorldId world = new WorldId("uniform");

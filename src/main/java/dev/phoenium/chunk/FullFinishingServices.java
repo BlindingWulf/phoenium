@@ -567,14 +567,17 @@ public final class FullFinishingServices {
         /** S9-D15: whether this scope is FULL. Its reservation, parent and service are final, so the answer is the
          * one the parent walk gives on every call; entity getters ask it on nearly every call. */
         private final boolean full;
+        /** S9-D16: the nearest reservation up the (final) parent chain, as the walk answered on every call. */
+        private final Reservation fullReservation;
         private ChunkStageClaim claim;
         private boolean closed;
         private Scope(FullFinishingServices service, Scope parent, Reservation reservation, Phase phase, long sequence) {
             this.service = service; this.parent = parent; this.reservation = reservation; this.phase = phase; this.sequence = sequence;
             this.full = reservation != null || parent != null && parent.service == service && parent.full;
+            this.fullReservation = reservation != null ? reservation : parent == null ? null : parent.fullReservation;
         }
         private boolean full() { return full; }
-        private Reservation fullReservation() { return reservation != null ? reservation : parent == null ? null : parent.fullReservation(); }
+        private Reservation fullReservation() { return fullReservation; }
         private void requireCurrent() {
             if (closed || CURRENT.get() != this || service.active != this)
                 throw new ChunkProtocolException("expired or displaced finishing service operation");

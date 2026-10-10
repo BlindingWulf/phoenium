@@ -49,11 +49,21 @@ public final class RegionRuntime {
         ownerEpoch = nextEpoch; transitioning = false; leases.openAdmission();
     }
     public Optional<RegionTaskEnvelope> peek() { return Optional.ofNullable(inbox.peekFirst()); }
-    public void enqueue(RegionTaskEnvelope envelope) { inbox.addLast(envelope); }
-    public void requeueFirst(RegionTaskEnvelope envelope) { inbox.addFirst(envelope); }
+    /** S9-D16: envelopes in any runtime's inbox, counted before an envelope becomes visible and uncounted after its
+     * removal, so it is never below the true total: zero means every inbox is empty. */
+    private static final java.util.concurrent.atomic.AtomicLong QUEUED = new java.util.concurrent.atomic.AtomicLong();
+    public static boolean noneQueued() { return QUEUED.get() == 0; }
+    /** The queued count (diagnostics: a count that never returns to zero leaves inboxesEmpty on its walk). */
+    public static long queued() { return QUEUED.get(); }
+    public void enqueue(RegionTaskEnvelope envelope) { QUEUED.incrementAndGet(); inbox.addLast(envelope); }
+    public void requeueFirst(RegionTaskEnvelope envelope) { QUEUED.incrementAndGet(); inbox.addFirst(envelope); }
     public void defer(RegionTaskEnvelope envelope) { transitionMailbox.addLast(envelope); }
     public void deferFirst(RegionTaskEnvelope envelope) { transitionMailbox.addFirst(envelope); }
-    public Optional<RegionTaskEnvelope> poll() { return Optional.ofNullable(inbox.pollFirst()); }
+    public Optional<RegionTaskEnvelope> poll() {
+        RegionTaskEnvelope polled = inbox.pollFirst();
+        if (polled != null) QUEUED.decrementAndGet();
+        return Optional.ofNullable(polled);
+    }
     public Optional<RegionTaskEnvelope> pollTransitionMailbox() { return Optional.ofNullable(transitionMailbox.pollFirst()); }
     public int transitionMailboxSize() { return transitionMailbox.size(); }
     public int inboxSize() { return inbox.size(); }

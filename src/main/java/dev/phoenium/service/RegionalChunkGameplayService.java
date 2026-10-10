@@ -1073,7 +1073,7 @@ public final class RegionalChunkGameplayService implements NaturalSpawnContinuat
      * changed: the player list (order and connection), the connection directory revision, or any player's
      * published fact, route or precise position (FullEntityFacts.playerPublications). A reused cut still
      * revalidates every live session, and publishedPosition's access check still runs whenever it would have. */
-    private record RetainedPlayers(List<ServerPlayer> order, long directory, long facts, PlayerCut captured) { }
+    private record RetainedPlayers(List<ServerPlayer> order, long directory, long facts, PlayerCut captured, int playerMap) { }
     private record RetainedLevelPlayers(List<ServerPlayer> order, long facts, List<PlayerProjection> players) { }
     private record FreshProjections(List<PlayerProjection> players, long facts) { }
     private volatile RetainedPlayers retainedPlayers;
@@ -1101,9 +1101,17 @@ public final class RegionalChunkGameplayService implements NaturalSpawnContinuat
     private PlayerCut capturePlayers() {
         long facts = finishing.entityFacts.playerPublications();
         long directory = finishing.scoreboard.directoryRevision();
-        var live = ((RegionalChunkMapAccess) map).phoenium$getPlayerMap().getAllPlayers();
+        var playerMap = ((RegionalChunkMapAccess) map).phoenium$getPlayerMap();
+        var live = playerMap.getAllPlayers();
+        int playerMapRevision = ((PlayerMapRevision) (Object) playerMap).phoenium$revision(); // final class: via Object
         RetainedPlayers retained = retainedPlayers;
-        if (retained != null && retained.facts == facts && retained.directory == directory && sameOrder(retained.order, live)) {
+        // S9-D16: an unchanged key-set count means the same members in the same order (see PlayerMapRevision), so
+        // the open-hash key set is walked only after a change.
+        if (retained != null && retained.facts == facts && retained.directory == directory
+                && (retained.playerMap == playerMapRevision || sameOrder(retained.order, live))) {
+            if (retained.playerMap != playerMapRevision)
+                retainedPlayers = retained = new RetainedPlayers(retained.order, retained.directory, retained.facts,
+                    retained.captured, playerMapRevision);
             FullFinishingScoreboard.TrackingCut cut = retained.captured.cut;
             requirePublishedPositionAccess(retained.order);
             finishing.scoreboard.requireTrackingCut(cut);
@@ -1124,7 +1132,7 @@ public final class RegionalChunkGameplayService implements NaturalSpawnContinuat
                 published.position(), candidate.fact().spectator()));
         }
         PlayerCut captured = new PlayerCut(cut, List.copyOf(result));
-        retainedPlayers = new RetainedPlayers(order, cut.directoryRevision(), facts, captured);
+        retainedPlayers = new RetainedPlayers(order, cut.directoryRevision(), facts, captured, playerMapRevision);
         return captured;
     }
     private List<PlayerProjection> captureLevelPlayers() {

@@ -18,6 +18,14 @@ import java.util.concurrent.locks.ReentrantLock;
 public final class ObjectOwnershipRegistry {
     private final RegionDirectory directory;
     private final Map<String, ObjectOwnership> entries = new LinkedHashMap<>();
+    /** S9-D16: the entries that are not REMOVED, the same bindings (written with every entry under the gate).
+     * entries keeps a REMOVED record for every object ever admitted (a re-admission continues its incarnation and
+     * object epoch), so it grows with entity churn; current-owner lookups only ever accept live records. */
+    private final Map<String, ObjectOwnership> live = new java.util.HashMap<>();
+    private void store(String objectId, ObjectOwnership binding) {
+        entries.put(objectId, binding);
+        if (binding.state() == ObjectOwnership.State.REMOVED) live.remove(objectId); else live.put(objectId, binding);
+    }
     private final ReentrantLock metadataGate = new ReentrantLock();
     private boolean closed;
 
@@ -33,7 +41,7 @@ public final class ObjectOwnershipRegistry {
             long incarnation = previous == null ? 0 : previous.incarnation() + 1;
             OwnerEpoch epoch = previous == null ? new OwnerEpoch(0) : previous.objectEpoch().next();
             ObjectOwnership binding = new ObjectOwnership(objectId, kind, key, incarnation, route.region(), route.generation(), route.ownerEpoch(), epoch, ObjectOwnership.State.OWNED);
-            entries.put(objectId, binding);
+            store(objectId, binding);
             return binding;
         } finally { metadataGate.unlock(); }
     }
@@ -54,7 +62,7 @@ public final class ObjectOwnershipRegistry {
             if (!source.objectEpoch().equals(expectedObjectEpoch)) throw new IllegalStateException("stale object epoch for routing update " + objectId);
             if (target.region().equals(source.owner())) {
                 ObjectOwnership updated = with(source, destination, target.region(), target.generation(), target.ownerEpoch(), source.objectEpoch(), ObjectOwnership.State.OWNED);
-                entries.put(objectId, updated);
+                store(objectId, updated);
                 return updated;
             }
             throw new IllegalStateException("routing update crosses object owner; use transitionOwner after a quiescent publication boundary");
@@ -80,11 +88,11 @@ public final class ObjectOwnershipRegistry {
             // These states are deliberately never observable outside this narrow publication gate.
             String objectId = source.objectId();
             ObjectOwnership prepared = with(source, source.routingKey(), source.owner(), source.topologyGeneration(), source.regionOwnerEpoch(), source.objectEpoch(), ObjectOwnership.State.SOURCE_PREPARED);
-            entries.put(objectId, prepared);
+            store(objectId, prepared);
             ObjectOwnership reserved = with(prepared, destination, target.region(), target.generation(), target.ownerEpoch(), prepared.objectEpoch(), ObjectOwnership.State.DESTINATION_RESERVED);
-            entries.put(objectId, reserved);
+            store(objectId, reserved);
             ObjectOwnership committed = with(reserved, destination, target.region(), target.generation(), target.ownerEpoch(), reserved.objectEpoch().next(), ObjectOwnership.State.OWNED);
-            entries.put(objectId, committed);
+            store(objectId, committed);
             return committed;
     }
 
@@ -106,7 +114,7 @@ public final class ObjectOwnershipRegistry {
                 RegionRoute route = route(binding.routingKey());
                 if (route.region().equals(binding.owner())) {
                     if (!route.generation().equals(binding.topologyGeneration()) || !route.ownerEpoch().equals(binding.regionOwnerEpoch())) {
-                        entries.put(binding.objectId(), with(binding, binding.routingKey(), route.region(), route.generation(), route.ownerEpoch(), binding.objectEpoch(), ObjectOwnership.State.OWNED));
+                        store(binding.objectId(), with(binding, binding.routingKey(), route.region(), route.generation(), route.ownerEpoch(), binding.objectEpoch(), ObjectOwnership.State.OWNED));
                     }
                     continue;
                 }
@@ -121,7 +129,7 @@ public final class ObjectOwnershipRegistry {
         metadataGate.lock();
         try {
             ObjectOwnership current = requiredLive(objectId);
-            entries.put(objectId, with(current, current.routingKey(), current.owner(), current.topologyGeneration(), current.regionOwnerEpoch(), current.objectEpoch().next(), ObjectOwnership.State.REMOVED));
+            store(objectId, with(current, current.routingKey(), current.owner(), current.topologyGeneration(), current.regionOwnerEpoch(), current.objectEpoch().next(), ObjectOwnership.State.REMOVED));
         } finally { metadataGate.unlock(); }
     }
 
@@ -132,7 +140,7 @@ public final class ObjectOwnershipRegistry {
             ObjectOwnership current = entries.get(expected.objectId());
             if (current == null || current.state() == ObjectOwnership.State.REMOVED
                     || current.incarnation() != expected.incarnation()) return false;
-            entries.put(current.objectId(), with(current, current.routingKey(), current.owner(), current.topologyGeneration(),
+            store(current.objectId(), with(current, current.routingKey(), current.owner(), current.topologyGeneration(),
                 current.regionOwnerEpoch(), current.objectEpoch().next(), ObjectOwnership.State.REMOVED));
             return true;
         } finally { metadataGate.unlock(); }
@@ -149,7 +157,7 @@ public final class ObjectOwnershipRegistry {
     private record Current(ObjectOwnership binding, RegionRoute route) { }
     /** current()'s decision under the held gate; null where current() is empty. */
     private Current currentLocked(String objectId) {
-        ObjectOwnership binding = entries.get(objectId);
+        ObjectOwnership binding = live.get(objectId);
         if (binding == null || binding.state() != ObjectOwnership.State.OWNED) return null;
         RegionRoute route = route(binding.routingKey());
         if (!binding.owner().equals(route.region())) {
@@ -159,7 +167,7 @@ public final class ObjectOwnershipRegistry {
         }
         if (!binding.topologyGeneration().equals(route.generation()) || !binding.regionOwnerEpoch().equals(route.ownerEpoch())) {
             binding = with(binding, binding.routingKey(), route.region(), route.generation(), route.ownerEpoch(), binding.objectEpoch(), ObjectOwnership.State.OWNED);
-            entries.put(objectId, binding);
+            store(objectId, binding);
         }
         return new Current(binding, route);
     }
@@ -200,7 +208,7 @@ public final class ObjectOwnershipRegistry {
     public void close() {
         if (OwnershipContext.current().isPresent()) throw new IllegalStateException("object registry closed under ownership");
         metadataGate.lock();
-        try { closed = true; entries.clear(); }
+        try { closed = true; entries.clear(); live.clear(); }
         finally { metadataGate.unlock(); }
     }
     public int playerCount() { return (int) entries.values().stream().filter(value -> value.kind() == OwnedObjectKind.PLAYER && value.state() == ObjectOwnership.State.OWNED).count(); }

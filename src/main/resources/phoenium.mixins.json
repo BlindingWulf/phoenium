@@ -50,6 +50,7 @@
     "RegionalServerLevelAccess",
     "RegionalBlockEventMixin",
     "RegionalChunkMapAccess",
+    "PlayerMapRevisionMixin",
     "RegionalVisibleChunkAccess",
     "RegionalServerChunkCacheAccess",
     "RegionalSpawnStateAccess",

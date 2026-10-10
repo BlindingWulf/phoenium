@@ -168,13 +168,14 @@ public final class RegionalTrackingService {
             players.put(session.player(), receipt);
             byListener.put(session.listener(), receipt);
         }
-        Map<Entry, Preview> previews = new IdentityHashMap<>();
         // S9-D11: per entry, its preparation (candidate, key, range admission) and then its read-only preview turn;
         // executeEach lets consecutive entries share one turn where nothing could run between them.
         int count = entries.size();
         FullEntityFacts.Candidate[] preparedCandidates = new FullEntityFacts.Candidate[count];
         RoutingKey[] preparedKeys = new RoutingKey[count];
         RangeProjection[] preparedRelations = new RangeProjection[count];
+        // S9-D16: entry i's preview at index i (entries are distinct; every pass below walks the same indices)
+        Preview[] previews = new Preview[count];
         dispatcher.executeEach(world, count, i -> {
             FullEntityFacts.Candidate prepared = finishing.entityFacts.trackingCandidate(level, entries.get(i).entity);
             preparedCandidates[i] = prepared;
@@ -193,26 +194,25 @@ public final class RegionalTrackingService {
                 RegionalTrackedEntityAccess tracker = access(entry.tracker);
                 SectionPos now = SectionPos.of(entry.entity);
                 var seenBy = tracker.phoenium$getSeenBy();
-                Set<ServerPlayer> seenPlayers; Set<Object> seenListeners;
+                Set<Object> seenListeners;
                 if (seenBy.isEmpty()) {
                     // S9-D14: most tracked entities have no viewer; their (empty) copies are the empty set.
-                    seenPlayers = Set.of(); seenListeners = Set.of();
+                    seenListeners = Set.of();
                 } else {
-                    Set<ServerPlayer> seen = java.util.Collections.newSetFromMap(new IdentityHashMap<>());
-                    Set<Object> seenConnections = java.util.Collections.newSetFromMap(new IdentityHashMap<>());
                     seenBy.forEach(connection -> {
-                        PlayerReceipt receipt = byListener.get(connection);
-                        if (receipt == null)
+                        if (byListener.get(connection) == null)
                             throw new IllegalStateException("tracked connection is absent from the retained live session cut");
-                        seen.add(receipt.session.player());
-                        seenConnections.add(connection);
                     });
-                    seenPlayers = Set.copyOf(seen); seenListeners = Set.copyOf(seenConnections);
+                    // S9-D16: the retained viewer set when its members are unchanged (as refreshProjection keeps it).
+                    // Viewer players are asked through their listeners (seesPlayer): the cut pairs them one to one.
+                    Set<Object> retainedViewers = entry.seenConnections;
+                    seenListeners = retainedViewers.size() == seenBy.size() && retainedViewers.containsAll(seenBy)
+                        ? retainedViewers : Set.<Object>copyOf(seenBy);
                 }
                 captured[0] = new Preview(key, now, !now.equals(tracker.phoenium$getLastSectionPos()),
-                    relation.effectiveRange, seenPlayers, seenListeners, candidate, relation);
+                    relation.effectiveRange, seenListeners, candidate, relation);
             }
-            previews.put(entry, Objects.requireNonNull(captured[0]));
+            previews[i] = Objects.requireNonNull(captured[0]);
             synchronized (this) {
                 entry.candidate = candidate;
                 entry.key = key;
@@ -227,14 +227,14 @@ public final class RegionalTrackingService {
         // S9-D7: every level player must have a receipt whatever the entry; check it where the first entry did.
         // A uniformly routed world then admits each entry's footprint (all keys in this world) without its keys.
         if (!entries.isEmpty()) for (ServerPlayer player : levelPlayers) requirePlayer(players, player);
-        for (Entry entry : entries) {
-            Preview preview = previews.get(entry);
+        for (int i = 0; i < count; i++) {
+            Preview preview = previews[i];
             if (dispatcher.ensureUniformClosure(preview.key)) continue;
             LinkedHashSet<RoutingKey> footprint = new LinkedHashSet<>();
             footprint.addAll(preview.relation.footprint);
             for (ServerPlayer player : levelPlayers) {
                 PlayerReceipt receipt = requirePlayer(players, player);
-                if (preview.seen.contains(player) || candidate(preview, receipt.key)) footprint.add(receipt.key);
+                if (seesPlayer(preview, receipt) || candidate(preview, receipt.key)) footprint.add(receipt.key);
             }
             dispatcher.ensureClosure(footprint);
         }
@@ -252,9 +252,9 @@ public final class RegionalTrackingService {
             });
 
             List<ServerPlayer> moved = new ArrayList<>();
-            dispatcher.executeEach(world, count, i -> previews.get(entries.get(i)).key, RegionalServiceKind.TRACKING_UPDATE, i -> {
+            dispatcher.executeEach(world, count, i -> previews[i].key, RegionalServiceKind.TRACKING_UPDATE, i -> {
                 Entry entry = entries.get(i);
-                Preview preview = previews.get(entry);
+                Preview preview = previews[i];
                 {
                     // A movement packet can run while executeAndDrain reaches this owner turn.
                     // Retire the old player preview; the next tick will recapture its route.
@@ -280,10 +280,10 @@ public final class RegionalTrackingService {
                     synchronized (this) { updates++; }
                 }
             });
-            if (!moved.isEmpty()) dispatcher.executeEach(world, count, i -> previews.get(entries.get(i)).key,
+            if (!moved.isEmpty()) dispatcher.executeEach(world, count, i -> previews[i].key,
                     RegionalServiceKind.TRACKING_PAIR, i -> {
                 Entry entry = entries.get(i);
-                Preview preview = previews.get(entry);
+                Preview preview = previews[i];
                 List<PlayerReceipt> candidates = trackingCandidates(moved, players, preview);
                 {
                     if (entry.entity instanceof ServerPlayer
@@ -585,10 +585,14 @@ public final class RegionalTrackingService {
         List<Entry> entries;
         synchronized (this) { entries = index.values(); }
         RangeProjection movingRelation = prepareRange(moving.candidate);
-        LinkedHashSet<RoutingKey> footprint = new LinkedHashSet<>(movingRelation.footprint);
+        // S9-D16: the footprint's parts in insertion order (a key or a key set); its set is built only where a world
+        // is not uniformly routed, whose closure check needs its keys.
+        List<Object> footprint = new ArrayList<>();
+        footprint.add(movingRelation.footprint);
         Set<Object> selectedTrackers = java.util.Collections.newSetFromMap(new IdentityHashMap<>());
         Set<ServerPlayer> selectedPlayers = java.util.Collections.newSetFromMap(new IdentityHashMap<>());
         Object playerTracker = null;
+        int maxVisible = maxVisibleRange(); // S9-D16: the server view distance, read once per move
         List<Entry> live = new ArrayList<>(entries.size());
         for (Entry entry : entries) if (!removalInProgress(entry.entity, player)) live.add(entry);
         refreshCandidates(live);
@@ -612,19 +616,19 @@ public final class RegionalTrackingService {
                 }
             } else {
                 boolean seen = entry.seenConnections.contains(moving.session.listener());
-                if (!seen && !candidateChunk(entry.key, maxVisibleRange(), moving.key)) continue;
+                if (!seen && !candidateChunk(entry.key, maxVisible, moving.key)) continue;
                 RangeProjection tracked = publishedRange(entry.candidate);
                 if (seen || candidateChunk(entry.key, tracked.effectiveRange, moving.key)) {
-                    selectedTrackers.add(entry.tracker); footprint.addAll(tracked.footprint);
+                    selectedTrackers.add(entry.tracker); footprint.add(tracked.footprint);
                 }
             }
         }
         // S9-D7: the footprint's first key is the moving player's; in a uniformly routed world its check is every key's.
         if (OwnershipContext.current().isPresent()) {
-            if (!dispatcher.requireUniformClosure(moving.key)) dispatcher.requireCurrentClosure(footprint);
-        } else if (!dispatcher.ensureUniformClosure(moving.key)) dispatcher.ensureClosure(footprint);
+            if (!dispatcher.requireUniformClosure(moving.key)) dispatcher.requireCurrentClosure(footprintKeys(footprint));
+        } else if (!dispatcher.ensureUniformClosure(moving.key)) dispatcher.ensureClosure(footprintKeys(footprint));
         MovePlan plan = new MovePlan(player, playerTracker, movingRelation, cut, players,
-            Set.copyOf(selectedPlayers), Set.copyOf(selectedTrackers), this, new ArrayList<>());
+            selectedPlayers, selectedTrackers, this, new ArrayList<>());
         Runnable body = () -> {
             dispatcher.requireCurrentOwner(moving.key);
             requireRelation(movingRelation);
@@ -643,6 +647,17 @@ public final class RegionalTrackingService {
         };
         if (OwnershipContext.current().isPresent()) body.run();
         else dispatcher.executeAndDrain(moving.key, RegionalServiceKind.TRACKING_UPDATE, ignored -> body.run());
+    }
+
+    /** S9-D16: a move footprint's keys, in the order its parts added them. */
+    @SuppressWarnings("unchecked")
+    private static LinkedHashSet<RoutingKey> footprintKeys(List<Object> parts) {
+        LinkedHashSet<RoutingKey> keys = new LinkedHashSet<>();
+        for (Object part : parts) {
+            if (part instanceof RoutingKey key) keys.add(key);
+            else keys.addAll((Set<RoutingKey>) part);
+        }
+        return keys;
     }
 
     public void movedPlayerUpdates(Object trackerIdentity, List<ServerPlayer> originalPlayers) {
@@ -816,6 +831,34 @@ public final class RegionalTrackingService {
         // S9-D7: read before the refresh, so a stamp never claims a later publication. Player candidates are
         // always looked up: each movement publishes its player.
         long stamp = finishing.entityFacts.nonPlayerPublications();
+        // S9-D16: a non-player entry verified at this stamp and routed in the current view is a no-op below (its
+        // retained candidate is written back, equal to its own, and its route is current), so only the others are
+        // passed on. refreshTrackingCandidates' per-world checks run first for every entry, in order, as it makes
+        // them before any lookup; it repeats them for the entries passed on.
+        net.minecraft.server.level.ServerLevel checked = null;
+        for (Entry entry : entries) {
+            var world = Objects.requireNonNull(entry.candidate, "retained").fact().world();
+            if (world != checked) {
+                FullFinishingServices.requireWorld(world, FullFinishingServices.Kind.ENTITY_REGISTRY);
+                checked = world;
+            }
+        }
+        RegionDirectory.View routedIn = directory.snapshot();
+        List<Entry> changing = null;
+        for (int i = 0; i < entries.size(); i++) {
+            Entry entry = entries.get(i);
+            boolean noop = entry.verifiedAt == stamp && entry.routedView == routedIn
+                && !(entry.entity instanceof net.minecraft.world.entity.player.Player);
+            if (changing == null) {
+                if (!noop) continue;
+                changing = new ArrayList<>(entries.size());
+                changing.addAll(entries.subList(0, i));
+            } else if (!noop) changing.add(entry);
+        }
+        if (changing != null) {
+            if (changing.isEmpty()) return;
+            entries = changing;
+        }
         List<FullEntityFacts.Candidate> retained = new ArrayList<>(entries.size());
         boolean[] unchanged = new boolean[entries.size()];
         for (int i = 0; i < entries.size(); i++) {
@@ -930,10 +973,16 @@ public final class RegionalTrackingService {
         List<PlayerReceipt> selected = new ArrayList<>();
         for (ServerPlayer value : from) {
             PlayerReceipt player = players.get(value);
-            if (player != null && (preview.seen.contains(player.session.player()) || candidate(preview, player.key)))
+            if (player != null && (seesPlayer(preview, player) || candidate(preview, player.key)))
                 selected.add(player);
         }
         return selected;
+    }
+    /** S9-D16: whether the previewed tracker's viewers held {@code player}'s session. A cut's sessions have distinct
+     * players (trackingCut rejects a repeated one) and each session's listener is its player's live connection, so
+     * a receipt's player was a viewer exactly when its listener was (the former per-entity viewer-player copy). */
+    private static boolean seesPlayer(Preview preview, PlayerReceipt player) {
+        return preview.seenConnections.contains(player.session.listener());
     }
     private boolean candidate(Preview entity, RoutingKey player) {
         return candidateChunk(entity.key, entity.effectiveRange, player);
@@ -969,7 +1018,7 @@ public final class RegionalTrackingService {
         }
     }
     private record Preview(RoutingKey key, SectionPos section, boolean sectionChanged,
-                           int effectiveRange, Set<ServerPlayer> seen, Set<Object> seenConnections,
+                           int effectiveRange, Set<Object> seenConnections,
                            FullEntityFacts.Candidate candidate, RangeProjection relation) { }
     private record RangeProjection(FullEntityFacts.Candidate source, int effectiveRange,
                                    Set<RoutingKey> footprint,
@@ -1003,8 +1052,10 @@ public final class RegionalTrackingService {
                             RegionalTrackingService service, List<Updated> updated) {
         MovePlan {
             players = Map.copyOf(players);
-            selectedPlayers = Set.copyOf(selectedPlayers);
-            selectedTrackers = Set.copyOf(selectedTrackers);
+            // S9-D16: the move's own identity sets, unchanged after the plan is built, without copies. A cut holds one
+            // player per identity, and a tracker index one tracker per entity id, so identity is equality here.
+            selectedPlayers = java.util.Collections.unmodifiableSet(selectedPlayers);
+            selectedTrackers = java.util.Collections.unmodifiableSet(selectedTrackers);
         }
     }
     public record MigrationPlan(long generation, Map<Integer, RegionId> owners) {

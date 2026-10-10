@@ -3082,6 +3082,7 @@ public final class PhoeniumLiveRuntime implements RegionScheduler.LiveTickExecut
             + " topology=" + topologySummary());
         logger.info("PHOENIUM_S8F6_CASCADE_TOTALS {} {}", event, dev.phoenium.service.NeighborCascadeContinuation.totals());
         logger.info("PHOENIUM_FAST_LOCALS_STATUS {} {}", event, dev.phoenium.core.FastThreadLocal.describe());
+        logger.info("PHOENIUM_QUEUED_STATUS {} queued={}", event, RegionRuntime.queued());
     }
 
     private sealed interface PendingPacket permits PendingMove, PendingInteract, PendingBlockPacket, PendingUseItem, PendingVehicleMove {

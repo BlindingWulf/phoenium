@@ -159,7 +159,7 @@ public final class RegionScheduler {
         if (envelope.payload() instanceof TaskPayload.RegionalService service
                 && service.operationKind().equals(dev.phoenium.service.RegionalServiceKind.LOCAL_BLOCK_ENTITY_TICK.name()))
             return false;
-        for (RegionRuntime value : runtimes.values()) if (!value.inboxEmpty()) return false;
+        if (!inboxesEmpty()) return false;
         var selection = runtime.leases().trySelect().orElse(null);
         if (selection == null) return false;
         new Selected(runtime, envelope, selection).run();
@@ -167,6 +167,7 @@ public final class RegionScheduler {
     }
     /** S9-D11: no owner inbox holds an envelope, so advanceOne would select nothing. */
     public boolean inboxesEmpty() {
+        if (RegionRuntime.noneQueued()) return true; // S9-D16: no inbox anywhere holds an envelope
         for (RegionRuntime value : runtimes.values()) if (!value.inboxEmpty()) return false;
         return true;
     }
