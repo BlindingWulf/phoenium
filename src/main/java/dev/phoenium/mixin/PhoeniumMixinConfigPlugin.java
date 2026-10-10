@@ -40,6 +40,9 @@ public final class PhoeniumMixinConfigPlugin implements IMixinConfigPlugin {
         if (mixinClassName.equals(BASE_LEVEL)) return !lithiumChunkAccess;
         if (mixinClassName.equals(LITHIUM_LEVEL)) return lithiumChunkAccess;
         if (mixinClassName.equals(GEYSER_FLOODGATE_SKIN)) return geyserFloodgate;
+        // S9-D18: the diagnostic's Level.getBlockState wrapper is applied only when the diagnostic is on
+        if (mixinClassName.equals("dev.phoenium.mixin.BlockEntityChunkQueryDiagnosticMixin"))
+            return dev.phoenium.core.DiagnosticSwitches.BLOCK_ENTITY_CHUNK_QUERIES;
         return true;
     }
 

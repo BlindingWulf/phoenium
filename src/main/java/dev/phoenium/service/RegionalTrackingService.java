@@ -51,6 +51,17 @@ public final class RegionalTrackingService {
     private final AtomicBoolean staleRouteFailureLogged = new AtomicBoolean();
     private boolean cycling;
     private long cycles, updates, migrations, sourceReconciliations;
+    /** S9-D18: entries added to or replaced in the index (each starts unverified); see Verified. */
+    private long additions;
+    /** S9-D18: every non-player entry in the index when {@code additions} had this value was verified at publication
+     * {@code stamp} and routed in {@code view} (a pass that verified each entry records it). A removal keeps it (a
+     * removed entry is never selected); an addition, another stamp or another view ends it. */
+    private record Verified(long additions, long stamp, RegionDirectory.View view) { }
+    private Verified verified;
+    /** S9-D18: each indexed entry under every listener of its seenConnections (kept by setSeen and forgetViewers). */
+    private final IdentityHashMap<Object, Set<Entry>> viewers = new IdentityHashMap<>();
+    /** S9-D18: the player entries of the index list {@code playerEntriesOf}, in its order. */
+    private List<Entry> playerEntriesOf, playerEntries = List.of();
 
     public RegionalTrackingService(WorldId world, ServerLevel level, RegionDirectory directory,
                                    RegionalServiceDispatcher dispatcher,
@@ -93,7 +104,9 @@ public final class RegionalTrackingService {
                 next.add(new RegionalTrackingPartitions.Item<>(sourceEntry.id, sourceEntry.tracker, retained,
                     sourceEntry.key, sourceEntry.owner));
             }
-            index.replaceAll(next); sourceReconciliations++;
+            List<Entry> before = index.values();
+            index.replaceAll(next); sourceReconciliations++; additions++;
+            for (Entry dropped : before) if (index.value(dropped.id) != dropped) forgetViewers(dropped);
         }
     }
 
@@ -122,8 +135,9 @@ public final class RegionalTrackingService {
             Entry retained = prior == null ? new Entry(id, tracker, entity, candidate, key, route(key).region()) : prior;
             retained.candidate = candidate; retained.key = key; retained.owner = route(key).region(); retained.routedView = null;
             retained.effectiveRange = effectiveRange;
-            retained.seenConnections = seenConnections;
             index.put(new RegionalTrackingPartitions.Item<>(id, tracker, retained, key, retained.owner));
+            setSeen(retained, seenConnections);
+            additions++;
             reorderSource(source);
             sourceReconciliations++;
         }
@@ -143,6 +157,7 @@ public final class RegionalTrackingService {
             Entry removed = index.remove(id, previous == null ? entity : previous.tracker);
             if (removed != null && removed.entity != entity)
                 throw new IllegalStateException("tracker removal names a displaced entity " + id);
+            if (removed != null) forgetViewers(removed);
             reorderSource(source);
             sourceReconciliations++;
         }
@@ -151,10 +166,11 @@ public final class RegionalTrackingService {
     public void tick(ChunkMap map, List<ServerPlayer> activePlayers, List<ServerPlayer> levelPlayers) {
         if (OwnershipContext.current().isPresent())
             throw new IllegalStateException("regional tracker entered with owner authority");
-        List<Entry> entries;
+        List<Entry> entries; long additionsAt;
         synchronized (this) {
             if (cycling) throw new IllegalStateException("nested regional tracker cycle");
             entries = index.values();
+            additionsAt = additions;
         }
 
         var allPlayers = new ArrayList<ServerPlayer>(levelPlayers);
@@ -180,6 +196,8 @@ public final class RegionalTrackingService {
         // refreshCandidates): each previewed non-player entry is then verified at it, and a move before the next
         // publication keeps its candidate without a lookup or a re-route.
         long stamp = finishing.entityFacts.nonPlayerPublications();
+        RegionDirectory.View[] previewView = {null};
+        boolean[] mixedViews = {false};
         dispatcher.executeEach(world, count, i -> {
             FullEntityFacts.Candidate prepared = finishing.entityFacts.trackingCandidate(level, entries.get(i).entity);
             preparedCandidates[i] = prepared;
@@ -219,6 +237,7 @@ public final class RegionalTrackingService {
             previews[i] = Objects.requireNonNull(captured[0]);
             // S9-D17: read before route() resolves the owner (as refreshCandidate does), so it never names a later view
             RegionDirectory.View routedIn = directory.snapshot();
+            if (previewView[0] == null) previewView[0] = routedIn; else if (previewView[0] != routedIn) mixedViews[0] = true;
             synchronized (this) {
                 entry.candidate = candidate;
                 entry.key = key;
@@ -226,10 +245,14 @@ public final class RegionalTrackingService {
                 entry.routedView = routedIn;
                 if (!(entry.entity instanceof net.minecraft.world.entity.player.Player)) entry.verifiedAt = stamp;
                 entry.effectiveRange = captured[0].effectiveRange;
-                entry.seenConnections = captured[0].seenConnections;
+                setSeen(entry, captured[0].seenConnections);
                 index.update(entry.id, key, entry.owner);
             }
         });
+        // S9-D18: every entry of the list is now verified at the stamp, in one view
+        if (!mixedViews[0]) synchronized (this) {
+            verified = new Verified(additionsAt, stamp, previewView[0] != null ? previewView[0] : directory.snapshot());
+        }
 
         // S9-D7: every level player must have a receipt whatever the entry; check it where the first entry did.
         // A uniformly routed world then admits each entry's footprint (all keys in this world) without its keys.
@@ -333,7 +356,7 @@ public final class RegionalTrackingService {
             });
             synchronized (this) {
                 entry.effectiveRange = relation.effectiveRange;
-                entry.seenConnections = Objects.requireNonNull(seen.get());
+                setSeen(entry, Objects.requireNonNull(seen.get()));
             }
         }
     }
@@ -588,8 +611,8 @@ public final class RegionalTrackingService {
         Map<ServerPlayer, PlayerReceipt> players = playerReceipts(cut);
         PlayerReceipt moving = requirePlayer(players, player);
         // S9-D17: (a listener-to-receipt map built here was never read)
-        List<Entry> entries;
-        synchronized (this) { entries = index.values(); }
+        List<Entry> entries; long entriesAdditions; Verified standing;
+        synchronized (this) { entries = index.values(); entriesAdditions = additions; standing = verified; }
         RangeProjection movingRelation = prepareRange(moving.candidate);
         // S9-D16: the footprint's parts in insertion order (a key or a key set); its set is built only where a world
         // is not uniformly routed, whose closure check needs its keys.
@@ -599,9 +622,28 @@ public final class RegionalTrackingService {
         Set<ServerPlayer> selectedPlayers = java.util.Collections.newSetFromMap(new IdentityHashMap<>());
         Object playerTracker = null;
         int maxVisible = maxVisibleRange(); // S9-D16: the server view distance, read once per move
-        List<Entry> live = new ArrayList<>(entries.size());
-        for (Entry entry : entries) if (!removalInProgress(entry.entity, player)) live.add(entry);
-        refreshCandidates(live);
+        // S9-D18: while every non-player entry is verified at the current publication and routed in the current view
+        // (Verified), refreshCandidates leaves each one unchanged, so its key is current. The loop below can then
+        // select only players, entries within maxVisible's candidate radius of the moving key (the cell index) and
+        // entries whose viewers hold the moving listener (viewers). It visits exactly those, players first in index
+        // order (the only entries refreshCandidates then refreshes, as over the whole list), and selects as before.
+        // Only a uniformly routed world, whose closure reads no footprint order, takes this; others keep the list.
+        List<Entry> live = null;
+        if (standing != null && standing.additions == entriesAdditions
+                && standing.stamp == finishing.entityFacts.nonPlayerPublications()
+                && standing.view == directory.snapshot() && directory.uniformRoute(world) != null)
+            live = nearbyEntries(entries, entriesAdditions, moving, maxVisible, player);
+        if (live == null) {
+            live = new ArrayList<>(entries.size());
+            boolean skipped = false;
+            for (Entry entry : entries) {
+                if (!removalInProgress(entry.entity, player)) live.add(entry);
+                else if (!(entry.entity instanceof net.minecraft.world.entity.player.Player)) skipped = true;
+            }
+            Pass pass = refreshCandidates(live);
+            // every non-player entry of the list was verified (none was skipped as in removal)
+            if (pass != null && !skipped) synchronized (this) { verified = new Verified(entriesAdditions, pass.stamp, pass.view); }
+        } else refreshCandidates(live);
         for (Entry entry : live) {
             if (entry.entity == player) {
                 synchronized (this) {
@@ -653,6 +695,66 @@ public final class RegionalTrackingService {
         };
         if (OwnershipContext.current().isPresent()) body.run();
         else dispatcher.executeAndDrain(moving.key, RegionalServiceKind.TRACKING_UPDATE, ignored -> body.run());
+    }
+
+    /** S9-D18: movePlayer's entries while Verified stands (see there): the players of {@code entries} in its order, then
+     * each entry in the cells within maxVisible's candidate radius of the moving key, then each indexed entry seen by
+     * the moving listener; each once, none in removal. */
+    private List<Entry> nearbyEntries(List<Entry> entries, long entriesAdditions, PlayerReceipt moving, int maxVisible,
+                                      ServerPlayer player) {
+        List<Entry> result = new ArrayList<>();
+        Set<Entry> added = java.util.Collections.newSetFromMap(new IdentityHashMap<>());
+        int radius = (int) Math.max(1L, (maxVisible + 15L) / 16L + 1L);
+        Object listener = moving.session.listener();
+        synchronized (this) {
+            // the cells and viewers describe the index now; they are the move's list only while it is unchanged
+            if (index.values() != entries || additions != entriesAdditions) return null;
+            for (Entry entry : playerEntries(entries))
+                if (!removalInProgress(entry.entity, player) && added.add(entry)) result.add(entry);
+            index.forEachNear(moving.key.x(), moving.key.z(), radius, entry -> {
+                if (!removalInProgress(entry.entity, player) && added.add(entry)) result.add(entry);
+            });
+            Set<Entry> seen = viewers.get(listener);
+            if (seen != null) for (Entry entry : seen) {
+                if (!entry.seenConnections.contains(listener) || index.value(entry.id) != entry)
+                    throw new IllegalStateException("tracker viewer index diverged " + entry.id);
+                if (!removalInProgress(entry.entity, player) && added.add(entry)) result.add(entry);
+            }
+        }
+        return result;
+    }
+    /** Called with this service's lock held. */
+    private List<Entry> playerEntries(List<Entry> entries) {
+        if (playerEntriesOf != entries) {
+            List<Entry> players = new ArrayList<>();
+            for (Entry entry : entries) if (entry.entity instanceof net.minecraft.world.entity.player.Player) players.add(entry);
+            playerEntries = players; playerEntriesOf = entries;
+        }
+        return playerEntries;
+    }
+    /** S9-D18: the one write path of an entry's seenConnections. Its viewers registration follows: the set while
+     * the entry is indexed, nothing once it is not. */
+    private void setSeen(Entry entry, Set<Object> next) {
+        synchronized (this) {
+            entry.seenConnections = next;
+            register(entry, index.value(entry.id) == entry ? next : Set.of());
+        }
+    }
+    /** S9-D18: after an entry left the index. */
+    private void forgetViewers(Entry entry) {
+        synchronized (this) { register(entry, Set.of()); }
+    }
+    private void register(Entry entry, Set<Object> next) {
+        Set<Object> previous = entry.registered;
+        if (previous == next) return;
+        for (Object listener : previous) if (!next.contains(listener)) {
+            Set<Entry> seen = viewers.get(listener);
+            if (seen == null || !seen.remove(entry)) throw new IllegalStateException("tracker viewer index lost " + entry.id);
+            if (seen.isEmpty()) viewers.remove(listener);
+        }
+        for (Object listener : next) if (!previous.contains(listener))
+            viewers.computeIfAbsent(listener, ignored -> java.util.Collections.newSetFromMap(new IdentityHashMap<>())).add(entry);
+        entry.registered = next;
     }
 
     /** S9-D16: a move footprint's keys, in the order its parts added them. */
@@ -837,10 +939,13 @@ public final class RegionalTrackingService {
             entry.routedView = view;
         }
     }
+    /** S9-D18: the publication and view every non-player entry of a pass is verified at and routed in. */
+    private record Pass(long stamp, RegionDirectory.View view) { }
     /** S9-D5: refreshCandidate for each entry in order, with one facts lock, one directory snapshot and one
-     * monitor entry. On a refresh failure the entries before it are applied and the failure is rethrown. */
-    private void refreshCandidates(List<Entry> entries) {
-        if (entries.isEmpty()) return;
+     * monitor entry. On a refresh failure the entries before it are applied and the failure is rethrown.
+     * S9-D18: returns the pass, or null when the view changed during it. */
+    private Pass refreshCandidates(List<Entry> entries) {
+        if (entries.isEmpty()) return new Pass(finishing.entityFacts.nonPlayerPublications(), directory.snapshot());
         // S9-D7: read before the refresh, so a stamp never claims a later publication. Player candidates are
         // always looked up: each movement publishes its player.
         long stamp = finishing.entityFacts.nonPlayerPublications();
@@ -864,7 +969,7 @@ public final class RegionalTrackingService {
             } else if (!noop) changing.add(entry);
         }
         if (changing != null) {
-            if (changing.isEmpty()) return;
+            if (changing.isEmpty()) return new Pass(stamp, routedIn);
             entries = changing;
         }
         List<FullEntityFacts.Candidate> retained = new ArrayList<>(entries.size());
@@ -893,6 +998,8 @@ public final class RegionalTrackingService {
             }
         }
         if (failure != null) throw failure;
+        for (FullEntityFacts.Candidate refreshed : current) if (refreshed == null) return null;
+        return routedIn == view ? new Pass(stamp, view) : null;
     }
     /** Exact retained record for a live tracker callback (S9-D2: identity index instead of a copied O(n) scan). */
     private Entry retainedTracker(Object trackerIdentity, String missing) {
@@ -910,7 +1017,7 @@ public final class RegionalTrackingService {
         // answer, so a move that left the tracker's seenBy unchanged (nearly every move) keeps it uncopied.
         var live = access(entry.tracker).phoenium$getSeenBy();
         Set<Object> retained = entry.seenConnections;
-        if (retained.size() != live.size() || !retained.containsAll(live)) entry.seenConnections = Set.copyOf(live);
+        if (retained.size() != live.size() || !retained.containsAll(live)) setSeen(entry, Set.copyOf(live));
     }
     private void reorderSource(Int2ObjectMap<Object> source) {
         List<RegionalTrackingPartitions.Identity> order = new ArrayList<>(source.size());
@@ -1017,6 +1124,8 @@ public final class RegionalTrackingService {
         final int id; final Object tracker; final Entity entity; FullEntityFacts.Candidate candidate; RoutingKey key; RegionId owner;
         int effectiveRange = -1;
         Set<Object> seenConnections = Set.of();
+        /** S9-D18: the listeners this entry is registered under in viewers (see setSeen). */
+        Set<Object> registered = Set.of();
         /** Directory view under which {@link #owner} was last resolved by refreshCandidate; null = re-resolve. */
         RegionDirectory.View routedView;
         /** S9-D7: nonPlayerPublications read before the last refresh that validated {@link #candidate}. */

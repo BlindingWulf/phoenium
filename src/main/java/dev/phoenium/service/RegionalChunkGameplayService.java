@@ -63,6 +63,14 @@ public final class RegionalChunkGameplayService implements NaturalSpawnContinuat
     private final java.util.concurrent.atomic.AtomicBoolean vaultBindingFailureReported = new java.util.concurrent.atomic.AtomicBoolean();
     private final dev.phoenium.chunk.BlockEntityChunkQueryDiagnostic blockEntityQueries =
             new dev.phoenium.chunk.BlockEntityChunkQueryDiagnostic();
+    /** S9-D18: a block-entity tick's diagnostic scope, or none (a null resource) while the diagnostic is off
+     * (DiagnosticSwitches); with no scope open the chunk queries take their idle path, as outside any tick. */
+    private dev.phoenium.chunk.BlockEntityChunkQueryDiagnostic.Scope blockEntityScope(
+            net.minecraft.world.level.block.entity.TickingBlockEntity ticker, net.minecraft.core.BlockPos position,
+            RegionalServiceDispatcher.Execution execution) {
+        if (!dev.phoenium.core.DiagnosticSwitches.BLOCK_ENTITY_CHUNK_QUERIES) return null;
+        return blockEntityQueries.enter(level, ticker::getType, position, execution, directory.snapshot().generation());
+    }
 
     public RegionalChunkGameplayService(WorldId world, ServerLevel level, ServerChunkCache cache,
             RegionDirectory directory, RegionalServiceDispatcher dispatcher, ObjectOwnershipRegistry objects) {
@@ -787,8 +795,7 @@ public final class RegionalChunkGameplayService implements NaturalSpawnContinuat
                         });
                         dispatcher.executeAndDrain(receipt.key, RegionalServiceKind.BLOCK_ENTITY_TICK, execution -> {
                             dispatcher.requireCurrentClosure(receipt.key, 1);
-                            try (var diagnostic = blockEntityQueries.enter(level, ticker::getType, receipt.position,
-                                    execution, directory.snapshot().generation())) {
+                            try (var diagnostic = blockEntityScope(ticker, receipt.position, execution)) {
                                 if (!receipt.binding.ready()) { removed[0] = true; return; }
                                 removed[0] = tickTicker(ticker, runs, receipt.position, level::shouldTickBlocksAt, vaultTick::original);
                             }
@@ -797,8 +804,7 @@ public final class RegionalChunkGameplayService implements NaturalSpawnContinuat
                             dispatcher.requireCurrentClosure(receipt.key, 1);
                             // The retained operation identity remains the original tick ordinal;
                             // each actual resume has a fresh current BLOCK_ENTITY_TICK claim.
-                            try (var diagnostic = blockEntityQueries.enter(level, ticker::getType, receipt.position,
-                                    execution, directory.snapshot().generation())) {
+                            try (var diagnostic = blockEntityScope(ticker, receipt.position, execution)) {
                                 body.run();
                             }
                         });
@@ -852,8 +858,7 @@ public final class RegionalChunkGameplayService implements NaturalSpawnContinuat
             });
             dispatcher.executeAndDrain(receipt.key, RegionalServiceKind.BLOCK_ENTITY_TICK, execution -> {
                 dispatcher.requireCurrentClosure(receipt.key, 1);
-                try (var diagnostic = blockEntityQueries.enter(level, ticker::getType, receipt.position,
-                        execution, directory.snapshot().generation())) {
+                try (var diagnostic = blockEntityScope(ticker, receipt.position, execution)) {
                     if (!receipt.binding.ready()) { removed[0] = true; return; }
                     removed[0] = tickTicker(ticker, runs, receipt.position, level::shouldTickBlocksAt, vaultTick::original);
                 }
@@ -862,8 +867,7 @@ public final class RegionalChunkGameplayService implements NaturalSpawnContinuat
             });
             vaultTick.finish(dispatcher, (execution, body) -> {
                 dispatcher.requireCurrentClosure(receipt.key, 1);
-                try (var diagnostic = blockEntityQueries.enter(level, ticker::getType, receipt.position,
-                        execution, directory.snapshot().generation())) {
+                try (var diagnostic = blockEntityScope(ticker, receipt.position, execution)) {
                     body.run();
                 }
             });
@@ -900,8 +904,7 @@ public final class RegionalChunkGameplayService implements NaturalSpawnContinuat
             }
             dispatcher.requireCurrentClosure(receipt.key, 1);
             boolean removed;
-            try (var diagnostic = blockEntityQueries.enter(level, ticker::getType, receipt.position,
-                    execution, directory.snapshot().generation())) {
+            try (var diagnostic = blockEntityScope(ticker, receipt.position, execution)) {
                 removed = tickTicker(ticker, runs, receipt.position, shouldTick);
             }
             joined.add(new JoinedTicker(ticker, receipt, removed ? Joined.CLOSE : Joined.KEEP));

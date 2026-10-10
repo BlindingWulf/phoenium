@@ -29,6 +29,32 @@ final class RegionalTrackingPartitions<T> {
     private final IdentityHashMap<Object, Integer> identityCounts = new IdentityHashMap<>();
     /** S9-D8: values() in source order, rebuilt only after a membership, order or value change (update() keeps values). */
     private List<T> values;
+    /** S9-D18: every record's value by the 4x4-chunk cell of its key and by id, kept with each membership and key
+     * change (a service's keys all name its one world), so a move can visit only the records near its player. */
+    private final it.unimi.dsi.fastutil.longs.Long2ObjectOpenHashMap<it.unimi.dsi.fastutil.ints.Int2ObjectOpenHashMap<T>> cells =
+        new it.unimi.dsi.fastutil.longs.Long2ObjectOpenHashMap<>();
+    private static long cell(int chunkX, int chunkZ) { return ((long) (chunkX >> 2) << 32) | ((chunkZ >> 2) & 0xFFFFFFFFL); }
+    private void cellAdd(Item<T> item) {
+        long key = cell(item.key.x(), item.key.z());
+        var bucket = cells.get(key);
+        if (bucket == null) cells.put(key, bucket = new it.unimi.dsi.fastutil.ints.Int2ObjectOpenHashMap<>());
+        bucket.put(item.id, item.value);
+    }
+    private void cellRemove(Item<T> item) {
+        long key = cell(item.key.x(), item.key.z());
+        var bucket = cells.get(key);
+        if (bucket == null || bucket.remove(item.id) == null) throw new IllegalStateException("tracker cell index lost " + item.id);
+        if (bucket.isEmpty()) cells.remove(key);
+    }
+    /** S9-D18: every record whose key is within {@code radius} chunks of (x, z) on both axes, and possibly others from the
+     * same cells (the caller applies its own exact distance). */
+    void forEachNear(int x, int z, int radius, java.util.function.Consumer<T> output) {
+        for (int cx = (x - radius) >> 2, maxX = (x + radius) >> 2; cx <= maxX; cx++)
+            for (int cz = (z - radius) >> 2, maxZ = (z + radius) >> 2; cz <= maxZ; cz++) {
+                var bucket = cells.get(((long) cx << 32) | (cz & 0xFFFFFFFFL));
+                if (bucket != null) bucket.values().forEach(output);
+            }
+    }
 
     T value(int id) { Item<T> item = ordered.get(id); return item == null ? null : item.value; }
     List<T> values() {
@@ -68,6 +94,7 @@ final class RegionalTrackingPartitions<T> {
             partitions.computeIfAbsent(item.owner, ignored -> new LinkedHashMap<>()).put(item.id, item);
             byIdentity.put(item.identity, item.value);
             identityCounts.put(item.identity, 1);
+            cellAdd(item);
             values = null;
             return;
         }
@@ -117,6 +144,7 @@ final class RegionalTrackingPartitions<T> {
             if (partition.isEmpty()) partitions.remove(previous.owner);
             byIdentity.remove(previous.identity);
             identityCounts.remove(previous.identity);
+            cellRemove(previous);
             return previous.value;
         }
         rebuild();
@@ -130,8 +158,11 @@ final class RegionalTrackingPartitions<T> {
         if (oldPartition == null || oldPartition.remove(id) != previous)
             throw new IllegalStateException("tracker owner partition lost " + id);
         if (oldPartition.isEmpty()) partitions.remove(previous.owner);
-        ordered.put(id, new Item<>(id, previous.identity, previous.value, key, owner));
-        partitions.computeIfAbsent(owner, ignored -> new LinkedHashMap<>()).put(id, ordered.get(id));
+        Item<T> next = new Item<>(id, previous.identity, previous.value, key, owner);
+        ordered.put(id, next);
+        partitions.computeIfAbsent(owner, ignored -> new LinkedHashMap<>()).put(id, next);
+        // S9-D18: a record keeps its cell while its key stays in it (the cell holds the unchanged value)
+        if (cell(previous.key.x(), previous.key.z()) != cell(key.x(), key.z())) { cellRemove(previous); cellAdd(next); }
     }
 
     Plan plan(long generation, Function<RoutingKey, RegionId> resolver) {
@@ -160,11 +191,13 @@ final class RegionalTrackingPartitions<T> {
         partitions.clear();
         byIdentity.clear();
         identityCounts.clear();
+        cells.clear();
         values = null;
         ordered.forEach((id, item) -> {
             partitions.computeIfAbsent(item.owner, ignored -> new LinkedHashMap<>()).put(id, item);
             byIdentity.putIfAbsent(item.identity, item.value);
             identityCounts.merge(item.identity, 1, Integer::sum);
+            cellAdd(item);
         });
     }
 }

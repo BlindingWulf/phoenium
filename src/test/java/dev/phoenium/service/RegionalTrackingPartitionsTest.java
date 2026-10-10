@@ -127,6 +127,62 @@ final class RegionalTrackingPartitionsTest {
         assertFalse(RegionalTrackingService.candidateChunk(source, 64, new RoutingKey(world, 10, 200)));
     }
 
+    /** S9-D18: the cell index reports every record near a point through puts, key updates, removals and rebuilds. */
+    @Test
+    void nearRecordsFollowEveryMembershipAndKeyChange() {
+        var index = new RegionalTrackingPartitions<String>();
+        var keys = new java.util.HashMap<String, RoutingKey>();
+        Object one = new Object(), two = new Object(), three = new Object(), four = new Object();
+        index.replaceAll(List.of(put(keys, item(1, one, "one", new RoutingKey(world, 0, 0), a)),
+            put(keys, item(2, two, "two", new RoutingKey(world, 9, -9), a)),
+            put(keys, item(3, three, "three", new RoutingKey(world, 40, 3), b))));
+        check(index, keys, 0, 0, 9, "one", "two");
+        check(index, keys, 0, 0, 8, "one");
+        index.put(put(keys, item(4, four, "four", new RoutingKey(world, -5, 7), c)));
+        check(index, keys, 0, 0, 9, "one", "two", "four");
+        index.update(2, key(keys, "two", 41, 2), b);   // across cells
+        index.update(1, key(keys, "one", 1, 1), a);    // inside its cell
+        index.update(4, key(keys, "four", -5, 7), a);  // owner only
+        check(index, keys, 0, 0, 9, "one", "four");
+        check(index, keys, 40, 0, 4, "two", "three");
+        assertEquals("two", index.remove(2, two));
+        keys.remove("two");
+        check(index, keys, 40, 0, 4, "three");
+        index.reorder(List.of(new RegionalTrackingPartitions.Identity(4, four), new RegionalTrackingPartitions.Identity(3, three),
+            new RegionalTrackingPartitions.Identity(1, one)));
+        index.install(index.plan(5, key -> key.x() >= 0 ? a : c));
+        check(index, keys, 0, 0, 9, "one", "four");
+        check(index, keys, 40, 0, 4, "three");
+        keys.clear();
+        index.replaceAll(List.of(put(keys, item(3, three, "three", new RoutingKey(world, -100, -100), b))));
+        check(index, keys, 40, 0, 9);
+        check(index, keys, -100, -100, 1, "three");
+        check(index, keys, -97, -97, 3, "three"); // negative coordinates use floor cells
+    }
+    private static RegionalTrackingPartitions.Item<String> put(Map<String, RoutingKey> keys,
+                                                                RegionalTrackingPartitions.Item<String> item) {
+        keys.put(item.value(), item.key());
+        return item;
+    }
+    private RoutingKey key(Map<String, RoutingKey> keys, String value, int x, int z) {
+        RoutingKey key = new RoutingKey(world, x, z);
+        keys.put(value, key);
+        return key;
+    }
+    /** Every record within the radius is reported; the cells may add nearby others, which callers filter. */
+    private static void check(RegionalTrackingPartitions<String> index, Map<String, RoutingKey> keys,
+                              int x, int z, int radius, String... expected) {
+        var found = new java.util.HashSet<String>();
+        index.forEachNear(x, z, radius, found::add);
+        var within = new java.util.HashSet<String>();
+        keys.forEach((value, key) -> {
+            if (Math.abs(key.x() - x) <= radius && Math.abs(key.z() - z) <= radius) within.add(value);
+        });
+        assertEquals(java.util.Set.of(expected), within, "test expectation");
+        assertTrue(found.containsAll(within), "missing near records: " + within + " vs " + found);
+        for (String value : found) assertTrue(keys.containsKey(value), "a removed record is still in its cell: " + value);
+    }
+
     private static RegionalTrackingPartitions.Item<String> item(int id, Object identity, String value,
                                                                  RoutingKey key, RegionId owner) {
         return new RegionalTrackingPartitions.Item<>(id, identity, value, key, owner);
