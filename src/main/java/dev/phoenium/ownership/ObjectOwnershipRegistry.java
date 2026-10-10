@@ -140,30 +140,56 @@ public final class ObjectOwnershipRegistry {
 
     /** Re-resolves current directory state; a stale derived record is never usable as authority. */
     public Optional<ObjectOwnership> current(String objectId) {
+        Current found;
         metadataGate.lock();
-        try {
-            ObjectOwnership binding = entries.get(objectId);
-            if (binding == null || binding.state() != ObjectOwnership.State.OWNED) return Optional.empty();
-            RegionRoute route = route(binding.routingKey());
-            if (!binding.owner().equals(route.region())) {
-                // A directory change alone never grants a new object owner. The topology publisher
-                // must reconcile this object at its quiescent boundary with transitionOwner().
-                return Optional.empty();
-            }
-            if (!binding.topologyGeneration().equals(route.generation()) || !binding.regionOwnerEpoch().equals(route.ownerEpoch())) {
-                binding = with(binding, binding.routingKey(), route.region(), route.generation(), route.ownerEpoch(), binding.objectEpoch(), ObjectOwnership.State.OWNED);
-                entries.put(objectId, binding);
-            }
-            return Optional.of(binding);
-        } finally { metadataGate.unlock(); }
+        try { found = currentLocked(objectId); } finally { metadataGate.unlock(); }
+        return found == null ? Optional.empty() : Optional.of(found.binding);
+    }
+    /** A current binding and the route its currency was decided against. */
+    private record Current(ObjectOwnership binding, RegionRoute route) { }
+    /** current()'s decision under the held gate; null where current() is empty. */
+    private Current currentLocked(String objectId) {
+        ObjectOwnership binding = entries.get(objectId);
+        if (binding == null || binding.state() != ObjectOwnership.State.OWNED) return null;
+        RegionRoute route = route(binding.routingKey());
+        if (!binding.owner().equals(route.region())) {
+            // A directory change alone never grants a new object owner. The topology publisher
+            // must reconcile this object at its quiescent boundary with transitionOwner().
+            return null;
+        }
+        if (!binding.topologyGeneration().equals(route.generation()) || !binding.regionOwnerEpoch().equals(route.ownerEpoch())) {
+            binding = with(binding, binding.routingKey(), route.region(), route.generation(), route.ownerEpoch(), binding.objectEpoch(), ObjectOwnership.State.OWNED);
+            entries.put(objectId, binding);
+        }
+        return new Current(binding, route);
     }
 
     /** The Stage 3 anti-cheat: an outer world lease does not authorize a foreign object. */
     public ObjectOwnership requireCurrentOwner(String objectId, OwnerEpoch expectedObjectEpoch, RegionId executingRegion) {
-        ObjectOwnership binding = current(objectId).orElseThrow(() -> new IllegalStateException("object is absent, removed, or transitioning: " + objectId));
+        Current found;
+        metadataGate.lock();
+        try { found = currentLocked(objectId); } finally { metadataGate.unlock(); }
+        if (found == null) throw new IllegalStateException("object is absent, removed, or transitioning: " + objectId);
+        return requireOwner(found, objectId, expectedObjectEpoch, executingRegion);
+    }
+    /**
+     * S9-D12: {@code current(objectId)} and, when it is present, {@code requireCurrentOwner(objectId, its object
+     * epoch, executingRegion)} on that same binding: one gate hold and one route resolution instead of two each.
+     * Empty exactly where current() is.
+     */
+    public Optional<ObjectOwnership> requireCurrentOwnerIfPresent(String objectId, RegionId executingRegion) {
+        Current found;
+        metadataGate.lock();
+        try { found = currentLocked(objectId); } finally { metadataGate.unlock(); }
+        if (found == null) return Optional.empty();
+        return Optional.of(requireOwner(found, objectId, found.binding.objectEpoch(), executingRegion));
+    }
+    // S9-D12: the route is the one current() decided against (the binding's owner is that route's region); the
+    // former second resolution re-read the same published view.
+    private static ObjectOwnership requireOwner(Current found, String objectId, OwnerEpoch expectedObjectEpoch, RegionId executingRegion) {
+        ObjectOwnership binding = found.binding;
         if (!binding.objectEpoch().equals(expectedObjectEpoch)) throw new IllegalStateException("stale object epoch for " + objectId);
-        RegionRoute route = route(binding.routingKey());
-        if (!binding.owner().equals(executingRegion) || !route.region().equals(executingRegion)) throw new IllegalStateException("foreign object mutation: " + objectId + " is owned by " + binding.owner());
+        if (!binding.owner().equals(executingRegion) || !found.route.region().equals(executingRegion)) throw new IllegalStateException("foreign object mutation: " + objectId + " is owned by " + binding.owner());
         OwnershipContext.Active active = OwnershipContext.current().orElseThrow(() -> new IllegalStateException("object mutation without ownership context"));
         if (!active.region().equals(executingRegion)) throw new IllegalStateException("object mutation context differs from executing region");
         return binding;

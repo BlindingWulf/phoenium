@@ -513,6 +513,14 @@ public final class RegionalTrackingService {
         RangeProjection relation = publishedRange(source);
         var footprint = new LinkedHashSet<>(relation.footprint);
         footprint.add(movement.routingDestination());
+        // S9-D12: while this world is uniformly routed, the admission authority is the whole world: every tracked
+        // entity's footprint key (each names this world) is admitted whether or not it is listed, so the world-wide
+        // selection below changes neither the closure nor the admission. The uniform closure is tried once, first.
+        boolean uniformTried = false;
+        if (RegionDirectory.sameWorld(footprint, world) && directory.uniformRoute(world) != null) {
+            uniformTried = true;
+            if (dispatcher.ensureUniformClosure(key(source))) return movement.withCallbacks(footprint);
+        }
         List<Entry> entries;
         synchronized (this) { entries = index.values(); }
         refreshCandidates(entries);
@@ -531,7 +539,7 @@ public final class RegionalTrackingService {
             }
         }
         // S9-D7: the movement destination comes from the admission, so its world is checked like ensureClosure's.
-        if (!RegionDirectory.sameWorld(footprint, world) || !dispatcher.ensureUniformClosure(key(source)))
+        if (!RegionDirectory.sameWorld(footprint, world) || uniformTried || !dispatcher.ensureUniformClosure(key(source)))
             dispatcher.ensureClosure(footprint);
         return movement.withCallbacks(footprint);
     }
@@ -692,9 +700,8 @@ public final class RegionalTrackingService {
     }
 
     private void requireEntityOwner(FullEntityFacts.Candidate candidate, RoutingKey key) {
-        var binding = objects.current(candidate.fact().objectId()).orElseThrow(
+        objects.requireCurrentOwnerIfPresent(candidate.fact().objectId(), route(key).region()).orElseThrow(
             () -> new IllegalStateException("tracked entity lacks current object ownership"));
-        objects.requireCurrentOwner(binding.objectId(), binding.objectEpoch(), route(key).region());
         dispatcher.requireCurrentOwner(key);
     }
     private void requirePlayer(PlayerReceipt receipt, FullFinishingScoreboard.TrackingCut cut) {

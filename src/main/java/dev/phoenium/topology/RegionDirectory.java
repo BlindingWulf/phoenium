@@ -116,8 +116,24 @@ public final class RegionDirectory {
         for (RoutingKey key : keys) if (!key.world().equals(world)) return false;
         return true;
     }
+    /** S9-D12: one view's world-default resolutions, built once per published view. */
+    private record DefaultResolutions(View view, Map<dev.phoenium.core.WorldId, Optional<RegionRoute>> routes) { }
+    private volatile DefaultResolutions defaultResolutions;
+    private Optional<RegionRoute> defaultResolution(View current, dev.phoenium.core.WorldId world) {
+        DefaultResolutions cached = defaultResolutions;
+        if (cached == null || cached.view != current) {
+            Map<dev.phoenium.core.WorldId, Optional<RegionRoute>> routes = new java.util.HashMap<>();
+            current.worldDefaults().forEach((value, route) -> routes.put(value, Optional.of(route)));
+            defaultResolutions = cached = new DefaultResolutions(current, Map.copyOf(routes));
+        }
+        Optional<RegionRoute> found = cached.routes.get(world);
+        return found != null ? found : Optional.empty();
+    }
     public Optional<RegionRoute> resolve(RoutingKey key) {
         View current = view.get();
+        // S9-D12: a view without explicit routes resolves every key to its world's default (no explicit route can
+        // match, and no world carries one), from a per-view table instead of three lookups and an Optional per call.
+        if (current.routes().isEmpty()) return defaultResolution(current, key.world());
         RegionRoute explicit = current.routes().get(key);
         if (explicit != null) return Optional.of(explicit);
         if (current.hasExplicitRoutesForWorld(key.world())) {

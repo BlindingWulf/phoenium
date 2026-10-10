@@ -950,11 +950,10 @@ public final class RegionalChunkGameplayService implements NaturalSpawnContinuat
     }
     private void requireEntity(FullEntityFacts.Candidate candidate, RoutingKey key) {
         String objectId = candidate.fact().objectId();
-        var binding = objects.current(objectId).orElseThrow(() -> new IllegalStateException(
-            "spawn-state candidate lacks regional lifecycle ownership id=" + objectId
+        objects.requireCurrentOwnerIfPresent(objectId, directory.resolve(key).orElseThrow().region()).orElseThrow(
+            () -> new IllegalStateException("spawn-state candidate lacks regional lifecycle ownership id=" + objectId
                 + " runtimeId=" + candidate.fact().runtimeId() + " type=" + candidate.fact().type()
                 + " route=" + key.x() + "," + key.z()));
-        objects.requireCurrentOwner(binding.objectId(), binding.objectEpoch(), directory.resolve(key).orElseThrow().region());
         dispatcher.requireCurrentOwner(key);
         if (!finishing.entityFacts.validTrackingCandidate(candidate))
             throw new IllegalStateException("chunk gameplay entity receipt changed");
