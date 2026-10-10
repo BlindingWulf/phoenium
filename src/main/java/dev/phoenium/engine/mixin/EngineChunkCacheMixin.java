@@ -87,7 +87,10 @@ abstract class EngineChunkCacheMixin {
     @WrapMethod(method = "getChunk(IILnet/minecraft/world/level/chunk/status/ChunkStatus;Z)Lnet/minecraft/world/level/chunk/ChunkAccess;")
     private ChunkAccess phoenium$tileChunk(int x, int z, ChunkStatus status, boolean load, Operation<ChunkAccess> original) {
         TileContext context = TileEngine.current();
-        if (context == null) return original.call(x, z, status, load);
+        if (context == null) {
+            TileEngine.checkChunkRequest(x, z);   // S9-E9: a parallel-for item would block on the waiting server thread
+            return original.call(x, z, status, load);
+        }
         return context.chunk((ServerChunkCache) (Object) this, x, z, status, load);
     }
 

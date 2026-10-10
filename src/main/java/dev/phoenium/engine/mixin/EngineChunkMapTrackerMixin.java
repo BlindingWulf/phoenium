@@ -5,13 +5,16 @@ import com.llamalad7.mixinextras.injector.wrapoperation.Operation;
 import com.llamalad7.mixinextras.injector.wrapoperation.WrapOperation;
 import com.llamalad7.mixinextras.sugar.Local;
 import dev.phoenium.engine.EngineConfig;
+import dev.phoenium.engine.EngineTimers;
 import dev.phoenium.engine.EngineTracker;
 import dev.phoenium.engine.EngineTrackerIndex;
+import dev.phoenium.engine.EngineTrackerSends;
 import it.unimi.dsi.fastutil.ints.Int2ObjectMap;
 import it.unimi.dsi.fastutil.objects.ObjectCollection;
 import it.unimi.dsi.fastutil.objects.ObjectIterator;
 import java.util.List;
 import net.minecraft.server.level.ChunkMap;
+import net.minecraft.server.level.ServerEntity;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import org.spongepowered.asm.mixin.Final;
@@ -33,6 +36,9 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
  * tracked entity of the level: they visit the trackers {@link EngineTrackerIndex} finds, exactly those the filter would
  * pass (the player's own tracker is still visited first in move). The index follows the entity map's put and remove
  * here, its own check runs at the head of tick(), and when it cannot answer the vanilla loop runs.
+ *
+ * <p>S9-E9: tick()'s loop collects its ServerEntity.sendChanges calls, which run on the tile threads after the loop and
+ * before the moved-players pass ({@link EngineTrackerSends}); the chunk tracking, the sends and the moved pass are timed.
  */
 @Mixin(value = ChunkMap.class, priority = 2000)
 abstract class EngineChunkMapTrackerMixin implements EngineTrackerIndex.Holder {
@@ -40,6 +46,7 @@ abstract class EngineChunkMapTrackerMixin implements EngineTrackerIndex.Holder {
     @Shadow @Final private Int2ObjectMap<?> entityMap;
 
     @Unique private EngineTrackerIndex phoenium$trackerIndex;
+    @Unique private final EngineTrackerSends phoenium$sends = new EngineTrackerSends();
 
     @Shadow private int getPlayerViewDistance(ServerPlayer player) { throw new AssertionError(); }
 
@@ -92,9 +99,13 @@ abstract class EngineChunkMapTrackerMixin implements EngineTrackerIndex.Holder {
         return original.call(trackers);
     }
 
-    /** The only isEmpty in tick() guards the pass over every tracker for the players that changed section. */
+    /**
+     * The only isEmpty in tick() guards the pass over every tracker for the players that changed section. S9-E9: the
+     * loop is over here, so the collected sendChanges calls run first.
+     */
     @WrapOperation(method = "tick()V", at = @At(value = "INVOKE", target = "Ljava/util/List;isEmpty()Z"))
     private boolean phoenium$movedPlayersIndexed(List<ServerPlayer> movedPlayers, Operation<Boolean> original) {
+        this.phoenium$sends.flush();
         boolean empty = original.call(movedPlayers);
         if (empty || !EngineConfig.TRACKER_INDEX) return empty;
         ObjectIterator<Object> visits = this.phoenium$trackerIndex().forMoved(movedPlayers);
@@ -105,7 +116,28 @@ abstract class EngineChunkMapTrackerMixin implements EngineTrackerIndex.Holder {
 
     @Inject(method = "tick()V", at = @At("HEAD"))
     private void phoenium$checkTrackerIndex(CallbackInfo ci) {
+        this.phoenium$sends.begin();
         if (EngineConfig.TRACKER_INDEX) this.phoenium$trackerIndex().tick();
+    }
+
+    // ---- S9-E9 ----
+
+    @WrapOperation(method = "tick()V", at = @At(value = "INVOKE",
+        target = "Lnet/minecraft/server/level/ChunkMap;updateChunkTracking(Lnet/minecraft/server/level/ServerPlayer;)V"))
+    private void phoenium$timeChunkTracking(ChunkMap chunkMap, ServerPlayer player, Operation<Void> original) {
+        long start = EngineTimers.start();
+        try { original.call(chunkMap, player); } finally { EngineTimers.add(EngineTimers.TRACKER_CHUNKS, start); }
+    }
+
+    /** The loop's sendChanges calls run after the loop (EngineTrackerSends); item frames, or with the flag off, in place. */
+    @WrapOperation(method = "tick()V", at = @At(value = "INVOKE", target = "Lnet/minecraft/server/level/ServerEntity;sendChanges()V"))
+    private void phoenium$collectSendChanges(ServerEntity serverEntity, Operation<Void> original) {
+        if (!this.phoenium$sends.collect(serverEntity, original)) original.call(serverEntity);
+    }
+
+    @Inject(method = "tick()V", at = @At("RETURN"))
+    private void phoenium$timeMovedPass(CallbackInfo ci) {
+        this.phoenium$sends.end();
     }
 
     @WrapOperation(method = "addEntity", at = @At(value = "INVOKE",

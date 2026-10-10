@@ -6,9 +6,11 @@ import dev.phoenium.engine.mixin.EngineMobCountsAccess;
 import dev.phoenium.engine.mixin.EnginePointChargeAccess;
 import dev.phoenium.engine.mixin.EnginePotentialAccess;
 import dev.phoenium.engine.mixin.EngineSpawnStateAccess;
+import it.unimi.dsi.fastutil.longs.Long2ObjectMap;
 import it.unimi.dsi.fastutil.longs.Long2ObjectOpenHashMap;
 import it.unimi.dsi.fastutil.objects.Object2IntMap;
 import it.unimi.dsi.fastutil.objects.Object2IntOpenHashMap;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.function.Consumer;
@@ -36,6 +38,14 @@ import org.slf4j.LoggerFactory;
  *
  * <p>Every {@link EngineConfig#SPAWN_MEMO_CHECK}-th state of a level is also built the vanilla way and compared field by
  * field (spawnMemoChecks); a difference is counted (spawnMemoStale), logged, and the vanilla state is used.
+ *
+ * <p>S9-E9 ({@link EngineConfig#SPAWN_SLICES}): with enough entities, createState runs once per contiguous slice of the
+ * entity list, on the tile threads, each slice with its own memo and Caps; the slices' states are merged in slice order
+ * into the first: charges concatenated (the serial pass's list, so every potential sum is vanilla's), category counts
+ * and each player's local counts summed, players-near lists united (each chunk's list is computed from the same state).
+ * Per entity a slice reads only the entity, its chunk's biome and the chunk map; the players-near lookups first run the
+ * natural-spawn distance tracker's pending updates, a write, so the server thread runs them before the slices start and
+ * the slices' lookups only read. The check above compares the merged state with the vanilla one.
  */
 public final class EngineSpawnMemo implements NaturalSpawner.ChunkGetter {
     private static final Logger LOGGER = LoggerFactory.getLogger("Phoenium");
@@ -43,17 +53,23 @@ public final class EngineSpawnMemo implements NaturalSpawner.ChunkGetter {
     private static final Object2IntOpenHashMap<MobCategory>[] VANILLA = new Object2IntOpenHashMap[0];
     // server thread
     private static long calls;
-    private static long queries;
-    private static long hits;
-    private static long chunkCount;
-    private static long fastMobs;
+    private static long totalQueries;
+    private static long totalHits;
+    private static long totalChunks;
+    private static long totalFastMobs;
     private static long checks;
     private static long stale;
+    private static long sliceStates;
+    private static long sliceCount;
+    private static long sliceWorkNanos;
 
     /** A level's memo settings (the engine's ServerChunkCache mixin keeps one per level). */
     public static final class Level {
         int states;
         int expected = 16;
+        /** S9-E9: the entities counted by the last state, and the list a sliced state is counted from. */
+        int lastEntities;
+        final ArrayList<Entity> entities = new ArrayList<>();
     }
 
     /** A chunk looked up in this call: the loaded chunk, its ChunkPos (the one its mobs are counted at), its count maps. */
@@ -77,6 +93,7 @@ public final class EngineSpawnMemo implements NaturalSpawner.ChunkGetter {
     public static final class Caps extends LocalMobCapCalculator {
         private final Thread thread;
         Chunk current;
+        long fastMobs;
 
         Caps(ChunkMap chunkMap, Thread thread) {
             super(chunkMap);
@@ -98,7 +115,7 @@ public final class EngineSpawnMemo implements NaturalSpawner.ChunkGetter {
             }
             // MobCounts.add: counts.computeInt(category, (k, v) -> v == null ? 1 : v + 1); addTo with a default of 0 is the same
             for (Object2IntOpenHashMap<MobCategory> playerCounts : counts) playerCounts.addTo(category, 1);
-            fastMobs++;
+            this.fastMobs++;
         }
 
         /** The count maps addMob(pos, ...) increments, after the vanilla addMob created them; VANILLA if not resolvable. */
@@ -125,6 +142,9 @@ public final class EngineSpawnMemo implements NaturalSpawner.ChunkGetter {
     private final Long2ObjectOpenHashMap<Chunk> chunks;
     private LevelChunk found;
     private final Consumer<LevelChunk> sink = chunk -> this.found = chunk;
+    // the thread building this memo's state
+    private long queries;
+    private long hits;
 
     private EngineSpawnMemo(NaturalSpawner.ChunkGetter getter, Caps caps, int expected) {
         this.getter = getter;
@@ -143,7 +163,6 @@ public final class EngineSpawnMemo implements NaturalSpawner.ChunkGetter {
             if (loaded == null) return; // not loaded: vanilla's getter did not call the consumer either
             chunk = new Chunk(loaded);
             this.chunks.put(pos, chunk);
-            chunkCount++;
         } else {
             hits++;
         }
@@ -160,22 +179,116 @@ public final class EngineSpawnMemo implements NaturalSpawner.ChunkGetter {
                                                         NaturalSpawner.ChunkGetter getter, LocalMobCapCalculator vanillaCaps,
                                                         Operation<NaturalSpawner.SpawnState> original) {
         ChunkMap chunkMap = ((EngineLocalMobCapAccess) vanillaCaps).phoenium$chunkMap();
-        Caps caps = new Caps(chunkMap, Thread.currentThread());
-        EngineSpawnMemo memo = new EngineSpawnMemo(getter, caps, level.expected);
-        NaturalSpawner.SpawnState state = original.call(spawnableChunks, entities, memo, caps);
-        calls++;
-        level.expected = Math.max(16, memo.chunks.size());
-        if (EngineConfig.SPAWN_MEMO_CHECK > 0 && ++level.states % EngineConfig.SPAWN_MEMO_CHECK == 0) {
-            NaturalSpawner.SpawnState reference = original.call(spawnableChunks, entities, getter, new LocalMobCapCalculator(chunkMap));
-            checks++;
-            String difference = difference(state, reference);
-            if (difference != null) {
-                stale++;
-                if (stale <= 10) LOGGER.warn("PHOENIUM_ENGINE spawnMemo stale (using the vanilla state): {}", difference);
-                return reference;
+        Iterable<Entity> counted = entities;
+        ArrayList<Entity> list = level.entities;
+        try {
+            NaturalSpawner.SpawnState state = null;
+            // S9-E9: slice when the last state counted enough entities for two slices
+            if (EngineConfig.SPAWN_SLICES && level.lastEntities >= 2 * EngineConfig.SPAWN_SLICE_MIN && TileEngine.canRunParallel()) {
+                for (Entity entity : entities) list.add(entity);
+                counted = list;
+                level.lastEntities = list.size();
+                state = sliced(level, chunkMap, spawnableChunks, list, getter, original);
             }
+            if (state == null) {
+                Caps caps = new Caps(chunkMap, Thread.currentThread());
+                EngineSpawnMemo memo = new EngineSpawnMemo(getter, caps, level.expected);
+                state = original.call(spawnableChunks, counted, memo, caps);
+                memo.addCounters();
+                level.expected = Math.max(16, memo.chunks.size());
+                if (counted != list) level.lastEntities = (int) Math.min(Integer.MAX_VALUE, memo.queries);
+            }
+            calls++;
+            if (EngineConfig.SPAWN_MEMO_CHECK > 0 && ++level.states % EngineConfig.SPAWN_MEMO_CHECK == 0) {
+                NaturalSpawner.SpawnState reference = original.call(spawnableChunks, counted, getter, new LocalMobCapCalculator(chunkMap));
+                checks++;
+                String difference = difference(state, reference);
+                if (difference != null) {
+                    stale++;
+                    if (stale <= 10) LOGGER.warn("PHOENIUM_ENGINE spawnMemo stale (using the vanilla state): {}", difference);
+                    return reference;
+                }
+            }
+            return state;
+        } finally {
+            list.clear();
         }
+    }
+
+    /**
+     * S9-E9: the state counted from contiguous slices of {@code list} on the tile threads and merged in slice order, or
+     * null (count it on this thread) when the list is too short for two slices or no parallel job can run.
+     */
+    private static NaturalSpawner.SpawnState sliced(Level level, ChunkMap chunkMap, int spawnableChunks, ArrayList<Entity> list,
+                                                    NaturalSpawner.ChunkGetter getter, Operation<NaturalSpawner.SpawnState> original) {
+        int count = list.size();
+        int threads = TileEngine.parallelThreads();
+        int most = Math.min(2 * threads, count / EngineConfig.SPAWN_SLICE_MIN);
+        // whole rounds: no thread runs one slice more than the rest
+        int slices = most > threads ? most - most % threads : most;
+        if (slices < 2) return null;
+        // the slices' players-near lookups run this tracker's pending updates first (a write): run them here, so they only read
+        chunkMap.getDistanceManager().hasPlayersNearby(0L);
+        NaturalSpawner.SpawnState[] states = new NaturalSpawner.SpawnState[slices];
+        EngineSpawnMemo[] memos = new EngineSpawnMemo[slices];
+        int expected = Math.max(16, level.expected / slices);
+        long work = TileEngine.runParallel(slices, 1, slice -> {
+            Caps caps = new Caps(chunkMap, Thread.currentThread());
+            EngineSpawnMemo memo = new EngineSpawnMemo(getter, caps, expected);
+            int from = (int) ((long) slice * count / slices);
+            int to = (int) ((long) (slice + 1) * count / slices);
+            states[slice] = original.call(spawnableChunks, list.subList(from, to), memo, caps);
+            memos[slice] = memo;
+        }, false);
+        if (work < 0L) return null;
+        NaturalSpawner.SpawnState state = states[0];
+        int chunks = 0;
+        for (int slice = 0; slice < slices; slice++) {
+            if (slice > 0) merge(state, states[slice]);
+            memos[slice].addCounters();
+            chunks += memos[slice].chunks.size();
+        }
+        level.expected = Math.max(16, chunks);
+        sliceStates++;
+        sliceCount += slices;
+        sliceWorkNanos += work;
         return state;
+    }
+
+    /** S9-E9: adds a later slice's state to {@code into}: charges appended in order, counts summed, players-near united. */
+    @SuppressWarnings("unchecked")
+    static void merge(NaturalSpawner.SpawnState into, NaturalSpawner.SpawnState from) {
+        EngineSpawnStateAccess a = (EngineSpawnStateAccess) into;
+        EngineSpawnStateAccess b = (EngineSpawnStateAccess) from;
+        ((List<Object>) ((EnginePotentialAccess) a.phoenium$potential()).phoenium$charges())
+            .addAll(((EnginePotentialAccess) b.phoenium$potential()).phoenium$charges());
+        Object2IntOpenHashMap<MobCategory> categories = a.phoenium$mobCategoryCounts();
+        for (Object2IntMap.Entry<MobCategory> entry : b.phoenium$mobCategoryCounts().object2IntEntrySet())
+            categories.addTo(entry.getKey(), entry.getIntValue());
+        EngineLocalMobCapAccess capsA = (EngineLocalMobCapAccess) a.phoenium$localMobCaps();
+        EngineLocalMobCapAccess capsB = (EngineLocalMobCapAccess) b.phoenium$localMobCaps();
+        Long2ObjectMap<List<ServerPlayer>> near = capsA.phoenium$playersNear();
+        for (Long2ObjectMap.Entry<List<ServerPlayer>> entry : capsB.phoenium$playersNear().long2ObjectEntrySet())
+            near.putIfAbsent(entry.getLongKey(), entry.getValue());
+        Map<ServerPlayer, Object> perPlayer = (Map<ServerPlayer, Object>) capsA.phoenium$playerMobCounts();
+        for (Map.Entry<ServerPlayer, ?> entry : capsB.phoenium$playerMobCounts().entrySet()) {
+            Object counts = perPlayer.get(entry.getKey());
+            if (counts == null) {
+                perPlayer.put(entry.getKey(), entry.getValue());   // the slice's state is dropped: its counts move over
+                continue;
+            }
+            Object2IntMap<MobCategory> target = ((EngineMobCountsAccess) counts).phoenium$counts();
+            for (Object2IntMap.Entry<MobCategory> count : ((EngineMobCountsAccess) entry.getValue()).phoenium$counts().object2IntEntrySet())
+                target.mergeInt(count.getKey(), count.getIntValue(), Integer::sum);
+        }
+    }
+
+    /** Server thread: this memo's lookups and fast counts join the totals. */
+    private void addCounters() {
+        totalQueries += queries;
+        totalHits += hits;
+        totalChunks += chunks.size();
+        totalFastMobs += caps.fastMobs;
     }
 
     /** The first difference between two freshly built spawn states, or null. */
@@ -209,7 +322,8 @@ public final class EngineSpawnMemo implements NaturalSpawner.ChunkGetter {
     }
 
     static String counters() {
-        return "spawnMemoCalls=" + calls + " spawnMemoQueries=" + queries + " spawnMemoHits=" + hits + " spawnMemoChunks=" + chunkCount
-            + " spawnMemoFastMobs=" + fastMobs + " spawnMemoChecks=" + checks + " spawnMemoStale=" + stale;
+        return "spawnMemoCalls=" + calls + " spawnMemoQueries=" + totalQueries + " spawnMemoHits=" + totalHits + " spawnMemoChunks=" + totalChunks
+            + " spawnMemoFastMobs=" + totalFastMobs + " spawnMemoChecks=" + checks + " spawnMemoStale=" + stale
+            + " spawnSliceStates=" + sliceStates + " spawnSlices=" + sliceCount + " spawnSliceWorkUs=" + sliceWorkNanos / 1000;
     }
 }

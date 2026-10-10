@@ -17,6 +17,7 @@ import java.util.function.Supplier;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.registries.Registries;
+import net.minecraft.network.protocol.Packet;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerChunkCache;
 import net.minecraft.server.level.ServerLevel;
@@ -56,6 +57,10 @@ import org.slf4j.LoggerFactory;
  * tickSpawningChunk and tickChunk as before, the calls are recorded per tile instead of run, and the tiles run them
  * colour by colour before the custom spawners. With {@link EngineConfig#DAG} the entity phase starts each tile as soon as
  * its lower-colour neighbours are done and applies the deferred effects after the phase.
+ *
+ * <p>S9-E9: serial work outside the phases that splits into independent items runs as a parallel-for on the same threads
+ * ({@link #runParallel}): the tracker's sendChanges calls ({@link EngineTrackerSends}, their packets held per thread and
+ * delivered per connection) and the spawn state's entity count in slices ({@link EngineSpawnMemo}).
  */
 public final class TileEngine {
     private TileEngine() { }
@@ -94,6 +99,11 @@ public final class TileEngine {
     private static long services;
     private static long serviceNanos;
     private static final AtomicInteger TRAP_LOGS = new AtomicInteger();
+    /** S9-E9: parallel-for jobs run; every thread's outbox; the delivery's connections (server thread). */
+    private static long parallelFors;
+    private static EngineOutbox[] outboxes;
+    private static final ArrayList<Object> HELD_TARGETS = new ArrayList<>();
+    private static final IdentityHashMap<Object, Boolean> HELD_SEEN = new IdentityHashMap<>();
 
     /** Per phase kind: counts and wall/tile times (server thread). */
     private static final class PhaseStats {
@@ -148,6 +158,7 @@ public final class TileEngine {
         serverThread = server.getRunningThread();
         pool = EngineWorkerPool.isWorker(serverThread) || EngineConfig.WORKERS == 0 ? null
             : new EngineWorkerPool(EngineConfig.WORKERS, TileEngine::runService);
+        outboxes = null;
         running = true;
         LOGGER.info("PHOENIUM_STAGE2 started lifecycle=RUNNING scheduler=ENGINE workers={} mode=engine-tiles {} threads={} parallel={} transforms={} loaded={}",
             EngineConfig.WORKERS, EngineConfig.describe(), EngineConfig.WORKERS + 1, pool == null ? "OFF" : "TILES",
@@ -157,6 +168,7 @@ public final class TileEngine {
     private static void stop(MinecraftServer server) {
         running = false;
         if (pool != null) pool.stop();
+        outboxes = null;
         EngineProtections.close();
         LOGGER.info("PHOENIUM_STAGE2 stopped lifecycle=STOPPED mode=engine-tiles {}", counters());
     }
@@ -175,6 +187,7 @@ public final class TileEngine {
             + " structureServices=" + STRUCTURE_SERVICES.sum() + " services=" + services + " serviceUs=" + serviceNanos / 1000
             + " loadTraps=" + LOAD_TRAPS.sum() + " writeTraps=" + WRITE_TRAPS.sum() + " storageTraps=" + STORAGE_TRAPS.sum()
             + " " + EngineTracker.counters() + " " + EngineSpawnMemo.counters() + " spawnCapOvershoot=" + EngineSpawnOverlay.overshoot()
+            + " parallelFors=" + parallelFors + " " + EngineTrackerSends.counters()
             + " " + EngineProtections.describe()
             + " " + EngineTimers.counters() + " transforms=" + EngineConfig.transforms();
     }
@@ -400,6 +413,105 @@ public final class TileEngine {
      * mid-tick chunk tasks are skipped then; they would mutate chunk and entity state under running tiles.
      */
     public static boolean inColour() { return colourRunning; }
+
+    // ---- S9-E9: parallel-for outside tiles ----
+
+    /** Threads a parallel job runs on: the tile threads and the server thread. */
+    static int parallelThreads() { return pool == null ? 1 : pool.threads() + 1; }
+
+    /** Whether {@link #runParallel} can run a job: the engine runs with tile threads; the server thread, outside a tile. */
+    static boolean canRunParallel() {
+        return running && pool != null && Thread.currentThread() == serverThread && MAIN.tile == null;
+    }
+
+    /**
+     * Server thread: runs {@code body} for 0..count-1 on the tile threads and this thread, in blocks of {@code block},
+     * outside any tile (no tile state, no services); returns the summed time of the blocks in ns, or -1 (nothing run)
+     * when {@link #canRunParallel} is false. With {@code capture} each thread's packet sends are held in its outbox until
+     * {@link #deliverHeld}.
+     */
+    static long runParallel(int count, int block, EngineWorkerPool.ForBody body, boolean capture) {
+        if (!canRunParallel()) return -1L;
+        if (count <= 0) return 0L;
+        EngineWorkerPool.ForJob job = new EngineWorkerPool.ForJob(count, block, body, capture);
+        parallelFors++;
+        pool.run(job, MAIN);
+        return job.workNanos.get();
+    }
+
+    /** The calling thread's context while it runs a capturing parallel-for, else null. */
+    static TileContext capturing() {
+        Thread thread = Thread.currentThread();
+        TileContext context;
+        if (thread == serverThread) context = MAIN;
+        else if (EngineWorkerPool.isWorker(thread)) context = EngineWorkerPool.contextOf(thread);
+        else return null;
+        return context.capturing ? context : null;
+    }
+
+    /** A connection's send on a thread that runs a capturing parallel-for: held in the thread's outbox (true). */
+    public static boolean holdSend(Object connection, Packet<?> packet, Object listener) {
+        TileContext context = capturing();
+        if (context == null || packet.isTerminal()) return false;
+        context.outbox.add(connection, packet, listener);
+        return true;
+    }
+
+    /** Every outbox: the server thread's, then the tile threads' in thread order. */
+    private static EngineOutbox[] outboxes() {
+        EngineOutbox[] boxes = outboxes;
+        if (boxes == null) {
+            TileContext[] workers = pool == null ? new TileContext[0] : pool.contexts();
+            boxes = new EngineOutbox[workers.length + 1];
+            boxes[0] = MAIN.outbox;
+            for (int i = 0; i < workers.length; i++) boxes[i + 1] = workers[i].outbox;
+            outboxes = boxes;
+        }
+        return boxes;
+    }
+
+    /**
+     * Server thread, after a capturing job: delivers every held send, each connection's on one thread (this one and the
+     * tile threads share the connections) in outbox order, then empties the outboxes. Adds to {@code stats}: [0] packets,
+     * [1] connections, [2] summed delivery time in ns.
+     */
+    static void deliverHeld(EngineOutbox.Sender sender, long[] stats) {
+        EngineOutbox[] boxes = outboxes();
+        try {
+            EngineOutbox.targets(boxes, HELD_TARGETS, HELD_SEEN);
+            int count = HELD_TARGETS.size();
+            for (EngineOutbox box : boxes) stats[0] += box.packets();
+            stats[1] += count;
+            long work = count > 1 ? runParallel(count, 1, i -> EngineOutbox.deliver(boxes, HELD_TARGETS.get(i), sender), false) : -1L;
+            if (work < 0L) {
+                long start = System.nanoTime();
+                for (int i = 0; i < count; i++) EngineOutbox.deliver(boxes, HELD_TARGETS.get(i), sender);
+                work = System.nanoTime() - start;
+            }
+            stats[2] += work;
+        } finally {
+            discardHeld();
+            HELD_TARGETS.clear();
+            HELD_SEEN.clear();
+        }
+    }
+
+    /** Server thread: empties every outbox (after delivery, or what a failed capturing job held). */
+    static void discardHeld() {
+        for (EngineOutbox box : outboxes()) box.clear();
+    }
+
+    /** True on a tile thread. */
+    public static boolean onTileThread() { return EngineWorkerPool.isWorker(Thread.currentThread()); }
+
+    /**
+     * A chunk request outside any tile (vanilla's path): from a tile thread that is a parallel-for item, which would block
+     * on the server thread while the server thread waits for the job. Fails instead of hanging.
+     */
+    public static void checkChunkRequest(int x, int z) {
+        if (EngineWorkerPool.isWorker(Thread.currentThread()))
+            throw new IllegalStateException("PHOENIUM_ENGINE chunk request " + x + "," + z + " from a tile thread outside a tile (parallel-for)");
+    }
 
     /**
      * Whether the serial set takes the entity: it acts across distances or shared structures a tile cannot claim.

@@ -29,6 +29,8 @@
     "EngineScoreboardMixin",
     "EngineSectionCallbackMixin",
     "EngineSectionStorageMixin",
+    "EngineSendMixin",
+    "EngineServerEntityAccess",
     "EngineServerLevelMixin",
     "EngineServerPlayerMixin",
     "EngineServerTimersMixin",

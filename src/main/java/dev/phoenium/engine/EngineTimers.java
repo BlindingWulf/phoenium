@@ -33,9 +33,17 @@ public final class EngineTimers {
     public static final int CONNECTIONS = 17;
     public static final int PLAYER_LIST = 18;
     public static final int CHUNK_SEND = 19;
+    /**
+     * S9-E9: parts of the tracker (ChunkMap.tick()): every player's chunk tracking; the loop's collected sendChanges
+     * calls (parallel, with their delivery); the moved-players pass. The rest of the tracker is the loop itself (pairing
+     * on section change, collection).
+     */
+    public static final int TRACKER_CHUNKS = 20;
+    public static final int TRACKER_SEND = 21;
+    public static final int TRACKER_MOVED = 22;
     private static final String[] NAMES = {"Packets", "ServerTick", "Autosave", "Children", "Levels", "LevelTicks", "Raids",
         "ChunkSource", "Distance", "TickChunks", "SpawnState", "Tracker", "ChunkUnload", "BlockEvents", "Entities",
-        "BlockEntities", "EntityManager", "Connections", "PlayerList", "ChunkSend"};
+        "BlockEntities", "EntityManager", "Connections", "PlayerList", "ChunkSend", "TrackerChunks", "TrackerSend", "TrackerMoved"};
     private static final long[] NANOS = new long[NAMES.length];
     private static long frames;
 

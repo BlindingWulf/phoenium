@@ -44,6 +44,9 @@ public final class TileContext {
     /** S9-E3: this tile's copy of Lithium's cached random-tick position. */
     final BlockPos.MutableBlockPos randomPos = new BlockPos.MutableBlockPos();
     private EngineSpawnOverlay spawn;
+    /** S9-E9: set while this thread runs a capturing parallel-for; its packet sends are held in {@link #outbox}. */
+    boolean capturing;
+    final EngineOutbox outbox = new EngineOutbox();
 
     void enter(ServerLevel level, TileWork tile, long phase, long colourRun, long seed) {
         if (this.phase != phase) {

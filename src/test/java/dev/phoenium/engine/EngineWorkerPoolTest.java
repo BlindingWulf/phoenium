@@ -16,6 +16,8 @@ import org.junit.jupiter.api.Test;
  * S9-E3: a dag job never runs two tiles whose claims touch at once and starts a tile only after its lower-colour
  * neighbours finished; a service runs on the caller's thread while no tile runs, and its result or failure reaches the
  * tile that asked.
+ * S9-E9: a parallel-for job runs every item once, outside any tile, in any block size; a capturing job marks its threads
+ * only while they run its items; a failure is rethrown and the pool goes on.
  */
 class EngineWorkerPoolTest {
     private static TileWork[] tiles(int count) {
@@ -272,6 +274,95 @@ class EngineWorkerPoolTest {
                     });
                 }), new TileContext()));
             assertEquals("load 2", thrown.getMessage());
+        } finally {
+            pool.stop();
+        }
+    }
+
+    // ---- S9-E9 ----
+
+    /** The context of the calling thread: a tile thread's own, else {@code own}. */
+    private static TileContext contextOf(TileContext own) {
+        Thread thread = Thread.currentThread();
+        return EngineWorkerPool.isWorker(thread) ? EngineWorkerPool.contextOf(thread) : own;
+    }
+
+    /**
+     * A tile thread leaves a job's work() (clearing its capture mark) only after the job's last item counted down, so the
+     * caller may return first: no thread is capturing once each has left.
+     */
+    private static void assertNoneCapturing(EngineWorkerPool pool, TileContext own) {
+        assertFalse(own.capturing);
+        long deadline = System.nanoTime() + 2_000_000_000L;
+        for (TileContext context : pool.contexts()) {
+            // the mark is a plain field (each thread reads only its own): fence so every read here is a fresh one
+            while (context.capturing && System.nanoTime() < deadline) java.lang.invoke.VarHandle.fullFence();
+            assertFalse(context.capturing);
+        }
+    }
+
+    @Test
+    void aForJobRunsEveryItemOnceInAnyBlockSize() {
+        EngineWorkerPool pool = new EngineWorkerPool(3);
+        try {
+            TileContext own = new TileContext();
+            for (int round = 0; round < 300; round++) {
+                int count = round % 7 == 0 ? round / 7 : 1 + (round * 131) % 2_000;
+                int block = 1 + round % 64;
+                AtomicIntegerArray runs = new AtomicIntegerArray(Math.max(1, count));
+                ConcurrentHashMap<Thread, Boolean> threads = new ConcurrentHashMap<>();
+                EngineWorkerPool.ForJob job = new EngineWorkerPool.ForJob(count, block, index -> {
+                    threads.put(Thread.currentThread(), Boolean.TRUE);
+                    assertNull(contextOf(own).tile, "a parallel-for item runs outside any tile");
+                    runs.incrementAndGet(index);
+                }, false);
+                pool.run(job, own);
+                for (int i = 0; i < count; i++) assertEquals(1, runs.get(i), "runs of item " + i + " of " + count);
+                assertTrue(threads.size() <= 4);
+                assertTrue(job.workNanos.get() >= 0L);
+            }
+        } finally {
+            pool.stop();
+        }
+    }
+
+    @Test
+    void aCapturingForJobMarksOnlyItsOwnRun() {
+        EngineWorkerPool pool = new EngineWorkerPool(3);
+        try {
+            TileContext own = new TileContext();
+            ConcurrentLinkedQueue<String> violations = new ConcurrentLinkedQueue<>();
+            pool.run(new EngineWorkerPool.ForJob(500, 4, index -> {
+                if (!contextOf(own).capturing) violations.add("item " + index + " ran without capturing");
+                spin(50);
+            }, true), own);
+            pool.run(new EngineWorkerPool.ForJob(500, 4, index -> {
+                if (contextOf(own).capturing) violations.add("item " + index + " of a plain job ran capturing");
+            }, false), own);
+            assertTrue(violations.isEmpty(), violations.toString());
+            assertNoneCapturing(pool, own);
+        } finally {
+            pool.stop();
+        }
+    }
+
+    @Test
+    void aForJobFailureIsRethrownAndThePoolGoesOn() {
+        EngineWorkerPool pool = new EngineWorkerPool(2);
+        try {
+            TileContext own = new TileContext();
+            AtomicInteger ran = new AtomicInteger();
+            IllegalStateException thrown = assertThrows(IllegalStateException.class, () ->
+                pool.run(new EngineWorkerPool.ForJob(1_000, 8, index -> {
+                    if (index == 437) throw new IllegalStateException("item 437");
+                    ran.incrementAndGet();
+                }, true), own));
+            assertEquals("item 437", thrown.getMessage());
+            assertTrue(ran.get() < 1_000);
+            assertNoneCapturing(pool, own);
+            AtomicInteger later = new AtomicInteger();
+            pool.run(new EngineWorkerPool.ForJob(300, 16, index -> later.incrementAndGet(), false), own);
+            assertEquals(300, later.get());
         } finally {
             pool.stop();
         }

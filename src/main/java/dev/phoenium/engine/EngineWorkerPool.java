@@ -2,6 +2,7 @@ package dev.phoenium.engine;
 
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.locks.LockSupport;
 import java.util.function.Supplier;
@@ -9,8 +10,9 @@ import java.util.function.Supplier;
 /**
  * S9-E1: the tile threads. The server thread publishes a {@link Job}, runs tiles itself, and returns when every tile of
  * the job has finished. A {@link ColourJob} hands out one colour's tiles from a shared index (work stealing); a
- * {@link DagJob} (S9-E3) hands out a tile once its lower-colour neighbours are done. Between jobs the threads spin
- * briefly, then park until the next job is published.
+ * {@link DagJob} (S9-E3) hands out a tile once its lower-colour neighbours are done; a {@link ForJob} (S9-E9) hands out
+ * blocks of a parallel for outside any tile. Between jobs the threads spin briefly, then park until the next job is
+ * published.
  *
  * <p>S9-E3 services: a running tile that needs what only the server thread may do with nothing else running (load a
  * chunk or a POI column, write outside its claim) pauses with {@link Job#service}; once no other tile is running
@@ -223,6 +225,60 @@ final class EngineWorkerPool {
         }
     }
 
+    /** One item of a {@link ForJob}. */
+    interface ForBody {
+        void run(int index);
+    }
+
+    /**
+     * S9-E9: a parallel for over items 0..count-1, taken in blocks of {@code block} by any thread, outside any tile (the
+     * running thread's context has no tile, so TileEngine.current() is null in the body: no tile state, no services). With
+     * {@code capture} every thread holds the packets it sends while it runs the job's items in its context's outbox
+     * ({@link EngineOutbox}); the caller delivers them after the job.
+     */
+    static final class ForJob extends Job {
+        final int count;
+        final int block;
+        final ForBody body;
+        final boolean capture;
+        final AtomicInteger next = new AtomicInteger();
+        /** The summed run time of the job's blocks, on every thread. */
+        final AtomicLong workNanos = new AtomicLong();
+
+        ForJob(int count, int block, ForBody body, boolean capture) {
+            super(count, null);
+            this.count = count;
+            this.block = Math.max(1, block);
+            this.body = body;
+            this.capture = capture;
+        }
+
+        @Override
+        void work(TileContext context) {
+            if (next.get() >= count) return;
+            if (capture) context.capturing = true;
+            try {
+                int start;
+                while ((start = next.getAndAdd(block)) < count) {
+                    int end = Math.min(count, start + block);
+                    long begin = System.nanoTime();
+                    try {
+                        if (failure.get() == null) {
+                            for (int i = start; i < end; i++) body.run(i);
+                        }
+                    } catch (Throwable cause) {
+                        fail(cause);
+                    } finally {
+                        workNanos.addAndGet(System.nanoTime() - begin);
+                        if (remaining.addAndGet(start - end) == 0) LockSupport.unpark(coordinator);
+                    }
+                }
+            } finally {
+                if (capture) context.capturing = false;
+            }
+        }
+    }
+
     /** Runs one tile on the calling thread with the calling thread's context. */
     interface Runner {
         void run(TileWork tile, TileContext context);
@@ -273,6 +329,13 @@ final class EngineWorkerPool {
     }
 
     int threads() { return workers.length; }
+
+    /** The tile threads' contexts, in thread order (S9-E9: their outboxes are delivered after a capturing job). */
+    TileContext[] contexts() {
+        TileContext[] out = new TileContext[workers.length];
+        for (int i = 0; i < workers.length; i++) out[i] = workers[i].context;
+        return out;
+    }
 
     /** The job being run, or null; a tile thread asks for services through it. */
     Job current() { return job; }

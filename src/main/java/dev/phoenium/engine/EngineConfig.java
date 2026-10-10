@@ -67,6 +67,29 @@ public final class EngineConfig {
      * cap, pearl cap) against its object (stale tile/world, orphan); 0 = never. Only with a protection enabled.
      */
     public static final int PROTECTION_CHECK = clamp(Integer.getInteger("phoenium.engine.protection.check", 20), 0, 1 << 20);
+    /**
+     * S9-E9 {@code phoenium.engine.sendFlush} (default true): a packet a tile thread sends while the server suspends
+     * flushing (MinecraftServer.tickChildren) waits for the end-of-tick flush, as the server thread's do; vanilla flushes
+     * every packet sent from another thread at once (a socket write per packet).
+     */
+    public static final boolean SEND_FLUSH = !"false".equalsIgnoreCase(System.getProperty("phoenium.engine.sendFlush"));
+    /**
+     * S9-E9 {@code phoenium.engine.trackerSend} (default true): ChunkMap.tick() collects its loop's
+     * ServerEntity.sendChanges calls and runs them on the tile threads after the loop, before the moved-players pass
+     * (pairing stays serial, in vanilla order; item frames, which tick shared map data, run in place). Their packets are
+     * held per thread and delivered per connection, one thread per connection.
+     */
+    public static final boolean TRACKER_SEND = !"false".equalsIgnoreCase(System.getProperty("phoenium.engine.trackerSend"));
+    /** S9-E9 {@code phoenium.engine.trackerSend.min}: fewer collected calls than this run on the server thread. */
+    public static final int TRACKER_SEND_MIN = clamp(Integer.getInteger("phoenium.engine.trackerSend.min", 256), 1, 1 << 24);
+    /**
+     * S9-E9 {@code phoenium.engine.spawnSlices} (default true; needs {@link #SPAWN_MEMO}): NaturalSpawner.createState
+     * counts contiguous slices of the entity list on the tile threads, each with its own memo and local caps, and merges
+     * them in slice order (charges concatenated, so the potential sums are vanilla's; counts summed).
+     */
+    public static final boolean SPAWN_SLICES = SPAWN_MEMO && !"false".equalsIgnoreCase(System.getProperty("phoenium.engine.spawnSlices"));
+    /** S9-E9 {@code phoenium.engine.spawnSlices.min}: entities per slice at least; fewer entities than this count serially. */
+    public static final int SPAWN_SLICE_MIN = clamp(Integer.getInteger("phoenium.engine.spawnSlices.min", 512), 1, 1 << 24);
 
     /** Blocks between a tile's edge and its claim's edge. */
     public static int claimReachBlocks() { return CLAIM_RADIUS << (TILE_SHIFT + 4); }
@@ -76,7 +99,9 @@ public final class EngineConfig {
             + " colours=" + COLOURS + " reachBlocks=" + claimReachBlocks() + " strict=" + STRICT + " chunks=" + CHUNKS
             + " schedule=" + (DAG ? "dag" : "colours") + " services=" + SERVICES + " tracker=" + TRACKER + " trackerIndex=" + TRACKER_INDEX
             + " trackerIndexCheck=" + TRACKER_INDEX_CHECK + " trackerIndexFull=" + TRACKER_INDEX_FULL
-            + " spawnMemo=" + SPAWN_MEMO + " spawnMemoCheck=" + SPAWN_MEMO_CHECK + " protectionCheck=" + PROTECTION_CHECK;
+            + " spawnMemo=" + SPAWN_MEMO + " spawnMemoCheck=" + SPAWN_MEMO_CHECK + " protectionCheck=" + PROTECTION_CHECK
+            + " sendFlush=" + SEND_FLUSH + " trackerSend=" + TRACKER_SEND + " trackerSendMin=" + TRACKER_SEND_MIN
+            + " spawnSlices=" + SPAWN_SLICES + " spawnSlicesMin=" + SPAWN_SLICE_MIN;
     }
 
     private static final java.util.concurrent.ConcurrentLinkedQueue<String> TRANSFORMS = new java.util.concurrent.ConcurrentLinkedQueue<>();
