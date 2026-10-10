@@ -188,6 +188,7 @@ public final class TileEngine {
             + " loadTraps=" + LOAD_TRAPS.sum() + " writeTraps=" + WRITE_TRAPS.sum() + " storageTraps=" + STORAGE_TRAPS.sum()
             + " " + EngineTracker.counters() + " " + EngineSpawnMemo.counters() + " spawnCapOvershoot=" + EngineSpawnOverlay.overshoot()
             + " parallelFors=" + parallelFors + " " + EngineTrackerSends.counters() + " " + EngineAutosave.counters()
+            + " " + EngineMoveSplit.counters()
             + " " + EngineProtections.describe()
             + " " + EngineTimers.counters() + " transforms=" + EngineConfig.transforms();
     }

@@ -150,6 +150,10 @@ class EngineTrackerIndexTest {
             Set<Object> actual = new HashSet<>();
             for (int i = 0; i < out.size; i++) assertTrue(actual.add(out.items[i]), "visited twice: " + out.items[i]);
             assertEquals(expected, actual, "query " + px + "," + pz + " reach " + reach);
+            // S9-E13: the stamp-free (parallel-safe) walk visits the same set, each once
+            Set<Object> quiet = new HashSet<>();
+            index.collectQuiet(px, pz, reach, connection, item -> assertTrue(quiet.add(item), "quiet visited twice: " + item));
+            assertEquals(expected, quiet, "quiet query " + px + "," + pz + " reach " + reach);
         }
     }
 }

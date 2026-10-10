@@ -2,6 +2,7 @@ package dev.phoenium.engine.mixin;
 
 import com.llamalad7.mixinextras.injector.wrapoperation.Operation;
 import com.llamalad7.mixinextras.injector.wrapoperation.WrapOperation;
+import dev.phoenium.engine.EngineMoveSplit;
 import dev.phoenium.engine.EngineTimers;
 import java.util.function.BooleanSupplier;
 import net.minecraft.server.level.ChunkMap;
@@ -47,6 +48,7 @@ abstract class EngineChunkCacheTimersMixin {
 
     @WrapOperation(method = "move(Lnet/minecraft/server/level/ServerPlayer;)V", at = @At(value = "INVOKE", target = "Lnet/minecraft/server/level/ChunkMap;move(Lnet/minecraft/server/level/ServerPlayer;)V"))
     private void phoenium$timePlayerMove(ChunkMap chunkMap, ServerPlayer player, Operation<Void> original) {
+        if (EngineMoveSplit.defer(chunkMap, player)) return;   // S9-E13: a move packet's, run after the queued packets
         long start = EngineTimers.start();
         try { original.call(chunkMap, player); } finally { EngineTimers.add(EngineTimers.PLAYER_MOVE, start); }
     }

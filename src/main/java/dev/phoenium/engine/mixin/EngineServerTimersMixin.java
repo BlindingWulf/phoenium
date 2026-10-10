@@ -2,6 +2,7 @@ package dev.phoenium.engine.mixin;
 
 import com.llamalad7.mixinextras.injector.wrapoperation.Operation;
 import com.llamalad7.mixinextras.injector.wrapoperation.WrapOperation;
+import dev.phoenium.engine.EngineMoveSplit;
 import dev.phoenium.engine.EngineTimers;
 import java.util.function.BooleanSupplier;
 import net.minecraft.network.PacketProcessor;
@@ -19,7 +20,11 @@ abstract class EngineServerTimersMixin {
     @WrapOperation(method = "processPacketsAndTick", at = @At(value = "INVOKE", target = "Lnet/minecraft/network/PacketProcessor;processQueuedPackets()V"))
     private void phoenium$timePackets(PacketProcessor processor, Operation<Void> original) {
         long start = EngineTimers.start();
-        try { original.call(processor); } finally { EngineTimers.add(EngineTimers.PACKETS, start); }
+        try {
+            EngineMoveSplit.beginPackets();   // S9-E13: the move packets' tracker updates run after the queued packets
+            try { original.call(processor); } finally { EngineMoveSplit.endPackets(); }
+            EngineMoveSplit.flush();
+        } finally { EngineTimers.add(EngineTimers.PACKETS, start); }
     }
 
     @WrapOperation(method = "processPacketsAndTick", at = @At(value = "INVOKE", target = "Lnet/minecraft/server/MinecraftServer;tickServer(Ljava/util/function/BooleanSupplier;)V"))

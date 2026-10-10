@@ -125,6 +125,17 @@ public final class EngineConfig {
     /** S9-E12 {@code phoenium.engine.autosaveSpread.budgetUs} (default 2000): time per level queue and tick at most (one key always runs). */
     public static final int AUTOSAVE_BUDGET_US = clamp(Integer.getInteger("phoenium.engine.autosaveSpread.budgetUs", 2_000), 50, 1_000_000);
 
+    /**
+     * S9-E13 R-C2 {@code phoenium.engine.moveSplit} (default false; needs {@link #TRACKER_INDEX}): a move packet's
+     * ChunkMap.move(player) waits for the end of the frame's queued packets; there the deferred moves' tracker checks are
+     * evaluated on the tile threads and applied on the server thread in order ({@link EngineMoveSplit}).
+     */
+    public static final boolean MOVE_SPLIT = TRACKER_INDEX && Boolean.getBoolean("phoenium.engine.moveSplit");
+    /** S9-E13 {@code phoenium.engine.moveSplit.min} (default 4): fewer deferred moves than this run serially (vanilla's move, in order). */
+    public static final int MOVE_SPLIT_MIN = clamp(Integer.getInteger("phoenium.engine.moveSplit.min", 4), 1, 1 << 20);
+    /** S9-E13 {@code phoenium.engine.moveSplit.check}: every N-th parallel flush also evaluates each move serially and compares; 0 = never. */
+    public static final int MOVE_SPLIT_CHECK = clamp(Integer.getInteger("phoenium.engine.moveSplit.check", 0), 0, 1 << 20);
+
     /** Blocks between a tile's edge and its claim's edge. */
     public static int claimReachBlocks() { return CLAIM_RADIUS << (TILE_SHIFT + 4); }
 
@@ -138,7 +149,8 @@ public final class EngineConfig {
             + " spawnSlices=" + SPAWN_SLICES + " spawnSlicesMin=" + SPAWN_SLICE_MIN
             + " spins=" + SPINS + " idleParkUs=" + IDLE_PARK_US + " dagWake=" + DAG_WAKE + " dagParkUs=" + DAG_PARK_US
             + " autosaveSpread=" + AUTOSAVE_SPREAD + " autosaveSpreadEntities=" + AUTOSAVE_SPREAD_ENTITIES
-            + " autosaveSpreadChunks=" + AUTOSAVE_CHUNKS + " autosaveSpreadBudgetUs=" + AUTOSAVE_BUDGET_US;
+            + " autosaveSpreadChunks=" + AUTOSAVE_CHUNKS + " autosaveSpreadBudgetUs=" + AUTOSAVE_BUDGET_US
+            + " moveSplit=" + MOVE_SPLIT + " moveSplitMin=" + MOVE_SPLIT_MIN + " moveSplitCheck=" + MOVE_SPLIT_CHECK;
     }
 
     private static final java.util.concurrent.ConcurrentLinkedQueue<String> TRANSFORMS = new java.util.concurrent.ConcurrentLinkedQueue<>();

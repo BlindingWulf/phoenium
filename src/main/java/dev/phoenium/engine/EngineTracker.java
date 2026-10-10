@@ -30,5 +30,14 @@ public final class EngineTracker {
         return false;
     }
 
+    /** {@link #mayChange} without its counters: any thread (the move split's parallel evaluation). */
+    public static boolean mayChangeQuiet(EngineTrackedEntityAccess tracker, ServerPlayer player, int viewDistance) {
+        ChunkPos at = tracker.phoenium$entity().chunkPosition();
+        ChunkPos from = player.chunkPosition();
+        int reach = viewDistance + 1;
+        return Math.abs(at.x() - from.x()) <= reach && Math.abs(at.z() - from.z()) <= reach
+            || tracker.phoenium$seenBy().contains(player.connection);
+    }
+
     static String counters() { return "trackerChecks=" + checks + " trackerSkipped=" + skipped + " " + EngineTrackerIndex.counters(); }
 }

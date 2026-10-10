@@ -5,6 +5,7 @@ import com.llamalad7.mixinextras.injector.wrapoperation.Operation;
 import com.llamalad7.mixinextras.injector.wrapoperation.WrapOperation;
 import com.llamalad7.mixinextras.sugar.Local;
 import dev.phoenium.engine.EngineConfig;
+import dev.phoenium.engine.EngineMoveSplit;
 import dev.phoenium.engine.EngineTimers;
 import dev.phoenium.engine.EngineTracker;
 import dev.phoenium.engine.EngineTrackerIndex;
@@ -12,6 +13,7 @@ import dev.phoenium.engine.EngineTrackerSends;
 import it.unimi.dsi.fastutil.ints.Int2ObjectMap;
 import it.unimi.dsi.fastutil.objects.ObjectCollection;
 import it.unimi.dsi.fastutil.objects.ObjectIterator;
+import it.unimi.dsi.fastutil.objects.ObjectIterators;
 import java.util.List;
 import net.minecraft.server.level.ChunkMap;
 import net.minecraft.server.level.ServerEntity;
@@ -39,9 +41,12 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
  *
  * <p>S9-E9: tick()'s loop collects its ServerEntity.sendChanges calls, which run on the tile threads after the loop and
  * before the moved-players pass ({@link EngineTrackerSends}); the chunk tracking, the sends and the moved pass are timed.
+ *
+ * <p>S9-E13 R-C2: the ChunkMap side of {@link EngineMoveSplit}: a deferred move's evaluation (move's tracker loop through
+ * the index, read only), the re-check of the player's own tracker, and move(player) with its tracker loop left out.
  */
 @Mixin(value = ChunkMap.class, priority = 2000)
-abstract class EngineChunkMapTrackerMixin implements EngineTrackerIndex.Holder {
+abstract class EngineChunkMapTrackerMixin implements EngineTrackerIndex.Holder, EngineMoveSplit.Target {
     @Shadow @Final private ServerLevel level;
     @Shadow @Final private Int2ObjectMap<?> entityMap;
 
@@ -92,6 +97,7 @@ abstract class EngineChunkMapTrackerMixin implements EngineTrackerIndex.Holder {
         target = "Lit/unimi/dsi/fastutil/objects/ObjectCollection;iterator()Lit/unimi/dsi/fastutil/objects/ObjectIterator;"))
     private ObjectIterator<?> phoenium$moveVisitsIndexed(ObjectCollection<?> trackers, Operation<ObjectIterator<?>> original,
                                                          @Local(argsOnly = true) ServerPlayer player) {
+        if (EngineMoveSplit.restOnly()) return ObjectIterators.emptyIterator();   // S9-E13: the apply has run the checks
         if (EngineConfig.TRACKER_INDEX) {
             ObjectIterator<Object> visits = this.phoenium$trackerIndex().forMove(player);
             if (visits != null) return visits;
@@ -139,6 +145,60 @@ abstract class EngineChunkMapTrackerMixin implements EngineTrackerIndex.Holder {
     private void phoenium$timeMovedPass(CallbackInfo ci) {
         this.phoenium$sends.end();
     }
+
+    // ---- S9-E13 R-C2 ----
+
+    @Override
+    public ServerLevel phoenium$level() { return this.level; }
+
+    @Override
+    public boolean phoenium$splitReady() { return EngineConfig.TRACKER_INDEX && this.phoenium$trackerIndex().readyForSplit(); }
+
+    @Override
+    public Object phoenium$ownTracker(ServerPlayer player) {
+        Object own = this.entityMap.get(player.getId());
+        return own != null && ((EngineTrackedEntityAccess) own).phoenium$entity() == player ? own : null;
+    }
+
+    /** move(player)'s tracker loop as the index visits it, each check through the S9-E4 filter (read only: records). */
+    @Override
+    public void phoenium$evaluateMove(ServerPlayer player) {
+        Object own = this.phoenium$ownTracker(player);
+        if (own != null) {
+            EngineTrackedEntityAccess tracker = (EngineTrackedEntityAccess) own;
+            List<ServerPlayer> players = this.level.players();
+            for (int i = 0, n = players.size(); i < n; i++) {
+                ServerPlayer other = players.get(i);
+                if (EngineTracker.mayChangeQuiet(tracker, other, this.getPlayerViewDistance(other))) tracker.phoenium$updatePlayer(other);
+            }
+        }
+        int view = this.getPlayerViewDistance(player);
+        this.phoenium$trackerIndex().forEachMoveCandidate(player, view + 1, item -> {
+            if (item == own) return;
+            EngineTrackedEntityAccess tracker = (EngineTrackedEntityAccess) item;
+            if (EngineTracker.mayChangeQuiet(tracker, player, view)) tracker.phoenium$updatePlayer(player);
+        });
+    }
+
+    @Override
+    public int phoenium$recheckOwn(ServerPlayer player, List<ServerPlayer> players) {
+        Object own = this.phoenium$ownTracker(player);
+        if (own == null) return 0;
+        EngineTrackedEntityAccess tracker = (EngineTrackedEntityAccess) own;
+        int checked = 0;
+        for (int i = 0, n = players.size(); i < n; i++) {
+            ServerPlayer other = players.get(i);
+            if (other == player || other.level() != this.level) continue;
+            if (EngineTracker.mayChange(tracker, other, this.getPlayerViewDistance(other))) {
+                tracker.phoenium$updatePlayer(other);
+                checked++;
+            }
+        }
+        return checked;
+    }
+
+    @Override
+    public void phoenium$moveNow(ServerPlayer player) { ((ChunkMap) (Object) this).move(player); }
 
     @WrapOperation(method = "addEntity", at = @At(value = "INVOKE",
         target = "Lit/unimi/dsi/fastutil/ints/Int2ObjectMap;put(ILjava/lang/Object;)Ljava/lang/Object;"))

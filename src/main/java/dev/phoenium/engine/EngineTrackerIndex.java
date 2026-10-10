@@ -13,6 +13,7 @@ import java.util.NoSuchElementException;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.LongAdder;
+import java.util.function.Consumer;
 import java.util.function.ToIntFunction;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
@@ -255,6 +256,19 @@ public final class EngineTrackerIndex {
         return out;
     }
 
+    /** S9-E13: server thread, before the move split's parallel evaluation: whether the index can answer (rebuilt first when marked). */
+    public boolean readyForSplit() { return ready(); }
+
+    /**
+     * S9-E13: the trackers {@link #forMove} visits for {@code player} (its own among them; the caller skips it) with
+     * {@code reach} = its view distance + 1, without the shared stamps and visit counters: any thread, while nothing changes
+     * the index (the move split's parallel evaluation, after {@link #readyForSplit}).
+     */
+    public void forEachMoveCandidate(ServerPlayer player, int reach, Consumer<Object> visit) {
+        ChunkPos at = player.chunkPosition();
+        collectQuiet(at.x(), at.z(), reach, player.connection, visit);
+    }
+
     private void gather(ServerPlayer player, int stamp, Candidates out) {
         ChunkPos at = player.chunkPosition();
         collect(at.x(), at.z(), this.viewDistance.applyAsInt(player) + 1, player.connection, stamp, out);
@@ -414,6 +428,48 @@ public final class EngineTrackerIndex {
             if (entry.stamp == stamp || entry.removed) continue;
             entry.stamp = stamp;
             out.add(entry.item);
+        }
+    }
+
+    /**
+     * {@link #collect}'s set without stamps (read only): the box's entries in range, then each seen entry the box pass did
+     * not visit (out of range, or bucketed outside the box's tiles).
+     */
+    void collectQuiet(int chunkX, int chunkZ, int reach, Object connection, Consumer<Object> out) {
+        int minX = chunkX - reach;
+        int maxX = chunkX + reach;
+        int minZ = chunkZ - reach;
+        int maxZ = chunkZ + reach;
+        int firstTileX = minX >> this.shift;
+        int lastTileX = maxX >> this.shift;
+        int firstTileZ = minZ >> this.shift;
+        int lastTileZ = maxZ >> this.shift;
+        for (int tileX = firstTileX; tileX <= lastTileX; tileX++) {
+            for (int tileZ = firstTileZ; tileZ <= lastTileZ; tileZ++) {
+                Bucket bucket = this.tiles.get(TileGeometry.key(tileX, tileZ));
+                if (bucket == null) continue;
+                Entry[] entries = bucket.entries;
+                for (int i = 0, n = bucket.size; i < n; i++) {
+                    Entry entry = entries[i];
+                    int x = entry.chunkX();
+                    int z = entry.chunkZ();
+                    if (x < minX || x > maxX || z < minZ || z > maxZ) continue;
+                    out.accept(entry.item);
+                }
+            }
+        }
+        ReferenceOpenHashSet<Entry> sees = this.seen.get(connection);
+        if (sees == null) return;
+        for (Entry entry : sees) {
+            if (entry.removed) continue;
+            int x = entry.chunkX();
+            int z = entry.chunkZ();
+            if (x >= minX && x <= maxX && z >= minZ && z <= maxZ) {
+                int tileX = TileGeometry.keyX(entry.tile);
+                int tileZ = TileGeometry.keyZ(entry.tile);
+                if (tileX >= firstTileX && tileX <= lastTileX && tileZ >= firstTileZ && tileZ <= lastTileZ) continue;
+            }
+            out.accept(entry.item);
         }
     }
 
