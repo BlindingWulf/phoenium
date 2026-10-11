@@ -30,6 +30,7 @@ public final class Phoenium implements DedicatedServerModInitializer {
     public void onInitializeServer() {
         SupportedStack.require(LOGGER);   // S9-E16 (S8-F1): refuse an unsupported stack before any world loads
         dev.phoenium.mem.NoiseRelease.install(LOGGER);   // S9-M1 (MEM-2): both modes
+        dev.phoenium.mem.MemoryGovernor.install(LOGGER);   // S9-M2 (MEM-2): off unless phoenium.mem.governor=true
         if (EngineConfig.ENABLED) {
             TileEngine.install();
             if (Boolean.getBoolean("phoenium.test.diagnostics")) {

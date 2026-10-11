@@ -7,5 +7,9 @@ public final class MemSwitches {
      * keeps vanilla behaviour and the two mixins are then not applied. */
     public static final boolean RELEASE_NOISE = !"false".equalsIgnoreCase(System.getProperty("phoenium.mem.releaseNoise", "true"));
 
+    /** S9-M2 heap-pressure governor (MemoryGovernor): steps the view distance down under sustained heap pressure and
+     * back up afterwards. Default off; -Dphoenium.mem.governor=true. */
+    public static final boolean GOVERNOR = Boolean.getBoolean("phoenium.mem.governor");
+
     private MemSwitches() { }
 }
