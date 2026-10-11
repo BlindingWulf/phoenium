@@ -6,9 +6,9 @@ import java.lang.management.ManagementFactory;
 import java.lang.management.MemoryPoolMXBean;
 import java.lang.management.MemoryType;
 import java.lang.management.MemoryUsage;
-import java.util.ArrayDeque;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.ConcurrentLinkedDeque;
 import java.util.stream.Collectors;
 import javax.management.Notification;
 import javax.management.NotificationEmitter;
@@ -37,7 +37,8 @@ public final class MemoryGovernor {
     private static final int MIN_VIEW = Math.max(2, Integer.getInteger("phoenium.mem.governor.minView", 4));
     private static final long WINDOW_MS = 30_000L;
 
-    private static final ArrayDeque<long[]> SAMPLES = new ArrayDeque<>();   // {time ms, heap used after GC, full ? 1 : 0}
+    // {time ms, heap used after GC, full ? 1 : 0}: appended by the JMX notification thread, pruned by the server thread
+    private static final ConcurrentLinkedDeque<long[]> SAMPLES = new ConcurrentLinkedDeque<>();
     private static Set<String> heapPools = Set.of();
     private static Logger logger;
     private static int configured = -1;
@@ -46,7 +47,7 @@ public final class MemoryGovernor {
     private static long ticks;
     private static int steps;
     private static int lowestView = Integer.MAX_VALUE;
-    private static long lastUsed = -1;   // heap left after the most recent collection (judged when the window is empty)
+    private static volatile long lastUsed = -1;   // heap left after the most recent collection (judged when the window is empty)
 
     private MemoryGovernor() {
     }
@@ -86,10 +87,8 @@ public final class MemoryGovernor {
             if (heapPools.contains(pool.getKey())) used += pool.getValue().getUsed();
         }
         boolean full = name.contains("Old Generation") || name.contains("MarkSweep");
-        synchronized (SAMPLES) {
-            SAMPLES.addLast(new long[] {System.currentTimeMillis(), used, full ? 1 : 0});
-            lastUsed = used;
-        }
+        SAMPLES.addLast(new long[] {System.currentTimeMillis(), used, full ? 1 : 0});
+        lastUsed = used;
     }
 
     /** Server thread, end of every tick; evaluates once per second. */
@@ -98,15 +97,13 @@ public final class MemoryGovernor {
         long now = System.currentTimeMillis();
         long floor = Long.MAX_VALUE;
         int fulls = 0;
-        synchronized (SAMPLES) {
-            while (!SAMPLES.isEmpty() && now - SAMPLES.peekFirst()[0] > WINDOW_MS) SAMPLES.pollFirst();
-            for (long[] s : SAMPLES) {
-                floor = Math.min(floor, s[1]);
-                fulls += (int) s[2];
-            }
-            // no collection in the window (a quiet heap): judge the most recent post-GC heap, so recovery still happens
-            if (floor == Long.MAX_VALUE) floor = lastUsed;
+        for (long[] head = SAMPLES.peekFirst(); head != null && now - head[0] > WINDOW_MS; head = SAMPLES.peekFirst()) SAMPLES.pollFirst();
+        for (long[] s : SAMPLES) {   // weakly consistent iteration: a sample added meanwhile counts next second
+            floor = Math.min(floor, s[1]);
+            fulls += (int) s[2];
         }
+        // no collection in the window (a quiet heap): judge the most recent post-GC heap, so recovery still happens
+        if (floor == Long.MAX_VALUE) floor = lastUsed;
         if (floor < 0) return;   // no collection yet since start
         double occupancy = (double) floor / Runtime.getRuntime().maxMemory();
         int view = server.getPlayerList().getViewDistance();
