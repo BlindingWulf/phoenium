@@ -21,7 +21,9 @@ public final class PhoeniumMixinConfigPlugin implements IMixinConfigPlugin {
     private static final String GEYSER_FLOODGATE_SKIN = "dev.phoenium.mixin.GeyserFloodgateSkinUploaderMixin";
     private static final Set<String> ENGINE_RETAINED = Set.of(
         "dev.phoenium.mixin.TrackedEntityRangeFastPathMixin",
-        "dev.phoenium.mixin.PublishedDirectHolderSetMixin");
+        "dev.phoenium.mixin.PublishedDirectHolderSetMixin",
+        "dev.phoenium.mixin.ChunkAccessNoiseAccess",
+        "dev.phoenium.mixin.MemNoiseReleaseMixin");
     private boolean lithium;
     private boolean lithiumChunkAccess;
     private boolean geyserFloodgate;
@@ -36,6 +38,10 @@ public final class PhoeniumMixinConfigPlugin implements IMixinConfigPlugin {
     @Override public String getRefMapperConfig() { return null; }
 
     @Override public boolean shouldApplyMixin(String targetClassName, String mixinClassName) {
+        // S9-M1: the noise-chunk release (both modes) is not applied at all when -Dphoenium.mem.releaseNoise=false
+        if (mixinClassName.equals("dev.phoenium.mixin.MemNoiseReleaseMixin")
+                || mixinClassName.equals("dev.phoenium.mixin.ChunkAccessNoiseAccess"))
+            return dev.phoenium.mem.MemSwitches.RELEASE_NOISE;
         // S9-E1: engine mode is L5 plus the tile engine; of these mixins it keeps only the standalone ones
         if (EngineConfig.ENABLED) {
             if (mixinClassName.equals(GEYSER_FLOODGATE_SKIN)) return geyserFloodgate;
