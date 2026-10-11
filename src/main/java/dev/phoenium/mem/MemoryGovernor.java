@@ -46,6 +46,7 @@ public final class MemoryGovernor {
     private static long ticks;
     private static int steps;
     private static int lowestView = Integer.MAX_VALUE;
+    private static long lastUsed = -1;   // heap left after the most recent collection (judged when the window is empty)
 
     private MemoryGovernor() {
     }
@@ -87,6 +88,7 @@ public final class MemoryGovernor {
         boolean full = name.contains("Old Generation") || name.contains("MarkSweep");
         synchronized (SAMPLES) {
             SAMPLES.addLast(new long[] {System.currentTimeMillis(), used, full ? 1 : 0});
+            lastUsed = used;
         }
     }
 
@@ -102,8 +104,10 @@ public final class MemoryGovernor {
                 floor = Math.min(floor, s[1]);
                 fulls += (int) s[2];
             }
+            // no collection in the window (a quiet heap): judge the most recent post-GC heap, so recovery still happens
+            if (floor == Long.MAX_VALUE) floor = lastUsed;
         }
-        if (floor == Long.MAX_VALUE) return;   // no collection in the window: nothing to judge
+        if (floor < 0) return;   // no collection yet since start
         double occupancy = (double) floor / Runtime.getRuntime().maxMemory();
         int view = server.getPlayerList().getViewDistance();
         boolean critical = occupancy >= CRITICAL || (fulls >= 2 && occupancy >= HIGH);
