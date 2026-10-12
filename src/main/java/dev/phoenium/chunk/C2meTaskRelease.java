@@ -12,10 +12,16 @@ public final class C2meTaskRelease {
 
     public static final boolean ENABLED = !"false".equalsIgnoreCase(System.getProperty("phoenium.c2me.releaseFinishedTasks"));
     private static final LongAdder RELEASED = new LongAdder();
+    private static final LongAdder REENTERED = new LongAdder();
 
     public static void released() { RELEASED.increment(); }
 
+    /** A released task entered run() again (never expected: FlowSched runs a task once). */
+    public static void reentered() { REENTERED.increment(); }
+
     public static long count() { return RELEASED.sum(); }
 
-    public static String counters() { return "c2meTaskRelease=" + ENABLED + " c2meTasksReleased=" + RELEASED.sum(); }
+    public static String counters() {
+        return "c2meTaskRelease=" + ENABLED + " c2meTasksReleased=" + RELEASED.sum() + " c2meTaskReleaseReentered=" + REENTERED.sum();
+    }
 }
