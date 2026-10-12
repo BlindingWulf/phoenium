@@ -26,6 +26,7 @@ import java.util.function.ToIntFunction;
 import java.util.jar.JarFile;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.RepeatedTest;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 import org.objectweb.asm.ClassReader;
@@ -280,8 +281,27 @@ final class FlowSchedQueuePurgeTest {
      * lowest), and a compactor on the executor's own queue and permits. Every task runs exactly once and completes, and
      * once the work is done no permit is left over and every worker parks (none spins).
      */
-    @Test @Timeout(value = 180, unit = TimeUnit.SECONDS)
+    @RepeatedTest(25) @Timeout(value = 180, unit = TimeUnit.SECONDS)
     void realExecutorWithLockWaitsRunsEveryTaskOnceAndWorkersParkAfterwards() throws Exception {
+        long dropped = realExecutor(true);
+        assertTrue(dropped > 0, "the compactor dropped superseded entries (" + dropped + ")");
+    }
+
+    /** The same workload without the compactor: the control arm for the test itself (FlowSched as shipped). */
+    @Test @Timeout(value = 180, unit = TimeUnit.SECONDS)
+    void realExecutorControlWithoutCompaction() throws Exception {
+        assertEquals(0, realExecutor(false));
+    }
+
+    private static long droppedSoFar() {
+        var matcher = java.util.regex.Pattern.compile("c2meQueueDropped=(\\d+)").matcher(FlowSchedQueuePurge.counters());
+        assertTrue(matcher.find());
+        return Long.parseLong(matcher.group(1));
+    }
+
+    /** Runs the real-executor workload, with or without a concurrent compactor; returns the entries it dropped. */
+    private long realExecutor(boolean compact) throws Exception {
+        long droppedBefore = droppedSoFar();
         Class<?> executorClass = loader.loadClass("com.ishland.flowsched.executor.ExecutorManager");
         Class<?> taskClass = loader.loadClass("com.ishland.flowsched.executor.Task");
         Class<?> tokenClass = loader.loadClass("com.ishland.flowsched.executor.LockToken");
@@ -316,9 +336,13 @@ final class FlowSchedQueuePurgeTest {
                     ThreadLocalRandom random = ThreadLocalRandom.current();
                     for (int i = 0; i < perProducer; i++) {
                         int id = base + i;
+                        // One token per position of a small run, as C2ME's runTaskWithLockArea builds them (one per chunk
+                        // of the lock area, never twice the same): a task holding two equal tokens finds its own listener
+                        // list in tryLock and retries forever, in FlowSched as shipped too.
                         Object tokens = Array.newInstance(tokenClass, 1 + random.nextInt(3));
+                        int first = random.nextInt(16 - Array.getLength(tokens) + 1);
                         for (int t = 0; t < Array.getLength(tokens); t++)
-                            Array.set(tokens, t, newToken.newInstance(0, (long) random.nextInt(16), worldgen));
+                            Array.set(tokens, t, newToken.newInstance(0, (long) (first + t), worldgen));
                         Supplier<CompletableFuture<Object>> action = () -> {
                             runs.incrementAndGet(id);
                             for (int spin = 0; spin < 50; spin++) Thread.onSpinWait();   // hold the locks briefly
@@ -334,7 +358,7 @@ final class FlowSchedQueuePurgeTest {
             }
             AtomicBoolean done = new AtomicBoolean();
             Thread compactor = start(failures, () -> {
-                while (!done.get())
+                while (compact && !done.get())
                     for (int b = 0; b < all.length; b++) FlowSchedQueuePurge.compact(all[b], count, b, priority, permits);
             });
             for (Thread producer : producerThreads) producer.join();
@@ -360,6 +384,7 @@ final class FlowSchedQueuePurgeTest {
                 assertEquals(0, count.get(b), "bucket " + b + " count");
                 assertTrue(all[b].isEmpty(), "bucket " + b + " entries");
             }
+            return droppedSoFar() - droppedBefore;
         } finally {
             executorClass.getMethod("shutdown").invoke(executor);
         }
