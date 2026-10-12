@@ -282,6 +282,34 @@ final class FlowSchedQueuePurgeTest {
     }
 
     /**
+     * A restore whose allocations fail while the thread is interrupted (review B3 F1/F2): it waits (no busy spin, nothing
+     * allocated on the retry path), puts the entry back with its count and permit, and keeps the interrupt status.
+     */
+    @Test @Timeout(value = 30, unit = TimeUnit.SECONDS)
+    void restoreWaitsOutAllocationFailuresAndKeepsTheInterrupt() throws Exception {
+        Sim sim = new Sim();
+        Object task = newTask.newInstance((Runnable) () -> { });
+        sim.enqueue(task, LOWEST);
+        FaultyQueue lowest = sim.faulty(LOWEST);
+        assertTrue(sim.permits.tryAcquire());                  // removed as a compaction would: entry and permit
+        assertTrue(lowest.remove(task));
+        sim.count.decrementAndGet(LOWEST);
+        lowest.target = Thread.currentThread();
+        lowest.failAdd = n -> n <= 3;
+        long before = counter("c2meQueueRestoreRetries");
+        Thread.currentThread().interrupt();
+        try {
+            FlowSchedQueuePurge.restore(lowest, sim.count, LOWEST, task, sim.permits);
+        } finally {
+            lowest.target = null;
+            assertTrue(Thread.interrupted(), "the interrupt status is kept (and cleared here)");
+        }
+        assertEquals(3, counter("c2meQueueRestoreRetries") - before);
+        sim.assertConsistent(List.of(task), priority(), "restored");
+        sim.assertDrainsRunningEachOnce(List.of(task), "restored");
+    }
+
+    /**
      * The concurrent workload of concurrentCompactionNeverLosesOrDuplicatesTasks, with failures injected into the
      * compactor at random steps (reads, permits, removals, restores' allocations): every task still runs exactly once and
      * the accounting holds.

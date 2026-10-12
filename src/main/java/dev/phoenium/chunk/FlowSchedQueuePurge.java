@@ -162,19 +162,31 @@ public final class FlowSchedQueuePurge {
         return counts.get(bucket);
     }
 
-    /** Puts back a removed entry as FlowSched enqueues one (entry, then count, then one permit); retries until it is back. */
+    /**
+     * Puts back a removed entry as FlowSched enqueues one (entry, then count, then one permit); retries until it is back.
+     * Nothing in the retry path allocates (the retry count is a local, published after the entry is back), and the
+     * interrupt status is cleared while waiting so parkNanos really waits, then restored.
+     */
     static <T> void restore(ConcurrentLinkedQueue<T> queue, AtomicIntegerArray counts, int bucket, T task, Semaphore permits) {
+        long retries = 0;
+        boolean interrupted = false;
         for (long backoffNanos = 100_000; ; backoffNanos = Math.min(backoffNanos * 2, 50_000_000)) {
             try {
                 queue.add(task);
                 break;
             } catch (OutOfMemoryError failure) {   // the only way add fails: wait for memory, never drop a live entry
-                RESTORE_RETRIES.increment();
+                retries++;
+                interrupted |= Thread.interrupted();
                 java.util.concurrent.locks.LockSupport.parkNanos(backoffNanos);
             }
         }
-        counts.incrementAndGet(bucket);
-        permits.release();
+        try {
+            counts.incrementAndGet(bucket);
+        } finally {
+            permits.release();
+        }
+        if (interrupted) Thread.currentThread().interrupt();
+        if (retries > 0) RESTORE_RETRIES.add(retries);
     }
 
     /** Reads FlowSched's {@code Task.priority} with the acquire semantics its own poll and re-prioritise use. */
