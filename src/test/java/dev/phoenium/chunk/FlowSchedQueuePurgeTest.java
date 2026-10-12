@@ -83,10 +83,54 @@ final class FlowSchedQueuePurgeTest {
         Files.deleteIfExists(baseJar);
     }
 
+    /** A bucket queue whose remove/add fail on demand, only on the target (compactor) thread: FlowSched's own calls never fail. */
+    static final class FaultyQueue extends ConcurrentLinkedQueue<Object> {
+        volatile Thread target;
+        volatile java.util.function.IntPredicate failRemove = n -> false, failAdd = n -> false;
+        final java.util.concurrent.atomic.AtomicInteger removeCalls = new java.util.concurrent.atomic.AtomicInteger();
+        final java.util.concurrent.atomic.AtomicInteger addCalls = new java.util.concurrent.atomic.AtomicInteger();
+        final java.util.concurrent.atomic.AtomicInteger injected = new java.util.concurrent.atomic.AtomicInteger();
+        volatile Object lastRemoved;
+
+        @Override public boolean remove(Object o) {
+            boolean mine = Thread.currentThread() == target;
+            if (mine && failRemove.test(removeCalls.incrementAndGet())) {
+                injected.incrementAndGet();
+                throw new IllegalStateException("injected remove failure");
+            }
+            boolean removed = super.remove(o);
+            if (removed && mine) lastRemoved = o;
+            return removed;
+        }
+
+        @Override public boolean add(Object o) {
+            if (Thread.currentThread() == target && failAdd.test(addCalls.incrementAndGet())) {
+                injected.incrementAndGet();
+                throw new OutOfMemoryError("injected allocation failure");
+            }
+            return super.add(o);
+        }
+    }
+
+    /** The executor's permits; tryAcquire fails on demand, only on the target (compactor) thread. */
+    static final class FaultySemaphore extends Semaphore {
+        volatile Thread target;
+        volatile java.util.function.IntPredicate failTry = n -> false;
+        final java.util.concurrent.atomic.AtomicInteger tryCalls = new java.util.concurrent.atomic.AtomicInteger();
+
+        FaultySemaphore() { super(0); }
+
+        @Override public boolean tryAcquire() {
+            if (Thread.currentThread() == target && failTry.test(tryCalls.incrementAndGet()))
+                throw new IllegalStateException("injected permit failure");
+            return super.tryAcquire();
+        }
+    }
+
     /** A BucketTaskPriorityQueue with the executor's permit accounting (ExecutorManager.reschedule0 / WorkerThread). */
     private static final class Sim {
         final Object queue;
-        final Semaphore permits = new Semaphore(0);
+        final FaultySemaphore permits = new FaultySemaphore();
         final ConcurrentLinkedQueue<?>[] all;
         final AtomicIntegerArray count;
 
@@ -118,6 +162,196 @@ final class FlowSchedQueuePurgeTest {
             int n = 0;
             for (ConcurrentLinkedQueue<?> q : all) n += q.size();
             return n;
+        }
+
+        /** Replaces bucket {@code bucket} of the real queue with a FaultyQueue holding the same entries in the same order. */
+        FaultyQueue faulty(int bucket) {
+            FaultyQueue replacement = new FaultyQueue();
+            replacement.addAll(all[bucket]);
+            all[bucket] = replacement;
+            return replacement;
+        }
+
+        /**
+         * FlowSched's invariants: every bucket's count equals its entries, permits equal entries, and every task whose
+         * priority is a bucket has an entry there (else it would never run).
+         */
+        void assertConsistent(List<Object> tasks, ToIntFunction<Object> priority, String context) {
+            for (int b = 0; b < BUCKETS; b++) assertEquals(all[b].size(), count.get(b), context + ": bucket " + b + " count");
+            assertEquals(entries(), permits.availablePermits(), context + ": permits equal entries");
+            for (Object task : tasks) {
+                int p = priority.applyAsInt(task);
+                if (p >= 0) assertTrue(all[p].stream().anyMatch(entry -> entry == task), context + ": " + task + " lost its entry in " + p);
+            }
+        }
+
+        /** As the workers would: poll and run everything; every task must run exactly once; ends empty. */
+        void assertDrainsRunningEachOnce(List<Object> tasks, String context) throws Exception {
+            java.util.IdentityHashMap<Object, Integer> runs = new java.util.IdentityHashMap<>();
+            for (Object entry; (entry = poll()) != null;) {
+                if (entry == tombstone) continue;
+                runTask.invoke(entry, (Runnable) () -> { });
+                runs.merge(entry, 1, Integer::sum);
+            }
+            for (Object task : tasks) assertEquals(1, runs.getOrDefault(task, 0), context + ": runs of " + task);
+            assertEquals(tasks.size(), runs.size(), context + ": nothing else ran");
+            assertEquals(0, entries(), context + ": drained");
+            assertEquals(0, permits.availablePermits(), context + ": no permit left");
+            for (int b = 0; b < BUCKETS; b++) assertEquals(0, count.get(b), context + ": bucket " + b + " count");
+        }
+    }
+
+    private static long counter(String name) {
+        var matcher = java.util.regex.Pattern.compile(name + "=(\\d+)").matcher(FlowSchedQueuePurge.counters());
+        assertTrue(matcher.find(), name);
+        return Long.parseLong(matcher.group(1));
+    }
+
+    /** 150 tasks: live ones in the lowest bucket, superseded ones moved to 10, some moved back (two entries there). */
+    private static List<Object> mixedLowestBucket(Sim sim) throws Exception {
+        List<Object> tasks = new ArrayList<>();
+        for (int i = 0; i < 150; i++) {
+            Object task = newTask.newInstance((Runnable) () -> { });
+            sim.enqueue(task, LOWEST);
+            if (i % 3 != 0) sim.enqueue(task, 10);
+            if (i % 5 == 1) sim.enqueue(task, LOWEST);   // back again: a superseded and a live entry of the same task
+            tasks.add(task);
+        }
+        return tasks;
+    }
+
+    /**
+     * A failure at every step of a compaction, at several points of the scan, loses no task, duplicates none, blocks none
+     * and leaves FlowSched's accounting intact: scan/filter (priority read), permit acquisition, the removal itself, the
+     * re-check after a removal, and the restore (allocation failures retried). After each, the queue drains and every task
+     * runs exactly once.
+     */
+    @Test void aFailureAtAnyStepOfACompactionLosesNothing() throws Exception {
+        for (String stage : List.of("filter", "permit", "remove", "recheck", "restore")) {
+            for (int k : new int[] {1, 2, 7, 40, 75}) {   // 80 superseded entries: every stage reaches each k
+                String context = stage + "@" + k;
+                Sim sim = new Sim();
+                List<Object> tasks = mixedLowestBucket(sim);
+                FaultyQueue lowest = sim.faulty(LOWEST);
+                ToIntFunction<Object> real = priority();
+                int[] reads = {0}, rechecks = {0};
+                ToIntFunction<Object> reader = task -> {
+                    boolean recheck = task == lowest.lastRemoved;
+                    if (recheck) lowest.lastRemoved = null;
+                    if (stage.equals("filter") && !recheck && ++reads[0] == k) throw new IllegalStateException("injected read failure");
+                    if (recheck && ++rechecks[0] == k) {
+                        if (stage.equals("recheck")) throw new IllegalStateException("injected re-check failure");
+                        if (stage.equals("restore")) return LOWEST;   // as if the task moved back: forces a restore
+                    }
+                    return real.applyAsInt(task);
+                };
+                lowest.target = Thread.currentThread();
+                sim.permits.target = Thread.currentThread();
+                if (stage.equals("permit")) sim.permits.failTry = n -> n == k;
+                if (stage.equals("remove")) lowest.failRemove = n -> n == k;
+                if (stage.equals("restore")) lowest.failAdd = n -> n <= 2;   // the restore's first two allocations fail
+                long retriesBefore = counter("c2meQueueRestoreRetries"), restoredBefore = counter("c2meQueueRestored");
+                Throwable thrown = null;
+                try {
+                    FlowSchedQueuePurge.compact(lowest, sim.count, LOWEST, reader, sim.permits);
+                } catch (IllegalStateException expected) {
+                    thrown = expected;
+                }
+                lowest.target = null;
+                sim.permits.target = null;
+                int reached = switch (stage) {
+                    case "filter" -> reads[0];
+                    case "permit" -> sim.permits.tryCalls.get();
+                    case "remove" -> lowest.removeCalls.get();
+                    default -> rechecks[0];
+                };
+                assertTrue(reached >= k, context + ": the scan reached step " + k + " (" + reached + ")");
+                if (stage.equals("restore")) {
+                    assertNull(thrown, context + ": a restore waits out allocation failures instead of failing");
+                    assertEquals(2, counter("c2meQueueRestoreRetries") - retriesBefore, context + ": allocation failures retried");
+                    assertTrue(counter("c2meQueueRestored") > restoredBefore, context + ": restored");
+                } else {
+                    assertNotNull(thrown, context + ": the injected failure surfaced");
+                }
+                sim.assertConsistent(tasks, real, context);
+                FlowSchedQueuePurge.compact(lowest, sim.count, LOWEST, real, sim.permits);   // a later compaction completes
+                sim.assertConsistent(tasks, real, context + " then complete");
+                sim.assertDrainsRunningEachOnce(tasks, context);
+            }
+        }
+    }
+
+    /**
+     * The concurrent workload of concurrentCompactionNeverLosesOrDuplicatesTasks, with failures injected into the
+     * compactor at random steps (reads, permits, removals, restores' allocations): every task still runs exactly once and
+     * the accounting holds.
+     */
+    @Test @Timeout(value = 120, unit = TimeUnit.SECONDS)
+    void concurrentCompactionWithInjectedFailuresNeverLosesOrDuplicatesTasks() throws Exception {
+        for (int round = 0; round < 3; round++) {
+            Sim sim = new Sim();
+            FaultyQueue lowest = sim.faulty(LOWEST), ten = sim.faulty(10);
+            int tasksPerProducer = 15_000, producers = 4, workers = 4, total = tasksPerProducer * producers;
+            AtomicIntegerArray runs = new AtomicIntegerArray(total);
+            List<Throwable> failures = new CopyOnWriteArrayList<>();
+            List<Thread> producerThreads = new ArrayList<>(), workerThreads = new ArrayList<>();
+            for (int p = 0; p < producers; p++) {
+                int base = p * tasksPerProducer;
+                producerThreads.add(start(failures, () -> {
+                    ThreadLocalRandom random = ThreadLocalRandom.current();
+                    for (int i = 0; i < tasksPerProducer; i++) {
+                        int id = base + i;
+                        Object task = newTask.newInstance((Runnable) () -> runs.incrementAndGet(id));
+                        sim.enqueue(task, LOWEST);
+                        for (int moves = random.nextInt(4); moves > 0; moves--)
+                            sim.enqueue(task, random.nextInt(4) == 0 ? LOWEST : random.nextInt(3) == 0 ? 10 : random.nextInt(LOWEST));
+                    }
+                }));
+            }
+            AtomicBoolean done = new AtomicBoolean();
+            for (int w = 0; w < workers; w++)
+                workerThreads.add(start(failures, () -> {
+                    while (!done.get()) {
+                        Object task = sim.poll();
+                        if (task != null && task != tombstone) runTask.invoke(task, (Runnable) () -> { });
+                    }
+                }));
+            ToIntFunction<Object> real = priority();
+            java.util.concurrent.atomic.AtomicInteger injected = new java.util.concurrent.atomic.AtomicInteger();
+            Thread compactor = start(failures, () -> {
+                ThreadLocalRandom random = ThreadLocalRandom.current();
+                lowest.target = ten.target = sim.permits.target = Thread.currentThread();
+                lowest.failRemove = ten.failRemove = n -> random.nextInt(50) == 0;
+                lowest.failAdd = ten.failAdd = n -> random.nextInt(3) == 0;
+                sim.permits.failTry = n -> random.nextInt(100) == 0;
+                ToIntFunction<Object> reader = task -> {
+                    if (random.nextInt(200) == 0) { injected.incrementAndGet(); throw new IllegalStateException("injected read failure"); }
+                    return real.applyAsInt(task);
+                };
+                while (!done.get()) {
+                    for (int b = 0; b < BUCKETS; b++) {
+                        try {
+                            FlowSchedQueuePurge.compact((ConcurrentLinkedQueue<Object>) sim.all[b], sim.count, b, reader, sim.permits);
+                        } catch (IllegalStateException expected) {
+                            injected.incrementAndGet();
+                        }
+                    }
+                }
+                lowest.target = ten.target = sim.permits.target = null;
+            });
+            for (Thread producer : producerThreads) producer.join();
+            long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(60);
+            while (sum(runs) < total && System.nanoTime() < deadline) Thread.sleep(5);
+            done.set(true);
+            for (Thread worker : workerThreads) worker.join();
+            compactor.join();
+            assertEquals(List.of(), failures);
+            assertTrue(injected.get() + lowest.injected.get() + ten.injected.get() > 0, "failures were injected");
+            for (int i = 0; i < total; i++) assertEquals(1, runs.get(i), "task " + i + " ran " + runs.get(i) + " times");
+            assertEquals(sim.entries(), sim.permits.availablePermits(), "permits equal entries");
+            for (Object task; (task = sim.poll()) != null;) assertSame(tombstone, task, "a task was still runnable after its run");
+            assertEquals(0, sim.entries());
+            for (int b = 0; b < BUCKETS; b++) assertEquals(0, sim.count.get(b), "bucket " + b + " count");
         }
     }
 
