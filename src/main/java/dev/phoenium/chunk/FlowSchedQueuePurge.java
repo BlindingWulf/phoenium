@@ -86,7 +86,7 @@ public final class FlowSchedQueuePurge {
                 if (count > Math.max(THRESHOLD, 2 * state.kept[bucket]))
                     state.kept[bucket] = compact(state.buckets[bucket], state.counts, bucket, state.priority, permits);
             }
-        } catch (ReflectiveOperationException | RuntimeException failure) {
+        } catch (ReflectiveOperationException | RuntimeException | LinkageError failure) {
             if (UNSUPPORTED.compareAndSet(false, true))
                 org.slf4j.LoggerFactory.getLogger("Phoenium").error("S9-M6b FlowSched queue compaction disabled", failure);
         } finally {
@@ -104,17 +104,28 @@ public final class FlowSchedQueuePurge {
         int budget = counts.get(bucket);
         ArrayList<T> keep = new ArrayList<>();
         int dropped = 0, held = 0;
-        for (int i = 0; i < budget; i++) {
-            T task = queue.poll();
-            if (task == null) break;
-            counts.decrementAndGet(bucket);
-            if (priority.applyAsInt(task) == bucket) keep.add(task);
-            else if (permits.tryAcquire()) dropped++;
-            else { keep.add(task); held++; }
-        }
-        for (T task : keep) {
-            queue.add(task);
-            counts.incrementAndGet(bucket);
+        T current = null;
+        try {
+            for (int i = 0; i < budget; i++) {
+                current = queue.poll();
+                if (current == null) break;
+                counts.decrementAndGet(bucket);
+                if (priority.applyAsInt(current) == bucket) keep.add(current);
+                else if (permits.tryAcquire()) dropped++;
+                else { keep.add(current); held++; }
+                current = null;
+            }
+        } finally {
+            // Whatever happens (a failing priority read, an Error while keep grows), every entry taken out of the
+            // queue and not deliberately dropped with its permit goes back: compaction may stop, never lose a task.
+            if (current != null) {   // taken out, not yet decided (or keep.add failed): back first, nothing to grow
+                queue.add(current);
+                counts.incrementAndGet(bucket);
+            }
+            for (T task : keep) {
+                queue.add(task);
+                counts.incrementAndGet(bucket);
+            }
         }
         COMPACTIONS.increment();
         DROPPED.add(dropped);
