@@ -23,7 +23,9 @@ public final class PhoeniumMixinConfigPlugin implements IMixinConfigPlugin {
         "dev.phoenium.mixin.TrackedEntityRangeFastPathMixin",
         "dev.phoenium.mixin.PublishedDirectHolderSetMixin",
         // S9-M6: stand-alone C2ME worldgen-task release, needed by every mode (MEM-6)
-        "dev.phoenium.mixin.C2meScheduledTaskReleaseMixin");
+        "dev.phoenium.mixin.C2meScheduledTaskReleaseMixin",
+        // S9-M6b: FlowSched superseded queue entries stay bounded, every mode (MEM-6)
+        "dev.phoenium.mixin.FlowSchedStalePurgeMixin");
     private boolean lithium;
     private boolean lithiumChunkAccess;
     private boolean geyserFloodgate;

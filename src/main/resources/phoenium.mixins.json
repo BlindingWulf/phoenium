@@ -43,6 +43,7 @@
     "C2meServerAccessibleMixin",
     "C2meHolderRemovalMixin",
     "C2meScheduledTaskReleaseMixin",
+    "FlowSchedStalePurgeMixin",
     "C2meServerAccessibleChunkSendingMixin",
     "RegionalLevelTicksAccess",
     "RegionalEntityStorageMixin",

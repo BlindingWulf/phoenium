@@ -190,6 +190,7 @@ public final class TileEngine {
             + " parallelFors=" + parallelFors + " " + EngineTrackerSends.counters() + " " + EngineAutosave.counters()
             + " " + EngineMoveSplit.counters()
             + " " + dev.phoenium.chunk.C2meTaskRelease.counters()
+            + " " + dev.phoenium.chunk.FlowSchedQueuePurge.counters()
             + " " + EngineProtections.describe()
             + " " + EngineTimers.counters() + " transforms=" + EngineConfig.transforms();
     }
