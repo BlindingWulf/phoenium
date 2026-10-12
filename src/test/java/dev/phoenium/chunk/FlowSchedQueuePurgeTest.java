@@ -179,6 +179,41 @@ final class FlowSchedQueuePurgeTest {
         for (int b = 0; b < BUCKETS; b++) assertEquals(0, sim.count.get(b), "bucket " + b);
     }
 
+    /**
+     * A compaction that fails midway (here a throwing priority read, standing in for any error, e.g. an OutOfMemoryError
+     * while the kept list grows under exactly the memory pressure MEM-6 creates) loses no entry: everything taken out
+     * and not dropped with its permit goes back, counts match the entries and permits equal entries.
+     */
+    @Test void compactionThatFailsMidwayLosesNoEntry() throws Exception {
+        Sim sim = new Sim();
+        List<Object> live = new ArrayList<>();
+        for (int i = 0; i < 150; i++) {
+            Object task = newTask.newInstance((Runnable) () -> { });
+            sim.enqueue(task, LOWEST);
+            if (i % 3 == 0) live.add(task);
+            else sim.enqueue(task, 10);                          // 50 live entries in the lowest bucket, 100 superseded
+        }
+        int queued = sim.count.get(LOWEST), permitsBefore = sim.permits.availablePermits();
+        ToIntFunction<Object> real = priority();
+        java.util.concurrent.atomic.AtomicInteger reads = new java.util.concurrent.atomic.AtomicInteger();
+        ToIntFunction<Object> failing = task -> {
+            if (reads.incrementAndGet() == 75) throw new IllegalStateException("injected failure");
+            return real.applyAsInt(task);
+        };
+        assertThrows(IllegalStateException.class,
+                () -> FlowSchedQueuePurge.compact(sim.all[LOWEST], sim.count, LOWEST, failing, sim.permits));
+        int dropped = permitsBefore - sim.permits.availablePermits();
+        assertTrue(dropped > 0 && dropped < 100, "dropped some superseded entries before failing: " + dropped);
+        assertEquals(queued - dropped, sim.all[LOWEST].size(), "every entry taken out and not dropped went back");
+        assertEquals(sim.all[LOWEST].size(), sim.count.get(LOWEST), "the count matches the entries");
+        assertEquals(sim.entries(), sim.permits.availablePermits(), "permits equal entries");
+        for (Object task : live)
+            assertTrue(sim.all[LOWEST].stream().anyMatch(entry -> entry == task), "live task " + task + " is still queued");
+        assertEquals(50, sim.compact(LOWEST), "a later compaction finishes the job");
+        assertEquals(50, sim.count.get(LOWEST));
+        assertEquals(sim.entries(), sim.permits.availablePermits());
+    }
+
     /** A superseded entry whose permit a worker already holds stays queued for that worker. */
     @Test void entriesWhosePermitsAreHeldStayForTheirWorkers() throws Exception {
         Sim sim = new Sim();
