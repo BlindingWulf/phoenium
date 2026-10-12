@@ -22,6 +22,15 @@ import static org.junit.jupiter.api.Assertions.*;
  * constructor, replacement, status supplier and entire callback/registration suffix execute.
  * No class replacement, agent, production mixin, or original FULL-future completion occurs. */
 final class FullConstructionFragments {
+    /**
+     * Code fingerprint ({@link ClassFingerprint}) of the audited Minecraft 26.2 ChunkStatusTasks class. The audit pinned
+     * the raw class bytes (SHA-256 ab9a75ec31f57df5502ee65ffe413d8099097417c2ed1c928da3890b523e3b05), which also pin the
+     * line-number table: Fabric Loom rewrites line numbers when a worktree's loom-cache holds a genSources line map, so
+     * the same jar is 4e5c8b1c192e9a77c713163762fff0382beb58580155d7e719d83e903963f72f without one, and every test of
+     * this prototype failed in fresh worktrees (S9 FULLNONSELF-48). Both encodings have this fingerprint, which still
+     * changes with any instruction, member, signature or constant (FullConstructionFragmentsPinTest).
+     */
+    static final String AUDITED_FINGERPRINT = "9d0ba2f53c32a94cc69ef926efdc9392a4b16f766295b67c14faf8a532e114d1";
     private static final Method PREPARE;
     private static final Method FINISH;
     static {
@@ -34,9 +43,9 @@ final class FullConstructionFragments {
                 // Independent accepted reference: STAGE3_FULL_NONSELF_INPUT_DECISION.md,
                 // adopted prototype 542b352; descriptor/call/control-flow checks below
                 // still validate the original mapped class before any fragment executes.
-                assertEquals("ab9a75ec31f57df5502ee65ffe413d8099097417c2ed1c928da3890b523e3b05",
-                    java.util.HexFormat.of().formatHex(java.security.MessageDigest.getInstance("SHA-256").digest(bytes)),
-                    "only the audited Minecraft 26.2 ChunkStatusTasks class may be split");
+                assertEquals(AUDITED_FINGERPRINT, ClassFingerprint.of(bytes),
+                    "only the audited Minecraft 26.2 ChunkStatusTasks code may be split (raw SHA-256 "
+                        + ClassFingerprint.sha256(bytes) + ")");
                 new ClassReader(bytes).accept(node, ClassReader.SKIP_DEBUG | ClassReader.SKIP_FRAMES);
             }
             MethodNode supplier = node.methods.stream().filter(m -> m.name.equals("lambda$full$0")).findFirst().orElseThrow();
