@@ -21,7 +21,9 @@ public final class PhoeniumMixinConfigPlugin implements IMixinConfigPlugin {
     private static final String GEYSER_FLOODGATE_SKIN = "dev.phoenium.mixin.GeyserFloodgateSkinUploaderMixin";
     private static final Set<String> ENGINE_RETAINED = Set.of(
         "dev.phoenium.mixin.TrackedEntityRangeFastPathMixin",
-        "dev.phoenium.mixin.PublishedDirectHolderSetMixin");
+        "dev.phoenium.mixin.PublishedDirectHolderSetMixin",
+        // S9-M6: stand-alone C2ME worldgen-task release, needed by every mode (MEM-6)
+        "dev.phoenium.mixin.C2meScheduledTaskReleaseMixin");
     private boolean lithium;
     private boolean lithiumChunkAccess;
     private boolean geyserFloodgate;

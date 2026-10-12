@@ -189,6 +189,7 @@ public final class TileEngine {
             + " " + EngineTracker.counters() + " " + EngineSpawnMemo.counters() + " spawnCapOvershoot=" + EngineSpawnOverlay.overshoot()
             + " parallelFors=" + parallelFors + " " + EngineTrackerSends.counters() + " " + EngineAutosave.counters()
             + " " + EngineMoveSplit.counters()
+            + " " + dev.phoenium.chunk.C2meTaskRelease.counters()
             + " " + EngineProtections.describe()
             + " " + EngineTimers.counters() + " transforms=" + EngineConfig.transforms();
     }

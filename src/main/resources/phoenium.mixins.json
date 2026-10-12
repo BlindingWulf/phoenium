@@ -42,6 +42,7 @@
     "C2meReadFromDiskAsyncMixin",
     "C2meServerAccessibleMixin",
     "C2meHolderRemovalMixin",
+    "C2meScheduledTaskReleaseMixin",
     "C2meServerAccessibleChunkSendingMixin",
     "RegionalLevelTicksAccess",
     "RegionalEntityStorageMixin",
