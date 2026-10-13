@@ -127,6 +127,7 @@ public final class FlowSchedQueuePurge {
         private final AtomicInteger inFlight = new AtomicInteger();
         final AtomicLong handedOff = new AtomicLong(), retries = new AtomicLong(), restored = new AtomicLong();
         final Thread thread;
+        private final AtomicBoolean starting = new AtomicBoolean();
         private volatile boolean started;
 
         Restorer(int slotCount, String name) {
@@ -156,15 +157,21 @@ public final class FlowSchedQueuePurge {
             inFlight.decrementAndGet();
         }
 
-        /** Starts the thread on the first compaction (before it changes anything, so a failure to start changes nothing). */
-        void start() {
-            if (started) return;
-            synchronized (this) {
-                if (!started) {
-                    thread.start();
-                    started = true;
-                }
+        /**
+         * Starts the thread on the first compaction, before that compaction changes anything, so a failure to start
+         * (e.g. no memory for a native thread) changes nothing and a later compaction tries again. Lock-free: while
+         * another thread is starting it this returns false and the caller is not admitted this time.
+         */
+        boolean start() {
+            if (started) return true;
+            if (!starting.compareAndSet(false, true)) return false;
+            try {
+                thread.start();
+                started = true;
+            } finally {
+                if (!started) starting.set(false);
             }
+            return true;
         }
 
         /** Takes over an entry whose restore could not allocate: the thread puts back entry, count and permit later. */
@@ -299,14 +306,13 @@ public final class FlowSchedQueuePurge {
      */
     static <T> int compact(ConcurrentLinkedQueue<T> queue, AtomicIntegerArray counts, int bucket, ToIntFunction<Object> priority,
                            Semaphore permits, Restorer restorer) {
-        if (!restorer.enter()) {
+        if (!restorer.start() || !restorer.enter()) {   // the restorer runs before any entry can be handed to it
             SKIPPED.incrementAndGet();
             return -1;
         }
         int budget = counts.get(bucket);
         int scanned = 0, dropped = 0, held = 0, restored = 0, handedOff = 0;
         try {
-            restorer.start();
             for (Iterator<T> entries = queue.iterator(); handedOff == 0 && scanned < budget && entries.hasNext(); scanned++) {
                 T task = entries.next();
                 if (!IDENTITY.get(task.getClass()) || priority.applyAsInt(task) == bucket) continue;   // live: stays

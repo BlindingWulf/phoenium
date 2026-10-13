@@ -318,7 +318,7 @@ final class FlowSchedQueuePurgeTest {
         assertTrue(lowest.remove(task));
         sim.count.decrementAndGet(LOWEST);
         FlowSchedQueuePurge.Restorer restorer = FlowSchedQueuePurge.RESTORER;
-        restorer.start();
+        assertTrue(restorer.start(), "the restorer thread runs");
         AtomicBoolean shortOfMemory = new AtomicBoolean(true);
         lowest.target = Thread.currentThread();
         lowest.failRestorer = true;
@@ -582,6 +582,13 @@ final class FlowSchedQueuePurgeTest {
                 sim.permits.failTry = n -> random.nextInt(100) == 0;
                 ToIntFunction<Object> reader = task -> {
                     if (random.nextInt(200) == 0) { injected.incrementAndGet(); throw new IllegalStateException("injected read failure"); }
+                    // The re-check after a removal: one in eight says the task moved back (as in the race), forcing a restore,
+                    // so restores (and, with the injected allocation failures, handoffs) happen in every round.
+                    int forced = task == lowest.lastRemoved ? LOWEST : task == ten.lastRemoved ? 10 : -1;
+                    if (forced >= 0) {
+                        if (forced == LOWEST) lowest.lastRemoved = null; else ten.lastRemoved = null;
+                        if (random.nextInt(8) == 0) return forced;
+                    }
                     return real.applyAsInt(task);
                 };
                 while (!done.get()) {
