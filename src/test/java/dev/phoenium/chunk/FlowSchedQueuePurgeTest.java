@@ -83,9 +83,13 @@ final class FlowSchedQueuePurgeTest {
         Files.deleteIfExists(baseJar);
     }
 
-    /** A bucket queue whose remove/add fail on demand, only on the target (compactor) thread: FlowSched's own calls never fail. */
+    /**
+     * A bucket queue whose remove/add fail on demand, only on the target (compactor) thread and, if {@code failRestorer},
+     * for adds of the restorer thread: FlowSched's own calls never fail.
+     */
     static final class FaultyQueue extends ConcurrentLinkedQueue<Object> {
         volatile Thread target;
+        volatile boolean failRestorer;
         volatile java.util.function.IntPredicate failRemove = n -> false, failAdd = n -> false;
         final java.util.concurrent.atomic.AtomicInteger removeCalls = new java.util.concurrent.atomic.AtomicInteger();
         final java.util.concurrent.atomic.AtomicInteger addCalls = new java.util.concurrent.atomic.AtomicInteger();
@@ -104,7 +108,9 @@ final class FlowSchedQueuePurgeTest {
         }
 
         @Override public boolean add(Object o) {
-            if (Thread.currentThread() == target && failAdd.test(addCalls.incrementAndGet())) {
+            Thread current = Thread.currentThread();
+            boolean mine = current == target || failRestorer && current == FlowSchedQueuePurge.RESTORER.thread;
+            if (mine && failAdd.test(addCalls.incrementAndGet())) {
                 injected.incrementAndGet();
                 throw new OutOfMemoryError("injected allocation failure");
             }
@@ -207,6 +213,13 @@ final class FlowSchedQueuePurgeTest {
         return Long.parseLong(matcher.group(1));
     }
 
+    /** Waits until the restorer has put back every handed-off entry (they wait for memory, not for a later compaction). */
+    private static void awaitRestores(String context) throws InterruptedException {
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
+        while (FlowSchedQueuePurge.RESTORER.pending() > 0 && System.nanoTime() < deadline) Thread.sleep(1);
+        assertEquals(0, FlowSchedQueuePurge.RESTORER.pending(), context + ": every handed-off entry is back");
+    }
+
     /** 150 tasks: live ones in the lowest bucket, superseded ones moved to 10, some moved back (two entries there). */
     private static List<Object> mixedLowestBucket(Sim sim) throws Exception {
         List<Object> tasks = new ArrayList<>();
@@ -223,8 +236,8 @@ final class FlowSchedQueuePurgeTest {
     /**
      * A failure at every step of a compaction, at several points of the scan, loses no task, duplicates none, blocks none
      * and leaves FlowSched's accounting intact: scan/filter (priority read), permit acquisition, the removal itself, the
-     * re-check after a removal, and the restore (allocation failures retried). After each, the queue drains and every task
-     * runs exactly once.
+     * re-check after a removal, and the restore (its allocation fails: the entry goes to the restorer, whose first attempts
+     * fail too, and the compaction stops). After each, the queue drains and every task runs exactly once.
      */
     @Test void aFailureAtAnyStepOfACompactionLosesNothing() throws Exception {
         for (String stage : List.of("filter", "permit", "remove", "recheck", "restore")) {
@@ -249,8 +262,12 @@ final class FlowSchedQueuePurgeTest {
                 sim.permits.target = Thread.currentThread();
                 if (stage.equals("permit")) sim.permits.failTry = n -> n == k;
                 if (stage.equals("remove")) lowest.failRemove = n -> n == k;
-                if (stage.equals("restore")) lowest.failAdd = n -> n <= 2;   // the restore's first two allocations fail
-                long retriesBefore = counter("c2meQueueRestoreRetries"), restoredBefore = counter("c2meQueueRestored");
+                if (stage.equals("restore")) {   // the restore's allocation fails, then the restorer's first two
+                    lowest.failRestorer = true;
+                    lowest.failAdd = n -> n <= 3;
+                }
+                long retriesBefore = counter("c2meQueueRestoreRetries"), handedOffBefore = counter("c2meQueueRestoreHandedOff");
+                long lateBefore = counter("c2meQueueRestoredLate");
                 Throwable thrown = null;
                 try {
                     FlowSchedQueuePurge.compact(lowest, sim.count, LOWEST, reader, sim.permits);
@@ -267,9 +284,13 @@ final class FlowSchedQueuePurgeTest {
                 };
                 assertTrue(reached >= k, context + ": the scan reached step " + k + " (" + reached + ")");
                 if (stage.equals("restore")) {
-                    assertNull(thrown, context + ": a restore waits out allocation failures instead of failing");
-                    assertEquals(2, counter("c2meQueueRestoreRetries") - retriesBefore, context + ": allocation failures retried");
-                    assertTrue(counter("c2meQueueRestored") > restoredBefore, context + ": restored");
+                    assertNull(thrown, context + ": a restore that cannot allocate does not fail the compaction");
+                    assertEquals(k, reached, context + ": the compaction stopped at the handoff");
+                    awaitRestores(context);
+                    assertEquals(1, counter("c2meQueueRestoreHandedOff") - handedOffBefore, context + ": handed off once");
+                    assertEquals(2, counter("c2meQueueRestoreRetries") - retriesBefore, context + ": the restorer retried");
+                    assertEquals(1, counter("c2meQueueRestoredLate") - lateBefore, context + ": the restorer put it back");
+                    lowest.failRestorer = false;
                 } else {
                     assertNotNull(thrown, context + ": the injected failure surfaced");
                 }
@@ -282,11 +303,13 @@ final class FlowSchedQueuePurgeTest {
     }
 
     /**
-     * A restore whose allocations fail while the thread is interrupted (review B3 F1/F2): it waits (no busy spin, nothing
-     * allocated on the retry path), puts the entry back with its count and permit, and keeps the interrupt status.
+     * A restore whose allocation fails on an interrupted compacting thread returns at once (it never waits for memory) and
+     * keeps the interrupt. The restorer, itself interrupted while memory stays short, waits between attempts (no busy
+     * spin) and never gives up; meanwhile the entry and its permit stay out together. Once memory is back, entry, count and
+     * permit return and the task runs once.
      */
     @Test @Timeout(value = 30, unit = TimeUnit.SECONDS)
-    void restoreWaitsOutAllocationFailuresAndKeepsTheInterrupt() throws Exception {
+    void aRestoreThatCannotAllocateReturnsAtOnceAndTheRestorerPutsItBack() throws Exception {
         Sim sim = new Sim();
         Object task = newTask.newInstance((Runnable) () -> { });
         sim.enqueue(task, LOWEST);
@@ -294,19 +317,223 @@ final class FlowSchedQueuePurgeTest {
         assertTrue(sim.permits.tryAcquire());                  // removed as a compaction would: entry and permit
         assertTrue(lowest.remove(task));
         sim.count.decrementAndGet(LOWEST);
+        FlowSchedQueuePurge.Restorer restorer = FlowSchedQueuePurge.RESTORER;
+        restorer.start();
+        AtomicBoolean shortOfMemory = new AtomicBoolean(true);
         lowest.target = Thread.currentThread();
-        lowest.failAdd = n -> n <= 3;
-        long before = counter("c2meQueueRestoreRetries");
-        Thread.currentThread().interrupt();
+        lowest.failRestorer = true;
+        lowest.failAdd = n -> shortOfMemory.get();
+        long handedOff = restorer.handedOff.get(), retries = restorer.retries.get();
         try {
-            FlowSchedQueuePurge.restore(lowest, sim.count, LOWEST, task, sim.permits);
+            Thread.currentThread().interrupt();
+            long start = System.nanoTime();
+            boolean back;
+            try {
+                back = FlowSchedQueuePurge.restore(lowest, sim.count, LOWEST, task, sim.permits, restorer);
+            } finally {
+                lowest.target = null;
+                assertTrue(Thread.interrupted(), "the interrupt status is kept (and cleared here)");
+            }
+            assertFalse(back, "not back yet: memory is short");
+            assertTrue(System.nanoTime() - start < TimeUnit.MILLISECONDS.toNanos(500), "returned without waiting for memory");
+            assertEquals(1, restorer.handedOff.get() - handedOff);
+            restorer.thread.interrupt();                       // must neither stop the restorer nor make it spin
+            while (restorer.retries.get() - retries < 10) Thread.sleep(5);
+            long settled = restorer.retries.get();
+            Thread.sleep(300);
+            assertTrue(restorer.retries.get() - settled < 40, "the restorer backs off (" + (restorer.retries.get() - settled)
+                    + " attempts in 300 ms)");
+            assertTrue(restorer.thread.isAlive());
+            assertEquals(1, restorer.pending());
+            assertEquals(0, lowest.size(), "the entry is out while memory is short");
+            assertEquals(0, sim.count.get(LOWEST));
+            assertEquals(0, sim.permits.availablePermits(), "its permit stays retired with it: no worker spins for it");
         } finally {
-            lowest.target = null;
-            assertTrue(Thread.interrupted(), "the interrupt status is kept (and cleared here)");
+            shortOfMemory.set(false);
+            lowest.failRestorer = false;
         }
-        assertEquals(3, counter("c2meQueueRestoreRetries") - before);
+        awaitRestores("memory back");
         sim.assertConsistent(List.of(task), priority(), "restored");
         sim.assertDrainsRunningEachOnce(List.of(task), "restored");
+    }
+
+    /**
+     * Sustained memory pressure (owner 2026-10-12): every allocation of the compactor and of the restorer fails for over a
+     * second, starting inside the move-back race, played deterministically so that the removal takes the task's only live
+     * entry (its old entry was polled as a TOMBSTONE while it was in bucket 10, then it moved back). The compacting thread
+     * is interrupted and holds a monitor that every task run also takes (as C2ME's SchedulingManager holds a position's
+     * task list around changePriority while finishing tasks take it): the compaction returns at once, keeps the interrupt
+     * and the order and identity of the entries it kept, and no further compaction is admitted while the entry is out.
+     * Under the same pressure workers run every other task, including tasks re-prioritised concurrently under the monitor,
+     * without waiting long for it; the task waits (it is neither lost nor run twice), or, moved to another bucket meanwhile,
+     * runs from there. Once memory is back its entry returns behind the entries enqueued meanwhile, and everything runs
+     * exactly once with counts and permits matching the entries throughout.
+     */
+    @Test @Timeout(value = 90, unit = TimeUnit.SECONDS)
+    void sustainedMemoryPressureLosesNoTaskAndBlocksNoProgress() throws Exception {
+        for (boolean movedAway : new boolean[] {false, true}) {
+            String context = movedAway ? "moved away under pressure" : "waits for memory";
+            Sim sim = new Sim();
+            FaultyQueue lowest = sim.faulty(LOWEST);
+            int keptTasks = 100, others = 200, moving = 100, late = 10;
+            int total = 1 + keptTasks + others + moving + late;
+            AtomicIntegerArray runs = new AtomicIntegerArray(total);
+            List<Object> tasks = new ArrayList<>();
+            for (int id = 0; id < total; id++) {
+                int which = id;
+                tasks.add(newTask.newInstance((Runnable) () -> runs.incrementAndGet(which)));
+            }
+            Object task = tasks.get(0);
+            List<Object> kept = tasks.subList(1, 1 + keptTasks);
+            sim.enqueue(task, LOWEST);                         // its first entry, at the head of the lowest bucket
+            sim.enqueue(task, 10);                             // moved: that entry is superseded
+            for (Object live : kept) sim.enqueue(live, LOWEST);
+            for (Object other : tasks.subList(1 + keptTasks, 1 + keptTasks + others)) sim.enqueue(other, 10);
+
+            AtomicBoolean shortOfMemory = new AtomicBoolean(), raced = new AtomicBoolean();
+            lowest.failRestorer = true;
+            lowest.failAdd = n -> shortOfMemory.get();
+            ToIntFunction<Object> real = priority();
+            ToIntFunction<Object> reader = entry -> {
+                int value = real.applyAsInt(entry);
+                if (entry == task && raced.compareAndSet(false, true)) {
+                    // Between this read and the removal: a worker polls the old entry (TOMBSTONE: the task is in 10) ...
+                    assertSame(task, lowest.poll());
+                    sim.count.decrementAndGet(LOWEST);
+                    assertTrue(sim.permits.tryAcquire());
+                    try {
+                        sim.enqueue(task, LOWEST);             // ... and the task moves back: its only live entry, at the tail
+                    } catch (Exception impossible) {
+                        throw new AssertionError(impossible);
+                    }
+                    shortOfMemory.set(true);                   // from here on the compactor and the restorer cannot allocate
+                }
+                return value;
+            };
+            Object monitor = new Object();
+            List<Throwable> failures = new CopyOnWriteArrayList<>();
+            java.util.concurrent.atomic.AtomicLong compactNanos = new java.util.concurrent.atomic.AtomicLong(-1);
+            AtomicBoolean interruptKept = new AtomicBoolean();
+            long handedOff = FlowSchedQueuePurge.RESTORER.handedOff.get(), retries = FlowSchedQueuePurge.RESTORER.retries.get();
+            List<Thread> threads = new ArrayList<>();
+            AtomicBoolean done = new AtomicBoolean();
+            try {
+                Thread compactor = start(failures, () -> {
+                    lowest.target = Thread.currentThread();
+                    Thread.currentThread().interrupt();
+                    long begin = System.nanoTime();
+                    synchronized (monitor) {
+                        assertEquals(keptTasks, FlowSchedQueuePurge.compact(lowest, sim.count, LOWEST, reader, sim.permits));
+                    }
+                    compactNanos.set(System.nanoTime() - begin);
+                    interruptKept.set(Thread.interrupted());
+                });
+                compactor.join(TimeUnit.SECONDS.toMillis(5));
+                assertFalse(compactor.isAlive(), context + ": the compaction returned although memory stayed short");
+                assertEquals(List.of(), failures);
+                long pressureStart = System.nanoTime();
+                assertTrue(raced.get() && shortOfMemory.get(), context + ": the race was played");
+                assertTrue(interruptKept.get(), context + ": the compacting thread keeps its interrupt");
+                assertTrue(compactNanos.get() < TimeUnit.MILLISECONDS.toNanos(500), context + ": took " + compactNanos.get() + " ns");
+                assertEquals(1, FlowSchedQueuePurge.RESTORER.handedOff.get() - handedOff, context + ": handed off");
+                assertEquals(1, FlowSchedQueuePurge.RESTORER.pending(), context);
+                assertEquals(kept, new ArrayList<>(lowest), context + ": kept entries keep their order and identity");
+                assertFalse(lowest.stream().anyMatch(entry -> entry == task), context + ": its entry is out");
+                assertEquals(LOWEST, real.applyAsInt(task), context + ": the task still belongs to the lowest bucket");
+                assertAccounting(sim, context + ": entry out");
+                assertEquals(-1, FlowSchedQueuePurge.compact(lowest, sim.count, LOWEST, real, sim.permits),
+                        context + ": no compaction is admitted while the entry is out");
+                assertEquals(keptTasks, lowest.size());
+
+                // Under the same pressure: workers (taking the monitor for every task, as C2ME's postExec does) and a
+                // re-prioritiser (moving tasks under the monitor, whose compaction attempts are not admitted).
+                java.util.concurrent.atomic.AtomicLong maxMonitorWait = new java.util.concurrent.atomic.AtomicLong();
+                java.util.concurrent.atomic.AtomicInteger admitted = new java.util.concurrent.atomic.AtomicInteger();
+                for (int w = 0; w < 2; w++)
+                    threads.add(start(failures, () -> {
+                        while (!done.get()) {
+                            Object entry = sim.poll();
+                            if (entry == null) {
+                                java.util.concurrent.locks.LockSupport.parkNanos(100_000);
+                                continue;
+                            }
+                            if (entry == tombstone) continue;
+                            long waitStart = System.nanoTime();
+                            synchronized (monitor) {
+                                maxMonitorWait.accumulateAndGet(System.nanoTime() - waitStart, Math::max);
+                            }
+                            runTask.invoke(entry, (Runnable) () -> { });
+                        }
+                    }));
+                List<Object> movingTasks = tasks.subList(1 + keptTasks + others, 1 + keptTasks + others + moving);
+                threads.add(start(failures, () -> {
+                    ThreadLocalRandom random = ThreadLocalRandom.current();
+                    for (Object mover : movingTasks) {
+                        synchronized (monitor) {
+                            sim.enqueue(mover, LOWEST);
+                            if (FlowSchedQueuePurge.compact(lowest, sim.count, LOWEST, real, sim.permits) >= 0) admitted.incrementAndGet();
+                        }
+                        for (int moves = 1 + random.nextInt(3); moves > 0; moves--)
+                            synchronized (monitor) {
+                                sim.enqueue(mover, random.nextInt(4) == 0 ? LOWEST : random.nextInt(LOWEST));
+                            }
+                    }
+                }));
+                if (movedAway) sim.enqueue(task, 5);           // the task itself can still move, and run from there
+                long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(30);
+                int expected = total - late - (movedAway ? 0 : 1);
+                while ((sum(runs) < expected || sim.entries() > 0 || System.nanoTime() - pressureStart < TimeUnit.SECONDS.toNanos(1)
+                        || FlowSchedQueuePurge.RESTORER.retries.get() - retries < 20) && System.nanoTime() < deadline)
+                    Thread.sleep(5);
+                assertEquals(expected, sum(runs), context + ": every other task ran while memory stayed short");
+                assertTrue(FlowSchedQueuePurge.RESTORER.retries.get() - retries >= 20
+                        && System.nanoTime() - pressureStart >= TimeUnit.SECONDS.toNanos(1), context + ": the pressure was sustained");
+                assertEquals(movedAway ? 1 : 0, runs.get(0), context + ": the task ran from its new bucket, or waits");
+                assertEquals(0, sim.entries(), context + ": the workers drained everything else");
+                assertEquals(0, admitted.get(), context + ": no compaction was admitted under pressure");
+                assertTrue(maxMonitorWait.get() < TimeUnit.MILLISECONDS.toNanos(250),
+                        context + ": longest wait for the monitor " + maxMonitorWait.get() + " ns");
+                assertTrue(shortOfMemory.get() && FlowSchedQueuePurge.RESTORER.pending() == 1, context + ": still short of memory");
+                done.set(true);
+                for (Thread thread : threads) thread.join();
+                assertEquals(List.of(), failures);
+                assertAccounting(sim, context + ": after the workers stopped");
+
+                List<Object> lateTasks = tasks.subList(total - late, total);
+                for (Object lateTask : lateTasks) sim.enqueue(lateTask, LOWEST);   // enqueued while the entry is out
+                long released = System.nanoTime();
+                shortOfMemory.set(false);
+                awaitRestores(context);
+                assertTrue(System.nanoTime() - released < TimeUnit.SECONDS.toNanos(1), context + ": back promptly");
+                List<Object> expectedOrder = new ArrayList<>(lateTasks);
+                expectedOrder.add(task);
+                assertEquals(expectedOrder, new ArrayList<>(lowest), context + ": the entry is back, at the tail, as itself");
+                assertAccounting(sim, context + ": entry back");
+                List<Object> order = new ArrayList<>();
+                for (Object entry; (entry = sim.poll()) != null;) {
+                    if (entry == tombstone) continue;
+                    runTask.invoke(entry, (Runnable) () -> { });
+                    order.add(entry);
+                }
+                assertEquals(movedAway ? lateTasks : expectedOrder, order, context + ": run in queue order");
+                for (int id = 0; id < total; id++) assertEquals(1, runs.get(id), context + ": runs of task " + id);
+                assertEquals(0, sim.entries());
+                assertEquals(0, sim.permits.availablePermits(), context + ": no permit left");
+                for (int b = 0; b < BUCKETS; b++) assertEquals(0, sim.count.get(b), context + ": bucket " + b);
+            } finally {
+                done.set(true);
+                shortOfMemory.set(false);
+                lowest.failRestorer = false;
+                lowest.target = null;
+                for (Thread thread : threads) thread.join();
+            }
+        }
+    }
+
+    /** Counts equal each bucket's entries and permits equal all entries (FlowSched's accounting). */
+    private static void assertAccounting(Sim sim, String context) {
+        for (int b = 0; b < BUCKETS; b++) assertEquals(sim.all[b].size(), sim.count.get(b), context + ": bucket " + b + " count");
+        assertEquals(sim.entries(), sim.permits.availablePermits(), context + ": permits equal entries");
     }
 
     /**
@@ -349,8 +576,9 @@ final class FlowSchedQueuePurgeTest {
             Thread compactor = start(failures, () -> {
                 ThreadLocalRandom random = ThreadLocalRandom.current();
                 lowest.target = ten.target = sim.permits.target = Thread.currentThread();
+                lowest.failRestorer = ten.failRestorer = true;   // the restorer's attempts fail as often
                 lowest.failRemove = ten.failRemove = n -> random.nextInt(50) == 0;
-                lowest.failAdd = ten.failAdd = n -> random.nextInt(3) == 0;
+                lowest.failAdd = ten.failAdd = n -> ThreadLocalRandom.current().nextInt(3) == 0;
                 sim.permits.failTry = n -> random.nextInt(100) == 0;
                 ToIntFunction<Object> reader = task -> {
                     if (random.nextInt(200) == 0) { injected.incrementAndGet(); throw new IllegalStateException("injected read failure"); }
@@ -367,6 +595,7 @@ final class FlowSchedQueuePurgeTest {
                 }
                 lowest.target = ten.target = sim.permits.target = null;
             });
+            long handedOff = counter("c2meQueueRestoreHandedOff");
             for (Thread producer : producerThreads) producer.join();
             long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(60);
             while (sum(runs) < total && System.nanoTime() < deadline) Thread.sleep(5);
@@ -374,7 +603,10 @@ final class FlowSchedQueuePurgeTest {
             for (Thread worker : workerThreads) worker.join();
             compactor.join();
             assertEquals(List.of(), failures);
+            awaitRestores("round " + round);
+            lowest.failRestorer = ten.failRestorer = false;
             assertTrue(injected.get() + lowest.injected.get() + ten.injected.get() > 0, "failures were injected");
+            assertTrue(counter("c2meQueueRestoreHandedOff") > handedOff, "restores were handed off");
             for (int i = 0; i < total; i++) assertEquals(1, runs.get(i), "task " + i + " ran " + runs.get(i) + " times");
             assertEquals(sim.entries(), sim.permits.availablePermits(), "permits equal entries");
             for (Object task; (task = sim.poll()) != null;) assertSame(tombstone, task, "a task was still runnable after its run");
@@ -580,14 +812,26 @@ final class FlowSchedQueuePurgeTest {
      */
     @RepeatedTest(25) @Timeout(value = 180, unit = TimeUnit.SECONDS)
     void realExecutorWithLockWaitsRunsEveryTaskOnceAndWorkersParkAfterwards() throws Exception {
-        long dropped = realExecutor(true);
+        long dropped = realExecutor(true, false);
         assertTrue(dropped > 0, "the compactor dropped superseded entries (" + dropped + ")");
     }
 
     /** The same workload without the compactor: the control arm for the test itself (FlowSched as shipped). */
     @Test @Timeout(value = 180, unit = TimeUnit.SECONDS)
     void realExecutorControlWithoutCompaction() throws Exception {
-        assertEquals(0, realExecutor(false));
+        assertEquals(0, realExecutor(false, false));
+    }
+
+    /**
+     * The real-executor workload under sustained memory pressure: a third of the compactor's removals in the lowest bucket
+     * must be restored (forced re-check, as if the task had moved back) and every allocation of the compactor and of the
+     * restorer fails from the start until 1.5 s after the producers finish. The compactor works under a monitor that every
+     * task also takes when it runs (C2ME's position task list): no task waits long for it, and once memory is back every
+     * task runs once and completes, the queue ends empty, no permit is left and every worker parks.
+     */
+    @RepeatedTest(5) @Timeout(value = 180, unit = TimeUnit.SECONDS)
+    void realExecutorUnderSustainedMemoryPressure() throws Exception {
+        realExecutor(true, true);
     }
 
     private static long droppedSoFar() {
@@ -596,9 +840,13 @@ final class FlowSchedQueuePurgeTest {
         return Long.parseLong(matcher.group(1));
     }
 
-    /** Runs the real-executor workload, with or without a concurrent compactor; returns the entries it dropped. */
-    private long realExecutor(boolean compact) throws Exception {
+    /**
+     * Runs the real-executor workload, with or without a concurrent compactor, optionally under sustained memory pressure
+     * (see realExecutorUnderSustainedMemoryPressure); returns the entries it dropped.
+     */
+    private long realExecutor(boolean compact, boolean pressure) throws Exception {
         long droppedBefore = droppedSoFar();
+        long handedOffBefore = FlowSchedQueuePurge.RESTORER.handedOff.get(), retriesBefore = FlowSchedQueuePurge.RESTORER.retries.get();
         Class<?> executorClass = loader.loadClass("com.ishland.flowsched.executor.ExecutorManager");
         Class<?> taskClass = loader.loadClass("com.ishland.flowsched.executor.Task");
         Class<?> tokenClass = loader.loadClass("com.ishland.flowsched.executor.LockToken");
@@ -621,7 +869,21 @@ final class FlowSchedQueuePurgeTest {
             Semaphore permits = (Semaphore) executorClass.getField("waitObj").get(executor);
             ConcurrentLinkedQueue<?>[] all = (ConcurrentLinkedQueue<?>[]) buckets.get(queue);
             AtomicIntegerArray count = counts(queue);
-            ToIntFunction<Object> priority = priority();
+            ToIntFunction<Object> real = priority();
+            FaultyQueue lowest = new FaultyQueue();            // the lowest bucket, failing the compactor's and restorer's adds
+            AtomicBoolean shortOfMemory = new AtomicBoolean(pressure);
+            if (pressure) {
+                all[LOWEST] = lowest;                          // the executor is new: the bucket is still empty
+                lowest.failRestorer = true;
+                lowest.failAdd = n -> shortOfMemory.get();
+            }
+            ToIntFunction<Object> priority = !pressure ? real : task -> {
+                if (task != lowest.lastRemoved) return real.applyAsInt(task);
+                lowest.lastRemoved = null;
+                return ThreadLocalRandom.current().nextInt(3) == 0 ? LOWEST : real.applyAsInt(task);
+            };
+            Object monitor = new Object();
+            java.util.concurrent.atomic.AtomicLong maxMonitorWait = new java.util.concurrent.atomic.AtomicLong();
             int producers = 3, perProducer = 15_000, total = producers * perProducer;
             AtomicIntegerArray runs = new AtomicIntegerArray(total);
             List<Object> futures = Collections.synchronizedList(new ArrayList<>());
@@ -641,6 +903,10 @@ final class FlowSchedQueuePurgeTest {
                         for (int t = 0; t < Array.getLength(tokens); t++)
                             Array.set(tokens, t, newToken.newInstance(0, (long) (first + t), worldgen));
                         Supplier<CompletableFuture<Object>> action = () -> {
+                            long waitStart = System.nanoTime();
+                            synchronized (monitor) {                 // as a finishing C2ME task takes its position's list
+                                maxMonitorWait.accumulateAndGet(System.nanoTime() - waitStart, Math::max);
+                            }
                             runs.incrementAndGet(id);
                             for (int spin = 0; spin < 50; spin++) Thread.onSpinWait();   // hold the locks briefly
                             return CompletableFuture.completedFuture(null);
@@ -655,15 +921,36 @@ final class FlowSchedQueuePurgeTest {
             }
             AtomicBoolean done = new AtomicBoolean();
             Thread compactor = start(failures, () -> {
+                lowest.target = Thread.currentThread();
                 while (compact && !done.get())
-                    for (int b = 0; b < all.length; b++) FlowSchedQueuePurge.compact(all[b], count, b, priority, permits);
+                    for (int b = 0; b < all.length; b++) {
+                        int left;
+                        synchronized (monitor) {                     // as SchedulingManager around changePriority
+                            left = FlowSchedQueuePurge.compact(all[b], count, b, priority, permits);
+                        }
+                        if (left < 0) java.util.concurrent.locks.LockSupport.parkNanos(50_000);   // not admitted: let others in
+                    }
             });
-            for (Thread producer : producerThreads) producer.join();
-            long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(120);
-            while (sum(runs) < total && System.nanoTime() < deadline) Thread.sleep(5);
-            done.set(true);
-            compactor.join();
+            try {
+                for (Thread producer : producerThreads) producer.join();
+                if (pressure) {
+                    Thread.sleep(1500);
+                    assertTrue(FlowSchedQueuePurge.RESTORER.handedOff.get() > handedOffBefore, "a restore was handed off under pressure");
+                    assertTrue(FlowSchedQueuePurge.RESTORER.retries.get() > retriesBefore, "the restorer met the pressure");
+                    shortOfMemory.set(false);
+                }
+                long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(120);
+                while (sum(runs) < total && System.nanoTime() < deadline) Thread.sleep(5);
+            } finally {
+                shortOfMemory.set(false);
+                done.set(true);
+                compactor.join();
+            }
+            awaitRestores("real executor");
+            lowest.failRestorer = false;
             assertEquals(List.of(), failures);
+            if (pressure)
+                assertTrue(maxMonitorWait.get() < TimeUnit.MILLISECONDS.toNanos(500), "longest wait for the monitor " + maxMonitorWait.get() + " ns");
             for (int i = 0; i < total; i++) assertEquals(1, runs.get(i), "task " + i + " ran " + runs.get(i) + " times");
             for (Object f : futures) {
                 CompletableFuture<?> completable = (CompletableFuture<?>) f;

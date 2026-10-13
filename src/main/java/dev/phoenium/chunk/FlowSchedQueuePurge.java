@@ -9,7 +9,8 @@ import java.util.concurrent.Semaphore;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicIntegerArray;
-import java.util.concurrent.atomic.LongAdder;
+import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.locks.LockSupport;
 import java.util.function.ToIntFunction;
 
 /**
@@ -38,14 +39,16 @@ import java.util.function.ToIntFunction;
  *
  * <p>Exception safety, step by step: nothing changes before the removal (scan, priority read, permit tryAcquire); a
  * removal that does not happen (lost race or failure) gives its permit back in a finally; after a removal the count is
- * decremented (cannot fail) and the re-check decides between dropped and restored, defaulting to restore if it fails; a
- * restore retries an allocation failure until the entry is back. So a failure at any step stops the compaction and loses
- * no task, duplicates none (FlowSched's CAS still runs a task once), and keeps permits equal to entries and counts equal to
- * the bucket's entries. Retiring a permit per removed entry keeps idle workers parked on the semaphore instead of
- * spinning; when no permit is free a worker already holds it and the entry stays for that worker. Kept entries keep their
- * order. Removal relies on identity equality (FlowSched/C2ME tasks do not override equals; checked per class).
- * There is no task-level cancellation in FlowSched (C2ME cancels at the status level and the task still runs once).
- * {@code -Dphoenium.c2me.purgeStaleQueueEntries=false} disables it.
+ * decremented (cannot fail) and the re-check decides between dropped and restored, defaulting to restore if it fails. A
+ * restore that cannot allocate its entry hands it to the {@link Restorer} thread, which puts it back as soon as memory
+ * allows, and the compaction stops. So a failure at any step stops the compaction and loses no task, duplicates none
+ * (FlowSched's CAS still runs a task once), and keeps permits equal to entries and counts equal to the bucket's entries.
+ * The compacting thread never waits for memory: it may be inside C2ME code holding a monitor the workers need. Retiring a
+ * permit per removed entry keeps idle workers parked on the semaphore instead of spinning; when no permit is free a worker
+ * already holds it and the entry stays for that worker. Kept entries keep their order; a restored entry goes to the tail,
+ * as FlowSched's own re-enqueue puts it. Removal relies on identity equality (FlowSched/C2ME tasks do not override equals;
+ * checked per class). There is no task-level cancellation in FlowSched (C2ME cancels at the status level and the task
+ * still runs once). {@code -Dphoenium.c2me.purgeStaleQueueEntries=false} disables it.
  */
 public final class FlowSchedQueuePurge {
     private FlowSchedQueuePurge() { }
@@ -57,12 +60,14 @@ public final class FlowSchedQueuePurge {
     static final int CHECK_EVERY = 1024;
     private static final String TASK = "com.ishland.flowsched.executor.Task";
 
-    private static final LongAdder COMPACTIONS = new LongAdder();
-    private static final LongAdder DROPPED = new LongAdder();
-    private static final LongAdder KEPT = new LongAdder();
-    private static final LongAdder HELD = new LongAdder();
-    private static final LongAdder RESTORED = new LongAdder();
-    private static final LongAdder RESTORE_RETRIES = new LongAdder();
+    // AtomicLong, not LongAdder: updating them never allocates, so no counter can fail under memory pressure.
+    private static final AtomicLong COMPACTIONS = new AtomicLong();
+    private static final AtomicLong DROPPED = new AtomicLong();
+    private static final AtomicLong KEPT = new AtomicLong();
+    private static final AtomicLong HELD = new AtomicLong();
+    private static final AtomicLong RESTORED = new AtomicLong();
+    private static final AtomicLong SKIPPED = new AtomicLong();
+    private static final AtomicLong ALLOCATION_FAILURES = new AtomicLong();
     private static final AtomicInteger LARGEST_BUCKET = new AtomicInteger();
     /** Whether entries of a task class can be removed by identity ({@code ConcurrentLinkedQueue.remove} uses equals). */
     private static final ClassValue<Boolean> IDENTITY = new ClassValue<>() {
@@ -75,6 +80,7 @@ public final class FlowSchedQueuePurge {
         }
     };
     private static final AtomicBoolean UNSUPPORTED = new AtomicBoolean();
+    static final Restorer RESTORER = new Restorer(64, "Phoenium FlowSched restorer");
 
     /** One per executor: enqueue counter, single compactor, the queue's structures and what each bucket kept last time. */
     public static final class State {
@@ -95,6 +101,164 @@ public final class FlowSchedQueuePurge {
         }
     }
 
+    /**
+     * Puts back, as soon as memory allows, entries whose restore could not allocate. The compacting thread must not wait
+     * for memory itself: C2ME's SchedulingManager.updatePriorityInternal calls changePriority (and so this hook) while
+     * holding a position's task-list monitor, which a worker takes when a task of that position finishes, so waiting there
+     * would stall workers for as long as memory stays short. A handoff allocates nothing (a slot CAS, stores into
+     * preallocated arrays, an unpark). Until its entry is back the task waits, like a task whose own enqueue waits for
+     * memory; it can still be moved to, and run from, another bucket meanwhile (the restored entry is then a tombstone).
+     *
+     * <p>A slot is always free: compactions are admitted only while no restore is pending and fewer than the slot count
+     * run, and each hands off at most once and then stops. Every pending handoff therefore comes from a compaction that
+     * was already running when the last of those compactions was admitted (which saw none pending), so there are at most
+     * as many as could run at once.
+     */
+    static final class Restorer {
+        private static final int FREE = 0, CLAIMED = 1, READY = 2;
+        private static final long MIN_BACKOFF_NANOS = 100_000, MAX_BACKOFF_NANOS = 50_000_000;
+        private final AtomicIntegerArray slots;
+        private final Object[] tasks;
+        private final ConcurrentLinkedQueue<?>[] queues;
+        private final AtomicIntegerArray[] counts;
+        private final int[] buckets;
+        private final Semaphore[] permits;
+        private final AtomicInteger pending = new AtomicInteger();
+        private final AtomicInteger inFlight = new AtomicInteger();
+        final AtomicLong handedOff = new AtomicLong(), retries = new AtomicLong(), restored = new AtomicLong();
+        final Thread thread;
+        private volatile boolean started;
+
+        Restorer(int slotCount, String name) {
+            slots = new AtomicIntegerArray(slotCount);
+            tasks = new Object[slotCount];
+            queues = new ConcurrentLinkedQueue<?>[slotCount];
+            counts = new AtomicIntegerArray[slotCount];
+            buckets = new int[slotCount];
+            permits = new Semaphore[slotCount];
+            thread = new Thread(this::run, name);
+            thread.setDaemon(true);
+        }
+
+        /** Entries handed off and not yet back. */
+        int pending() {
+            return pending.get();
+        }
+
+        /** Admits a compaction unless a restore is pending or as many compactions as slots are running. */
+        boolean enter() {
+            if (inFlight.incrementAndGet() <= slots.length() && pending.get() == 0) return true;
+            inFlight.decrementAndGet();
+            return false;
+        }
+
+        void exit() {
+            inFlight.decrementAndGet();
+        }
+
+        /** Starts the thread on the first compaction (before it changes anything, so a failure to start changes nothing). */
+        void start() {
+            if (started) return;
+            synchronized (this) {
+                if (!started) {
+                    thread.start();
+                    started = true;
+                }
+            }
+        }
+
+        /** Takes over an entry whose restore could not allocate: the thread puts back entry, count and permit later. */
+        void handOff(ConcurrentLinkedQueue<?> queue, AtomicIntegerArray count, int bucket, Object task, Semaphore permit) {
+            pending.incrementAndGet();             // first: from here on no compaction is admitted
+            for (int slot = 0; slot < slots.length(); slot++) {
+                if (!slots.compareAndSet(slot, FREE, CLAIMED)) continue;
+                tasks[slot] = task;
+                queues[slot] = queue;
+                counts[slot] = count;
+                buckets[slot] = bucket;
+                permits[slot] = permit;
+                slots.set(slot, READY);            // publishes the stores above to the thread
+                handedOff.incrementAndGet();
+                LockSupport.unpark(thread);
+                return;
+            }
+            try {                                  // unreachable while compactions go through enter() (see above)
+                waitAndRestore(queue, count, bucket, task, permit);
+            } finally {
+                pending.decrementAndGet();
+            }
+        }
+
+        private void run() {
+            long backoffNanos = MIN_BACKOFF_NANOS;
+            for (;;) {
+                try {
+                    boolean waiting = false;
+                    for (int slot = 0; slot < slots.length(); slot++)
+                        if (slots.get(slot) == READY && !putBack(slot)) waiting = true;
+                    Thread.interrupted();          // a stray interrupt must not turn the waits below into a spin
+                    if (waiting) {
+                        LockSupport.parkNanos(this, backoffNanos);
+                        backoffNanos = Math.min(backoffNanos * 2, MAX_BACKOFF_NANOS);
+                    } else {
+                        backoffNanos = MIN_BACKOFF_NANOS;
+                        if (pending.get() == 0) LockSupport.park(this);
+                        else LockSupport.parkNanos(this, MIN_BACKOFF_NANOS);   // a handoff is still being written
+                    }
+                } catch (Throwable unexpected) {   // never stop while entries may be waiting
+                    LockSupport.parkNanos(this, MAX_BACKOFF_NANOS);
+                }
+            }
+        }
+
+        /** One attempt to put back the entry of {@code slot}; false if it still cannot be allocated. */
+        @SuppressWarnings("unchecked")
+        private boolean putBack(int slot) {
+            try {
+                ((ConcurrentLinkedQueue<Object>) queues[slot]).add(tasks[slot]);
+            } catch (OutOfMemoryError failure) {
+                retries.incrementAndGet();
+                return false;
+            }
+            try {
+                counts[slot].incrementAndGet(buckets[slot]);
+            } finally {
+                permits[slot].release();
+                tasks[slot] = null;
+                queues[slot] = null;
+                counts[slot] = null;
+                permits[slot] = null;
+                restored.incrementAndGet();
+                slots.set(slot, FREE);
+                pending.decrementAndGet();         // last: once nothing is pending, every entry, count and permit is back
+            }
+            return true;
+        }
+
+        /** Last resort for a handoff without a free slot: waits here until the entry is back (nothing allocates meanwhile). */
+        private <T> void waitAndRestore(ConcurrentLinkedQueue<T> queue, AtomicIntegerArray count, int bucket, Object task,
+                                        Semaphore permit) {
+            boolean interrupted = false;
+            for (long backoffNanos = MIN_BACKOFF_NANOS; ; backoffNanos = Math.min(backoffNanos * 2, MAX_BACKOFF_NANOS)) {
+                try {
+                    @SuppressWarnings("unchecked") T entry = (T) task;
+                    queue.add(entry);
+                    break;
+                } catch (OutOfMemoryError failure) {
+                    retries.incrementAndGet();
+                    interrupted |= Thread.interrupted();
+                    LockSupport.parkNanos(backoffNanos);
+                }
+            }
+            try {
+                count.incrementAndGet(bucket);
+            } finally {
+                permit.release();
+            }
+            if (interrupted) Thread.currentThread().interrupt();
+        }
+    }
+
     /** Called after each {@code ExecutorManager.reschedule0} of {@code executor}; compacts oversized buckets now and then. */
     public static void afterEnqueue(State state, Object executor, Semaphore permits) {
         if ((state.enqueues.incrementAndGet() & (CHECK_EVERY - 1)) != 0 || UNSUPPORTED.get()) return;
@@ -104,9 +268,16 @@ public final class FlowSchedQueuePurge {
             for (int bucket = 0; bucket < state.buckets.length; bucket++) {
                 int count = state.counts.get(bucket);
                 LARGEST_BUCKET.accumulateAndGet(count, Math::max);
-                if (count > Math.max(THRESHOLD, 2 * state.kept[bucket]))
-                    state.kept[bucket] = compact(state.buckets[bucket], state.counts, bucket, state.priority, permits);
+                if (count > Math.max(THRESHOLD, 2 * state.kept[bucket])) {
+                    int kept = compact(state.buckets[bucket], state.counts, bucket, state.priority, permits);
+                    if (kept < 0) break;           // not admitted (a restore is pending): a later check retries
+                    state.kept[bucket] = kept;
+                }
             }
+        } catch (OutOfMemoryError failure) {
+            // Optional work never passes its own allocation failure on to FlowSched's caller (C2ME code mid-update). Every
+            // point of a compaction that can throw leaves the queue consistent, and a later check simply tries again.
+            ALLOCATION_FAILURES.incrementAndGet();
         } catch (ReflectiveOperationException | RuntimeException | LinkageError failure) {
             if (UNSUPPORTED.compareAndSet(false, true))
                 org.slf4j.LoggerFactory.getLogger("Phoenium").error("S9-M6b FlowSched queue compaction disabled", failure);
@@ -115,17 +286,28 @@ public final class FlowSchedQueuePurge {
         }
     }
 
+    static <T> int compact(ConcurrentLinkedQueue<T> queue, AtomicIntegerArray counts, int bucket, ToIntFunction<Object> priority,
+                           Semaphore permits) {
+        return compact(queue, counts, bucket, priority, permits, RESTORER);
+    }
+
     /**
      * Removes, in place, up to the bucket's current count of scanned entries the superseded ones for which a free permit
      * can be retired (see the class comment for the protocol and its exception safety). Returns the bucket's count
-     * afterwards. Safe to run concurrently with FlowSched's own enqueue, re-prioritise and poll, and with another compactor.
+     * afterwards, or -1 if the compaction was not admitted (see {@link Restorer}). Safe to run concurrently with
+     * FlowSched's own enqueue, re-prioritise and poll, and with another compactor.
      */
     static <T> int compact(ConcurrentLinkedQueue<T> queue, AtomicIntegerArray counts, int bucket, ToIntFunction<Object> priority,
-                           Semaphore permits) {
+                           Semaphore permits, Restorer restorer) {
+        if (!restorer.enter()) {
+            SKIPPED.incrementAndGet();
+            return -1;
+        }
         int budget = counts.get(bucket);
-        int scanned = 0, dropped = 0, held = 0, restored = 0;
+        int scanned = 0, dropped = 0, held = 0, restored = 0, handedOff = 0;
         try {
-            for (Iterator<T> entries = queue.iterator(); scanned < budget && entries.hasNext(); scanned++) {
+            restorer.start();
+            for (Iterator<T> entries = queue.iterator(); handedOff == 0 && scanned < budget && entries.hasNext(); scanned++) {
                 T task = entries.next();
                 if (!IDENTITY.get(task.getClass()) || priority.applyAsInt(task) == bucket) continue;   // live: stays
                 if (!permits.tryAcquire()) {        // a worker holds every free permit: the entry stays for it
@@ -144,49 +326,41 @@ public final class FlowSchedQueuePurge {
                 try {
                     restore = priority.applyAsInt(task) == bucket;
                 } finally {
-                    if (restore) {
-                        restore(queue, counts, bucket, task, permits);
-                        restored++;
-                    } else {
-                        dropped++;
-                    }
+                    if (!restore) dropped++;
+                    else if (restore(queue, counts, bucket, task, permits, restorer)) restored++;
+                    else handedOff++;                // memory is short: the restorer has it, and this compaction stops
                 }
             }
         } finally {
-            COMPACTIONS.increment();
-            DROPPED.add(dropped);
-            KEPT.add(scanned - dropped);
-            HELD.add(held);
-            RESTORED.add(restored);
+            restorer.exit();
+            COMPACTIONS.incrementAndGet();
+            DROPPED.addAndGet(dropped);
+            KEPT.addAndGet(scanned - dropped);
+            HELD.addAndGet(held);
+            RESTORED.addAndGet(restored);
         }
         return counts.get(bucket);
     }
 
     /**
-     * Puts back a removed entry as FlowSched enqueues one (entry, then count, then one permit); retries until it is back.
-     * Nothing in the retry path allocates (the retry count is a local, published after the entry is back), and the
-     * interrupt status is cleared while waiting so parkNanos really waits, then restored.
+     * Puts a removed entry back as FlowSched enqueues one (entry, then count, then one permit), or, if the entry cannot be
+     * allocated now, hands it to {@code restorer}, which does so as soon as memory allows. Never waits; returns whether
+     * the entry is back already.
      */
-    static <T> void restore(ConcurrentLinkedQueue<T> queue, AtomicIntegerArray counts, int bucket, T task, Semaphore permits) {
-        long retries = 0;
-        boolean interrupted = false;
-        for (long backoffNanos = 100_000; ; backoffNanos = Math.min(backoffNanos * 2, 50_000_000)) {
-            try {
-                queue.add(task);
-                break;
-            } catch (OutOfMemoryError failure) {   // the only way add fails: wait for memory, never drop a live entry
-                retries++;
-                interrupted |= Thread.interrupted();
-                java.util.concurrent.locks.LockSupport.parkNanos(backoffNanos);
-            }
+    static <T> boolean restore(ConcurrentLinkedQueue<T> queue, AtomicIntegerArray counts, int bucket, T task, Semaphore permits,
+                               Restorer restorer) {
+        try {
+            queue.add(task);
+        } catch (OutOfMemoryError failure) {        // the only way add fails
+            restorer.handOff(queue, counts, bucket, task, permits);
+            return false;
         }
         try {
             counts.incrementAndGet(bucket);
         } finally {
             permits.release();
         }
-        if (interrupted) Thread.currentThread().interrupt();
-        if (retries > 0) RESTORE_RETRIES.add(retries);
+        return true;
     }
 
     /** Reads FlowSched's {@code Task.priority} with the acquire semantics its own poll and re-prioritise use. */
@@ -208,9 +382,11 @@ public final class FlowSchedQueuePurge {
     }
 
     public static String counters() {
-        return "c2meQueuePurge=" + (ENABLED && !UNSUPPORTED.get()) + " c2meQueueCompactions=" + COMPACTIONS.sum()
-            + " c2meQueueDropped=" + DROPPED.sum() + " c2meQueueKept=" + KEPT.sum() + " c2meQueueHeldForWorker=" + HELD.sum()
-            + " c2meQueueRestored=" + RESTORED.sum() + " c2meQueueRestoreRetries=" + RESTORE_RETRIES.sum()
-            + " c2meQueueLargestBucket=" + LARGEST_BUCKET.get();
+        return "c2meQueuePurge=" + (ENABLED && !UNSUPPORTED.get()) + " c2meQueueCompactions=" + COMPACTIONS.get()
+            + " c2meQueueDropped=" + DROPPED.get() + " c2meQueueKept=" + KEPT.get() + " c2meQueueHeldForWorker=" + HELD.get()
+            + " c2meQueueRestored=" + RESTORED.get() + " c2meQueueRestoreHandedOff=" + RESTORER.handedOff.get()
+            + " c2meQueueRestoredLate=" + RESTORER.restored.get() + " c2meQueueRestoreRetries=" + RESTORER.retries.get()
+            + " c2meQueueRestorePending=" + RESTORER.pending() + " c2meQueueSkipped=" + SKIPPED.get()
+            + " c2meQueueAllocationFailures=" + ALLOCATION_FAILURES.get() + " c2meQueueLargestBucket=" + LARGEST_BUCKET.get();
     }
 }
