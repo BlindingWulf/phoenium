@@ -27,10 +27,12 @@ final class FullConstructionFragments {
      * the raw class bytes (SHA-256 ab9a75ec31f57df5502ee65ffe413d8099097417c2ed1c928da3890b523e3b05), which also pin the
      * line-number table: Fabric Loom rewrites line numbers when a worktree's loom-cache holds a genSources line map, so
      * the same jar is 4e5c8b1c192e9a77c713163762fff0382beb58580155d7e719d83e903963f72f without one, and every test of
-     * this prototype failed in fresh worktrees (S9 FULLNONSELF-48). Both encodings have this fingerprint, which still
-     * changes with any instruction, member, signature or constant (FullConstructionFragmentsPinTest).
+     * this prototype failed in fresh worktrees (S9 FULLNONSELF-48). Both encodings have this fingerprint (computed
+     * 2026-10-13 with ClassFingerprint.main from the stage9-e16-d35 loom jar and its .backup, and the stage9-mem6-d39
+     * jar), which still changes with any instruction, member, signature, constant, exception handler, bootstrap reference
+     * or annotation (FullConstructionFragmentsPinTest, ClassFingerprintTest).
      */
-    static final String AUDITED_FINGERPRINT = "9d0ba2f53c32a94cc69ef926efdc9392a4b16f766295b67c14faf8a532e114d1";
+    static final String AUDITED_FINGERPRINT = "2337df23c6f569650a7009170c9c664b04663285f46d3399d88b2028aa7f1237";
     private static final Method PREPARE;
     private static final Method FINISH;
     static {
