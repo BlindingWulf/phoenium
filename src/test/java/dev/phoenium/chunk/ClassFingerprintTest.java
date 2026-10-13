@@ -199,7 +199,8 @@ final class ClassFingerprintTest {
         // exception handling
         m.put("caught type", n -> call(n).tryCatchBlocks.get(0).type = "java/lang/Exception");
         m.put("catch everything", n -> call(n).tryCatchBlocks.get(0).type = null);
-        m.put("handler range", n -> call(n).tryCatchBlocks.get(0).end = label(n, 2));
+        // label 2 (handler) shares label 1's offset, so moving an end there changes nothing: use label 3
+        m.put("handler range", n -> call(n).tryCatchBlocks.get(0).end = label(n, 3));
         m.put("handler target", n -> call(n).tryCatchBlocks.get(0).handler = label(n, 3));
         m.put("handler order", n -> java.util.Collections.swap(call(n).tryCatchBlocks, 0, 1));
         m.put("handler removed", n -> call(n).tryCatchBlocks.remove(1));
@@ -237,7 +238,7 @@ final class ClassFingerprintTest {
         m.put("handler type annotation", n -> call(n).tryCatchBlocks.get(0).visibleTypeAnnotations.get(0).desc = "Lprobe/Other;");
         m.put("local variable annotation", n -> call(n).visibleLocalVariableAnnotations.get(0).desc = "Lprobe/Other;");
         m.put("local variable annotation slot", n -> call(n).visibleLocalVariableAnnotations.get(0).index.set(0, 2));
-        m.put("local variable annotation range", n -> call(n).visibleLocalVariableAnnotations.get(0).end.set(0, label(n, 2)));
+        m.put("local variable annotation range", n -> call(n).visibleLocalVariableAnnotations.get(0).end.set(0, label(n, 3)));
         m.put("annotation default", n -> n.methods.get(1).annotationDefault = 8);
         // signatures, constants, members, nesting
         m.put("class signature", n -> n.signature = "<T:Ljava/lang/Number;>Ljava/lang/Object;Ljava/lang/Runnable;");
@@ -256,12 +257,15 @@ final class ClassFingerprintTest {
     }
 
     @Test void everyMeaningfulChangeChangesTheFingerprint() {
-        String original = ClassFingerprint.of(bytes(probe()));
-        List<String> missed = new ArrayList<>();
+        byte[] plain = bytes(probe());
+        String original = ClassFingerprint.of(plain);
+        List<String> missed = new ArrayList<>(), noChange = new ArrayList<>();
         for (Map.Entry<String, Consumer<ClassNode>> mutation : mutations().entrySet()) {
             byte[] mutated = probeWith(mutation.getValue());
-            if (original.equals(ClassFingerprint.of(mutated))) missed.add(mutation.getKey());
+            if (java.util.Arrays.equals(plain, mutated)) noChange.add(mutation.getKey());   // a broken mutation, not a miss
+            else if (original.equals(ClassFingerprint.of(mutated))) missed.add(mutation.getKey());
         }
+        assertEquals(List.of(), noChange, "mutations that do not change the class file (fix the test)");
         assertEquals(List.of(), missed, "changes the fingerprint did not detect");
     }
 
