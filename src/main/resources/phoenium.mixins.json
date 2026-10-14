@@ -243,7 +243,9 @@
     "PearlPortalThrownEnderpearlAccess",
     "PearlPortalThrownEnderpearlMixin",
     "ServerPlayerLifecycleMixin",
-    "ServerLevelEntityLifecycleMixin"
+    "ServerLevelEntityLifecycleMixin",
+    "ChunkAccessNoiseAccess",
+    "MemNoiseReleaseMixin"
   ],
   "injectors": {
     "defaultRequire": 1
