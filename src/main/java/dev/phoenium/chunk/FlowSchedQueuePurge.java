@@ -298,6 +298,14 @@ public final class FlowSchedQueuePurge {
         return compact(queue, counts, bucket, priority, permits, RESTORER);
     }
 
+    /** Result of a compaction that ran out of work budget before it finished its scan. */
+    static final int PARTIAL = -2;
+
+    static <T> int compact(ConcurrentLinkedQueue<T> queue, AtomicIntegerArray counts, int bucket, ToIntFunction<Object> priority,
+                           Semaphore permits, Restorer restorer, long workBudget) {
+        return compact(queue, counts, bucket, priority, permits, restorer);
+    }
+
     /**
      * Removes, in place, up to the bucket's current count of scanned entries the superseded ones for which a free permit
      * can be retired (see the class comment for the protocol and its exception safety). Returns the bucket's count

@@ -91,6 +91,11 @@ final class FlowSchedQueuePurgeTest {
         volatile Thread target;
         volatile boolean failRestorer;
         volatile java.util.function.IntPredicate failRemove = n -> false, failAdd = n -> false;
+        /** What an injected failure throws (unchecked): by default IllegalStateException for remove, OOM for add. */
+        volatile Supplier<? extends RuntimeException> removeException = () -> new IllegalStateException("injected remove failure");
+        volatile Supplier<? extends Error> removeError, addError = () -> new OutOfMemoryError("injected allocation failure");
+        /** If set, the restorer's injected add failures throw this instead of addError. */
+        volatile Supplier<? extends RuntimeException> restorerAddException;
         final java.util.concurrent.atomic.AtomicInteger removeCalls = new java.util.concurrent.atomic.AtomicInteger();
         final java.util.concurrent.atomic.AtomicInteger addCalls = new java.util.concurrent.atomic.AtomicInteger();
         final java.util.concurrent.atomic.AtomicInteger injected = new java.util.concurrent.atomic.AtomicInteger();
@@ -100,7 +105,9 @@ final class FlowSchedQueuePurgeTest {
             boolean mine = Thread.currentThread() == target;
             if (mine && failRemove.test(removeCalls.incrementAndGet())) {
                 injected.incrementAndGet();
-                throw new IllegalStateException("injected remove failure");
+                Supplier<? extends Error> error = removeError;
+                if (error != null) throw error.get();
+                throw removeException.get();
             }
             boolean removed = super.remove(o);
             if (removed && mine) lastRemoved = o;
@@ -109,10 +116,13 @@ final class FlowSchedQueuePurgeTest {
 
         @Override public boolean add(Object o) {
             Thread current = Thread.currentThread();
-            boolean mine = current == target || failRestorer && current == FlowSchedQueuePurge.RESTORER.thread;
+            boolean restorer = failRestorer && current == FlowSchedQueuePurge.RESTORER.thread;
+            boolean mine = current == target || restorer;
             if (mine && failAdd.test(addCalls.incrementAndGet())) {
                 injected.incrementAndGet();
-                throw new OutOfMemoryError("injected allocation failure");
+                Supplier<? extends RuntimeException> exception = restorerAddException;
+                if (restorer && exception != null) throw exception.get();
+                throw addError.get();
             }
             return super.add(o);
         }
@@ -1001,6 +1011,160 @@ final class FlowSchedQueuePurgeTest {
                 "lowest bucket peaked at " + largest + " entries");
         assertEquals(sim.entries(), sim.permits.availablePermits(), "permits equal entries");
         assertTrue(FlowSchedQueuePurge.counters().contains("c2meQueuePurge=true"), FlowSchedQueuePurge.counters());
+    }
+
+    /**
+     * D40 review R2 (2026-10-14): an error other than OutOfMemoryError (here StackOverflowError) while restoring the live
+     * entry of a task that moved back into the bucket must not lose that entry: it goes to the restorer like an entry
+     * whose allocation failed. The task is read as superseded by the scan and as belonging to the bucket by the re-check
+     * after its removal, exactly the move-back race.
+     */
+    @Test @Timeout(value = 30, unit = TimeUnit.SECONDS)
+    void aStackOverflowWhileRestoringAMovedBackTaskLosesNoEntry() throws Exception {
+        Sim sim = new Sim();
+        List<Object> tasks = mixedLowestBucket(sim);
+        Object movedBack = newTask.newInstance((Runnable) () -> { });
+        sim.enqueue(movedBack, LOWEST);                        // its only entry
+        tasks.add(movedBack);
+        FaultyQueue lowest = sim.faulty(LOWEST);
+        ToIntFunction<Object> real = priority();
+        ToIntFunction<Object> reader = task -> {
+            boolean recheck = task == lowest.lastRemoved;
+            if (recheck) lowest.lastRemoved = null;
+            if (task == movedBack && !recheck) return 10;      // the scan saw it elsewhere; the re-check sees it back
+            return real.applyAsInt(task);
+        };
+        lowest.target = Thread.currentThread();
+        lowest.addError = () -> new StackOverflowError("injected stack overflow");
+        lowest.failAdd = n -> n == 1;                          // the compactor's restore of that entry
+        try {
+            FlowSchedQueuePurge.compact(lowest, sim.count, LOWEST, reader, sim.permits);
+        } catch (StackOverflowError tolerated) {
+            // whether the error surfaces is not the point: the entry must not be lost
+        } finally {
+            lowest.target = null;
+        }
+        assertEquals(1, lowest.injected.get(), "the restore of the moved-back entry failed");
+        awaitRestores("stack overflow");
+        sim.assertConsistent(tasks, real, "stack overflow");
+        FlowSchedQueuePurge.compact(lowest, sim.count, LOWEST, real, sim.permits);
+        sim.assertConsistent(tasks, real, "stack overflow then complete");
+        sim.assertDrainsRunningEachOnce(tasks, "stack overflow");
+    }
+
+    /**
+     * D40 review R2: an error other than OutOfMemoryError inside the optional work never reaches FlowSched's caller
+     * (reschedule0 inside C2ME code), is counted, and does not switch compaction off.
+     */
+    @Test void anErrorInsideTheHookNeverReachesFlowSchedAndIsCounted() throws Exception {
+        Sim sim = new Sim();
+        List<Object> tasks = new ArrayList<>();
+        for (int i = 0; i < FlowSchedQueuePurge.THRESHOLD + 100; i++) {
+            Object task = newTask.newInstance((Runnable) () -> { });
+            sim.enqueue(task, LOWEST);
+            sim.enqueue(task, 10);
+            tasks.add(task);
+        }
+        FlowSchedQueuePurge.State state = new FlowSchedQueuePurge.State();
+        state.bind(sim.queue);
+        FaultyQueue lowest = sim.faulty(LOWEST);              // the state sees it: same bucket array
+        lowest.target = Thread.currentThread();
+        lowest.removeError = () -> new StackOverflowError("injected stack overflow");
+        lowest.failRemove = n -> n == 1;
+        long errors = counter("c2meQueueErrors");
+        try {
+            for (int i = 0; i < FlowSchedQueuePurge.CHECK_EVERY; i++)   // exactly one check among these
+                assertDoesNotThrow(() -> FlowSchedQueuePurge.afterEnqueue(state, null, sim.permits));
+        } finally {
+            lowest.target = null;
+        }
+        assertEquals(1, lowest.injected.get(), "the check ran and hit the injected error");
+        assertEquals(1, counter("c2meQueueErrors") - errors, "counted");
+        assertTrue(FlowSchedQueuePurge.counters().contains("c2meQueuePurge=true"), "an error does not disable compaction");
+        sim.assertConsistent(tasks, priority(), "after the error");
+    }
+
+    /**
+     * D40 review R4: a restore failing in the restorer with something other than OutOfMemoryError is counted (visible in
+     * the diagnostics) and retried until the entry is back; it never strands the entry or stops the restorer.
+     */
+    @Test @Timeout(value = 30, unit = TimeUnit.SECONDS)
+    void restorerFailuresOtherThanOomAreCountedAndRetried() throws Exception {
+        Sim sim = new Sim();
+        Object task = newTask.newInstance((Runnable) () -> { });
+        sim.enqueue(task, LOWEST);
+        FaultyQueue lowest = sim.faulty(LOWEST);
+        assertTrue(sim.permits.tryAcquire());                  // removed as a compaction would: entry and permit
+        assertTrue(lowest.remove(task));
+        sim.count.decrementAndGet(LOWEST);
+        FlowSchedQueuePurge.Restorer restorer = FlowSchedQueuePurge.RESTORER;
+        assertTrue(restorer.start(), "the restorer thread runs");
+        long errors = counter("c2meQueueRestoreErrors");
+        lowest.failRestorer = true;
+        lowest.restorerAddException = () -> new IllegalStateException("injected restorer failure");
+        lowest.failAdd = n -> n <= 2;
+        try {
+            restorer.handOff(lowest, sim.count, LOWEST, task, sim.permits);
+            awaitRestores("restorer failures");
+        } finally {
+            lowest.failRestorer = false;
+        }
+        assertEquals(2, counter("c2meQueueRestoreErrors") - errors, "both failures counted");
+        assertTrue(restorer.thread.isAlive());
+        sim.assertConsistent(List.of(task), priority(), "restored after failures");
+        sim.assertDrainsRunningEachOnce(List.of(task), "restored after failures");
+    }
+
+    /**
+     * D40 review R1 (2026-10-14): the compaction runs on the enqueuing thread, possibly inside C2ME monitors, and each
+     * removal rescans the bucket from its head, so live entries ahead of many superseded ones make one pass quadratic. A
+     * pass stops at its work budget (reported as PARTIAL, so the hook keeps the bucket's previous kept size and a later
+     * check continues), loses nothing, and later passes finish the job.
+     */
+    @Test void aCompactionStopsAtItsWorkBudgetAndLaterPassesFinish() throws Exception {
+        Sim sim = new Sim();
+        List<Object> tasks = new ArrayList<>();
+        for (int i = 0; i < 2000; i++) {                      // live entries first: every removal walks past them
+            Object task = newTask.newInstance((Runnable) () -> { });
+            sim.enqueue(task, LOWEST);
+            tasks.add(task);
+        }
+        for (int i = 0; i < 2000; i++) {
+            Object task = newTask.newInstance((Runnable) () -> { });
+            sim.enqueue(task, LOWEST);
+            sim.enqueue(task, 10);
+            tasks.add(task);
+        }
+        ToIntFunction<Object> real = priority();
+        long budget = 200_000;                                 // ~100 removals behind 2000 live entries
+        int result = FlowSchedQueuePurge.compact(sim.all[LOWEST], sim.count, LOWEST, real, sim.permits, FlowSchedQueuePurge.RESTORER, budget);
+        assertEquals(FlowSchedQueuePurge.PARTIAL, result, "a pass that runs out of budget says so");
+        int dropped = 4000 - sim.count.get(LOWEST);
+        assertTrue(dropped > 0 && dropped < 2000, "the first pass dropped some, not all: " + dropped);
+        sim.assertConsistent(tasks, real, "after a partial pass");
+        int passes = 1;
+        for (int r = result; r == FlowSchedQueuePurge.PARTIAL; passes++) {
+            assertTrue(passes < 200, "later passes make progress");
+            r = FlowSchedQueuePurge.compact(sim.all[LOWEST], sim.count, LOWEST, real, sim.permits, FlowSchedQueuePurge.RESTORER, budget);
+        }
+        assertEquals(2000, sim.count.get(LOWEST), "only the live entries are left");
+        sim.assertConsistent(tasks, real, "after " + passes + " passes");
+        sim.assertDrainsRunningEachOnce(tasks, "budgeted");
+    }
+
+    /**
+     * D40 review R3: the hook is guarded, so a failure to initialise FlowSchedQueuePurge (ExceptionInInitializerError,
+     * then NoClassDefFoundError on every call) never reaches reschedule0; the hook switches itself off instead.
+     */
+    @Test void theHookGuardsItsCallAgainstAnyFailure() throws Exception {
+        ClassNode mixin = new ClassNode();
+        try (var input = java.util.Objects.requireNonNull(
+                getClass().getResourceAsStream("/dev/phoenium/mixin/FlowSchedStalePurgeMixin.class"))) {
+            new ClassReader(input).accept(mixin, ClassReader.SKIP_FRAMES);
+        }
+        MethodNode hook = mixin.methods.stream().filter(m -> m.name.equals("phoenium$boundSupersededEntries")).findFirst().orElseThrow();
+        assertTrue(hook.tryCatchBlocks.stream().anyMatch(block -> "java/lang/Throwable".equals(block.type)),
+                "the hook catches Throwable around its call");
     }
 
     private interface Body { void run() throws Exception; }
