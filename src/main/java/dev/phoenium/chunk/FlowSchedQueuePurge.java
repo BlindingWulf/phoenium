@@ -30,6 +30,8 @@ import java.util.function.ToIntFunction;
  * consistent iterator and never taken out, except a superseded entry, which is removed by the queue's own atomic removal
  * (a CAS on one node holding that task: exactly one of the compactor and a polling worker gets it) paired with retiring
  * one free permit. An entry is superseded when its task's priority, read as FlowSched reads it, differs from the bucket.
+ * A pass spends at most {@link #WORK_BUDGET} work units (scan steps plus the entries each removal walks past) and then
+ * stops ({@link #PARTIAL}); the next check continues.
  * Every move of a task into a bucket enqueues a fresh entry there after the priority CAS, so a superseded task either has
  * its entry elsewhere, is running or has run, waits for a lock (and is re-enqueued when it frees), or gets a new entry
  * when it moves back. One race remains: the task moves back into this bucket between the read and the removal, and the
@@ -40,8 +42,10 @@ import java.util.function.ToIntFunction;
  * <p>Exception safety, step by step: nothing changes before the removal (scan, priority read, permit tryAcquire); a
  * removal that does not happen (lost race or failure) gives its permit back in a finally; after a removal the count is
  * decremented (cannot fail) and the re-check decides between dropped and restored, defaulting to restore if it fails. A
- * restore that cannot allocate its entry hands it to the {@link Restorer} thread, which puts it back as soon as memory
- * allows, and the compaction stops. So a failure at any step stops the compaction and loses no task, duplicates none
+ * restore that cannot allocate its entry (or fails with any other error, e.g. StackOverflowError) hands it to the
+ * {@link Restorer} thread, which puts it back as soon as memory allows, and the compaction stops. The hook swallows and
+ * counts every failure of this optional work; a VirtualMachineError after the entry is linked but before add returns is
+ * the one residual case (the restorer adds a second entry, so the bucket holds one entry more than its count and permits). So a failure at any step stops the compaction and loses no task, duplicates none
  * (FlowSched's CAS still runs a task once), and keeps permits equal to entries and counts equal to the bucket's entries.
  * The compacting thread never waits for memory: it may be inside C2ME code holding a monitor the workers need. Retiring a
  * permit per removed entry keeps idle workers parked on the semaphore instead of spinning; when no permit is free a worker
@@ -58,6 +62,10 @@ public final class FlowSchedQueuePurge {
     static final int THRESHOLD = Math.max(64, Integer.getInteger("phoenium.c2me.purgeThreshold", 4096));
     /** Buckets are checked once per this many enqueues on an executor (power of two). */
     static final int CHECK_EVERY = 1024;
+    /** Work units (scan steps plus entries the removals walk past) one compaction pass may spend; see compact. */
+    static final long WORK_BUDGET = Math.max(1024L, Long.getLong("phoenium.c2me.purgeWorkBudget", 1L << 20));
+    /** Result of a compaction pass that stopped at its work budget before finishing its scan. */
+    static final int PARTIAL = -2;
     private static final String TASK = "com.ishland.flowsched.executor.Task";
 
     // AtomicLong, not LongAdder: updating them never allocates, so no counter can fail under memory pressure.
@@ -68,6 +76,8 @@ public final class FlowSchedQueuePurge {
     private static final AtomicLong RESTORED = new AtomicLong();
     private static final AtomicLong SKIPPED = new AtomicLong();
     private static final AtomicLong ALLOCATION_FAILURES = new AtomicLong();
+    private static final AtomicLong ERRORS = new AtomicLong();
+    private static final AtomicLong PARTIALS = new AtomicLong();
     private static final AtomicInteger LARGEST_BUCKET = new AtomicInteger();
     /** Whether entries of a task class can be removed by identity ({@code ConcurrentLinkedQueue.remove} uses equals). */
     private static final ClassValue<Boolean> IDENTITY = new ClassValue<>() {
@@ -125,7 +135,7 @@ public final class FlowSchedQueuePurge {
         private final Semaphore[] permits;
         private final AtomicInteger pending = new AtomicInteger();
         private final AtomicInteger inFlight = new AtomicInteger();
-        final AtomicLong handedOff = new AtomicLong(), retries = new AtomicLong(), restored = new AtomicLong();
+        final AtomicLong handedOff = new AtomicLong(), retries = new AtomicLong(), restored = new AtomicLong(), errors = new AtomicLong();
         final Thread thread;
         private final AtomicBoolean starting = new AtomicBoolean();
         private volatile boolean started;
@@ -213,6 +223,7 @@ public final class FlowSchedQueuePurge {
                         else LockSupport.parkNanos(this, MIN_BACKOFF_NANOS);   // a handoff is still being written
                     }
                 } catch (Throwable unexpected) {   // never stop while entries may be waiting
+                    failed(unexpected);
                     LockSupport.parkNanos(this, MAX_BACKOFF_NANOS);
                 }
             }
@@ -224,6 +235,10 @@ public final class FlowSchedQueuePurge {
             try {
                 ((ConcurrentLinkedQueue<Object>) queues[slot]).add(tasks[slot]);
             } catch (OutOfMemoryError failure) {
+                retries.incrementAndGet();
+                return false;
+            } catch (Throwable failure) {          // D40 review R4: counted and visible, then retried like memory
+                failed(failure);
                 retries.incrementAndGet();
                 return false;
             }
@@ -240,6 +255,16 @@ public final class FlowSchedQueuePurge {
                 pending.decrementAndGet();         // last: once nothing is pending, every entry, count and permit is back
             }
             return true;
+        }
+
+        /** Counts a restorer failure other than OutOfMemoryError; the first one is logged (a pending entry blocks compaction). */
+        private void failed(Throwable failure) {
+            if (errors.getAndIncrement() == 0) {
+                try {
+                    org.slf4j.LoggerFactory.getLogger("Phoenium").error("S9-M6b FlowSched restorer failure (retrying)", failure);
+                } catch (Throwable ignored) {      // logging is best effort here
+                }
+            }
         }
 
         /** Last resort for a handoff without a free slot: waits here until the entry is back (nothing allocates meanwhile). */
@@ -277,7 +302,8 @@ public final class FlowSchedQueuePurge {
                 LARGEST_BUCKET.accumulateAndGet(count, Math::max);
                 if (count > Math.max(THRESHOLD, 2 * state.kept[bucket])) {
                     int kept = compact(state.buckets[bucket], state.counts, bucket, state.priority, permits);
-                    if (kept < 0) break;           // not admitted (a restore is pending): a later check retries
+                    if (kept == -1) break;         // not admitted (a restore is pending): a later check retries
+                    if (kept == PARTIAL) continue; // out of budget: keep the previous size, so the next check continues
                     state.kept[bucket] = kept;
                 }
             }
@@ -288,6 +314,9 @@ public final class FlowSchedQueuePurge {
         } catch (ReflectiveOperationException | RuntimeException | LinkageError failure) {
             if (UNSUPPORTED.compareAndSet(false, true))
                 org.slf4j.LoggerFactory.getLogger("Phoenium").error("S9-M6b FlowSched queue compaction disabled", failure);
+        } catch (Throwable failure) {
+            // D40 review R2: nor any other error (StackOverflowError deep in C2ME frames, InternalError); counted, retried.
+            ERRORS.incrementAndGet();
         } finally {
             state.running.set(false);
         }
@@ -298,32 +327,43 @@ public final class FlowSchedQueuePurge {
         return compact(queue, counts, bucket, priority, permits, RESTORER);
     }
 
-    /** Result of a compaction that ran out of work budget before it finished its scan. */
-    static final int PARTIAL = -2;
-
     static <T> int compact(ConcurrentLinkedQueue<T> queue, AtomicIntegerArray counts, int bucket, ToIntFunction<Object> priority,
-                           Semaphore permits, Restorer restorer, long workBudget) {
-        return compact(queue, counts, bucket, priority, permits, restorer);
+                           Semaphore permits, Restorer restorer) {
+        return compact(queue, counts, bucket, priority, permits, restorer, WORK_BUDGET);
     }
 
     /**
      * Removes, in place, up to the bucket's current count of scanned entries the superseded ones for which a free permit
      * can be retired (see the class comment for the protocol and its exception safety). Returns the bucket's count
-     * afterwards, or -1 if the compaction was not admitted (see {@link Restorer}). Safe to run concurrently with
-     * FlowSched's own enqueue, re-prioritise and poll, and with another compactor.
+     * afterwards, -1 if the compaction was not admitted (see {@link Restorer}), or {@link #PARTIAL} if it stopped at its
+     * work budget (a later check continues). Safe to run concurrently with FlowSched's own enqueue, re-prioritise and
+     * poll, and with another compactor.
+     *
+     * <p>Work budget (D40 review R1): this runs on the enqueuing thread, possibly inside C2ME monitors, and the queue's
+     * atomic removal walks from the head, so each removal costs about the entries still ahead of it. Scan steps and those
+     * walks are counted against {@code workBudget}; a removal that would exceed it is not started and the pass ends.
      */
     static <T> int compact(ConcurrentLinkedQueue<T> queue, AtomicIntegerArray counts, int bucket, ToIntFunction<Object> priority,
-                           Semaphore permits, Restorer restorer) {
+                           Semaphore permits, Restorer restorer, long workBudget) {
         if (!restorer.start() || !restorer.enter()) {   // the restorer runs before any entry can be handed to it
             SKIPPED.incrementAndGet();
             return -1;
         }
         int budget = counts.get(bucket);
         int scanned = 0, dropped = 0, held = 0, restored = 0, handedOff = 0;
+        long work = 0;
+        boolean partial = false;
         try {
             for (Iterator<T> entries = queue.iterator(); handedOff == 0 && scanned < budget && entries.hasNext(); scanned++) {
                 T task = entries.next();
+                work++;
                 if (!IDENTITY.get(task.getClass()) || priority.applyAsInt(task) == bucket) continue;   // live: stays
+                long walk = scanned - dropped - restored;  // entries ahead of this one that the removal walks past
+                if (work + walk > workBudget) {
+                    partial = true;
+                    break;
+                }
+                work += walk;
                 if (!permits.tryAcquire()) {        // a worker holds every free permit: the entry stays for it
                     held++;
                     continue;
@@ -352,8 +392,9 @@ public final class FlowSchedQueuePurge {
             KEPT.addAndGet(scanned - dropped);
             HELD.addAndGet(held);
             RESTORED.addAndGet(restored);
+            if (partial) PARTIALS.incrementAndGet();
         }
-        return counts.get(bucket);
+        return partial ? PARTIAL : counts.get(bucket);
     }
 
     /**
@@ -365,8 +406,8 @@ public final class FlowSchedQueuePurge {
                                Restorer restorer) {
         try {
             queue.add(task);
-        } catch (OutOfMemoryError failure) {        // the only way add fails
-            restorer.handOff(queue, counts, bucket, task, permits);
+        } catch (Throwable failure) {               // OutOfMemoryError, or (D40 review R2) StackOverflowError/InternalError:
+            restorer.handOff(queue, counts, bucket, task, permits);   // the removed entry must never be stranded
             return false;
         }
         try {
@@ -400,7 +441,9 @@ public final class FlowSchedQueuePurge {
             + " c2meQueueDropped=" + DROPPED.get() + " c2meQueueKept=" + KEPT.get() + " c2meQueueHeldForWorker=" + HELD.get()
             + " c2meQueueRestored=" + RESTORED.get() + " c2meQueueRestoreHandedOff=" + RESTORER.handedOff.get()
             + " c2meQueueRestoredLate=" + RESTORER.restored.get() + " c2meQueueRestoreRetries=" + RESTORER.retries.get()
-            + " c2meQueueRestorePending=" + RESTORER.pending() + " c2meQueueSkipped=" + SKIPPED.get()
-            + " c2meQueueAllocationFailures=" + ALLOCATION_FAILURES.get() + " c2meQueueLargestBucket=" + LARGEST_BUCKET.get();
+            + " c2meQueueRestorePending=" + RESTORER.pending() + " c2meQueueRestoreErrors=" + RESTORER.errors.get()
+            + " c2meQueueSkipped=" + SKIPPED.get() + " c2meQueuePartial=" + PARTIALS.get()
+            + " c2meQueueAllocationFailures=" + ALLOCATION_FAILURES.get() + " c2meQueueErrors=" + ERRORS.get()
+            + " c2meQueueLargestBucket=" + LARGEST_BUCKET.get();
     }
 }
