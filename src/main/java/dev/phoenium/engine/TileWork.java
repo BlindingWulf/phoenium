@@ -34,6 +34,8 @@ final class TileWork {
     final AtomicInteger pending = new AtomicInteger();
     /** S9-E8: the earliest start of this tile in the dag given its predecessors' measured times (critical path, server thread). */
     long earliest;
+    /** S9-E19: the heaviest chain of tile weights before this tile (scratch of EngineSchedule.dagWidth, server thread). */
+    long chainWeight;
 
     void reset(long key, int tileX, int tileZ, int colour) {
         this.key = key;
@@ -54,6 +56,7 @@ final class TileWork {
         predecessors = 0;
         pending.set(0);
         earliest = 0L;
+        chainWeight = 0L;
     }
 
     void addSuccessor(TileWork next) {

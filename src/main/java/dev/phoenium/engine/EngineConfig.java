@@ -115,6 +115,22 @@ public final class EngineConfig {
     public static final boolean DAG_WAKE = Boolean.getBoolean("phoenium.engine.dagWake");
     /** S9-E11 {@code phoenium.engine.dagParkUs} (default 1000): with dagWake, the longest single park of a waiting tile thread. */
     public static final int DAG_PARK_US = clamp(Integer.getInteger("phoenium.engine.dagParkUs", 1_000), 20, 1_000_000);
+    /**
+     * S9-E19 (D43) {@code phoenium.engine.minWidth} (default 1.5; 0 = D42's: every phase with tile threads): a phase whose
+     * tiles overlap less than this (total tile weight over its heaviest dependency chain, {@link EngineSchedule}) runs on
+     * the server thread alone, as with 0 workers.
+     */
+    public static final double MIN_WIDTH = minWidth(System.getProperty("phoenium.engine.minWidth"));
+
+    static double minWidth(String value) {
+        if (value == null) return 1.5;
+        try {
+            double parsed = Double.parseDouble(value.trim());
+            return Double.isNaN(parsed) ? 1.5 : Math.max(0.0, Math.min(64.0, parsed));
+        } catch (NumberFormatException bad) {
+            return 1.5;
+        }
+    }
 
     /**
      * S9-E12 {@code phoenium.engine.autosaveSpread} (default false): the periodic autosave (every 6000 ticks, players
@@ -171,7 +187,7 @@ public final class EngineConfig {
             + " spawnMemo=" + SPAWN_MEMO + " spawnMemoCheck=" + SPAWN_MEMO_CHECK + " spawnMemoLiveCheck=" + SPAWN_MEMO_LIVE_CHECK + " protectionCheck=" + PROTECTION_CHECK
             + " sendFlush=" + SEND_FLUSH + " trackerSend=" + TRACKER_SEND + " trackerSendMin=" + TRACKER_SEND_MIN
             + " spawnSlices=" + SPAWN_SLICES + " spawnSlicesMin=" + SPAWN_SLICE_MIN
-            + " spins=" + SPINS + " idleParkUs=" + IDLE_PARK_US + " dagWake=" + DAG_WAKE + " dagParkUs=" + DAG_PARK_US
+            + " spins=" + SPINS + " idleParkUs=" + IDLE_PARK_US + " dagWake=" + DAG_WAKE + " dagParkUs=" + DAG_PARK_US + " minWidth=" + MIN_WIDTH
             + " autosaveSpread=" + AUTOSAVE_SPREAD + " autosaveSpreadEntities=" + AUTOSAVE_SPREAD_ENTITIES
             + " autosaveSpreadPlayers=" + AUTOSAVE_SPREAD_PLAYERS
             + " autosaveSpreadChunks=" + AUTOSAVE_CHUNKS + " autosaveSpreadBudgetUs=" + AUTOSAVE_BUDGET_US

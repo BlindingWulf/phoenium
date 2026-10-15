@@ -110,6 +110,8 @@ public final class TileEngine {
         long phases;
         long colourRuns;
         long parallelRuns;
+        /** S9-E19: phases run on the server thread alone because their tiles barely overlap (EngineSchedule). */
+        long widthSerial;
         long tiles;
         long maxColourTiles;
         long deferredApplied;
@@ -124,7 +126,7 @@ public final class TileEngine {
 
         String describe(String prefix) {
             return prefix + "Phases=" + phases + " " + prefix + "ColourRuns=" + colourRuns + " " + prefix + "ParallelRuns=" + parallelRuns
-                + " " + prefix + "Tiles=" + tiles + " " + prefix + "MaxColourTiles=" + maxColourTiles + " " + prefix + "Deferred=" + deferredApplied
+                + " " + prefix + "WidthSerial=" + widthSerial + " " + prefix + "Tiles=" + tiles + " " + prefix + "MaxColourTiles=" + maxColourTiles + " " + prefix + "Deferred=" + deferredApplied
                 + " " + prefix + "PhaseUs=" + phaseNanos / 1000 + " " + prefix + "TileUs=" + tileNanos / 1000 + " " + prefix + "ApplyUs="
                 + applyNanos / 1000 + " " + prefix + "SerialUs=" + serialNanos / 1000 + " " + prefix + "CriticalUs=" + criticalNanos / 1000
                 + " " + prefix + "LargestUs=" + largestNanos / 1000;
@@ -633,8 +635,15 @@ public final class TileEngine {
             if (pool != null && !parallel) serialFallbacks++;
             try {
                 for (ArrayList<TileWork> work : colours) work.sort(BY_KEY);
-                if (dag && parallel) runDag(body, phaseId, gameTime);
-                else runColours(body, phaseId, gameTime, parallel);
+                if (dag && parallel) {
+                    runDag(body, phaseId, gameTime);
+                } else {
+                    // S9-E19: colour by colour, the tile threads only where a colour's tiles overlap enough
+                    boolean threads = parallel
+                        && !EngineSchedule.serial(EngineSchedule.colourWidth(colours), tiles.size(), EngineConfig.MIN_WIDTH);
+                    if (parallel && !threads) stats.widthSerial++;
+                    runColours(body, phaseId, gameTime, threads);
+                }
                 if (!serial.isEmpty()) {
                     long serialStart = System.nanoTime();
                     for (int i = 0; i < serial.size(); i++) serialBody.accept(serial.get(i));
@@ -706,15 +715,26 @@ public final class TileEngine {
                 if (tile.predecessors == 0) order[roots++] = tile;
             }
             Arrays.sort(order, 0, roots, LARGEST_FIRST);
+            // S9-E19: a phase whose tiles form (nearly) one chain gains nothing from the tile threads
+            boolean serial = EngineSchedule.serial(EngineSchedule.dagWidth(colours), total, EngineConfig.MIN_WIDTH);
             stats.colourRuns++;
-            stats.parallelRuns++;
+            if (serial) stats.widthSerial++;
+            else stats.parallelRuns++;
             stats.tiles += total;
             stats.maxColourTiles = Math.max(stats.maxColourTiles, roots);
             // run id -1: every tile run starts with an empty path-type cache (neighbours may have run on other threads)
             EngineWorkerPool.Runner runner = (tile, context) -> runTile(tile, context, body, phaseId, -1L, gameTime);
             colourRunning = true;
             try {
-                pool.run(new EngineWorkerPool.DagJob(order, roots, total, runner), MAIN);
+                if (serial) {
+                    // colour order is a topological order of the dag: every tile still runs after its lower-colour
+                    // neighbours, and the deferred effects apply after the phase as in the parallel run
+                    for (ArrayList<TileWork> work : colours) {
+                        for (int i = 0, n = work.size(); i < n; i++) runner.run(work.get(i), MAIN);
+                    }
+                } else {
+                    pool.run(new EngineWorkerPool.DagJob(order, roots, total, runner), MAIN);
+                }
                 Arrays.fill(order, 0, roots, null);
                 // S9-E8: the longest chain of measured tile times (colour order is a topological order of the dag)
                 long critical = 0L;
