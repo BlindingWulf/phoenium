@@ -4,6 +4,7 @@ import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.concurrent.atomic.LongAdder;
 import java.util.concurrent.locks.LockSupport;
 import java.util.function.Supplier;
 
@@ -26,13 +27,28 @@ final class EngineWorkerPool {
      * without a job parks {@code idleParkNanos} at a time; with {@code dagWake} a tile thread with no ready tile in a dag
      * job parks up to {@code dagParkNanos} and is unparked by a finished tile that readies another or by the job's end.
      */
-    record Waiting(int spins, long idleParkNanos, boolean dagWake, long dagParkNanos) {
+    record Waiting(int spins, long idleParkNanos, boolean dagWake, long dagParkNanos, long idleParkMaxNanos) {
         /** D29: 8192 spins, 1 ms idle parks, dag waits poll every 20 us. */
         static final Waiting D29 = new Waiting(8_192, 1_000_000L, false, 20_000L);
 
+        /** S9-E11's four parts: idle parks stay at idleParkNanos (no backoff). */
+        Waiting(int spins, long idleParkNanos, boolean dagWake, long dagParkNanos) {
+            this(spins, idleParkNanos, dagWake, dagParkNanos, idleParkNanos);
+        }
+
         static Waiting configured() {
             return new Waiting(EngineConfig.SPINS, EngineConfig.IDLE_PARK_US * 1_000L, EngineConfig.DAG_WAKE,
-                EngineConfig.DAG_PARK_US * 1_000L);
+                EngineConfig.DAG_PARK_US * 1_000L, EngineConfig.IDLE_PARK_MAX_US * 1_000L);
+        }
+
+        /**
+         * S9-E20 (D44): the next idle park of a tile thread that found no job after parking {@code current}: double it, up to
+         * {@code max}; a maximum at or below the base means no backoff. A published job unparks every tile thread, so the
+         * park length never delays a job.
+         */
+        static long nextIdlePark(long current, long base, long max) {
+            if (max <= base) return base;
+            return Math.min(max, Math.max(base, current) * 2);
         }
     }
 
@@ -337,21 +353,28 @@ final class EngineWorkerPool {
         public void run() {
             Job seen = null;
             int idle = 0;
+            long park = waiting.idleParkNanos();
             while (!stopping) {
                 Job published = job;
                 if (published != null && published != seen) {
                     seen = published;
                     published.work(context);
                     idle = 0;
+                    park = waiting.idleParkNanos();
                 } else if (idle < waiting.spins()) {
                     idle++;
                     Thread.onSpinWait();
                 } else {
-                    LockSupport.parkNanos(this, waiting.idleParkNanos());
+                    LockSupport.parkNanos(this, park);
+                    IDLE_PARKS.increment();
+                    park = Waiting.nextIdlePark(park, waiting.idleParkNanos(), waiting.idleParkMaxNanos());
                 }
             }
         }
     }
+
+    /** S9-E20: idle parks of every pool's tile threads (diagnostics). */
+    private static final LongAdder IDLE_PARKS = new LongAdder();
 
     private final Worker[] workers;
     private final ServiceRunner serviceRunner;
@@ -376,6 +399,11 @@ final class EngineWorkerPool {
     }
 
     int threads() { return workers.length; }
+
+    /** S9-E20: idle parks of the tile threads so far (all pools of this JVM). */
+    long idleParks() { return IDLE_PARKS.sum(); }
+
+    static long idleParksTotal() { return IDLE_PARKS.sum(); }
 
     /** The tile threads' contexts, in thread order (S9-E9: their outboxes are delivered after a capturing job). */
     TileContext[] contexts() {

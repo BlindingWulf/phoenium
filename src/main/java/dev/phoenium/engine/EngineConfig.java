@@ -108,6 +108,11 @@ public final class EngineConfig {
      */
     public static final int IDLE_PARK_US = clamp(Integer.getInteger("phoenium.engine.idleParkUs", 1_000), 20, 1_000_000);
     /**
+     * S9-E20 (D44) {@code phoenium.engine.idleParkMaxUs} (default 16000; at or below idleParkUs = D43's fixed parks): an idle
+     * tile thread doubles its park from idleParkUs up to this. A published job unparks every tile thread at once.
+     */
+    public static final int IDLE_PARK_MAX_US = clamp(Integer.getInteger("phoenium.engine.idleParkMaxUs", 16_000), 0, 1_000_000);
+    /**
      * S9-E11 {@code phoenium.engine.dagWake} (default false, D29's polling): in a dag job a tile thread with no ready tile
      * parks up to {@link #DAG_PARK_US} and is unparked when a finished tile readies another or the job ends, instead of
      * polling every 20 us until the phase ends. The server thread keeps polling (it serves the tiles' requests).
@@ -187,7 +192,7 @@ public final class EngineConfig {
             + " spawnMemo=" + SPAWN_MEMO + " spawnMemoCheck=" + SPAWN_MEMO_CHECK + " spawnMemoLiveCheck=" + SPAWN_MEMO_LIVE_CHECK + " protectionCheck=" + PROTECTION_CHECK
             + " sendFlush=" + SEND_FLUSH + " trackerSend=" + TRACKER_SEND + " trackerSendMin=" + TRACKER_SEND_MIN
             + " spawnSlices=" + SPAWN_SLICES + " spawnSlicesMin=" + SPAWN_SLICE_MIN
-            + " spins=" + SPINS + " idleParkUs=" + IDLE_PARK_US + " dagWake=" + DAG_WAKE + " dagParkUs=" + DAG_PARK_US + " minWidth=" + MIN_WIDTH
+            + " spins=" + SPINS + " idleParkUs=" + IDLE_PARK_US + " idleParkMaxUs=" + IDLE_PARK_MAX_US + " dagWake=" + DAG_WAKE + " dagParkUs=" + DAG_PARK_US + " minWidth=" + MIN_WIDTH
             + " autosaveSpread=" + AUTOSAVE_SPREAD + " autosaveSpreadEntities=" + AUTOSAVE_SPREAD_ENTITIES
             + " autosaveSpreadPlayers=" + AUTOSAVE_SPREAD_PLAYERS
             + " autosaveSpreadChunks=" + AUTOSAVE_CHUNKS + " autosaveSpreadBudgetUs=" + AUTOSAVE_BUDGET_US
