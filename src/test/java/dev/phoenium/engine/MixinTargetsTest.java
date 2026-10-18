@@ -114,4 +114,63 @@ class MixinTargetsTest {
     void fabricModJsonWithoutMixinsHasNoConfigs() {
         assertEquals(List.of(), MixinTargets.modConfigs("{\"id\":\"polymer-bundled\"}"));
     }
+
+    // ---- gate v2: which vanilla methods a mixin injects into
+
+    /** A mixin class with one method per (annotation descriptor, method selectors); null selectors = no "method" value. */
+    private static byte[] injectorMixin(String target, String[][] methods) {
+        ClassWriter cw = new ClassWriter(0);
+        cw.visit(Opcodes.V21, Opcodes.ACC_PUBLIC | Opcodes.ACC_ABSTRACT, "x/M", null, "java/lang/Object", null);
+        AnnotationVisitor m = cw.visitAnnotation("Lorg/spongepowered/asm/mixin/Mixin;", false);
+        AnnotationVisitor arr = m.visitArray("value");
+        arr.visit(null, Type.getObjectType(target));
+        arr.visitEnd();
+        m.visitEnd();
+        int k = 0;
+        for (String[] spec : methods) {
+            var mv = cw.visitMethod(Opcodes.ACC_PRIVATE, spec.length > 2 ? spec[2] : "h" + k++, "()V", null, null);
+            AnnotationVisitor a = mv.visitAnnotation(spec[0], false);
+            if (spec[1] != null) {
+                AnnotationVisitor sel = a.visitArray("method");
+                for (String s : spec[1].split("\\|")) sel.visit(null, s);
+                sel.visitEnd();
+            }
+            a.visitEnd();
+            mv.visitEnd();
+        }
+        cw.visitEnd();
+        return cw.toByteArray();
+    }
+
+    private static final String INJECT = "Lorg/spongepowered/asm/mixin/injection/Inject;";
+
+    @Test
+    void injectedMethodsReadsSelectorsInEveryForm() {
+        byte[] b = injectorMixin("net/minecraft/server/level/ServerPlayer", new String[][] {
+            {INJECT, "die(Lnet/minecraft/world/damagesource/DamageSource;)V"},
+            {"Lorg/spongepowered/asm/mixin/injection/Redirect;", "Lnet/minecraft/server/level/ServerPlayer;hurtServer(Lnet/minecraft/server/level/ServerLevel;Lnet/minecraft/world/damagesource/DamageSource;F)Z"},
+            {"Lcom/llamalad7/mixinextras/injector/wrapoperation/WrapOperation;", "restoreFrom|permissions"}});
+        assertEquals(List.of("die", "hurtServer", "restoreFrom", "permissions"), MixinTargets.injectedMethods(b));
+    }
+
+    @Test
+    void overwriteCountsUnderItsOwnName() {
+        byte[] b = injectorMixin("net/minecraft/server/level/ServerPlayer",
+            new String[][] {{"Lorg/spongepowered/asm/mixin/Overwrite;", null, "getTabListDisplayName"}});
+        assertEquals(List.of("getTabListDisplayName"), MixinTargets.injectedMethods(b));
+    }
+
+    @Test
+    void mixinWithoutInjectorsInjectsNothing() {
+        byte[] b = injectorMixin("net/minecraft/world/entity/npc/villager/Villager",
+            new String[][] {{"Lorg/spongepowered/asm/mixin/Unique;", null}, {"Lorg/spongepowered/asm/mixin/Shadow;", null}});
+        assertEquals(List.of(), MixinTargets.injectedMethods(b));
+    }
+
+    @Test
+    void wildcardRegexOrMissingSelectorsAreUnknown() {
+        assertNull(MixinTargets.injectedMethods(injectorMixin("net/minecraft/server/level/ServerPlayer", new String[][] {{INJECT, null}})));
+        assertNull(MixinTargets.injectedMethods(injectorMixin("net/minecraft/server/level/ServerPlayer", new String[][] {{INJECT, "*"}})));
+        assertNull(MixinTargets.injectedMethods(injectorMixin("net/minecraft/server/level/ServerPlayer", new String[][] {{INJECT, "/die.*/"}})));
+    }
 }

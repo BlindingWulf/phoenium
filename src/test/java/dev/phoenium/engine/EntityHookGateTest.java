@@ -98,4 +98,54 @@ class EntityHookGateTest {
         assertFalse(EntityHookGate.certified("universal-graves", CERTIFIED));
         assertFalse(EntityHookGate.certified(null, CERTIFIED));
     }
+
+    // ---- gate v2 (owner 2026-10-18: do not serialize harmless mods; do not miss late callbacks)
+
+    private static final String SP = "net.minecraft.server.level.ServerPlayer";
+    private static final String PLAYER = "net.minecraft.world.entity.player.Player";
+
+    @Test
+    void serverThreadOnlyPlayerHooksAreNotTileHooks() {
+        // luckperms 5.5.85: ServerPlayer permissions + restoreFrom; player-roles: readAdditionalSaveData, getTabListDisplayName
+        assertFalse(EntityHookGate.isTileHook(List.of(SP), List.of("permissions", "restoreFrom")));
+        assertFalse(EntityHookGate.isTileHook(List.of(SP), List.of("readAdditionalSaveData", "getTabListDisplayName")));
+        assertFalse(EntityHookGate.isTileHook(List.of(PLAYER, SP), List.of("<init>", "addAdditionalSaveData", "onUpdateAbilities")));
+    }
+
+    @Test
+    void playerDamageAndDeathHooksAreTileHooks() {
+        // a mob's tile thread kills or hurts a player: essential-commands, styled-chat, sgui hook ServerPlayer.die/hurtServer
+        assertTrue(EntityHookGate.isTileHook(List.of(SP), List.of("die")));
+        assertTrue(EntityHookGate.isTileHook(List.of(SP), List.of("permissions", "hurtServer")));
+        assertTrue(EntityHookGate.isTileHook(List.of(PLAYER), List.of("getDisplayName")));   // death messages read it on tiles
+    }
+
+    @Test
+    void nonPlayerEntityHooksAreAlwaysTileHooks() {
+        assertTrue(EntityHookGate.isTileHook(List.of("net.minecraft.world.entity.LivingEntity"), List.of("dropAllDeathLoot")));
+        assertTrue(EntityHookGate.isTileHook(List.of("net.minecraft.world.entity.LivingEntity"), List.of("readAdditionalSaveData")));
+        assertTrue(EntityHookGate.isTileHook(List.of(SP, "net.minecraft.world.entity.Entity"), List.of("permissions")));
+    }
+
+    @Test
+    void unreadableSelectorsCountAsTileHooks() {
+        assertTrue(EntityHookGate.isTileHook(List.of(SP), null));
+    }
+
+    @Test
+    void mixinsWithoutInjectorsAddNoCallbacks() {
+        // e.g. goml's Villager mixin and server_translations_api's ServerPlayer mixin only add fields or interfaces
+        assertFalse(EntityHookGate.isTileHook(List.of("net.minecraft.world.entity.npc.villager.Villager"), List.of()));
+        assertFalse(EntityHookGate.isTileHook(List.of(SP), List.of()));
+    }
+
+    @Test
+    void lateListenerIsSeenByIdentityChange() {
+        Object[] a = {new Object()}, b = {new Object()};
+        List<Object[]> before = List.of(a, b);
+        assertFalse(EntityHookGate.anyChanged(before, List.of(a, b)));
+        Object[] grown = {a[0], new Object()};                      // ArrayBackedEvent.register replaces the array
+        assertTrue(EntityHookGate.anyChanged(before, List.of(grown, b)));
+        assertTrue(EntityHookGate.anyChanged(before, List.<Object[]>of(a)));   // a missing event counts as a change
+    }
 }

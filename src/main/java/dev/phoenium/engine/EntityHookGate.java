@@ -70,6 +70,44 @@ public final class EntityHookGate {
         return c.startsWith("net.minecraft.world.entity.") || c.equals("net.minecraft.server.level.ServerPlayer");
     }
 
+    /** The player classes whose server-thread-only methods {@link #isTileHook} may discount. */
+    static final Set<String> PLAYER_CLASSES = Set.of("net.minecraft.server.level.ServerPlayer", "net.minecraft.world.entity.player.Player");
+
+    /**
+     * Player methods that vanilla calls only from the server thread (login, respawn, permission checks, saving, the tab
+     * list, menus, game mode, abilities and disconnect), never from an entity tick. A tile thread runs mob ticks and with
+     * them a player's damage and death ({@code hurtServer}, {@code die}, death messages), so those stay hooks. From the
+     * Stage 11 mixin census: luckperms (permissions, restoreFrom), player-roles (save data, tab list name),
+     * styledplayerlist (tab list) and playerabilitylib (constructor, save data, abilities) touch only these.
+     */
+    static final Set<String> SERVER_THREAD_ONLY = Set.of("<init>", "permissions", "getPermissionLevel", "restoreFrom",
+        "readAdditionalSaveData", "addAdditionalSaveData", "getTabListDisplayName", "getTabListOrder", "initMenu",
+        "initInventoryMenu", "openMenu", "setGameMode", "disconnect", "onUpdateAbilities");
+
+    /**
+     * Whether a mixin on {@code entityTargets} can run on a tile thread, given the vanilla methods it injects into or
+     * replaces ({@code null}: unknown, so yes). A mixin that injects nothing adds only fields and its own methods. One
+     * that touches only {@link #SERVER_THREAD_ONLY} methods of {@link #PLAYER_CLASSES} cannot. Anything else can.
+     */
+    public static boolean isTileHook(List<String> entityTargets, List<String> injected) {
+        if (injected == null) return true;
+        if (injected.isEmpty()) return false;
+        for (String t : entityTargets) if (!PLAYER_CLASSES.contains(t.replace('/', '.'))) return true;
+        for (String m : injected) if (!SERVER_THREAD_ONLY.contains(m)) return true;
+        return false;
+    }
+
+    /**
+     * Whether any listener array differs (by identity) from the one seen before: Fabric's ArrayBackedEvent replaces its
+     * array on every {@code register}, so a listener added after the start scan shows as a new array. A different count
+     * of events counts as a change.
+     */
+    public static boolean anyChanged(List<Object[]> before, List<Object[]> now) {
+        if (before.size() != now.size()) return true;
+        for (int i = 0; i < before.size(); i++) if (before.get(i) != now.get(i)) return true;
+        return false;
+    }
+
     /** A listed id, or a Fabric API module ({@code fabric-...}). */
     public static boolean certified(String modId, Set<String> certified) {
         if (modId == null) return false;

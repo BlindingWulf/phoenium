@@ -15,6 +15,7 @@ import java.util.concurrent.atomic.LongAdder;
 import java.util.function.Consumer;
 import java.util.function.Supplier;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents;
+import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.network.protocol.Packet;
@@ -73,6 +74,12 @@ public final class TileEngine {
     private static Thread serverThread;
     private static EngineWorkerPool pool;
     private static volatile boolean running;
+    /**
+     * Stage 11 gate v2: set (once, never cleared until the next start) when an uncertified entity listener is registered
+     * after the start scan; from then on the tiles run on the server thread, as with a foreign hook at start.
+     */
+    private static volatile boolean hooksSerial;
+    private static EntityHookScan.Watch hookWatch;
     private static boolean colourRunning;
     private static final IdentityHashMap<ServerLevel, LevelPhase> PHASES = new IdentityHashMap<>();
     private static final IdentityHashMap<ServerLevel, LevelPhase> CHUNK_PHASES = new IdentityHashMap<>();
@@ -150,6 +157,7 @@ public final class TileEngine {
     public static void install() {
         ServerLifecycleEvents.SERVER_STARTED.register(TileEngine::start);
         ServerLifecycleEvents.SERVER_STOPPING.register(TileEngine::stop);
+        ServerTickEvents.START_SERVER_TICK.register(TileEngine::watchHooks);
         EngineProtections.install();
         LOGGER.info("PHOENIUM_STAGE2 entrypoint registered once; engine mode ({}) awaits server start.", EngineConfig.describe());
     }
@@ -163,6 +171,17 @@ public final class TileEngine {
         pool = EngineWorkerPool.isWorker(serverThread) || EngineConfig.WORKERS == 0 || !hooks.parallel() ? null
             : new EngineWorkerPool(EngineConfig.WORKERS, TileEngine::runService);
         outboxes = null;
+        hooksSerial = false;
+        hookWatch = null;
+        if (pool != null) {
+            try {
+                hookWatch = new EntityHookScan.Watch();
+            } catch (ReflectiveOperationException | RuntimeException unreadable) {
+                // the start scan read these same fields; if they cannot be watched, stay on the safe side
+                hooksSerial = true;
+                LOGGER.warn("PHOENIUM_COMPAT changed entityHooks=SERIAL (listener watch unavailable: {})", unreadable.toString());
+            }
+        }
         running = true;
         LOGGER.info("PHOENIUM_STAGE2 started lifecycle=RUNNING scheduler=ENGINE workers={} mode=engine-tiles {} threads={} parallel={} transforms={} loaded={}",
             EngineConfig.WORKERS, EngineConfig.describe(), EngineConfig.WORKERS + 1, pool == null ? "OFF" : "TILES",
@@ -171,6 +190,29 @@ public final class TileEngine {
             LOGGER.info("PHOENIUM_COMPAT {}{}", hooks.describe(), hooks.parallel() ? ""
                 : " (tiles run on the server thread: third-party entity callbacks keep vanilla's thread; "
                   + "-Dphoenium.engine.foreignHooks=allow keeps the tile threads at the operator's risk)");
+    }
+
+    /**
+     * Start of each server tick, while the tile threads run: an uncertified entity listener registered since the start
+     * scan switches the tiles to the server thread for the rest of the run (logged once). Server thread, between ticks.
+     */
+    private static void watchHooks(MinecraftServer server) {
+        if (!running || pool == null || hooksSerial || hookWatch == null) return;
+        EntityHookGate.Decision d;
+        try {
+            d = hookWatch.check();
+        } catch (ReflectiveOperationException | RuntimeException unreadable) {
+            hooksSerial = true;
+            LOGGER.warn("PHOENIUM_COMPAT changed entityHooks=SERIAL (listener watch failed: {})", unreadable.toString());
+            return;
+        }
+        if (d == null) return;
+        if (d.parallel()) {
+            LOGGER.info("PHOENIUM_COMPAT entityHooks=PARALLEL kept: {} (registered after start)", d.describe());
+            return;
+        }
+        hooksSerial = true;
+        LOGGER.info("PHOENIUM_COMPAT changed {} (registered after start; tiles now run on the server thread)", d.describe());
     }
 
     private static void stop(MinecraftServer server) {
@@ -184,7 +226,7 @@ public final class TileEngine {
     /** The engine's state and counters, for the test diagnostics command (server thread). */
     public static String diagnostics() {
         return "mode=engine-tiles lifecycle=" + (running ? "RUNNING" : "STOPPED") + " workers=" + EngineConfig.WORKERS
-            + " parallel=" + (pool == null ? "OFF" : "TILES") + " " + counters();
+            + " parallel=" + (pool == null || hooksSerial ? "OFF" : "TILES") + " " + counters();
     }
 
     public static String counters() {
@@ -431,7 +473,7 @@ public final class TileEngine {
 
     /** Whether {@link #runParallel} can run a job: the engine runs with tile threads; the server thread, outside a tile. */
     static boolean canRunParallel() {
-        return running && pool != null && Thread.currentThread() == serverThread && MAIN.tile == null;
+        return running && pool != null && !hooksSerial && Thread.currentThread() == serverThread && MAIN.tile == null;
     }
 
     /**
@@ -637,8 +679,8 @@ public final class TileEngine {
             long gameTime = level.getGameTime();
             long started = System.nanoTime();
             // the vanilla body pushes on the profiler it captured on this thread: tiles leave it only when it is inactive
-            boolean parallel = pool != null && Profiler.get() == InactiveProfiler.INSTANCE;
-            if (pool != null && !parallel) serialFallbacks++;
+            boolean parallel = pool != null && !hooksSerial && Profiler.get() == InactiveProfiler.INSTANCE;
+            if (pool != null && !hooksSerial && !parallel) serialFallbacks++;
             try {
                 for (ArrayList<TileWork> work : colours) work.sort(BY_KEY);
                 if (dag && parallel) {
