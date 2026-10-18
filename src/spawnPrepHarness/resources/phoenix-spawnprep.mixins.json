@@ -1,0 +1,7 @@
+{
+  "required": true,
+  "package": "dev.phoenix.spawnprep.mixin",
+  "compatibilityLevel": "JAVA_25",
+  "server": ["MinecraftServerAccess", "PrepareLevelsMixin"],
+  "injectors": { "defaultRequire": 1 }
+}

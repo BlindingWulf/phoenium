@@ -632,6 +632,16 @@ tasks.register('c2meObservationHarness', Jar) {
     from('src/c2meHarness/resources')
 }
 
+// Phoenix spawn preparation (owner 2026-10-17): standalone server mod, no Phoenium dependency, built like the test harnesses.
+tasks.register('spawnPrepJar', Jar) {
+    description = 'Build the Phoenix spawn preparation mod (generates missing terrain around spawn before Done).'
+    dependsOn tasks.named('compileTestJava')
+    archiveFileName = 'phoenix-spawnprep.jar'
+    destinationDirectory = layout.buildDirectory.dir('test-harness')
+    from(sourceSets.test.output.classesDirs) { include 'dev/phoenix/spawnprep/**'; exclude '**/*Test.class', '**/*Test$*.class' }
+    from('src/spawnPrepHarness/resources')
+}
+
 tasks.register('prepareFullAcceptanceServer', Copy) {
     dependsOn tasks.named('prepareStage3ClientServer'), tasks.named('fullAcceptanceHarness')
     from(tasks.named('fullAcceptanceHarness'))

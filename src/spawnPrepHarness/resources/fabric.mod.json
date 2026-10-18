@@ -1,0 +1,11 @@
+{
+  "schemaVersion": 1,
+  "id": "phoenix-spawnprep",
+  "version": "0.1.0",
+  "name": "Phoenix spawn preparation",
+  "description": "Generates the missing terrain around spawn before the server reports Done. Finished chunks are never loaded or rewritten. Config: config/phoenix-spawnprep.properties.",
+  "environment": "server",
+  "entrypoints": { "main": ["dev.phoenix.spawnprep.SpawnPrep"] },
+  "mixins": ["phoenix-spawnprep.mixins.json"],
+  "depends": { "fabricloader": ">=0.19.5", "minecraft": "26.2" }
+}
