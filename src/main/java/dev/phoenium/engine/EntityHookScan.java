@@ -1,15 +1,10 @@
 package dev.phoenium.engine;
 
-import com.google.gson.JsonElement;
-import com.google.gson.JsonObject;
-import com.google.gson.JsonParser;
-import java.io.Reader;
 import java.lang.reflect.Field;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.Collection;
 import java.util.HashMap;
 import java.util.LinkedHashSet;
@@ -17,6 +12,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.TreeSet;
 import net.fabricmc.loader.api.FabricLoader;
 import net.fabricmc.loader.api.ModContainer;
 import org.slf4j.Logger;
@@ -24,8 +20,8 @@ import org.slf4j.LoggerFactory;
 
 /**
  * Stage 11: finds the entity hooks the tile threads would run (see {@link EntityHookGate}) once, at server start, after
- * every mod initializer has registered its listeners and every mixin config has been applied. Read-only: it inspects
- * listener arrays and mixin configs and changes nothing. Any failure of the scan itself counts as a foreign hook
+ * every mod initializer has registered its listeners. Read-only: it inspects listener arrays and the mods' own mixin
+ * files and changes nothing. Any failure of the scan itself counts as a foreign hook
  * ({@code scan-error}), so an unreadable setup runs the safe serial way.
  */
 final class EntityHookScan {
@@ -138,35 +134,36 @@ final class EntityHookScan {
 
     // ---- mixins
 
+    /**
+     * Entity mixins of the mods that are not certified, read from each mod's own fabric.mod.json, mixin configs and mixin
+     * class files (see {@link MixinTargets}). Certified mods are not read at all, so the stack without add-ons parses
+     * nothing. A mod whose files cannot be read counts as a foreign hook.
+     */
     private static void mixins(Collection<ModContainer> mods, List<EntityHookGate.Hook> out) {
-        Map<String, String> configOwner = new HashMap<>();
         for (ModContainer mod : mods) {
-            Optional<Path> fmj = mod.findPath("fabric.mod.json");
-            if (fmj.isEmpty()) continue;
-            try (Reader r = Files.newBufferedReader(fmj.get(), StandardCharsets.UTF_8)) {
-                JsonElement root = JsonParser.parseReader(r);
-                if (!root.isJsonObject() || !root.getAsJsonObject().has("mixins")) continue;
-                for (JsonElement e : root.getAsJsonObject().getAsJsonArray("mixins")) {
-                    String name = e.isJsonPrimitive() ? e.getAsString()
-                        : e.isJsonObject() && ((JsonObject) e).has("config") ? ((JsonObject) e).get("config").getAsString() : null;
-                    if (name != null) configOwner.put(name, mod.getMetadata().getId());
+            String id = mod.getMetadata().getId();
+            if (EntityHookGate.certified(id, EntityHookGate.DEFAULT_CERTIFIED)) continue;
+            try {
+                Optional<Path> fmj = mod.findPath("fabric.mod.json");
+                if (fmj.isEmpty()) continue;
+                for (String config : MixinTargets.modConfigs(Files.readString(fmj.get(), StandardCharsets.UTF_8))) {
+                    Optional<Path> cfg = mod.findPath(config);
+                    if (cfg.isEmpty()) continue;
+                    TreeSet<String> entity = new TreeSet<>();
+                    for (String cls : MixinTargets.configClasses(Files.readString(cfg.get(), StandardCharsets.UTF_8))) {
+                        Optional<Path> file = mod.findPath(cls.replace('.', '/') + ".class");
+                        if (file.isEmpty()) continue;
+                        for (String target : MixinTargets.hookTargets(Files.readAllBytes(file.get())))
+                            if (EntityHookGate.isEntityTarget(target)) entity.add(target.replace('/', '.'));
+                    }
+                    if (entity.isEmpty()) continue;
+                    List<String> shown = new ArrayList<>(entity).subList(0, Math.min(entity.size(), 6));
+                    out.add(new EntityHookGate.Hook(id, "mixin", config + " -> " + String.join(",", shown)
+                        + (entity.size() > 6 ? ",+" + (entity.size() - 6) : "")));
                 }
-            } catch (Exception unreadable) {
-                // a mod without readable metadata has no mixins we can attribute: counted by its configs below
+            } catch (Exception | LinkageError unreadable) {
+                out.add(new EntityHookGate.Hook(id, "mixin", "unreadable: " + unreadable));
             }
-        }
-        for (org.spongepowered.asm.mixin.transformer.Config config : org.spongepowered.asm.mixin.Mixins.getConfigs()) {
-            String name = config.getName();
-            Set<String> targets = config.getConfig().getTargets();
-            String owner = configOwner.get(name);
-            List<String> entityTargets = new ArrayList<>();
-            for (String target : targets) if (EntityHookGate.isEntityTarget(target)) entityTargets.add(target.replace('/', '.'));
-            if (entityTargets.isEmpty()) continue;
-            String[] sorted = entityTargets.toArray(new String[0]);
-            Arrays.sort(sorted);
-            out.add(new EntityHookGate.Hook(owner == null ? "config:" + name : owner, "mixin",
-                name + " -> " + String.join(",", Arrays.asList(sorted).subList(0, Math.min(sorted.length, 6)))
-                    + (sorted.length > 6 ? ",+" + (sorted.length - 6) : "")));
         }
     }
 }
