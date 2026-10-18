@@ -65,9 +65,15 @@ Any other value of `foreignHooks` is treated as `auto`, so foreign hooks still m
 ## Known limitations (owner review 2026-10-18)
 
 - **L-a (narrowed in v2):** the gate is per mod, not per callback. One tile-reachable hook makes the whole run SERIAL, even when the mod's other hooks are harmless.
-  - The method rule removes the common harmless cases: LuckPerms permissions and respawn, Player Roles save data and tab list, Styled Player List, and PlayerAbilityLib.
+  - The method rule removes the common harmless cases, confirmed live on a2cde95:
+    - LuckPerms (`permissions`, `restoreFrom`): PARALLEL alone;
+    - polymer-core's `initMenu` mixin and the injector-free mixins of polymer-networking, polymer-virtual-entity and server_translations_api.
   - Mods with real tile-reachable hooks still serialize by design. Examples: Essential Commands, Styled Chat and SGUI hook `ServerPlayer.die`; Vanish, GOML, Ledger, OPAC, Graves and Polymer hook damage or ticks.
-  - Public duck-interface methods without a `$` in their name count as possible overrides. That is conservative: it can serialize a harmless mod, never the reverse.
+  - Player Roles stays SERIAL, correctly. Its `name_decoration/ServerPlayerEntityMixin` merges a public `getDisplayName()` override into `ServerPlayer`, and death messages call it on the tile that kills the player. The offline census prediction missed this, because the census does not record merged methods; the gate reads the class bytes.
+- **L-e (documented, not addressed; conservative):** public methods a mixin merges to implement its own mod interface count as possible overrides, because the rule matches merged methods by name only.
+  - Example: PlayerAbilityLib's `ServerPlayerMixin` merges `listPalAbilities`, `get` and `refreshAllPalAbilities`. Its injectors touch only server-thread-only methods. Vanilla cannot call these methods, yet the mod counts as foreign (s11gv21-goml-D43G-1).
+  - No measured stack changed decision because of it: PlayerAbilityLib arrives with GOML, SGUI or Polymer, which serialize anyway.
+  - Possible fix: skip merged methods that implement a non-`net.minecraft` interface the mixin itself adds. Not done in v2.1.
 - **L-b (addressed in v2):** listeners registered after start are watched. Events outside the list above are not watched or scanned at all; see L-d.
 - **L-c (addressed in v2):**
   - The applied-mixin cross-check covers config plugins and programmatic configs for entity classes loaded by server start. Entity classes are loaded at bootstrap through the `EntityType` registry.
@@ -85,5 +91,18 @@ Any other value of `foreignHooks` is treated as `auto`, so foreign hooks still m
   - deathstorm 0 overlaps;
   - inert PARALLEL foreign=[] without add-ons;
   - benchmarks with no regression; start time unchanged; liveAfterGC 374-385 vs 372-382 MB.
+- v2.1 (a2cde95, 2026-10-18), all runs PASS, no fatal errors or crash reports. The applied-mixin cross-check took 13-19 ms with no WARN.
+  - t0 without add-ons: 23/23, PARALLEL foreign=[], appliedMixins 793-809.
+  - LuckPerms: 29/29, PARALLEL.
+  - Graves: SERIAL (polymer-*, sgui, universal-graves).
+  - Deathstorm dds2: 7/7, SERIAL.
+  - Styled Chat: 9/9, SERIAL.
+  - Player Roles: 13/13, SERIAL (see L-a).
+  - GOML: 32/32, SERIAL (see L-e).
+  - still8 benchmark: mean 1.06 ms, against D43 1.01 and v1 0.99.
+  - explore8 benchmark, 5 interleaved pairs: gate mean 2.728 ± 0.117 ms vs plain D43 2.678 ± 0.048 ms (+0.05 ms, Welch p = 0.41, not significant). p95 5.31 vs 5.19; p99 7.78 vs 7.95.
+    - entityParallelRuns 4614-4750 vs 4664-4752. Start 16.1-18.2 s vs 16.1-23.1 s.
+    - The per-tick watch is about eight reflective field reads, well under a microsecond.
+    - Runs: s11gv21-bench-D43G-explore8[-2..-5] and s11t0-bench-D43-explore8[-2..-5]; details in `.audit/stage11-20261017/GATE_V2_REVALIDATION.md`.
 - Matrix: `.audit/stage11-20261017/STAGE11_MATRIX.md`.
 - Per-mod census: `.audit/stage11-20261017/GATE_CENSUS.md`.
