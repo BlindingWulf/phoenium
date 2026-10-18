@@ -16,7 +16,6 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
-import java.util.TreeMap;
 import java.util.TreeSet;
 import java.util.function.Supplier;
 import net.fabricmc.loader.api.FabricLoader;
@@ -268,9 +267,13 @@ final class EntityHookScan {
     }
 
     /**
-     * The mixins Mixin actually applied to entity classes (its class metadata cache, read once at start), for the ones the
-     * config scan did not see: those a config plugin adds or a programmatic config declares. Each is judged like the
-     * others, by its mod and its own class bytes; one whose bytes cannot be read counts as a hook.
+     * The mixins Mixin actually applied whose targets include entity classes (its class metadata cache, read once at start),
+     * for the ones the config scan did not see: those a config plugin adds or a programmatic config declares. Each is
+     * judged like the others, by its mod and its own class bytes; one whose bytes cannot be read counts as a hook.
+     *
+     * <p>Mixin records an applied mixin on the mixin's own ClassInfo ({@code MixinInfo.postApply}:
+     * {@code info.addAppliedMixin(this)}), not on its targets, so this walks from applied mixins to their targets.
+     * Phoenium's own mixins are always applied, so seeing none means Mixin's internals changed: that is logged as a WARN.
      */
     private static void applied(Collection<ModContainer> mods, List<EntityHookGate.Hook> out, Set<String> seen)
             throws ReflectiveOperationException {
@@ -279,35 +282,37 @@ final class EntityHookScan {
         cacheField.setAccessible(true);
         Map<?, ?> cache = (Map<?, ?>) cacheField.get(null);
         List<Object> infos = copy(() -> new ArrayList<Object>(cache.values()));
-        Map<String, TreeSet<String>> targetsOf = new TreeMap<>();
+        List<Map.Entry<String, List<String>>> applied = new ArrayList<>();
         Map<String, IMixinInfo> infoOf = new HashMap<>();
-        int entityClasses = 0;
         for (Object o : infos) {
-            if (!(o instanceof ClassInfo ci) || !EntityHookGate.isEntityTarget(ci.getName())) continue;
-            entityClasses++;
+            if (!(o instanceof ClassInfo ci)) continue;
             for (IMixinInfo mi : copy(() -> new ArrayList<IMixinInfo>(ci.getAppliedMixins()))) {
                 String cls = mi.getClassName();
-                if (cls == null || seen.contains(cls)) continue;
-                targetsOf.computeIfAbsent(cls, k -> new TreeSet<>()).add(ci.getName().replace('/', '.'));
-                infoOf.putIfAbsent(cls, mi);
+                if (cls == null || infoOf.putIfAbsent(cls, mi) != null) continue;
+                List<String> targets = mi.getTargetClasses();
+                applied.add(Map.entry(cls, targets == null ? List.of() : List.copyOf(targets)));
             }
         }
+        if (applied.isEmpty())
+            LOGGER.warn("PHOENIUM_COMPAT applied-mixin cross-check saw no applied mixins (Mixin internals changed?); "
+                + "decision uses the mods' mixin configs only");
+        Map<String, List<String>> unseen = EntityHookGate.unseenEntityTargets(applied, seen);
         int judged = 0;
-        for (Map.Entry<String, TreeSet<String>> e : targetsOf.entrySet()) {
+        for (Map.Entry<String, List<String>> e : unseen.entrySet()) {
             String cls = e.getKey();
             String mod = sourceMod(infoOf.get(cls));
             if (mod == null) mod = modOf(cls, mods);
             if (EntityHookGate.certified(mod, EntityHookGate.DEFAULT_CERTIFIED)) continue;
             judged++;
-            List<String> targets = new ArrayList<>(e.getValue());
+            List<String> targets = e.getValue();
             String detail = "applied " + cls + " -> " + String.join(",", targets.subList(0, Math.min(targets.size(), 6)))
                 + (targets.size() > 6 ? ",+" + (targets.size() - 6) : "");
             byte[] bytes = classBytes(cls, mod);
             if (bytes == null) out.add(new EntityHookGate.Hook(mod, "mixin", detail + " (class unreadable)"));
             else if (tileHook(mod, cls, targets, bytes)) out.add(new EntityHookGate.Hook(mod, "mixin", detail));
         }
-        LOGGER.info("PHOENIUM_COMPAT applied-mixin cross-check entityClasses={} unseenMixins={} judged={} ms={}", entityClasses,
-            targetsOf.size(), judged, String.format(Locale.ROOT, "%.1f", (System.nanoTime() - t0) / 1e6));
+        LOGGER.info("PHOENIUM_COMPAT applied-mixin cross-check appliedMixins={} unseenEntityMixins={} judged={} ms={}", applied.size(),
+            unseen.size(), judged, String.format(Locale.ROOT, "%.1f", (System.nanoTime() - t0) / 1e6));
     }
 
     /** Copies a collection that class loading on another thread may change, retrying a few times. */

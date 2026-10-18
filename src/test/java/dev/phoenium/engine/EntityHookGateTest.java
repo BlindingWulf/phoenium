@@ -148,4 +148,22 @@ class EntityHookGateTest {
         assertTrue(EntityHookGate.anyChanged(before, List.of(grown, b)));
         assertTrue(EntityHookGate.anyChanged(before, List.<Object[]>of(a)));   // a missing event counts as a change
     }
+
+    /**
+     * s11gv2-t0-D43G-1 logged unseenMixins=0: Mixin records an applied mixin on the MIXIN's own ClassInfo
+     * (MixinInfo.postApply: info.addAppliedMixin(this)), not on its targets, so the cross-check must go from each applied
+     * mixin to its target classes.
+     */
+    @Test
+    void appliedMixinsAreGroupedByTheirEntityTargets() {
+        var applied = List.of(
+            java.util.Map.entry("a.PluginAddedMixin", List.of("net/minecraft/world/entity/LivingEntity", "net/minecraft/server/level/ServerLevel")),
+            java.util.Map.entry("b.SeenMixin", List.of("net.minecraft.world.entity.Entity")),
+            java.util.Map.entry("c.LevelOnlyMixin", List.of("net.minecraft.server.level.ServerLevel")),
+            java.util.Map.entry("a.PlayerMixin", List.of("net.minecraft.server.level.ServerPlayer")));
+        var out = EntityHookGate.unseenEntityTargets(applied, Set.of("b.SeenMixin"));
+        assertEquals(java.util.Map.of(
+            "a.PluginAddedMixin", List.of("net.minecraft.world.entity.LivingEntity"),
+            "a.PlayerMixin", List.of("net.minecraft.server.level.ServerPlayer")), out);
+    }
 }

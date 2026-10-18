@@ -108,6 +108,23 @@ public final class EntityHookGate {
         return false;
     }
 
+    /**
+     * From Mixin's applied mixins (class name, target classes) to the entity targets of each one the config scan did not
+     * see ({@code seen}), dotted and sorted; mixins without an entity target are left out.
+     */
+    public static java.util.Map<String, List<String>> unseenEntityTargets(List<java.util.Map.Entry<String, List<String>>> applied,
+                                                                          Set<String> seen) {
+        java.util.Map<String, TreeSet<String>> grouped = new java.util.TreeMap<>();
+        for (java.util.Map.Entry<String, List<String>> e : applied) {
+            if (e.getKey() == null || seen.contains(e.getKey())) continue;
+            for (String t : e.getValue())
+                if (isEntityTarget(t)) grouped.computeIfAbsent(e.getKey(), k -> new TreeSet<>()).add(t.replace('/', '.'));
+        }
+        java.util.Map<String, List<String>> out = new java.util.TreeMap<>();
+        grouped.forEach((k, v) -> out.put(k, List.copyOf(v)));
+        return out;
+    }
+
     /** A listed id, or a Fabric API module ({@code fabric-...}). */
     public static boolean certified(String modId, Set<String> certified) {
         if (modId == null) return false;
