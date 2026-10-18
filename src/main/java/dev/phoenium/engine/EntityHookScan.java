@@ -166,7 +166,12 @@ final class EntityHookScan {
                     if (handler == null) continue;
                     String host = hostClass(handler.getClass().getName());
                     String mod = cache.computeIfAbsent(host, h -> modOf(h, mods));
-                    out.add(new EntityHookGate.Hook(mod, "event", holder.getSimpleName() + "." + spec[i] + " " + host));
+                    String name = holder.getSimpleName() + "." + spec[i];
+                    if (!EntityHookGate.isTileEvent(name, EngineConfig.DEATH_CONFINEMENT)) {
+                        LOGGER.info("PHOENIUM_COMPAT entity hook ignored mod={} event={} listener={} reason=death-confined", mod, name, host);
+                        continue;
+                    }
+                    out.add(new EntityHookGate.Hook(mod, "event", name + " " + host));
                 }
             }
         }
@@ -260,9 +265,10 @@ final class EntityHookScan {
     /** {@link EntityHookGate#isTileHook} for one mixin class; a mixin it discounts is logged with its methods. */
     private static boolean tileHook(String mod, String mixinClass, List<String> targets, byte[] bytes) {
         List<String> injected = MixinTargets.injectedMethods(bytes);
-        if (EntityHookGate.isTileHook(targets, injected)) return true;
+        if (EntityHookGate.isTileHook(targets, injected, EngineConfig.DEATH_CONFINEMENT)) return true;
         LOGGER.info("PHOENIUM_COMPAT entity hook ignored mod={} mixin={} targets={} methods={} reason={}", mod, mixinClass,
-            targets, injected, injected.isEmpty() ? "no-injector" : "server-thread-only");
+            targets, injected, injected.isEmpty() ? "no-injector"
+                : EntityHookGate.isTileHook(targets, injected) ? "death-confined" : "server-thread-only");
         return false;
     }
 

@@ -23,6 +23,12 @@ public final class EngineConfig {
     /** Traps (a load-miss chunk request, a block write outside the claim) throw instead of being counted. */
     public static final boolean STRICT = Boolean.getBoolean("phoenium.engine.strict");
     /**
+     * Stage 11 P1 prototype {@code phoenium.engine.deathConfinement} (default false, experimental): a death caused on a tile
+     * runs after the colour on the server thread (EngineDeathConfinement* mixins, applied only then), and the entity-hook
+     * gate no longer counts hooks reachable only inside {@code die} (EntityHookGate.DEATH_PATH, AFTER_DEATH listeners).
+     */
+    public static final boolean DEATH_CONFINEMENT = Boolean.getBoolean("phoenium.engine.deathConfinement");
+    /**
      * S9-E3 {@code phoenium.engine.chunks} (default true): the chunk phase of ServerChunkCache.tickChunks (inhabited
      * time, thunder, natural spawning, precipitation and random block ticks) runs in tiles too.
      */

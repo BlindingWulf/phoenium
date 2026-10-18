@@ -44,7 +44,14 @@ public final class EngineMixinPlugin implements IMixinConfigPlugin {
 
     @Override public void onLoad(String mixinPackage) { }
     @Override public String getRefMapperConfig() { return null; }
-    @Override public boolean shouldApplyMixin(String targetClassName, String mixinClassName) { return EngineConfig.ENABLED; }
+    @Override public boolean shouldApplyMixin(String targetClassName, String mixinClassName) {
+        return applies(mixinClassName, EngineConfig.ENABLED, EngineConfig.DEATH_CONFINEMENT);
+    }
+
+    /** Engine mixins apply in engine mode; the Stage 11 death-confinement ones only with phoenium.engine.deathConfinement too. */
+    static boolean applies(String mixinClassName, boolean engine, boolean deathConfinement) {
+        return engine && (deathConfinement || !mixinClassName.startsWith(PACKAGE + "EngineDeathConfinement"));
+    }
     @Override public void acceptTargets(Set<String> myTargets, Set<String> otherTargets) { }
     @Override public List<String> getMixins() { return null; }
     @Override public void preApply(String targetClassName, ClassNode targetClass, String mixinClassName, IMixinInfo info) { }

@@ -98,6 +98,41 @@ public final class EntityHookGate {
     }
 
     /**
+     * Stage 11 P1 prototype ({@code phoenium.engine.deathConfinement}): the entity methods vanilla 26.2 reaches only through
+     * {@code die}, which confinement defers from tile threads to the server thread. Proven from the 26.2 call graph, every
+     * caller and every declarer (STAGE11_CALLBACK_CONFINEMENT_DESIGN.md §3a). It holds only together with the deferral of
+     * {@code ArmorStand.brokenByAnything}, the one non-death caller of {@code dropAllDeathLoot}. {@code dropFromLootTable}
+     * is not in it (shearing, gifts and {@code Creeper.killedEntity} call it too). Re-prove it for each Minecraft version.
+     */
+    public static final Set<String> DEATH_PATH = Set.of("die", "dropAllDeathLoot", "dropCustomDeathLoot", "dropEquipment",
+        "dropExperience", "createWitherRose");
+
+    /** Fabric API events fired only inside {@code die} (LivingEntity.die and ServerPlayer.die mixins of fabric-entity-events-v1). */
+    static final Set<String> DEATH_EVENTS = Set.of("ServerLivingEntityEvents.AFTER_DEATH",
+        "ServerEntityCombatEvents.AFTER_KILLED_OTHER_ENTITY");
+
+    /**
+     * {@link #isTileHook(List, List)} with death confinement: when {@code deathConfined}, a {@link #DEATH_PATH} method of any
+     * entity target no longer runs on a tile, and server-thread-only methods still count only on player targets.
+     */
+    public static boolean isTileHook(List<String> entityTargets, List<String> injected, boolean deathConfined) {
+        if (!deathConfined || injected == null || injected.isEmpty()) return isTileHook(entityTargets, injected);
+        boolean playersOnly = true;
+        for (String t : entityTargets) if (!PLAYER_CLASSES.contains(t.replace('/', '.'))) playersOnly = false;
+        for (String m : injected) {
+            if (DEATH_PATH.contains(m)) continue;
+            if (playersOnly && SERVER_THREAD_ONLY.contains(m)) continue;
+            return true;
+        }
+        return false;
+    }
+
+    /** Whether a listener on {@code event} ({@code Holder.FIELD}) runs on a tile: all scanned events do, unless confined to death. */
+    public static boolean isTileEvent(String event, boolean deathConfined) {
+        return !(deathConfined && DEATH_EVENTS.contains(event));
+    }
+
+    /**
      * Whether any listener array differs (by identity) from the one seen before: Fabric's ArrayBackedEvent replaces its
      * array on every {@code register}, so a listener added after the start scan shows as a new array. A different count
      * of events counts as a change.
