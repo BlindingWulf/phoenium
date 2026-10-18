@@ -12,6 +12,10 @@ Fabric API, so it works on every stack Phoenix runs (L5, D43, …).
   radius, state). A finished area is skipped.
 - **Interrupted runs resume.** If the server was killed, the marker says `RUNNING`; the next start resumes and only the
   chunks still missing are generated.
+  - This includes a brand-new world killed during its first preparation. Before generating, the mod saves the new world's
+    level data (the same `saveEverything` the dedicated server runs right after "Done").
+  - Without that save the world had no `world_gen_settings.dat` and could not load again: "Overworld settings missing".
+    The laptop found this on Phone A on 2026-10-18 (RADIUS-2 b5/b6), and jar AECD0C457460 has the bug.
 - **Memory.**
   - At most `maxInFlight` chunks are requested at once.
   - Tickets are released as soon as a chunk is done, and released chunks are unloaded and saved as the run goes.
@@ -33,6 +37,7 @@ Bad values never stop the server; they fall back or are clamped, with a `config:
 **Log lines** (always `[PhoenixSpawnPrep]` and then `key=value` fields; field order is fixed):
 ```
 [PhoenixSpawnPrep] START reason=<new-world|resume|expand|center-changed|radius-changed|existing-world-opt-in> dimension=minecraft:overworld centerChunk=X,Z radiusBlocks=N chunks=TOTAL maxInFlight=M
+[PhoenixSpawnPrep] SAVED new world level data before preparation seconds=S.S     (new worlds only, right after START)
 [PhoenixSpawnPrep] PROGRESS done=D total=T pct=P.P generated=G existing=E failed=F cps=C.C etaS=S inFlight=I heapMB=U/M     (every 2 s)
 [PhoenixSpawnPrep] DONE state=<COMPLETE|PARTIAL|CANCELLED> done=D total=T generated=G existing=E failed=F seconds=S.S
 [PhoenixSpawnPrep] READY state=…            (the server finishes starting now; "Done (…)!" follows)

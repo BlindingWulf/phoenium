@@ -5,6 +5,7 @@ import java.io.Reader;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.Locale;
 import java.util.Properties;
 import java.util.concurrent.CompletableFuture;
 import net.fabricmc.api.ModInitializer;
@@ -74,6 +75,16 @@ public final class SpawnPrep implements ModInitializer {
                  decision.reason(), dimension, cx, cz, config.radiusBlocks(), plan.size(), config.maxInFlight());
         writeMarker(markerFile, SpawnPrepMarker.State.RUNNING, dimension, cx, cz, config.radiusBlocks(),
                     new SpawnPrepRunner.Result(SpawnPrepMarker.State.RUNNING, 0, plan.size(), 0, 0, 0, 0, 0));
+        if (newWorld) {
+            // A new world has no level data on disk yet: the dedicated server writes it (level.dat, world_gen_settings.dat)
+            // with saveEverything(false, true, true) right after "Done". Killed during a long first preparation, the world
+            // could not load again ("Overworld settings missing"). Make that same save now, after the RUNNING marker, so a
+            // kill at any later point resumes instead.
+            long t0 = System.nanoTime();
+            server.saveEverything(true, true, true);
+            LOG.info("[PhoenixSpawnPrep] SAVED new world level data before preparation seconds={}",
+                     String.format(Locale.ROOT, "%.1f", (System.nanoTime() - t0) / 1e9));
+        }
         SpawnPrepRunner.Result result = new SpawnPrepRunner(plan, config.maxInFlight(), new LevelBackend(level, waiter),
             new SpawnPrepRunner.Control() {
                 @Override
