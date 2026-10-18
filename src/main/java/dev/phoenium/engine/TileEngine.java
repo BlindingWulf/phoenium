@@ -158,13 +158,19 @@ public final class TileEngine {
         // load (and so transform) the section map class now, so its transform shows on the start line
         String sectionMap = ClassInstanceMultiMap.class.getSimpleName();
         serverThread = server.getRunningThread();
-        pool = EngineWorkerPool.isWorker(serverThread) || EngineConfig.WORKERS == 0 ? null
+        // Stage 11: tile threads only when every entity damage/death hook belongs to a certified mod (EntityHookGate)
+        EntityHookGate.Decision hooks = EngineConfig.WORKERS == 0 ? null : EntityHookScan.run();
+        pool = EngineWorkerPool.isWorker(serverThread) || EngineConfig.WORKERS == 0 || !hooks.parallel() ? null
             : new EngineWorkerPool(EngineConfig.WORKERS, TileEngine::runService);
         outboxes = null;
         running = true;
         LOGGER.info("PHOENIUM_STAGE2 started lifecycle=RUNNING scheduler=ENGINE workers={} mode=engine-tiles {} threads={} parallel={} transforms={} loaded={}",
             EngineConfig.WORKERS, EngineConfig.describe(), EngineConfig.WORKERS + 1, pool == null ? "OFF" : "TILES",
             EngineConfig.transforms(), sectionMap);
+        if (hooks != null)
+            LOGGER.info("PHOENIUM_COMPAT {}{}", hooks.describe(), hooks.parallel() ? ""
+                : " (tiles run on the server thread: third-party entity callbacks keep vanilla's thread; "
+                  + "-Dphoenium.engine.foreignHooks=allow keeps the tile threads at the operator's risk)");
     }
 
     private static void stop(MinecraftServer server) {
