@@ -8,11 +8,17 @@ import java.util.function.BooleanSupplier;
 public final class ChunkSynchronousAccessGuard {
     /** Synchronous fault routing only: never used to discover work or grant query authority. */
     private static final ThreadLocal<Invocation> INVOCATION = new dev.phoenium.core.FastThreadLocal<>();
+    private static final String UNFINISHED = "unfinished synchronous chunk dependency inside an owner transaction";
     private ChunkSynchronousAccessGuard() { }
     public static void beforeWait(BooleanSupplier ready) {
         if (OwnershipContext.current().isPresent() && !ready.getAsBoolean()) {
-            throw breach(new ChunkProtocolException("unfinished synchronous chunk dependency inside an owner transaction"));
+            throw breach(new ChunkProtocolException(UNFINISHED));
         }
+    }
+
+    /** The bare marker {@link #beforeWait} throws, before any wait began; never a wrapped or other protocol failure. */
+    public static boolean unfinishedWait(Throwable failure) {
+        return failure instanceof ChunkProtocolException && failure.getCause() == null && UNFINISHED.equals(failure.getMessage());
     }
 
     /** Typed private-query faults use the same caught-failure barrier as unfinished waits. */

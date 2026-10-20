@@ -1,5 +1,12 @@
 package dev.phoenium.service;
 
+import dev.phoenium.chunk.ChunkProtocolException;
+import dev.phoenium.chunk.ChunkSynchronousAccessGuard;
+import dev.phoenium.core.WorldId;
+import dev.phoenium.ownership.LeaseEpoch;
+import dev.phoenium.ownership.OperationCategory;
+import dev.phoenium.ownership.OwnershipContext;
+import dev.phoenium.region.RegionId;
 import net.minecraft.world.entity.ai.village.VillageSiege;
 import net.minecraft.world.entity.npc.CatSpawner;
 import net.minecraft.world.level.CustomSpawner;
@@ -31,6 +38,38 @@ final class RegionalCustomSpawnerBoundaryTest {
             counter.getInt(spawner), true));
         spawner.tick(null, true);
         assertEquals(1, counter.getInt(spawner));
+    }
+
+    /** Phone B 2026-10-20: after a respawn at spawn, CatSpawner's hasChunksAt gate passed for chunk [1, -1] while it
+     * was still loading, and its terrain read inside the owner transaction stopped the server. */
+    @Test void terrainStillLoadingEndsOnlyThatSpawnerAttempt() {
+        int[] reached = {0};
+        try (var ignored = OwnershipContext.enter(new RegionId(new WorldId("spawner-terrain"), "owner"),
+                new LeaseEpoch(1), OperationCategory.TICK)) {
+            assertFalse(RegionalChunkGameplayService.runSpawnerAttempt(() -> {
+                reached[0]++;
+                ChunkSynchronousAccessGuard.beforeWait(() -> false);
+                reached[0] += 100;
+            }));
+            assertTrue(RegionalChunkGameplayService.runSpawnerAttempt(() -> reached[0]++));
+        }
+        assertEquals(2, reached[0], "the attempt ends at the unfinished read and the next attempt runs");
+    }
+
+    @Test void everyOtherSpawnerFailureStillFails() {
+        try (var ignored = OwnershipContext.enter(new RegionId(new WorldId("spawner-terrain"), "owner"),
+                new LeaseEpoch(1), OperationCategory.TICK)) {
+            assertThrows(ChunkProtocolException.class, () -> RegionalChunkGameplayService.runSpawnerAttempt(() -> {
+                throw new ChunkProtocolException("published route unavailable");
+            }));
+            assertThrows(ChunkProtocolException.class, () -> RegionalChunkGameplayService.runSpawnerAttempt(() -> {
+                throw new ChunkProtocolException("unfinished synchronous chunk dependency inside an owner transaction",
+                    new IllegalStateException("a wrapped wait is not the bare guard marker"));
+            }));
+            assertThrows(IllegalStateException.class, () -> RegionalChunkGameplayService.runSpawnerAttempt(() -> {
+                throw new IllegalStateException("retained siege origin changed during regional admission");
+            }));
+        }
     }
 
 }

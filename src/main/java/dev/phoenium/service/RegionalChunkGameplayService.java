@@ -57,7 +57,7 @@ public final class RegionalChunkGameplayService implements NaturalSpawnContinuat
     private final int recipientRadius;
     private Cycle cycle;
     private final IdentityHashMap<TickingBlockEntity, BlockEntityReceipt> blockEntities = new IdentityHashMap<>();
-    private long cycles, entityContributions, chunkCallbacks;
+    private long cycles, entityContributions, chunkCallbacks, spawnerTerrainNotReady;
     private long naturalSpawnOrdinal;
     private long vaultTickOrdinal;
     private final java.util.concurrent.atomic.AtomicBoolean vaultBindingFailureReported = new java.util.concurrent.atomic.AtomicBoolean();
@@ -286,9 +286,23 @@ public final class RegionalChunkGameplayService implements NaturalSpawnContinuat
             if (siege != null && (siege.phoenium$hasSetupSiege() != siegeSetup
                     || siege.phoenium$spawnX() != siegeX || siege.phoenium$spawnZ() != siegeZ))
                 throw new IllegalStateException("retained siege origin changed during regional admission");
-            original.run();
+            if (!runSpawnerAttempt(original)) {
+                spawnerTerrainNotReady = Math.incrementExact(spawnerTerrainNotReady);
+                org.slf4j.LoggerFactory.getLogger("Phoenium").info("PHOENIUM_SPAWNER_TERRAIN_NOT_READY spawner={} world={} attempts={}",
+                    spawner.getClass().getSimpleName(), world, spawnerTerrainNotReady);
+            }
         });
         chunkCallbacks = Math.incrementExact(chunkCallbacks);
+    }
+    /** Vanilla's spawner gate (hasChunksAt) counts a chunk ticketed FULL that is still loading, e.g. right after a
+     * respawn or teleport, and vanilla would then wait for it; an owner transaction never may. That attempt ends as
+     * vanilla's own "terrain not loaded" branch would: nothing more spawns this time. Every other failure propagates. */
+    static boolean runSpawnerAttempt(Runnable original) {
+        try { original.run(); return true; }
+        catch (dev.phoenium.chunk.ChunkProtocolException failure) {
+            if (!dev.phoenium.chunk.ChunkSynchronousAccessGuard.unfinishedWait(failure)) throw failure;
+            return false;
+        }
     }
     static Set<RoutingKey> siegeFootprint(WorldId world, boolean setup, int x, int z) {
         LinkedHashSet<RoutingKey> footprint = new LinkedHashSet<>();
