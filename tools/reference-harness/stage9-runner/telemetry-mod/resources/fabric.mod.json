@@ -1,0 +1,11 @@
+{
+  "schemaVersion": 1,
+  "id": "stage9-telemetry",
+  "version": "1.0.0",
+  "name": "Stage 9 Telemetry",
+  "description": "Per-tick server timing probe for the Phoenix/Phoenium Stage 9 benchmark campaign. Measurement only.",
+  "license": "MIT",
+  "environment": "server",
+  "mixins": ["stage9telemetry.mixins.json"],
+  "depends": { "fabricloader": ">=0.19.5", "minecraft": "26.2", "java": ">=25" }
+}

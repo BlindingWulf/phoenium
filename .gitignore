@@ -6,3 +6,9 @@ logs/
 /.audit/
 .stage2-server*/
 __pycache__/
+
+# Phoenium public repo
+/test-fixtures/
+/testkit-work/
+__pycache__/
+*.pyc
