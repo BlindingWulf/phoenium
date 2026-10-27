@@ -30,7 +30,7 @@ def audit(jar, root):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--jar", type=Path, default=Path("build/libs/phoenium-0.2.0-stage2.jar"))
+    parser.add_argument("--jar", type=Path, default=Path("build/libs/phoenium-0.2.0-beta.1.jar"))
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
     result = audit(args.jar, Path(__file__).resolve().parents[1])

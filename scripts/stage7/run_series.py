@@ -25,7 +25,7 @@ parser.add_argument('--stop-on-fail', action='store_true')
 args = parser.parse_args()
 if not args.candidate:
     import hashlib, shutil
-    built = WORK / 'build' / 'libs' / 'phoenium-0.2.0-stage2.jar'
+    built = WORK / 'build' / 'libs' / 'phoenium-0.2.0-beta.1.jar'
     digest = hashlib.sha256(built.read_bytes()).hexdigest()
     staged = AUDIT / 'candidate' / f'phoenium-dev-{digest[:12]}.jar'
     staged.parent.mkdir(parents=True, exist_ok=True)

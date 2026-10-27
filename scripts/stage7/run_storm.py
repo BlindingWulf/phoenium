@@ -5,7 +5,7 @@ given a deterministic UUID. Transaction observer events, rather than command
 success, are the contact and transfer oracle. A failed namespace is never reused.
 
 Example (after building the candidate and stage7RepairHarness):
-  python -u scripts/stage7/run_storm.py --name final-w4 --candidate build/libs/phoenium-0.2.0-stage2.jar
+  python -u scripts/stage7/run_storm.py --name final-w4 --candidate build/libs/phoenium-0.2.0-beta.1.jar
 
 The optional --families and --attempts switches are for bounded diagnostics. The
 bounded Nether storm gate requires the default family list, >= 2,000 actual portal

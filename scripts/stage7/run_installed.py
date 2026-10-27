@@ -97,7 +97,7 @@ if not restart:
     for n in ['fabric-server-launch.jar','eula.txt']:shutil.copy2(template/n,server/n)
     (server/'mods').mkdir()
     for n in pinned['providers']:os.link(template/'mods'/n,server/'mods'/n)
-    candidate=pathlib.Path(candidate_override) if candidate_override else work/'build/libs/phoenium-0.2.0-stage2.jar'
+    candidate=pathlib.Path(candidate_override) if candidate_override else work/'build/libs/phoenium-0.2.0-beta.1.jar'
     digest=sha(candidate)
     immutable=run/('phoenium-stage7-'+digest[:12].lower()+'.jar');shutil.copy2(candidate,immutable)
     shutil.copy2(immutable,server/'mods'/immutable.name)

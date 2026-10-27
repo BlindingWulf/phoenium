@@ -71,7 +71,7 @@ def main():
     p.add_argument("--warmup",type=int,default=1200);p.add_argument("--samples",type=int,default=5)
     p.add_argument("--ticks",type=int,default=1200);p.add_argument("--furnaces-per-region",type=int,default=256)
     args=p.parse_args();root=args.output.resolve();require(not root.exists(),"benchmark output already exists");root.mkdir(parents=True)
-    production=Path("build/libs/phoenium-0.2.0-stage2.jar");probe=Path("build/test-harness/stage4-acceptance-probe.jar")
+    production=Path("build/libs/phoenium-0.2.0-beta.1.jar");probe=Path("build/test-harness/stage4-acceptance-probe.jar")
     production_sha=sha256(production);probe_sha=sha256(probe);results=[]
     configurations=[("frozen",1),("candidate",1),("candidate",2),("candidate",4)]
     for repeat in range(args.repeats):

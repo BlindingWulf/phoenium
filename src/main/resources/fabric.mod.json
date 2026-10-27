@@ -3,7 +3,7 @@
   "id": "phoenium",
   "version": "${version}",
   "name": "Phoenium",
-  "description": "Regionized server scheduling engine; Stage 2 serial live integration.",
+  "description": "Regionized, Folia-style multithreaded server scheduling engine for Fabric (beta).",
   "license": "GPL-3.0-only",
   "environment": "server",
   "entrypoints": {

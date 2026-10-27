@@ -20,7 +20,7 @@ FROZEN_STAGE3 = "017EE8ED612D238894FFA5A1DC019BA8B0E31124B0B5171D08CC0D8993C1B53
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output", type=Path, required=True)
-    parser.add_argument("--production", type=Path, default=Path("build/libs/phoenium-0.2.0-stage2.jar"))
+    parser.add_argument("--production", type=Path, default=Path("build/libs/phoenium-0.2.0-beta.1.jar"))
     parser.add_argument("--prepared", type=Path, default=Path("build/stage3-client-server"))
     parser.add_argument("--probe", type=Path, default=Path("build/test-harness/stage4-acceptance-probe.jar"))
     parser.add_argument("--workers", type=int, choices=[1, 2, 4, 8], default=2)

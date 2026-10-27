@@ -11,7 +11,7 @@ ROOT = Path(__file__).resolve().parents[1]
 PREPARED = ROOT / "build/stage3-client-server"
 TARGET = ROOT / "run/stage4" / time.strftime("adverse-final-%Y%m%d-%H%M%S")
 PROBE = ROOT / "build/test-harness/stage4-adverse-stop-probe.jar"
-PRODUCTION = ROOT / "build/libs/phoenium-0.2.0-stage2.jar"
+PRODUCTION = ROOT / "build/libs/phoenium-0.2.0-beta.1.jar"
 digest = lambda path: hashlib.sha256(path.read_bytes()).hexdigest().upper()
 
 assert PROBE.is_file() and PRODUCTION.is_file(), "build production and adverseStopHarness first"

@@ -16,7 +16,7 @@ def main():
     parser.add_argument('--distance',type=int,choices=[5,8],default=5)
     args=parser.parse_args();root=args.output.resolve()
     require(not root.exists(),'control campaign output already exists');root.mkdir(parents=True)
-    production=Path('build/libs/phoenium-0.2.0-stage2.jar');probe=Path('build/test-harness/stage4-acceptance-probe.jar')
+    production=Path('build/libs/phoenium-0.2.0-beta.1.jar');probe=Path('build/test-harness/stage4-acceptance-probe.jar')
     production_hash=sha256(production);probe_hash=sha256(probe)
     runs={};results=[]
     for kind,workers in [('frozen',1),('candidate',1),('candidate',2),('candidate',4)]:

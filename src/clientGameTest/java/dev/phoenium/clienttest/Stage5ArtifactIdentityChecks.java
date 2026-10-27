@@ -11,7 +11,7 @@ public final class Stage5ArtifactIdentityChecks {
         Path root = Path.of(args[0]), output = Path.of(args[1]);
         if (Files.exists(output)) throw new IllegalStateException("identity evidence already exists");
         Files.createDirectories(output);
-        Path candidate = root.resolve("build/libs/phoenium-0.2.0-stage2.jar");
+        Path candidate = root.resolve("build/libs/phoenium-0.2.0-beta.1.jar");
         Path stage4 = root.resolve("run/stage4/final-artifacts/phoenium-0.2.0-stage2.jar");
         Path stage3 = root.resolve("run/stage3-closure/final-artifacts/phoenium-0.2.0-stage2.jar");
         Method guard = Stage4ClientTraceTest.class.getDeclaredMethod("verifyInstalledProduction", Path.class, Path.class, String.class, boolean.class);

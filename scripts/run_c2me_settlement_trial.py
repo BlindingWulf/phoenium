@@ -24,7 +24,7 @@ def main():
     candidate_name, expected_production = candidate_args or ["accepted-source-no-break-candidate.jar",
         "8A1C0C4852150C8D36E9EDB8DDEFC9F9B6E9A3E82AE71123D798416DD39A21FC"]
     candidate = EVIDENCE / candidate_name
-    production = ROOT / "build/libs/phoenium-0.2.0-stage2.jar"
+    production = ROOT / "build/libs/phoenium-0.2.0-beta.1.jar"
     assert sha(production) == expected_production
     if candidate_name == "@production":
         candidate = production

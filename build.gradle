@@ -427,7 +427,7 @@ loom {
             property 'phoenium.panda.serverTemplate', providers.gradleProperty('pandaServerTemplate')
                     .orElse(file('run/stage8/entry-20260913/astra-c2me-provider-settlement/production-final-coinstall-w1/server').absolutePath).get()
             property 'phoenium.panda.productionJar',
-                    layout.buildDirectory.file('libs/phoenium-0.2.0-stage2.jar').get().asFile.absolutePath
+                    layout.buildDirectory.file("libs/phoenium-${project.version}.jar").get().asFile.absolutePath
             property 'phoenium.panda.harness',
                     layout.buildDirectory.file('test-harness/panda-a2-live-probe.jar').get().asFile.absolutePath
             property 'phoenium.panda.evidence', providers.gradleProperty('pandaEvidence')
@@ -461,7 +461,7 @@ loom {
             property 'phoenium.panda.serverTemplate', providers.gradleProperty('pandaServerTemplate')
                     .orElse(file('run/stage8/entry-20260913/astra-c2me-provider-settlement/production-final-coinstall-w1/server').absolutePath).get()
             property 'phoenium.panda.productionJar',
-                    layout.buildDirectory.file('libs/phoenium-0.2.0-stage2.jar').get().asFile.absolutePath
+                    layout.buildDirectory.file("libs/phoenium-${project.version}.jar").get().asFile.absolutePath
             property 'phoenium.panda.harness',
                     layout.buildDirectory.file('test-harness/panda-a2-live-probe.jar').get().asFile.absolutePath
             property 'phoenium.projectile.evidence', providers.gradleProperty('projectileEvidence')

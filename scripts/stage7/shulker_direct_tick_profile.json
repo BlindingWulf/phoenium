@@ -43,7 +43,7 @@
     "route": "NETHER_ENTRY",
     "family": "shulker_bullet",
     "summonState": "deterministic UUID, no owner or target, NoGravity:1b, initial z motion -0.8",
-    "command": "python -u scripts/stage7/run_storm.py --name <unique> --candidate build/libs/phoenium-0.2.0-stage2.jar --attempts 1 --minimum-contacts 1 --wave-size 1 --families shulker_bullet --workers 1"
+    "command": "python -u scripts/stage7/run_storm.py --name <unique> --candidate build/libs/phoenium-0.2.0-beta.1.jar --attempts 1 --minimum-contacts 1 --wave-size 1 --families shulker_bullet --workers 1"
   },
   "remainingExactFixtureObligations": [
     "Preserve owner and target references through a native cross-dimension transfer",

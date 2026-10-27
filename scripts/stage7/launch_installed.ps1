@@ -14,7 +14,7 @@ param(
 )
 $wt = Split-Path (Split-Path $PSScriptRoot -Parent) -Parent
 $aud = Join-Path (Split-Path (Split-Path $wt -Parent) -Parent) '.audit\sonnet-stage7-closeout-20261004'
-if (-not $Candidate) { $Candidate = Join-Path $wt 'build\libs\phoenium-0.2.0-stage2.jar' }
+if (-not $Candidate) { $Candidate = Join-Path $wt 'build\libs\phoenium-0.2.0-beta.1.jar' }
 $hash = (Get-FileHash $Candidate -Algorithm SHA256).Hash
 $staged = Join-Path $aud ('candidate\phoenium-dev-' + $hash.Substring(0, 12).ToLower() + '.jar')
 if (-not (Test-Path $staged)) { Copy-Item $Candidate $staged }

@@ -116,7 +116,7 @@ def main():
     for source in (TEMPLATE/'mods').glob('*.jar'):
         if source.name.startswith(('phoenium-','panda-a2-')):continue
         shutil.copy2(source,server/'mods'/source.name)
-    production=ROOT/'build/libs/phoenium-0.2.0-stage2.jar'
+    production=ROOT/'build/libs/phoenium-0.2.0-beta.1.jar'
     shutil.copy2(production,server/'mods'/production.name)
     shutil.copy2(ROOT/'build/test-harness/a3-live-probe.jar',server/'mods/a3-live-probe.jar')
     props={'level-name':'a3-disposable','level-seed':'444444','level-type':'minecraft:flat','generator-settings':'{}',
