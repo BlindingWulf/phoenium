@@ -7,6 +7,7 @@ All desktop results: Windows 11, Temurin 25.0.4.1, 16-thread desktop CPU (Ryzen 
 | Check | Result |
 |---|---|
 | Unit suite on the release commit (`build --rerun-tasks`, fixtures present) | **PASS** 2060 tests, 0 failures, 2 skipped (environment-gated) |
+| Fresh-checkout CI (GitHub Actions, Temurin 25, `scripts/fetch_test_fixtures.py` then `build`) | **PASS** on ubuntu-latest and windows-latest. The Windows build reproduces the release jar byte for byte; the Linux jar differs, most likely from LF vs CRLF text resources (see MYTHOS_START_HERE) |
 | Release jar | `phoenium-0.2.0-beta.1.jar`, 2,500,473 B, SHA-256 `09530B8BA5FC090E584D4419CE133AD647CE6D6FDB708D82B0B2ADE76765037B` |
 | P0 fix unit tests (`RegionalCustomSpawnerBoundaryTest`: terrain still loading ends only that attempt; every other failure still fails) | **PASS** (red first, then green) |
 | P0 desktop reproduction (one player teleported 400 blocks every 4 s for 10 min, default mode) | Server stayed up, save and restart OK, no crash. **The timing window was not hit** on the fast desktop, so this shows no regression only. |

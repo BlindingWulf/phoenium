@@ -110,8 +110,12 @@ H-BIG, a big-core CPU-affinity add-on for Android, is **not yet published**.
 Expected release artifact: `phoenium-0.2.0-beta.1.jar`, 2,500,473 bytes, SHA-256
 `09530B8BA5FC090E584D4419CE133AD647CE6D6FDB708D82B0B2ADE76765037B`. It bundles no third-party code.
 
-A source build of the release tag with the same JDK (Temurin 25.0.4.1+1) is **expected** to reproduce the release jar
-byte for byte. **Please verify this and report the result.**
+**Reproducibility (measured by CI on 2026-10-27, run 40561281506):** a fresh **Windows** checkout built with Temurin 25
+reproduces the release jar **byte for byte** (`09530B8B…037B`, 2,500,473 bytes). A fresh **Linux** checkout builds a
+different jar (`6341915E…E860`, 2,500,264 bytes; all tests pass). The likely cause, still unconfirmed, is line endings: Git
+for Windows checks text resources (mixin JSON, `fabric.mod.json`, `LICENSE`) out with CRLF, and Linux checks them out
+with LF. The class files should be identical. Making the jar reproducible across platforms (for example a
+`.gitattributes` with `eol=lf` for resources) is a welcome small PR. If it changes the release hash, say so in the PR.
 
 ### PowerShell (Windows)
 
