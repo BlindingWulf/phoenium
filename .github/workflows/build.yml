@@ -1,0 +1,49 @@
+name: build
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '25'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Fetch C2ME test fixtures (hash-verified)
+        run: python scripts/fetch_test_fixtures.py
+      - name: Build and test (Linux)
+        if: runner.os != 'Windows'
+        run: sh ./gradlew build --no-daemon --stacktrace
+      - name: Build and test (Windows)
+        if: runner.os == 'Windows'
+        run: .\gradlew.bat build --no-daemon --stacktrace
+      - name: Jar SHA-256 (compare with the release when building the release commit)
+        shell: bash
+        run: |
+          ls -l build/libs/
+          sha256sum build/libs/phoenium-*.jar | tee jar.sha256
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: phoenium-${{ matrix.os }}
+          path: |
+            build/libs/*.jar
+            jar.sha256
+            build/reports/tests/
+          retention-days: 14
